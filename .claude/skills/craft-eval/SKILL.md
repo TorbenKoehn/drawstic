@@ -1,6 +1,8 @@
-﻿---
+---
 name: craft-eval
 description: Runs a multi-agent OOTB craft evaluation for a Drawstic graphics category (TODO-<CAT>.md in repo root) — 7 blind builder agents, per-agent Evaluation report, consolidation report, fix wave, craft-guide distillation, skill routing. Use when executing any TODO-<category>.md or when the user asks for a "Evaluation report"-Lauf for a category (icons, characters, animation, portraits, items, tilesets, UI, scenes …).
+metadata:
+  internal: true
 ---
 
 # craft-eval — Multi-Agent-Kategorie-Evaluation

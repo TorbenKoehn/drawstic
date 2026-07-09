@@ -13,6 +13,27 @@ renders it — pixel-for-pixel identically on every machine — to **PNG**, **SV
 - **Zero runtime dependencies** — ships as ESM, runs on Node ≥ 20, Bun and Deno.
 - **CLI first** — agents call it on the command line; a typed library surface is available too.
 
+## Agent skill
+
+Drawstic's primary use case is LLM agents authoring and verifying Recipe files. Install the
+bundled product skill into your agent first:
+
+```sh
+npx skills add torbenkoehn/drawstic
+```
+
+For non-interactive setups that should install only the Drawstic product skill:
+
+```sh
+npx skills add torbenkoehn/drawstic --skill drawstic -y
+```
+
+Alternatively, tell your agent the following:
+
+```
+Install the Drawstic skill from GitHub: torbenkoehn/drawstic
+```
+
 ## Quickstart (CLI)
 
 No install required — run it straight from the registry with your package manager's runner:

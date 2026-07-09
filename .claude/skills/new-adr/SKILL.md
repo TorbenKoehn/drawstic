@@ -1,6 +1,8 @@
 ---
 name: new-adr
 description: Creates a new Architectural Decision Record for Drawstic. Use whenever a material design or architecture decision is made (language semantics, syntax, tooling, infrastructure) — every such decision must be recorded as an ADR and synced into the docs.
+metadata:
+  internal: true
 ---
 
 # New ADR

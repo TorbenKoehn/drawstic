@@ -138,6 +138,6 @@
     "@biomejs/biome": "^2.4.16",
     "@types/bun": "latest",
     "js-tiktoken": "^1.0.21",
-    "typescript": "^5.9.0"
+    "typescript": "^7.0.2"
   }
 }
