@@ -1,6 +1,8 @@
 ---
 name: craft-eval
 description: Use this skill when executing a Drawstic category evaluation or an "Evaluation report" run for a graphics category. Runs the full multi-agent builder wave, consolidation report, fix wave, craft-guide distillation, and product-skill routing from bundled runbooks. Do not use for one-off asset creation, normal recipe authoring, code-only bug fixes, or small docs updates.
+metadata:
+  internal: true
 ---
 
 # craft-eval

@@ -1,6 +1,8 @@
 ---
 name: new-adr
 description: Use this skill when a Drawstic language, CLI, packaging, infrastructure, or architecture decision needs a new or updated ADR in docs/decisions/. Do not use for routine implementation, typo fixes, docs-only wording, or applying an already-recorded decision.
+metadata:
+  internal: true
 ---
 
 # New ADR
