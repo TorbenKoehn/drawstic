@@ -1,7 +1,17 @@
-# TODO
+# Runbook - General Backlog
 
 Concrete backlog for agents. Work top-down unless a task explicitly says it is independent.
 Material language or CLI decisions need an ADR in `docs/decisions/` before implementation.
+
+## Contents
+
+- 4: context and lint.
+- 5: small abstract std construction primitives.
+- 6: drawing primitives and effects.
+- 7: example and docs maintenance.
+- 8: longer-term backlog.
+- 9: additional improvements and fixes.
+- Verification rule.
 
 ## 4. Context and lint
 
@@ -180,7 +190,7 @@ sprites without palettes always rendering `?` for every pixel.
 ASCII should rather use "color approximations", light calculating the lightness and selecting fitting pixels to approximate a somewhat real representation
 of the image in grayscale. There should be no ANSI sequences in the output, it's a pure ASCII text.
 
-Superseded/merged by TODO-IMP.md §3.1 — ramp now maps true sRGB relative luminance (alpha-composited over an implied black backdrop), fixing the ink-density inversion; implemented in `src/preview.ts`.
+Superseded/merged by `scene-dx-improvements.md` §3.1 — ramp now maps true sRGB relative luminance (alpha-composited over an implied black backdrop), fixing the ink-density inversion; implemented in `src/preview.ts`.
 
 ### 9.2. AA for Stamps and hand-drawn (`pixels:`) sprites
 

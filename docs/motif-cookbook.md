@@ -170,7 +170,7 @@ draw nightLighting 64x48:
 ```
 
 Verification note: `--ascii` maps by ink-density, not luminance (tracked separately —
-`TODO-IMP.md` § 3.1) — a dark scene like this one renders as a wall of `@`. Use `--preview`
+the Scene-DX improvements runbook § 3.1) — a dark scene like this one renders as a wall of `@`. Use `--preview`
 or a PNG render to check night/space motifs, not `--ascii`.
 
 ## Water reflection

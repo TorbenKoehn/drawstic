@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-08
 - Deciders: t.koehn, Claude
-- Resolves: `TODO-IMP.md` §5.4 (Scene-DX evaluation, the hand-rolled `for`+`rand`+`floor` scatter dance)
+- Resolves: scene-dx improvements runbook §5.4 (Scene-DX evaluation, the hand-rolled `for`+`rand`+`floor` scatter dance)
 
 ## Context
 
@@ -32,7 +32,7 @@ seeded point drawn from `<region>`.** The header mirrors `for` exactly
 ([spec §11](../language-spec.md#11-loops)): the keyword, then the **binding name** (like `for`'s
 loop variable), then positional operands, then `:` and an indented block. No `in`/`seed`/`over`
 filler words — `for` has none either, and every filler word is dead tokens on a construct authors
-write constantly. Operand order is **count, seed, region** (the order `TODO-IMP.md` §5.4 states).
+write constantly. Operand order is **count, seed, region** (the order the scene-dx improvements runbook §5.4 states).
 The bound name is a `point` value; the body reads it like any point.
 
 ```drw

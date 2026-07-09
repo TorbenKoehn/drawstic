@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-08
 - Deciders: t.koehn, Claude
-- Resolves: `TODO-IMP.md` §5.6 (Scene-DX evaluation, procedural ramp access, volcano #5)
+- Resolves: scene-dx improvements runbook §5.6 (Scene-DX evaluation, procedural ramp access, volcano #5)
 
 ## Context
 

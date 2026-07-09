@@ -146,4 +146,4 @@ token-optimized, never letting quality slip. Treat a stale product skill as a fa
 
 Keep the indexes current: this file (§5 docs + the skill list below) and each skill's `description`.
 
-**Current skills:** [new-adr](.claude/skills/new-adr/SKILL.md) — record a material decision as an ADR and sync the indexes. [craft-eval](.claude/skills/craft-eval/SKILL.md) — run a multi-agent OOTB craft evaluation for a graphics category (`TODO-<CAT>.md` in repo root): builder wave, Evaluation report, consolidation, fix wave, craft-guide distillation, skill routing.
+**Current skills:** [new-adr](.claude/skills/new-adr/SKILL.md) — create or update ADRs only for material Drawstic language, CLI, packaging, infrastructure, or architecture decisions. [craft-eval](.claude/skills/craft-eval/SKILL.md) — run a full category Evaluation report loop from bundled runbooks: builder wave, consolidation, fix wave, craft-guide distillation, and product-skill routing.

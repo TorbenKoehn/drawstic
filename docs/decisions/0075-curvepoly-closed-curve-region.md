@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-08
 - Deciders: t.koehn, Claude
-- Resolves: `TODO-IMP.md` §5.2 (Scene-DX evaluation, organic-mass gap)
+- Resolves: scene-dx improvements runbook §5.2 (Scene-DX evaluation, organic-mass gap)
 - Pairs with: [ADR-0074](0074-curve-through-points-spline.md) (open counterpart)
 
 ## Context
