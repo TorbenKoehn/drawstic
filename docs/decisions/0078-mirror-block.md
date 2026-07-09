@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-08
 - Deciders: t.koehn, Claude
-- Resolves: `TODO-IMP.md` §5.5 (Scene-DX evaluation, symmetry only per-stamp, never for procedural passages)
+- Resolves: scene-dx improvements runbook §5.5 (Scene-DX evaluation, symmetry only per-stamp, never for procedural passages)
 
 ## Context
 

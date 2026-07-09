@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-08
 - Deciders: t.koehn, Claude
-- Resolves: `TODO-IMP.md` §5.1 (Scene-DX evaluation, highest-impact new primitive)
+- Resolves: scene-dx improvements runbook §5.1 (Scene-DX evaluation, highest-impact new primitive)
 - Pairs with: [ADR-0075](0075-curvepoly-closed-curve-region.md) (closed-loop / fillable counterpart)
 
 ## Context

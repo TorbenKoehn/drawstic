@@ -1,6 +1,6 @@
 ---
 name: drawstic
-description: Draws deterministic images (icons, sprites, pixel art, scenes, tilesets, spritesheets) as PNG/SVG/JPEG by authoring Drawstic recipe files (.drw) and running the drawstic CLI. Use whenever an image, icon, sprite, texture, favicon, or game asset must be created or edited programmatically and reproducibly — write the recipe, verify it via check/render, then build the artifacts.
+description: Use this skill when creating or editing deterministic graphics with Drawstic recipes and CLI output: icons, sprites, pixel art, scenes, tilesets, spritesheets, textures, favicons, and game assets. Author .drw recipes, run check/fmt/render, visually verify output, and build PNG/SVG/JPEG artifacts. Do not use for general image editing, non-Drawstic raster manipulation, or conceptual art direction without a reproducible recipe.
 ---
 
 # Drawstic
@@ -308,12 +308,8 @@ verifies grammar only — pair confusion, weak silhouettes, and mushy materials 
   **filter/directive** keyword (`shadow`, `tint`, `grain`, `dither`, `replace`, `outline`, `speckle`,
   `ripple`) parses as its directive — `shadow = …` then `shadow.alpha(…)` fails as `E004` at the
   **use** site, not the declaration. Also avoid `w`/`h`. Full stdlib list: reference.md § Expressions.
-- SVG export target: pixel mode merges *horizontal* runs into `<rect>`s, so colour varying along a
-  scanline — a horizontal/radial gradient, a `shadeRegion`/`lightRegion` veil (2D), `grain`/`speckle`,
-  `dither` — blows up to ~1 `<rect>`/pixel (5–25×; a grainy 32px tile 369 rects/22 KB vs. flat 28
-  rects/1.8 KB). A purely vertical (row-uniform) gradient stays compact. For SVG use flat fills /
-  discrete `pal` zones (or `mode smooth`); keep scanline-varying gradients/veils/texture for PNG-only
-  targets; counter-check `<rect>` count ≪ pixel count after `build`.
+- SVG export stays compact for flat or row-uniform fills; scanline-varying gradients, veils, texture,
+  and grain can explode `<rect>` count. Full export tradeoffs: reference.md § Export.
 - `dither` is a **raw set, not a blend** — an `alpha(0%)` partner punches a transparency hole.
   `grain`/`speckle`/`ripple`/`dither` take an **optional leading region** to scope them
   (`grain sand 0.3 11 p`); without one they hit every opaque pixel (still respecting a `mask …:`
@@ -322,23 +318,11 @@ verifies grammar only — pair confusion, weak silhouettes, and mushy materials 
   respects a `mask …:` block in language version 2 (`drawstic 1` ignores it). A `stamp … shadow` on
   a **composite** sprite clumps the whole silhouette into a dark blob — use an `ellipse … fill` ground
   shadow for standing objects.
-- `radial(c, transparent)` mixes RGB toward black → muddy dark halo; end on `c.alpha(0%)` instead.
-  **Soft glow** = a gentle alpha ramp: either **many fine** `alpha` circles (increment ≤~7%, radius
-  shrinking a few px each) or one `radial(c.alpha(x), c.alpha(0%))` over the region (extend the radius
-  past the falloff so the edge alpha is ~0). A few *coarse* high-alpha rings produce concentric onion
-  rings at every size; below ~24px use `mode smooth` or hand-pixel. (scene-craft.md § 6.)
-  Same class — **any cross-hue blend** takes the short OkLCh arc **through magenta/grey**: a `grad`
-  with stops from two hue families (blue↔amber → pink), *and* a scalar `mix`/`tint` toward a chromatic
-  colour (warm skin `.mix(coolBlue, 30–40%)` → rose/magenta; `tint <chromatic>` rotates hue the same
-  way). For grads build stops intra-hue (`x.lighten` ↔ `x.darken` of one base), set an explicit mid
-  stop, or pass `rgb`/`hsl`. Shade **warm materials with `darken()`** (+ at most a small cool `mix`);
-  depth-`tint` **only with an exactly neutral grey** (`R==G==B`) — a near-neutral cast (`#2a2b2f`)
-  still swings to magenta, so use `#2b2b2b`.
-- Stamp anchors are **visual** in language version 2 — the eight offset anchors name a spot on the
-  footprint you see *after* flip/rotate/scale, so `anchor bottomLeft flipx` lands visible
-  bottom-left and `anchor bottom rot90` lands visible bottom-center. `topLeft`/default places the
-  untransformed origin. (`drawstic 1`: source-local, pushed through the transform → `bottomLeft
-  flipx` lands bottom-right.)
+- `radial(c, transparent)` muddies a glow; end on `c.alpha(0%)`. Cross-hue OkLCh blends can drift
+  through muddy/magenta colours; use intra-hue ramps or explicit `rgb`/`hsl` stops. Full colour traps:
+  reference.md § Color and § Gradients & filters.
+- Stamp anchors are visual in language version 2: offset anchors name a spot on the post-transform
+  footprint. Version-history details: reference.md § Determinism & budget.
 - `quad`/`bezier`/`arc` below ~12px rasterize blocky — use `pixels:` instead. `noise(seed, x, 0)`
   at integer `x` is high-frequency spikes — sample fractional steps (`x * 0.05`) for smoothness, or
   use `profile` for a silhouette (its `fn` gets normalized x, so the trap can't occur).
@@ -352,4 +336,9 @@ verifies grammar only — pair confusion, weak silhouettes, and mushy materials 
 ---
 *Maintenance (Drawstic developers): this skill ships with the package and mirrors
 `docs/language-spec.md` + `src/cli.ts`. Any language or CLI change MUST update SKILL.md and
-reference.md in the same change — without compromising their precision or token economy.*
+reference.md in the same change — without compromising their precision or token economy.
+Ground edits in real recipe runs/evaluation reports, not generic advice. For substantial skill
+changes, compare the new skill against the previous version on 2–3 realistic prompts and grade the
+rendered artifacts with concrete evidence. Add helper scripts only when agents repeatedly rewrite
+the same deterministic logic; scripts need flags/`--help`, no prompts, structured stdout, diagnostics
+on stderr, safe retry behaviour, and an executed test.*

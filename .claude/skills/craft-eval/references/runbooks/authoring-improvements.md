@@ -1,8 +1,17 @@
-# TODO Plan: Agent Authoring Improvements
+# Runbook - Agent Authoring Improvements
 
 This plan captures concrete improvements from authoring `examples/scenes/island.drw`.
 The focus is not a broader feature wishlist, but changes that make Drawstic easier for
 LLM agents to write, verify, and correct.
+
+## Contents
+
+- P0: pixel-row diagnostics and palette-name guidance.
+- P1: preview scaling, lint, inspect, render JSON, render target diagnostics, check collection,
+  context expansion, std marks, local ramps, scoped shadows, texture filters.
+- P2: lighting helpers, stamp anchors, segment sugar, row-width side channel, formatter feedback,
+  example smoke tests, render crop, docs drift.
+- Acceptance order and verification commands.
 
 ## P0 - Fix misleading `pixels:` size diagnostics
 

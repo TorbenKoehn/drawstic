@@ -1,4 +1,4 @@
-# TODO-ANIMATION - Animation Frames, Animated GIF, and Sprite Sheets
+# Runbook - Animation Frames, Animated GIF, and Sprite Sheets
 
 Status: open; engine groundwork required. Procedure: `.claude/skills/craft-eval/SKILL.md`. Output: `examples/animations/`. Evaluation report: `docs/animation-dx-evaluation-<date>.md`. Craft guide: `skills/drawstic/animation-craft.md`.
 

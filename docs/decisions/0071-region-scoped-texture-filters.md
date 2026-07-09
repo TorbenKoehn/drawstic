@@ -17,7 +17,7 @@ The deterministic texture filters `grain`/`speckle`/`ripple`/`dither`
 framebuffer** — they carry no region argument. Confining one to part of a scene ("grain only the
 sand, not the sky") forced the author either to wrap the call in a `mask …:` block or to draw
 the content in its own component `draw` and stamp the result in
-([evaluation](../scene-dx-evaluation-2026-07-08.md), prioritized action #6; `TODO-IMP.md` §4.4). Both
+([evaluation](../scene-dx-evaluation-2026-07-08.md), prioritized action #6; scene-dx improvements runbook §4.4). Both
 are boilerplate detours for what is conceptually one extra argument — and the region-first
 lighting helpers (`shadeRegion`/`castShadow`) already read `region first`, so the texture
 filters were the odd ones out.

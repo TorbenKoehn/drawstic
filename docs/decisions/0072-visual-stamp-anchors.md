@@ -19,7 +19,7 @@ model. The [Scene-DX evaluation](../scene-dx-evaluation-2026-07-08.md) recorded 
 misplacement class** (2/7 graders; market and desert): an author writes the visually-obvious
 anchor, gets the mirrored/rotated placement, and no `check` can catch it because the recipe is
 well-formed. The P1 documentation wave ([spec §9](../language-spec.md#9-composition-transforms--masks),
-`TODO-IMP.md` §1.4) documented the through-transform rule with a worked `flipx`→bottom-right
+the scene-dx improvements runbook §1.4 documented the through-transform rule with a worked `flipx`→bottom-right
 example as a stopgap and flagged "supersede if 4.5 lands". This is that supersede.
 
 Every LLM author reasons about the *visible* result: `bottom` should mean "the bottom of the

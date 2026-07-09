@@ -9,7 +9,7 @@
 
 Drawstic exposes one concept — *drop a silhouette shadow at an offset* — through three
 surfaces with three different argument shapes ([evaluation](../scene-dx-evaluation-2026-07-08.md),
-prioritized action #6; `TODO-IMP.md` §4.3):
+prioritized action #6; scene-dx improvements runbook §4.3):
 
 - stamp flag `stamp part pt shadow dx:dy paint` — an **`dx:dy` point** offset,
 - frame filter `shadow dx dy paint` — **two separate numbers**,

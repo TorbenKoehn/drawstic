@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-08
 - Deciders: t.koehn, Claude
-- Resolves: `TODO-IMP.md` §5.3 (Scene-DX evaluation, the hand-rolled per-column noise loop)
+- Resolves: scene-dx improvements runbook §5.3 (Scene-DX evaluation, the hand-rolled per-column noise loop)
 
 ## Context
 
@@ -13,7 +13,7 @@ x:f(x) x:bottom` ([evaluation](../scene-dx-evaluation-2026-07-08.md), motif cook
 That loop is boilerplate, and it walks straight into the **noise-frequency trap**: `noise(seed,
 x, 0)` sampled at raw integer `x` hits the noise lattice exactly and returns high-frequency,
 uncorrelated spikes instead of a smooth curve (7/7 graders; [ADR-0026](0026-seeded-randomness-and-noise.md),
-`TODO-IMP.md` §1.1). `curve`/`curvePoly` ([ADR-0074](0074-curve-through-points-spline.md),
+the scene-dx improvements runbook §1.1). `curve`/`curvePoly` ([ADR-0074](0074-curve-through-points-spline.md),
 [ADR-0075](0075-curvepoly-closed-curve-region.md)) cover *hand-authored* through-points silhouettes,
 but not a **procedural** `y = f(x)` swept across a span, where the author has a function, not a
 point list. A built-in that samples the function once per output column — with the function seeing

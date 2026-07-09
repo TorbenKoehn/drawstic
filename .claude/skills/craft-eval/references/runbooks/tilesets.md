@@ -1,4 +1,4 @@
-# TODO-TILESETS - Tileable Terrain Sets
+# Runbook - Tileable Terrain Sets
 
 Status: open. Procedure: `.claude/skills/craft-eval/SKILL.md`. Output: `examples/tilesets/`. Evaluation report: `docs/tileset-dx-evaluation-<date>.md`. Craft guide: `skills/drawstic/tileset-craft.md`.
 

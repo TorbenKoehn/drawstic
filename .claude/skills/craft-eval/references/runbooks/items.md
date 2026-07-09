@@ -1,4 +1,4 @@
-# TODO-ITEMS - Item and Equipment Sets with Atlas Export
+# Runbook - Item and Equipment Sets with Atlas Export
 
 Status: completed on 2026-07-09. Procedure: `.claude/skills/craft-eval/SKILL.md`. Output: `examples/items/`. Evaluation report: `docs/item-dx-evaluation-2026-07-09.md`. Craft guide: `skills/drawstic/item-craft.md`.
 

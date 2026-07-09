@@ -1,4 +1,4 @@
-# TODO-PORTRAITS - Pixel Portraits of Historical Figures
+# Runbook - Pixel Portraits of Historical Figures
 
 Status: open. Procedure: `.claude/skills/craft-eval/SKILL.md`. Output: `examples/portraits/`. Evaluation report: `docs/portrait-dx-evaluation-<date>.md`. Craft guide: `skills/drawstic/portrait-craft.md`.
 

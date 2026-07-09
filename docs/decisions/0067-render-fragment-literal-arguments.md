@@ -78,7 +78,7 @@ changes what the ad-hoc `render` fragment accepts.
 
 - Any parametric drawing can be rendered standalone for a visual check without a wrapper
   `draw` — closes the P2.4 gap from
-  [TODO-IMP.md](../../TODO-IMP.md) §2.4.
+  [scene-dx improvements runbook](../../.claude/skills/craft-eval/references/runbooks/scene-dx-improvements.md) §2.4.
 - Touches: `src/parser.ts` (one new standalone-expression entry point reusing the existing
   private expression-parsing methods, no grammar change), `src/eval.ts` (`Engine.renderFragment`
   + a private literal-argument evaluator/validator), `src/cli.ts` (`parseRenderTarget` grows an

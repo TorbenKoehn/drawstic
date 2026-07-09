@@ -1,4 +1,4 @@
-# TODO-UI - Pixel UI Kits for Games and Apps
+# Runbook - Pixel UI Kits for Games and Apps
 
 Status: open. Procedure: `.claude/skills/craft-eval/SKILL.md`. Output: `examples/ui/`. Evaluation report: `docs/ui-dx-evaluation-<date>.md`. Craft guide: `skills/drawstic/ui-craft.md`.
 

@@ -1,4 +1,4 @@
-# TODO-ICONS - Icon Families with PNG and SVG Export
+# Runbook - Icon Families with PNG and SVG Export
 
 Status: completed. Main run: 2026-07-08. Fix wave: 2026-07-09. Procedure: `.claude/skills/craft-eval/SKILL.md`. Output: `examples/icons/`. Evaluation report: `docs/icon-dx-evaluation-2026-07-08.md`. Craft guide: `skills/drawstic/icon-craft.md`.
 

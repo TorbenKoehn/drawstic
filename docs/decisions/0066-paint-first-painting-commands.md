@@ -66,7 +66,7 @@ bump: v1 is unreleased (0.0.0), so the change lands in v1 semantics
   (draw-suffix rules), [dsl-examples](../dsl-examples.md), [best-practices](../best-practices.md),
   `examples/**/*.drw`, all test recipes (including position-sensitive diagnostics
   assertions), `src/std/*.drw.ts` recipe modules, `skills/drawstic/` (SKILL.md +
-  reference.md — product-skill rule, AGENTS.md §6), the README example, and TODO.md
+  reference.md — product-skill rule, AGENTS.md §6), the README example, and the general backlog runbook
   snippets.
 - Error hints referencing the old order (e.g. missing-paint hints) must name the new
   position.
