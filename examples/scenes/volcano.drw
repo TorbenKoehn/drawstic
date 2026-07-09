@@ -1,0 +1,191 @@
+drawstic 1
+
+from std/shapes star4, spark
+use std/themes pixelBase
+
+# ---- palette (module scope so fn / grads can see it) --------------------
+skyTop = #05060e
+skyMid = #0e0a1a
+skyGlow = #3a1420
+moonCol = #efe6c6
+moonLite = #fff6d8
+moonHalo = #f0e2a828
+ash = #191722
+ember = #ff7b2e
+lavaCore = oklch(0.94, 0.10, 96)
+lavaHot = oklch(0.82, 0.20, 62)
+lavaMid = oklch(0.66, 0.23, 38)
+lavaDeep = oklch(0.46, 0.18, 28)
+rockDark = #090b12
+rockLit = #5a2213
+hillFar = #0d1019
+shoreCol = #05070d
+waterTop = #0b1524
+waterDeep = #03050c
+reflRed = #a83417
+reflOrange = #db6a26
+reflMoon = #d8cc95
+
+emberRamp = lavaMid.mixes(lavaCore, 4)
+smoke = ash.tones(10%, 45%, 85%)
+
+fn lava(t) = lavaDeep.mix(lavaCore, t)
+
+grad night = linear(90, skyTop, skyMid, skyGlow)
+grad crater = radial(lavaCore, lavaMid)
+grad halo = radial(moonHalo, transparent)
+grad water = linear(90, waterTop, waterDeep)
+
+# ---- silhouette sprites -------------------------------------------------
+draw pine 9x14:
+  pal d=#080b11 t=#0d1219
+  pixels:
+    ....d....
+    ...ddd...
+    ..ddddd..
+    ...ddd...
+    ..ddddd..
+    .ddddddd.
+    ..ddddd..
+    .ddddddd.
+    ddddddddd
+    .ddddddd.
+    ddddddddd
+    ....t....
+    ....t....
+    ....t....
+
+draw hut 11x9:
+  pal d=#090c12 l=#ffb84d g=#ffd98a
+  pixels:
+    .....d.....
+    ....ddd....
+    ...ddddd...
+    ..ddddddd..
+    .ddddddddd.
+    .ddddddddd.
+    .dd.glg.dd.
+    .dd.glg.dd.
+    .ddddddddd.
+
+path flowA 160x96:
+  move 79:33
+  line 82:38
+  bezier 88:44 92:50 95:58
+  line 90:58
+  bezier 86:50 82:44 76:38
+  close
+
+# ---- the scene ----------------------------------------------------------
+draw volcano 160x96:
+  title "Vulkanausbruch bei Nacht"
+
+  mask mtn = poly(26:58, 44:46, 58:34, 66:27, 72:31, 80:33, 88:31, 94:27, 104:34, 120:46, 136:58)
+  mask lake = rect(0:58, 159:95)
+
+  # -- night sky ----------------------------------------------------------
+  bg night
+  for i 0..54:
+    sx = rand(11, i) * 159
+    sy = rand(23, i) * 40
+    match i mod 5:
+      0: px moonLite.alpha(80%) (sx):(sy)
+      1: px #aab6e0.alpha(75%) (sx):(sy)
+      else: px #c8d2f0.alpha(55%) (sx):(sy)
+  for i 0..8:
+    stamp star4(moonLite.alpha(55%)) (rand(31, i) * 150):(rand(41, i) * 26)
+
+  # -- moon behind smoke veils -------------------------------------------
+  circle halo 124:16 20 fill
+  circle moonCol 124:16 9 fill
+  circle moonLite 121:13 4 fill
+  ellipse ash.alpha(50%) 120:15 16:3 fill
+  ellipse smoke[2].alpha(30%) 130:19 13:2 fill
+
+  # -- ash plume with ember sparks ---------------------------------------
+  for i 0..18:
+    t = i / 18
+    cx = 80 - t * 26 + noise(7, i, 0) * 12 - 6
+    cy = 30 - t * 30
+    ellipse smoke[0].alpha(85%) (cx):(cy) (7 + t * 9):(6 + t * 7) fill
+  for i 0..14:
+    t = i / 14
+    cx = 82 - t * 20 + noise(13, i, 0) * 14 - 7
+    cy = 26 - t * 27
+    ellipse smoke[1].alpha(55%) (cx):(cy) (5 + t * 7):(4 + t * 6) fill
+  ellipse ember.alpha(30%) 80:23 13:6 fill
+  ellipse lavaHot.alpha(45%) 80:27 8:4 fill
+  mask ellipse(64:6, 42:28):
+    grain 0.22 5 ash
+    speckle 0.05 19 ember
+
+  # -- distant hills ------------------------------------------------------
+  poly hillFar 0:58 8:52 22:55 38:50 52:56 60:58 fill
+  poly hillFar 108:58 120:52 134:54 148:50 159:55 fill
+
+  # -- volcano silhouette + lava lighting --------------------------------
+  fill rockDark mtn
+  shadeRegion mtn 80:31 #0a0e1877 0.85
+  grad lit = linear(90, transparent, transparent, transparent, rockLit)
+  fill lit mtn.intersect(rect(0:44, 159:58))
+  mask mtn:
+    grad hot = radial(lavaMid.alpha(80%), transparent)
+    ellipse hot 80:52 34:13 fill
+  rim mtn 0:1 lavaHot.alpha(65%) 1
+  rim mtn -1:0 moonLite.alpha(18%) 1
+  ambientOcclusion mtn #000000 0.5
+
+  # -- crater vent + eruption --------------------------------------------
+  ellipse crater 80:31 8:3 fill
+  ellipse lavaCore.alpha(80%) 80:30 4:2 fill
+  arc lavaCore.alpha(45%) 80:31 14 250 290
+  for i 0..28:
+    px lava(1 - rand(5, i) * 0.5) (80 + (rand(3, i) - 0.5) * 34):(31 - rand(9, i) * 27)
+  for i 0..5:
+    stamp spark(emberRamp[i mod 4]) (80 + (rand(7, i) - 0.5) * 34):(28 - rand(15, i) * 18)
+
+  # -- lava flows down the flanks (path + curves) ------------------------
+  fill lavaMid flowA
+  bezier lavaHot 80:33 74:44 70:52 66:58 w2
+  bezier lavaCore.alpha(85%) 80:33 74:45 71:52 67:58
+  quad lavaHot 81:34 88:47 92:58
+  bezier lavaCore.alpha(70%) 84:37 89:47 92:53 94:58
+
+  # -- lake: base texture, reflections, ripple ---------------------------
+  rect water 0:58 159:95 fill
+  mask lake:
+    dither waterTop.darken(8%) waterDeep 0.55
+  poly rockDark.alpha(55%) 26:58 44:70 58:82 66:89 72:85 80:83 88:85 94:89 104:82 120:70 136:58 fill
+  line reflOrange.alpha(40%) 62:58 98:58
+  line moonLite.alpha(30%) 118:58 130:58
+  for y 59..85:
+    t = (y - 59) / 26
+    cxr = 80 + (rand(19, y) - 0.5) * 7
+    gw = (9 - t * 7) * (0.55 + rand(21, y) * 0.6)
+    ga = (1 - t) * 0.75
+    if rand(17, y) > 0.28:
+      col = if rand(27, y) > 0.5 then reflOrange else reflRed
+      rect col.alpha(ga) (cxr - gw):y (cxr + gw):y fill
+  for y 59..80:
+    ma = (1 - (y - 59) / 21) * 0.5
+    if rand(37, y) > 0.35:
+      rect reflMoon.alpha(ma) 123:y 126:y fill
+  mask lake:
+    ripple 0.4 29 #14324e80
+
+  # -- foreground shore, trees, cabin ------------------------------------
+  poly shoreCol 0:96 0:88 30:90 62:92 100:91 140:89 159:90 159:96 fill
+  mask hutR = hut.region.scale(2).shift(111:76)
+  castShadow hutR 5:2 #00000050
+  stamp hut 122:94 anchor bottom scale2
+  ellipse ember.alpha(20%) 122:86 6:4 fill
+  mask pineR = pine.region.scale(2).shift(3:64)
+  castShadow pineR 3:1 #00000050
+  stamp pine 12:93 anchor bottom scale2 shadow 2:0 #00000055
+  stamp pine 150:93 anchor bottom flipx scale2
+  stamp pine 34:94 anchor bottom
+  stamp pine 96:95 anchor bottom tint skyGlow 0.35
+
+export volcano scenes/volcano:
+  png @1 @2
+  svg ids classes

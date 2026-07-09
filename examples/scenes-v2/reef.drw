@@ -1,0 +1,127 @@
+# reef.drw — a coral reef scene
+# semantic palette
+waterTop    = #37abcb
+waterBot    = #0c3450
+sand        = #e7c98b
+coralPink   = #ff7d8a
+coralOrange = #ff9a4d
+fanPurple   = #b06fd6
+brainTan    = #d6cf7c
+anemMagenta = #ff5fa2
+kelpGreen   = #47a85a
+fishYellow  = #ffd23f
+fishCyan    = #46c4ff
+rockGray    = #6b7a86
+bubbleCol   = #d0efff
+
+fn sandY(nx) = 74 + round(noise(7, nx * 3, 0) * 7)
+
+# branching (staghorn) coral
+draw branchCoral(c) 28x34:
+  t = c.lighten(14%)
+  line c 14:33 14:20 w4
+  line c 14:24 5:9 w3
+  line c 14:21 23:7 w3
+  line c 14:18 14:3 w3
+  line c 9:17 3:11 w2
+  line c 19:14 25:16 w2
+  circle t 5:9 2 fill
+  circle t 23:7 2 fill
+  circle t 14:3 2 fill
+  circle t 3:11 1 fill
+  circle t 25:16 1 fill
+
+# sea fan
+draw fanCoral(c) 30x36:
+  d = c.darken(16%)
+  curvePoly c 15:35 3:24 1:11 8:1 15:4 22:1 29:11 27:24 fill
+  for i 0..8:
+    line d 15:34 (2 + i * 4):3 w1
+
+# brain coral dome
+draw brainCoral(c) 30x18:
+  d = c.darken(18%)
+  ellipse c 15:17 14:9 fill
+  for i 0..4:
+    yy = 9 + i * 2
+    curve d 3:yy 15:(yy + 1) 27:yy w1
+
+# anemone
+draw anemone(c) 22x18:
+  b = c.darken(16%)
+  t = c.lighten(22%)
+  ellipse b 11:16 7:2 fill
+  for i 0..10:
+    tx = 1 + i * 2
+    ty = 4 + round(abs(i - 5) * 1.4)
+    line c 11:15 tx:ty w1
+    circle t tx:ty 1 fill
+  circle c 11:14 3 fill
+
+# kelp cluster
+draw kelp(c) 16x44:
+  d = c.darken(14%)
+  l = c.lighten(12%)
+  curve c 8:43 4:32 11:22 5:12 9:2 w3
+  curve d 8:43 12:34 5:24 12:14 8:4 w3
+  curve l 8:43 8:30 9:16 8:3 w2
+
+# small fish
+draw fish(c) 14x9:
+  d = c.darken(22%)
+  ellipse c 6:4 5:3 fill
+  poly c 11:4 13:1 13:7 fill
+  line d 5:1 5:7 w1
+  px #16202a 3:3
+
+# rock
+draw rock(c) 32x16:
+  l = c.lighten(10%)
+  curvePoly c 2:15 4:6 13:1 23:3 30:8 29:15 fill
+  curvePoly l 8:6 14:3 19:5 12:8 fill
+
+# starfish
+draw starfish(c) 14x14:
+  d = c.darken(18%)
+  poly c 7:0 9:5 14:5 10:8 12:13 7:10 2:13 4:8 0:5 5:5 fill
+  circle d 7:7 2 fill
+
+draw reef 128x96:
+  grad water = linear(90, waterTop, waterBot)
+  bg water
+  # sun beams
+  ray = #ddf6ff.alpha(9%)
+  poly ray 22:0 38:0 62:96 46:96 fill
+  poly ray 74:0 86:0 112:96 98:96 fill
+  # seabed
+  mask sandMask = profile(0..w, sandY)
+  profile sand 0..w sandY fill
+  lightRegion sandMask 64:0 #fff2cf 22%
+  grain sandMask 0.22 4 sand.darken(18%)
+  # hazy background reef for depth (tint toward water haze so it recedes)
+  haze = #3f8aa8
+  stamp branchCoral(coralOrange) 40:78 anchor bottom scale2 tint haze 62%
+  stamp fanCoral(fanPurple) 112:80 anchor bottom tint haze 55%
+  # rocks
+  stamp rock(rockGray) 22:84 anchor bottom
+  stamp rock(rockGray.lighten(8%)) 100:85 anchor bottom
+  # foreground reef
+  stamp kelp(kelpGreen) 9:88 anchor bottom
+  stamp kelp(kelpGreen.darken(6%)) 118:90 anchor bottom flipx
+  stamp brainCoral(brainTan) 30:82 anchor bottom
+  stamp branchCoral(coralPink) 54:83 anchor bottom
+  stamp anemone(anemMagenta) 70:82 anchor bottom
+  stamp branchCoral(coralOrange) 82:82 anchor bottom flipx
+  stamp fanCoral(fanPurple) 98:83 anchor bottom
+  stamp starfish(#ff8a4d) 15:93 anchor bottom
+  # fish school
+  stamp fish(fishYellow) 44:40
+  stamp fish(fishCyan) 60:30 flipx
+  stamp fish(fishYellow.darken(8%)) 88:48 flipx
+  stamp fish(fishCyan.lighten(6%)) 30:56
+  # bubbles
+  scatter b 26 5 rect(0:0, 127:58):
+    circle bubbleCol.alpha(50%) b 1
+
+export reef reef:
+  png @1 @2

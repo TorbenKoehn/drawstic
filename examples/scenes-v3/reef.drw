@@ -1,0 +1,289 @@
+# Korallenriff — underwater coral reef scene
+# Light source: the surface (top of frame). Top edges catch light, undersides darken,
+# objects seat into the sand with ambient occlusion. Depth via atmospheric blue haze.
+
+# ---- water column -------------------------------------------------------------
+surfaceGlow = #7fd0e0
+upperWater  = #2f86a8
+deepWater   = #0a2a44
+abyss       = #061a2e
+grad water  = linear(90, surfaceGlow, upperWater, deepWater, abyss)
+
+# ---- sand seabed --------------------------------------------------------------
+sandLit  = #cbb583
+sandMid  = #a99a6a
+sandDark = #6f6f57
+grad sand = linear(90, sandLit, sandMid, sandDark)
+
+fn duneY(nx) = 176 + round(noise(7, nx * 3, 0) * 12)
+fn ridgeY(nx) = 158 + round(noise(11, nx * 3.5, 0) * 15)
+
+# ---- reef palette (muted warm hues, underwater) -------------------------------
+coralPink   = #d4657a
+coralRed    = #c0405a
+coralOrange = #d98a44
+coralPurple = #9a6bb8
+spongeRose  = #c85a6a
+brainMauve  = #c77a9a
+grassGreen  = #6fae52
+rockGrey    = #566257
+fishYellow  = #eec24a
+fishBlue    = #4a90c0
+haze        = upperWater
+
+# ---- light shafts -------------------------------------------------------------
+grad shaft = linear(90, surfaceGlow.alpha(22%), surfaceGlow.alpha(0%))
+grad hazeBand = linear(90, haze.alpha(0%), haze.alpha(40%), haze.alpha(0%))
+grad vign = radial(abyss.alpha(0%), abyss.alpha(58%))
+
+# ---- coral components (light from top) ---------------------------------------
+# brain coral: shaded dome with wavy grooves
+draw brainCoral(c) 46x34:
+  dome = ellipse(23:24, 21:15)
+  fill c dome
+  mask dome:
+    for i 0..6:
+      gy = 8 + i * 4
+      curve c.darken(26%) 2:gy 12:(gy + 3) 23:(gy - 2) 34:(gy + 3) 44:gy w2
+    for i 0..6:
+      gy = 10 + i * 4
+      curve c.lighten(14%) 2:(gy - 1) 12:(gy + 2) 23:(gy - 3) 34:(gy + 2) 44:(gy - 1)
+  shadeRegion dome 23:0 abyss.alpha(70%) 0.7
+  rim dome.intersect(rect(0:0, 45:20)) 0:1 c.lighten(30%) 1
+
+# staghorn: branching coral, brighter toward the tips
+draw staghorn(c) 42x50:
+  curve c.darken(14%) 21:49 19:34 13:20 8:7 w3
+  curve c.darken(14%) 21:49 24:33 30:22 34:9 w3
+  curve c.darken(14%) 21:49 21:36 20:24 21:8 w3
+  curve c 13:26 6:20 3:11 w2
+  curve c 30:26 37:19 39:12 w2
+  for t 0:7, 8:6, 21:7, 34:8, 39:11, 3:10:
+    circle c.lighten(24%) t 2 fill
+
+# tube sponge cluster: vertical tubes with dark openings
+draw tubeSponge(c) 32x42:
+  tube1 = 7:24
+  tube2 = 16:16
+  tube3 = 25:26
+  for t tube1, tube2, tube3:
+    tx = t.x
+    top = t.y
+    rrect c (tx - 4):top (tx + 4):41 3 fill
+    shadeRegion rect((tx - 4):top, (tx + 4):41) tx:0 abyss.alpha(65%) 0.65
+    rim rect((tx - 4):top, (tx + 4):41).intersect(rect((tx - 4):top, (tx - 2):41)) 1:0 c.lighten(26%) 1
+    ellipse c.lighten(18%) tx:top 4:2 fill
+    ellipse abyss tx:top 2:1 fill
+
+# sea fan / gorgonian: fanning lattice of thin ribs
+draw seaFan(c) 46x44:
+  base = 23:43
+  n = 9
+  prevMid = base
+  prevTip = base
+  for i 0..n:
+    fr = i / (n - 1)
+    ang = lerp(-58, 58, fr) * pi / 180
+    dir = sin(ang):(0 - cos(ang))
+    mid = base + dir * 20
+    tip = base + dir * 41
+    curve c.darken(8%) base ((base + mid) / 2) mid tip
+    if i > 0:
+      line c.darken(26%) prevMid mid
+      line c.darken(26%) prevTip tip
+    circle c.lighten(20%) tip 1 fill
+    prevMid = mid
+    prevTip = tip
+
+# seagrass: wavy blades reaching upward
+draw seagrass(c) 18x56:
+  curve c.darken(16%) 9:55 6:40 11:24 8:6 w3
+  curve c 5:55 3:38 8:22 5:5 w2
+  curve c.darken(6%) 13:55 15:40 10:26 13:9 w2
+  curve c.lighten(10%) 9:55 10:36 8:20 9:4
+
+# anemone: soft column crowned with a dome of waving tentacles
+draw anemone(c) 28x24:
+  ellipse c.darken(16%) 14:20 8:5 fill
+  shadeRegion ellipse(14:20, 8:5) 14:0 abyss.alpha(60%) 0.55
+  for i 0..17:
+    fr = i / 16
+    tipX = round(lerp(2, 26, fr))
+    startX = round(lerp(10, 18, fr))
+    tipY = round(3 + abs(tipX - 14) * 0.34 + noise(2, fr * 6, 0) * 2)
+    curve c startX:17 ((startX + tipX) / 2):(tipY + 4) tipX:tipY w2
+    circle c.lighten(28%) tipX:tipY 1 fill
+
+# rock / boulder: shaded organic mass
+draw rock(c) 54x30:
+  body = curvePoly(2:29, 5:16, 15:7, 30:5, 44:9, 52:17, 53:29).intersect(rect(0:8, 53:29))
+  fill c body
+  mask body:
+    line c.darken(30%) 18:12 24:26 w1
+    line c.darken(30%) 38:10 33:24 w1
+    speckle 0.12 4 c.darken(18%)
+  shadeRegion body 27:0 abyss.alpha(72%) 0.72
+  rim body.intersect(rect(0:0, 53:15)) 0:1 c.lighten(24%) 1
+
+# ---- fauna --------------------------------------------------------------------
+# small school fish: faces left (head at low x)
+draw fishS(c) 14x8:
+  poly c 1:4 5:1 10:3 10:5 5:6 fill
+  poly c 8:2 13:0 13:7 8:5 fill
+  poly c.darken(16%) 3:1 7:1 5:3 fill
+  px c.lighten(20%) 3:4
+  px #0e1c26 3:3
+
+# angelfish: tall disc body, fins, stripe and eye; faces left
+draw angel(c) 32x24:
+  body = ellipse(14:12, 12:10)
+  poly c.darken(10%) 6:2 20:1 22:5 8:6 fill
+  poly c.darken(10%) 6:22 20:23 22:19 8:18 fill
+  poly c 22:12 31:3 31:21 fill
+  fill c body
+  mask body:
+    line c.darken(28%) 9:2 12:22 w2
+    line c.darken(28%) 15:2 18:22 w2
+  shadeRegion body 14:0 abyss.alpha(45%) 0.42
+  rim body.intersect(rect(0:0, 31:9)) 0:1 c.lighten(26%) 1
+  circle #f4f4f0 6:10 2 fill
+  circle #0e1c26 6:10 1 fill
+
+# clownfish: hero fish, orange with white bands; faces left
+draw clownfish 30x18:
+  o = #e8721e
+  w = #f4efe4
+  k = #241208
+  body = ellipse(13:9, 12:7)
+  poly o 5:2 19:1 21:5 fill
+  poly o 5:16 19:17 21:13 fill
+  poly o 20:9 29:2 29:16 fill
+  fill o body
+  mask body:
+    poly w 8:1 12:1 10:17 6:17 fill
+    poly w 16:1 20:1 18:17 14:17 fill
+    stroke k body.intersect(rect(6:8, 8:11)) w1
+  shadeRegion body 13:0 k.alpha(40%) 0.38
+  rim body.intersect(rect(0:0, 29:7)) 0:1 #fff3d0 1
+  circle #f4f4f0 5:8 2 fill
+  circle k 5:8 1 fill
+
+# starfish: five tapered arms, top-lit ridge
+draw starfish(c) 26x26:
+  ctr = 13:13
+  fill c circle(ctr, 4)
+  for i 0..5:
+    a = (i / 5) * tau - pi / 2
+    tip = ctr + (cos(a) * 12):(sin(a) * 12)
+    bl = ctr + (cos(a - 0.55) * 4):(sin(a - 0.55) * 4)
+    br = ctr + (cos(a + 0.55) * 4):(sin(a + 0.55) * 4)
+    poly c bl tip br fill
+    line c.lighten(20%) ctr (ctr + (tip - ctr) * 0.7) w1
+    circle c.darken(16%) (ctr + (tip - ctr) * 0.55) 1 fill
+  circle c.lighten(22%) ctr 2 fill
+
+draw reef 320x240:
+  bg water
+  # god rays: slanted translucent beams from the surface, fading with depth
+  for i 0..6:
+    bx = 18 + i * 56
+    poly shaft (bx):0 (bx + 16):0 (bx - 34):h (bx - 52):h fill
+
+  # --- seabed ---
+  sandR = profile(0..w, duneY)
+  fill sand sandR
+  # caustics: dappled surface light scattered on the sand
+  speckle sandR 0.05 5 surfaceGlow.alpha(45%)
+  speckle sandR 0.03 8 sandLit.alpha(60%)
+
+  # --- far background: hazy distant reef ridge near the horizon ---
+  distReef = deepWater.mix(upperWater, 40%)
+  profile distReef 0..w ridgeY 178 fill
+  # faint distant coral bumps on the ridge, only barely distinct
+  stamp brainCoral(distReef.lighten(10%)) 70:166 anchor bottom
+  stamp brainCoral(distReef.lighten(8%)) 210:162 anchor bottom
+  stamp tubeSponge(distReef.lighten(12%)) 255:164 anchor bottom
+
+  # --- distance haze veil: pushes the far reef back into the water ---
+  rect hazeBand 0:132 (w - 1):192 fill
+
+  # === LEFT reef cluster (back -> front) ===
+  stamp seaFan(coralRed) 34:182 anchor bottom tint haze 0.16
+  stamp staghorn(coralOrange) 96:181 anchor bottom tint haze 0.12
+  ellipse abyss.alpha(45%) 58:189 27:4 fill
+  stamp rock(rockGrey) 58:189 anchor bottom
+  ellipse abyss.alpha(40%) 38:187 16:3 fill
+  stamp brainCoral(brainMauve) 38:187 anchor bottom
+  ellipse abyss.alpha(40%) 90:188 15:3 fill
+  stamp tubeSponge(spongeRose) 90:188 anchor bottom
+  stamp seagrass(grassGreen) 14:191 anchor bottom
+  stamp seagrass(grassGreen.darken(8%)) 122:189 anchor bottom flipx
+  ellipse abyss.alpha(40%) 110:191 14:3 fill
+  stamp anemone(coralPurple) 110:191 anchor bottom
+
+  # === RIGHT reef cluster (back -> front) ===
+  stamp seaFan(coralPurple) 294:182 anchor bottom tint haze 0.16
+  stamp staghorn(coralPink) 232:181 anchor bottom tint haze 0.12
+  ellipse abyss.alpha(45%) 264:189 27:4 fill
+  stamp rock(rockGrey.darken(7%)) 264:189 anchor bottom
+  ellipse abyss.alpha(40%) 290:187 16:3 fill
+  stamp brainCoral(coralPink) 290:187 anchor bottom
+  ellipse abyss.alpha(40%) 214:188 15:3 fill
+  stamp tubeSponge(spongeRose.lighten(4%)) 214:188 anchor bottom
+  stamp seagrass(grassGreen.darken(4%)) 312:190 anchor bottom
+  ellipse abyss.alpha(40%) 242:190 14:3 fill
+  stamp anemone(coralOrange) 242:190 anchor bottom
+
+  # === CENTRE focal: anemone hosting a clownfish ===
+  # soft glow lifts the focal pair off the background
+  ellipse surfaceGlow.alpha(12%) 168:180 46:26 fill
+  ellipse abyss.alpha(40%) 176:193 18:3 fill
+  stamp anemone(coralPink) 178:193 anchor bottom
+  stamp clownfish 158:184 anchor bottom
+
+  # tall background kelp: vertical structure rising into the water column
+  stamp seagrass(grassGreen.darken(6%)) 44:185 anchor bottom scale2 tint haze 0.3
+  stamp seagrass(grassGreen.darken(12%)) 208:183 anchor bottom scale2 tint haze 0.32 flipx
+  stamp seagrass(grassGreen.darken(4%)) 288:187 anchor bottom scale2 tint haze 0.28
+
+  # === fish school drifting through the mid-water ===
+  scatter f 20 31 ellipse(150:86, 72:24):
+    col = if rand(32, f.x + f.y) > 0.82 then fishBlue else fishYellow
+    stamp fishS(col) f.x:f.y
+  stamp angel(fishBlue) 214:68 flipx
+  stamp angel(coralOrange) 88:126
+  # a few reef fish hovering near the coral
+  stamp fishS(fishYellow) 120:166
+  stamp fishS(coralPink.lighten(12%)) 246:170 flipx
+  stamp fishS(fishBlue) 66:172
+  # distant hazed fish balance the upper water
+  stamp fishS(fishYellow) 58:64 tint haze 0.42
+  stamp fishS(fishBlue) 92:86 tint haze 0.46
+
+  # === FOREGROUND (near, darker, framing the composition) ===
+  stamp seagrass(grassGreen.darken(22%)) 10:214 anchor bottom scale2
+  stamp rock(rockGrey.darken(20%)) 302:216 anchor bottom scale2
+  ellipse abyss.alpha(45%) 132:211 16:4 fill
+  stamp starfish(#dd5a34) 132:211 anchor bottom
+  scatter g 12 61 rect(112:205, 156:213):
+    px sandDark.darken(12%) g
+
+  # === bubbles: rising streams + ambient drift ===
+  for i 0..13:
+    by = 190 - i * 12
+    bx = 178 + round(sin(i * 0.9) * 3)
+    br = if i mod 4 == 0 then 2 else 1
+    circle surfaceGlow.alpha(42%) bx:by br
+    px #ffffff.alpha(45%) (bx - 1):(by - 1)
+  for i 0..10:
+    by = 186 - i * 14
+    bx = 92 + round(sin(i * 1.1 + 1) * 3)
+    circle surfaceGlow.alpha(38%) bx:by 1
+  scatter b 22 47 rect(0:16, w - 1:150):
+    circle surfaceGlow.alpha(30%) b (if rand(48, b.x) > 0.75 then 2 else 1)
+
+  # === atmosphere: depth vignette darkens the edges ===
+  rect vign 0:0 (w - 1):(h - 1) fill
+
+export reef reef:
+  png @1 @4

@@ -1,0 +1,60 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/dist",
+      "!bench/corpus",
+      "!bench/reports",
+      "!examples/**/*.svg"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "semicolons": "asNeeded",
+      "quoteStyle": "single",
+      "jsxQuoteStyle": "double",
+      "trailingCommas": "all",
+      "arrowParentheses": "always"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "performance": {
+        "noImgElement": "off"
+      },
+      "style": {
+        "useBlockStatements": "error",
+        "useConst": "error",
+        "useTemplate": "error",
+        "noParameterAssign": "error",
+        "useConsistentTypeDefinitions": { "level": "error", "options": { "style": "type" } }
+      },
+      "suspicious": {
+        "noExplicitAny": "error",
+        "noVar": "error"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["src/dmath.ts"],
+      "linter": {
+        "rules": {
+          "correctness": { "noPrecisionLoss": "off" },
+          "suspicious": { "noApproximativeNumericConstant": "off" }
+        }
+      }
+    }
+  ]
+}

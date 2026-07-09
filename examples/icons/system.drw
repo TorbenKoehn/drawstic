@@ -1,0 +1,131 @@
+use system
+
+# ── System app-icon family ─────────────────────────────────────────
+# One light source: top-left. Tiles carry the light (top edge lighter,
+# bottom darker); glyphs are bold near-white masses, optically centered.
+
+theme system:
+  pal:
+    k = #20242c
+    l = #f7faff
+    s = #6c7789
+    b = #3b82f0
+    r = #ef5d52
+    t = #16b3ab
+    e = #35b45a
+    d = #2b303b
+    p = #57e08a
+  size 32x32
+  mode pixel
+  style """System app-icon family. Rounded-square tiles (radius 6, 2px margin).
+One light source top-left: tile gradient lighter at top, darker at bottom.
+Bold near-white glyphs, ~2-3px strokes, optically centered. Consistent corner
+radii, stroke weights and palette across every size."""
+
+# Shared tile: identical radius / margin / light model for the whole family.
+draw tile(c) 32x32:
+  rrect linear(90, c.mix(l, 20%), c.darken(14%)) 2:2 29:29 6 fill
+  line c.mix(l, 52%) 9:2 22:2
+
+# ── Einstellungen (gear) ────────────────────────────────────────────
+draw settings:
+  stamp tile(s) 0:0
+  fill l circle(16:16, 7).subtract(circle(16:16, 3))
+  for i 0..8:
+    th = i * tau / 8
+    circle l (round(16 + cos(th) * 8)):(round(16 + sin(th) * 8)) 2 fill
+
+# ── Dateien (folder) ────────────────────────────────────────────────
+draw files:
+  stamp tile(b) 0:0
+  poly l.darken(16%) 5:10 5:8 12:8 14:10 26:10 26:23 5:23 fill
+  poly l 5:23 8:14 23:14 26:23 fill
+
+# ── Papierkorb (trash can) ──────────────────────────────────────────
+draw trash:
+  stamp tile(r) 0:0
+  rect l 13:6 18:9 fill
+  rect l 8:9 23:11 fill
+  poly l 9:11 22:11 20:25 11:25 fill
+  line r.darken(20%) 13:14 12:23
+  line r.darken(20%) 16:14 16:23
+  line r.darken(20%) 19:14 20:23
+
+# ── Suche (magnifier) ───────────────────────────────────────────────
+draw search:
+  stamp tile(t) 0:0
+  fill l circle(13:13, 6).subtract(circle(13:13, 3))
+  line l 17:17 26:26 w3
+
+# ── Downloads (arrow to tray) ───────────────────────────────────────
+draw downloads:
+  stamp tile(e) 0:0
+  rect l 14:6 17:14 fill
+  poly l 8:13 23:13 16:24 15:24 fill
+  rect l 8:26 23:28 fill
+
+# ── Terminal (prompt on dark window) ────────────────────────────────
+draw terminal:
+  stamp tile(d) 0:0
+  line p 8:11 14:16 w2
+  line p 14:16 8:21 w2
+  rect l 16:20 23:22 fill
+
+# ── 16×16 native redraws (re-proportioned, NOT scaled) ──────────────
+# Tighter margin (1px) / radius (3); glyph strokes kept ≥2px for legibility.
+draw tile16(c) 16x16:
+  rrect linear(90, c.mix(l, 20%), c.darken(14%)) 1:1 14:14 3 fill
+  line c.mix(l, 50%) 5:1 10:1
+
+draw search16 16x16:
+  stamp tile16(t) 0:0
+  fill l circle(6:6, 3).subtract(circle(6:6, 1))
+  line l 9:9 13:13 w2
+
+draw downloads16 16x16:
+  stamp tile16(e) 0:0
+  rect l 7:2 8:7 fill
+  poly l 4:6 11:6 8:11 7:11 fill
+  rect l 4:12 11:13 fill
+
+# ── 64×64 detail version (native, light-modelled gear) ──────────────
+draw tile64(c) 64x64:
+  rrect linear(90, c.mix(l, 22%), c.darken(16%)) 4:4 59:59 12 fill
+  line c.mix(l, 50%) 18:4 45:4
+
+draw settings64 64x64:
+  stamp tile64(s) 0:0
+  teeth = circle(49:32, 4).union(circle(44:44, 4)).union(circle(32:49, 4)).union(circle(20:44, 4)).union(circle(15:32, 4)).union(circle(20:20, 4)).union(circle(32:15, 4)).union(circle(44:20, 4))
+  gear = circle(32:32, 15).union(teeth).subtract(circle(32:32, 7))
+  fill l gear
+  shadeRegion gear -20:-20 k 26%
+  stroke s.darken(28%) circle(32:32, 7)
+
+# ── Exports: png @1 @2 + svg per icon, base path system/<name> ───────
+export settings system/settings:
+  png @1 @2
+  svg
+export files system/files:
+  png @1 @2
+  svg
+export trash system/trash:
+  png @1 @2
+  svg
+export search system/search:
+  png @1 @2
+  svg
+export downloads system/downloads:
+  png @1 @2
+  svg
+export terminal system/terminal:
+  png @1 @2
+  svg
+export search16 system/search16:
+  png @1 @2
+  svg
+export downloads16 system/downloads16:
+  png @1 @2
+  svg
+export settings64 system/settings64:
+  png @1 @2
+  svg

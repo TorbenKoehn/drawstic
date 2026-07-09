@@ -1,0 +1,223 @@
+from std/shapes spark
+
+theme weatherTime:
+  pal:
+    k = #26344a           # ink — outlines, dark details, needles
+    s = k.lighten(20%)    # inkSoft — secondary lines, minor ticks
+    p = #eef2f8           # paper — light faces (dials, glass, cloud, moon)
+    d = p.darken(14%)     # paperShade — bottom-right shadow tone on paper
+    a = #f5a623           # amber — warm accent (sun, bells, sand, ring)
+    b = a.darken(18%)     # amberDeep — amber shadow tone
+    c = #6fa8dc           # sky — cool accent (cloud shade, moon glow, night)
+    r = #e05a5a           # red — alert accent (needles, hands, marks)
+  size 32x32
+  mode pixel
+  style """
+    Flat duotone app-icon family "Weather/Time". Ink (k) outlines the primary silhouette
+    (main body/face/glass) at w2 (32/64px) or w1 (16px); small accessory shapes (bells, knob,
+    tick dots — roughly r<=4) drop to w1 even at 32/64px, else the outline nearly fills them.
+    Faces use paper (p) with paperShade (d) as a bottom-band shadow tint. Two accents: amber
+    (a) = warm (sun, bells, sand, rings), sky (c) = cool — mixed a small amount into a face's
+    paper tone (`p.mix(c, 12-20%)`) on the two "sky" icons (cloud, moon) rather than used raw,
+    so the cool accent reads as a tint, not a hue clash. Red (r) marks a single alert/pointer
+    detail per icon, never a fill. One light source, top-left: every rounded body gets a short
+    lighter-tone highlight stroke near its top-left edge and a paperShade/amberDeep shadow
+    tint on its bottom band. Corner radius scales with size: 3px at 32/64px, 1px at 16px,
+    down to 1px regardless of size when the element itself is too thin (e.g. a 3px-tall cap
+    bar) to take a bigger radius. No cast ground shadows — icons float on transparent
+    background.
+  """
+
+use weatherTime
+
+draw weather 32x32:
+  sc = 12:12
+  circle a sc 6 fill
+  for i 0..8:
+    ang = i * (pi / 4)
+    x1 = sc.x + round(cos(ang) * 9)
+    y1 = sc.y + round(sin(ang) * 9)
+    x2 = sc.x + round(cos(ang) * 12)
+    y2 = sc.y + round(sin(ang) * 12)
+    line a x1:y1 x2:y2 w2
+  circle k sc 6
+  mask cloud = circle(13:19, 5).union(circle(19:16, 6)).union(circle(25:19, 5)).union(rrect(9:20, 29:26, 3))
+  cloudTone = p.mix(c, 12%)
+  fill cloudTone cloud
+  fill d cloud.intersect(rect(0:23, 31:27))
+  stroke k cloud w2
+  arc p.lighten(12%) 19:16 6 195 255 w2
+
+draw alarm 32x32:
+  dc = 16:19
+  mask dial = circle(dc, 9)
+  circle a 9:9 4 fill
+  circle a 23:9 4 fill
+  fill p dial
+  fill d dial.intersect(rect(0:25, 32:32))
+  stroke k dial w2
+  circle k 9:9 4
+  circle k 23:9 4
+  arc p.lighten(14%) dc 8 200 260 w2
+  line k 10:26 7:30 w2
+  line k 22:26 25:30 w2
+  circle a 16:7 2 fill
+  circle k 16:7 2
+  line r 14:4 12:1 w1
+  line r 16:4 16:0 w1
+  line r 18:4 20:1 w1
+  circle s 16:10 1 fill
+  circle s 25:19 1 fill
+  circle s 16:28 1 fill
+  circle s 7:19 1 fill
+  line k dc 16:12 w2
+  line k dc 21:14 w2
+  circle k dc 1 fill
+
+draw timer 32x32:
+  rrect k 4:2 28:5 1 fill
+  rrect k 4:27 28:30 1 fill
+  mask glassU = poly(8:6, 24:6, 18:16, 14:16)
+  mask glassL = poly(14:16, 18:16, 24:26, 8:26)
+  fill p glassU
+  fill p glassL
+  poly a 12:12 20:12 18:16 14:16 fill
+  poly a 11:21 21:21 24:26 8:26 fill
+  poly b 9:24 23:24 24:26 8:26 fill
+  line a 16:16 16:21 w1
+  stroke k glassU w2
+  stroke k glassL w2
+  line p.lighten(14%) 13:9 17:9 w1
+  line s 5:3 26:3 w1
+
+export weather weather/weather:
+  png @1 @2
+  svg ids classes
+
+export alarm weather/alarm:
+  png @1 @2
+  svg ids classes
+
+draw stopwatch 32x32:
+  dc = 16:17
+  rect k 14:3 18:7 fill
+  rect k 26:15 30:19 fill
+  mask dial = circle(dc, 10)
+  fill p dial
+  fill d dial.intersect(rect(0:23, 32:32))
+  stroke k dial w2
+  line p.lighten(14%) 10:10 13:8 w1
+  circle a 16:3 2 fill
+  circle k 16:3 2
+  circle s 16:7 1 fill
+  circle s 26:17 1 fill
+  circle s 16:27 1 fill
+  circle s 6:17 1 fill
+  line k dc 16:10 w2
+  line r dc 21:12 w1
+  circle k dc 1 fill
+
+export timer weather/timer:
+  png @1 @2
+  svg ids classes
+
+export stopwatch weather/stopwatch:
+  png @1 @2
+  svg ids classes
+
+draw compass 32x32:
+  dc = 16:16
+  circle k dc 11 fill
+  mask face = circle(dc, 9)
+  fill p face
+  fill d face.intersect(rect(0:21, 32:32))
+  poly r 16:7 18:16 14:16 fill
+  poly k 16:25 18:16 14:16 fill
+  circle s 16:9 1 fill
+  circle s 23:16 1 fill
+  circle s 16:23 1 fill
+  circle s 9:16 1 fill
+  circle k dc 1 fill
+  line p.lighten(14%) 10:9 13:7 w1
+
+draw moon 32x32:
+  mask crescent = circle(16:16, 10).subtract(circle(21:12, 9))
+  moonTone = p.mix(c, 20%)
+  fill moonTone crescent
+  fill d crescent.intersect(rect(0:22, 32:32))
+  stroke k crescent w2
+  circle d 10:16 1 fill
+  circle d 13:22 1 fill
+  line p.lighten(14%) 8:10 11:8 w1
+  stamp spark(p) 5:6 anchor center
+  stamp spark(p) 27:20 anchor center
+  stamp spark(p) 24:5 anchor center
+
+export compass weather/compass:
+  png @1 @2
+  svg ids classes
+
+draw alarmSmall 16x16:
+  dc = 8:9
+  mask dial = circle(dc, 6)
+  circle a 4:3 2 fill
+  circle a 12:3 2 fill
+  fill p dial
+  fill d dial.intersect(rect(0:12, 16:16))
+  stroke k dial w1
+  circle a 8:2 1 fill
+  line r 6:1 5:0 w1
+  line r 10:1 11:0 w1
+  line k dc 8:5 w1
+  line k dc 10:6 w1
+  circle k dc 1 fill
+
+export moon weather/moon:
+  png @1 @2
+  svg ids classes
+
+draw compassSmall 16x16:
+  dc = 8:8
+  circle k dc 7 fill
+  mask face = circle(dc, 6)
+  fill p face
+  fill d face.intersect(rect(0:11, 16:16))
+  poly r 8:3 9:8 7:8 fill
+  poly k 8:13 9:8 7:8 fill
+  circle k dc 1 fill
+
+export alarmSmall weather/alarmSmall:
+  png @1 @2
+  svg ids classes
+
+export compassSmall weather/compassSmall:
+  png @1 @2
+  svg ids classes
+
+draw weatherDetail 64x64:
+  sc = 24:24
+  grad sunGrad = radial(a.lighten(18%), a.darken(8%))
+  circle sunGrad sc 14 fill
+  for i 0..12:
+    ang = i * (pi / 6)
+    outer = if i mod 2 == 0 then 28 else 24
+    x1 = sc.x + round(cos(ang) * 17)
+    y1 = sc.y + round(sin(ang) * 17)
+    x2 = sc.x + round(cos(ang) * outer)
+    y2 = sc.y + round(sin(ang) * outer)
+    line a x1:y1 x2:y2 w3
+  circle k sc 14 w2
+  stamp spark(a.lighten(35%)) 12:10 anchor center
+  stamp spark(a.lighten(35%)) 10:20 anchor center
+  mask cloud = circle(26:44, 12).union(circle(40:36, 14)).union(circle(52:44, 11)).union(circle(58:48, 7)).union(rrect(18:46, 62:58, 3))
+  cloudTone = p.mix(c, 12%)
+  fill cloudTone cloud
+  grain cloud 0.1 5 d
+  fill d cloud.intersect(rect(0:52, 64:60))
+  stroke k cloud w2
+  line p.lighten(16%) 30:32 38:28 w2
+  line p.lighten(16%) 38:28 46:30 w2
+
+export weatherDetail weather/weatherDetail:
+  png @1 @2
+  svg ids classes

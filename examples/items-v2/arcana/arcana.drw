@@ -1,0 +1,219 @@
+drawstic 2
+
+theme arcanaSet:
+  pal:
+    k = #241820
+    s = #98a7bc
+    h = #eef4fb
+    n = #536272
+    x = #8d5f39
+    v = #c18a52
+    z = #61361f
+    g = #c9a140
+    y = #f3df94
+    u = #7c5627
+    p = #dbc89c
+    q = #ad8e63
+    r = #8f4039
+    t = #5f2622
+    c = #7fd1ff
+    i = #4e9eff
+    j = #2f5dc1
+    a = #8d63ff
+    b = #d0b9ff
+    e = #d458ab
+    f = #7e2f63
+  size 64x64
+  mode pixel
+  style """
+  64x64 transparent inventory sprites. Light top-left, dark bottom-right.
+  4-6 px breathing room. Long arcana props lean lower-left -> upper-right.
+  Shared plum-black outline with 1-2 px edge control. Metal gets dark spines
+  and pale glints. Wood stays warm and sparse. Parchment reads matte. Magic
+  stays compact around the focal tip, gem, clasp, or pendant.
+  """
+
+use arcanaSet
+
+draw combatStaff 64x64:
+  line x 14:54 44:15 w5
+  line v 12:52 42:13
+  line z 16:56 46:17
+  ferrule = poly(8:57, 13:50, 18:53, 16:59, 10:61)
+  fill u ferrule
+  stroke k ferrule
+  head = poly(39:27, 45:8, 52:10, 54:17, 50:24, 43:29)
+  fill n head
+  fill s head.intersect(rect(39:9, 50:24))
+  fill h head.intersect(poly(43:14, 50:10, 51:15, 45:23, 42:22))
+  stroke k head
+  rearSpike = poly(35:29, 40:22, 43:24, 38:31)
+  fill n rearSpike
+  fill h rearSpike.intersect(rect(38:22, 42:27))
+  stroke k rearSpike
+  line k 33:34 47:19 w2
+  line r 19:44 24:38 w4
+  line t 18:46 23:40
+  line r 24:38 29:32 w4
+  line t 23:40 28:34
+  line g 31:31 36:25 w2
+  line y 30:30 35:24
+  px h 46:12
+  px h 44:16
+
+draw crystalStaff 64x64:
+  circle b.alpha(8%) 46:17 12 fill
+  circle a.alpha(14%) 46:17 9 fill
+  line x 16:56 39:28 w5
+  line v 14:54 37:26
+  line z 18:58 41:30
+  line r 23:47 28:41 w4
+  line t 22:48 27:42
+  line g 33:33 38:28 w2
+  line y 32:32 37:27
+  crystal = poly(37:26, 45:7, 53:15, 50:25, 42:30)
+  fill j crystal
+  fill i crystal.intersect(poly(39:24, 45:10, 50:16, 47:24, 42:27))
+  fill c crystal.intersect(poly(43:21, 45:11, 48:16, 46:22))
+  stroke k crystal
+  poly n 33:29 38:23 41:24 37:32 fill
+  poly n 40:22 46:16 48:18 42:25 fill
+  poly n 46:16 51:12 53:15 48:19 fill
+  line h 43:11 46:24
+  px h 46:12
+  px c 47:17
+  ferrule = poly(11:58, 16:52, 21:55, 18:61, 12:62)
+  fill u ferrule
+  stroke k ferrule
+
+draw scepter 64x64:
+  circle b.alpha(7%) 45:18 10 fill
+  line x 17:54 38:31 w5
+  line v 15:52 36:29
+  line z 19:56 40:33
+  line g 23:48 28:43 w4
+  line u 24:49 29:44
+  line g 31:40 35:36 w3
+  line y 30:39 34:35
+  crown = poly(35:31, 40:18, 49:15, 55:22, 53:31, 45:36, 38:35)
+  fill u crown
+  fill g crown.intersect(poly(36:29, 40:19, 48:17, 53:23, 51:30, 44:33, 39:33))
+  fill y crown.intersect(rect(37:18, 49:25))
+  stroke k crown
+  gem = poly(42:27, 47:19, 51:24, 46:30)
+  fill f gem
+  fill e gem.intersect(poly(43:26, 47:21, 49:24, 46:28))
+  fill b gem.intersect(poly(45:25, 47:21, 48:24, 46:27))
+  stroke k gem
+  line y 41:18 43:15
+  line y 49:17 52:14
+  line y 50:29 53:32
+  px h 38:21
+  px y 44:18
+  px y 50:22
+  ferrule = poly(13:58, 17:53, 21:56, 18:61, 14:62)
+  fill u ferrule
+  stroke k ferrule
+
+draw spellbook 64x64:
+  page = poly(18:22, 43:14, 53:24, 28:32)
+  cover = poly(14:18, 39:10, 49:20, 24:28)
+  spine = poly(14:18, 18:22, 28:32, 24:28)
+  pageShadow = poly(28:32, 53:24, 55:29, 30:37)
+  fill q pageShadow
+  fill p page
+  fill #f3ead0 page.intersect(poly(20:22, 42:16, 50:24, 28:30))
+  stroke k page
+  fill t spine
+  stroke k spine
+  fill r cover
+  fill #b34e46 cover.intersect(poly(17:19, 39:12, 47:20, 25:27))
+  stroke k cover
+  clasp = rect(31:14, 37:28)
+  fill u clasp
+  fill g clasp.intersect(rect(31:14, 35:27))
+  stroke k clasp
+  gem = poly(32:20, 34:17, 36:20, 34:23)
+  fill f gem
+  fill e gem.intersect(poly(33:20, 34:18, 35:20, 34:22))
+  stroke k gem
+  line h 21:20 40:13
+  line p 31:28 49:21
+  line y 19:19 22:16
+  line y 42:12 45:15
+
+draw scroll 64x64:
+  sheet = poly(20:23, 42:17, 47:37, 25:43)
+  fill p sheet
+  fill #f1e4c0 sheet.intersect(poly(22:24, 41:19, 45:35, 26:40))
+  stroke k sheet
+  ellipse q 43:20 6:5 fill
+  ellipse p 42:20 4:4 fill
+  ellipse k 42:20 2:2 fill
+  ellipse q 25:40 6:5 fill
+  ellipse p 24:40 4:4 fill
+  ellipse k 24:40 2:2 fill
+  line r 28:38 39:23 w5
+  line t 29:39 40:24
+  seal = poly(31:35, 35:31, 40:34, 36:39)
+  fill f seal
+  fill e seal.intersect(poly(33:35, 35:32, 38:34, 36:37))
+  stroke k seal
+  line q 28:27 41:23
+  line q 30:31 43:27
+  px y 37:31
+
+draw amulet 64x64:
+  circle b.alpha(8%) 32:30 15 fill
+  circle a.alpha(12%) 32:30 11 fill
+  line u 26:13 22:7 w2
+  line u 38:13 42:7 w2
+  line y 27:12 24:8
+  line y 37:12 40:8
+  loop = rrect(27:10, 37:18, 4)
+  fill u loop
+  fill g loop.intersect(rect(28:10, 35:16))
+  stroke k loop
+  body = poly(32:18, 47:31, 32:49, 17:31)
+  fill u body
+  fill g body.intersect(poly(32:20, 45:31, 32:47, 19:31))
+  fill y body.intersect(poly(32:23, 41:31, 32:43, 23:31))
+  stroke k body
+  gem = poly(32:25, 39:31, 32:40, 25:31)
+  fill f gem
+  fill e gem.intersect(poly(32:27, 37:31, 32:37, 27:31))
+  fill b gem.intersect(poly(32:28, 35:31, 32:34, 29:31))
+  stroke k gem
+  line h 29:24 23:31
+  line h 35:24 41:31
+  line y 32:18 32:22
+  px y 32:15
+  px h 26:31
+  px h 38:31
+
+tileset arcanaSetSheet 64x64:
+  tiles combatStaff, crystalStaff, scepter, spellbook, scroll, amulet
+  cols 3
+
+export combatStaff combatStaff:
+  png @1 @4
+
+export crystalStaff crystalStaff:
+  png @1 @4
+
+export scepter scepter:
+  png @1 @4
+
+export spellbook spellbook:
+  png @1 @4
+
+export scroll scroll:
+  png @1 @4
+
+export amulet amulet:
+  png @1 @4
+
+export arcanaSetSheet arcanaSet:
+  png @1 @4
+  tiled
+  atlasJson

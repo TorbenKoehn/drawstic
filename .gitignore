@@ -1,0 +1,25 @@
+node_modules/
+dist/
+bench/reports/*
+!bench/reports/.gitkeep
+
+# local agent / review scratch
+.scratch/
+.claude/settings*.json
+
+# build / type artifacts
+*.tsbuildinfo
+
+# test coverage
+coverage/
+
+# npm packaging
+*.tgz
+
+# editor / OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ad-hoc root renders; checked-in example artifacts live under examples/
+/*.png

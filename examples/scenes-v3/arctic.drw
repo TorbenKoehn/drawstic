@@ -1,0 +1,246 @@
+# Polarnacht — arctic night: aurora, snow, ice. One point light (moonPt) drives
+# every shadeRegion/lightRegion/rim call so the whole scene shares one light source.
+
+moonPt = 195:26
+rimDir = -1:1
+heroShadowOffset = -16:9
+aoColor = oklch(0.05, 0, 0).alpha(45%)
+
+skyTop = oklch(0.07, 0.03, 260)
+skyHorizon = oklch(0.24, 0.07, 285)
+grad nightSky = linear(90, skyTop, skyHorizon)
+
+auroraGreen = oklch(0.78, 0.19, 155)
+auroraTeal = oklch(0.72, 0.15, 205)
+auroraPurple = oklch(0.58, 0.17, 305)
+
+moonColor = oklch(0.97, 0.02, 90)
+starLite = oklch(0.97, 0.01, 250)
+starTones = starLite.tones(-14%, -4%, 6%)
+
+mountainDark = oklch(0.1, 0.04, 258)
+mountainCap = oklch(0.86, 0.02, 250)
+farTree = oklch(0.16, 0.04, 230)
+
+snowLit = oklch(0.92, 0.015, 240)
+snowShadowC = oklch(0.5, 0.06, 265)
+snowTones = snowLit.tones(-30%, -14%, 0%, 8%)
+
+iceLite = oklch(0.82, 0.05, 215)
+iceDark = oklch(0.5, 0.07, 235)
+grad lakeGrad = linear(90, iceLite, iceDark)
+
+needleLit = oklch(0.34, 0.09, 155)
+needleTones = needleLit.tones(-18%, 0%, 12%)
+trunkColor = oklch(0.22, 0.03, 60)
+
+rockLit = oklch(0.42, 0.02, 250)
+rockShadow = oklch(0.22, 0.02, 255)
+shadowBlue = oklch(0.3, 0.05, 255).alpha(35%)
+reedColor = oklch(0.3, 0.05, 90)
+
+horizonY = 108
+
+fn mountainY(nx) = 90 - round(28 * noise(11, nx * 3.2, 0)) - round(10 * noise(11, nx * 9, 7))
+fn capBottomY(nx) = mountainY(nx) + 6
+fn duneY(nx) = 150 - round(122 * (nx - 0.5) * (nx - 0.5)) + round(6 * noise(31, nx * 6, 2))
+
+mask mountainSilhouette = profile(0..240, mountainY, horizonY)
+mask mountainCapZone = mountainSilhouette.subtract(profile(0..240, capBottomY, horizonY))
+mask snowGround = profile(0..240, duneY, 159)
+mask lakeSurface = rect(0:horizonY, 239:159).subtract(snowGround)
+mask mountainReflection = mountainSilhouette.transform(flipy().about(0:horizonY)).intersect(lakeSurface)
+mask shard1 = poly(103:124, 111:97, 118:124)
+mask shard2 = poly(116:124, 124:106, 132:124)
+mask shard3 = poly(94:124, 100:112, 106:124)
+mask shards = shard1.union(shard2).union(shard3)
+mask floe1 = curvePoly(60:120, 74:116, 88:121, 76:126)
+mask floe2 = curvePoly(150:114, 168:110, 182:116, 168:122)
+mask moonGlint = poly(188:109, 200:109, 184:142, 166:142).intersect(lakeSurface)
+mask rockBody = poly(2:158, 0:146, 8:136, 20:133, 34:139, 40:150, 36:158)
+mask rockSnowCap = poly(0:146, 8:136, 20:133, 30:137, 24:139, 12:141, 0:150).intersect(rockBody)
+mask rockCrown = poly(20:133, 34:139, 30:143, 22:137).intersect(rockBody)
+
+path crack1 240x160:
+  move 26:114
+  line 66:120
+  line 92:111
+  line 128:121
+  line 158:112
+  line 188:118
+
+path crack2 240x160:
+  move 44:126
+  line 70:129
+  line 102:124
+
+draw shadowBlob 14x5:
+  ellipse shadowBlue 7:2 6:2 fill
+
+draw pineTree(needleC) 13x19:
+  needleDk = needleC.darken(32%)
+  needleLt = needleC.lighten(28%)
+  poly needleC 6:0 3:6 9:6 fill
+  poly needleDk 6:0 3:6 6:6 fill
+  line needleLt 6:1 9:6
+  poly needleC 6:4 1:11 11:11 fill
+  poly needleDk 6:4 1:11 6:11 fill
+  line needleLt 6:5 11:11
+  poly needleC 6:8 0:17 12:17 fill
+  poly needleDk 6:8 0:17 6:17 fill
+  line needleLt 6:9 12:17
+  line snowLit.alpha(70%) 4:6 9:6
+  line snowLit.alpha(60%) 2:11 10:11
+  rect trunkColor 5:17 7:18 fill
+
+draw arctic 240x160:
+  title "Polarnacht"
+
+  bg nightSky
+  scatter st 55 2 rect(0:0, 239:92):
+    tone = starTones.cycle(st.x + st.y)
+    px tone.alpha(30% + rand(3, st.x * 13 + st.y * 7) * 60%) st
+
+  curve auroraGreen.alpha(30%) 0:22 40:14 90:26 140:10 190:20 240:15 w14
+  curve auroraTeal.alpha(24%) 0:34 50:44 100:26 150:38 200:24 240:34 w10
+  curve auroraPurple.alpha(20%) 10:12 70:6 130:16 190:4 240:10 w8
+  scatter aq 22 12 rect(0:10, 239:36):
+    line auroraGreen.alpha(13%) aq.x:aq.y aq.x:(aq.y + 7)
+  scatter at 12 14 rect(0:18, 239:42):
+    line auroraTeal.alpha(11%) at.x:at.y at.x:(at.y + 6)
+
+  circle moonColor.alpha(6%) moonPt 28 fill
+  circle moonColor.alpha(9%) moonPt 23 fill
+  circle moonColor.alpha(13%) moonPt 18 fill
+  circle moonColor.alpha(20%) moonPt 14 fill
+  circle moonColor.alpha(32%) moonPt 11 fill
+  circle moonColor moonPt 8 fill
+  circle moonColor.darken(10%) 193:24 1 fill
+  circle moonColor.darken(7%) 198:29 1 fill
+
+  fill mountainDark mountainSilhouette
+  fill mountainCap mountainCapZone
+  shadeRegion mountainSilhouette moonPt mountainDark.darken(20%) 40%
+  lightRegion mountainSilhouette moonPt mountainCap 15%
+  lightRegion mountainCapZone 120:20 auroraGreen 10%
+
+  for i 0..20:
+    bx = i * 12 + round(5 * noise(21, i * 0.7, 3))
+    bh = 3 + round(3 * noise(22, i * 0.9, 1))
+    poly farTree bx:107 (bx + 3):(107 - bh) (bx + 6):107 fill
+
+  fill lakeGrad lakeSurface
+  fill mountainDark.alpha(35%) mountainReflection
+  ripple mountainReflection 0.5 5 iceLite.alpha(30%)
+  lightRegion lakeSurface 120:20 auroraGreen 10%
+  fill moonColor.alpha(10%) moonGlint
+  scatter mg 34 21 moonGlint:
+    line moonColor.alpha(25% + rand(23, mg.x + mg.y * 3) * 30%) (mg.x - 2):mg.y (mg.x + 2):mg.y
+  stroke iceLite.alpha(55%) crack1 w1
+  stroke iceLite.alpha(45%) crack2 w1
+  fill iceLite floe1
+  rim floe1 rimDir moonColor.alpha(50%) 1
+  fill iceLite floe2
+  rim floe2 rimDir moonColor.alpha(50%) 1
+
+  fill iceLite.alpha(20%) shards.transform(flipy().about(0:124)).intersect(lakeSurface)
+  fill iceLite.lighten(8%) shards
+  fill iceDark shard1.intersect(rect(0:0, 110:159))
+  fill iceDark shard2.intersect(rect(0:0, 123:159))
+  fill iceDark shard3.intersect(rect(0:0, 99:159))
+  line moonColor.alpha(75%) 111:97 118:124
+  line moonColor.alpha(65%) 124:106 132:124
+  line moonColor.alpha(55%) 100:112 106:124
+  px moonColor 111:97
+  px moonColor.alpha(70%) 124:106
+  ellipse shadowBlue 107:125 11:2 fill
+  ellipse shadowBlue 125:125 8:2 fill
+
+  fill snowTones.2 snowGround
+  shadeRegion snowGround moonPt snowShadowC 45%
+  lightRegion snowGround moonPt snowLit 22%
+  lightRegion snowGround 120:20 auroraTeal 6%
+  grain snowGround 0.08 9 snowTones.1
+  speckle snowGround 0.05 13 starLite.alpha(50%)
+
+  for sx 0..42:
+    sy = duneY(sx / 240) + 5
+    px snowShadowC.alpha(50%) sx:sy
+    px snowLit.alpha(65%) sx:(sy + 1)
+  for sx 198..240:
+    sy = duneY(sx / 240) + 7
+    px snowShadowC.alpha(50%) sx:sy
+    px snowLit.alpha(65%) sx:(sy + 1)
+
+  for i 0..8:
+    fx = 56 + i * 5
+    fy = 158 - i
+    side = if i mod 2 == 0 then -1 else 1
+    rect snowShadowC.alpha(90%) (fx + side):fy (fx + side + 1):fy fill
+    px snowLit.alpha(70%) (fx + side):(fy + 1)
+
+  for i 0..10:
+    tx = 40 + i * 14 + round(8 * noise(51, i * 0.3, 0))
+    ty = 158 - i * 6
+    nx = tx / 240
+    if ty > duneY(nx):
+      side = if i mod 2 == 0 then -3 else 3
+      sz = max(1, 3 - floor(i / 4))
+      ellipse snowShadowC.alpha(45%) (tx + side):ty sz:(sz - 1) fill
+
+  for i 0..5:
+    rx = 205 + i * 7
+    ry = duneY(rx / 240) - 1
+    match i mod 2:
+      0: line reedColor rx:ry (rx - 2):(ry - 9)
+      else: line reedColor rx:ry (rx + 2):(ry - 7)
+
+  for i 0..4:
+    tx = 55 + i * 17 + round(9 * noise(41, i * 0.37, 1))
+    ty = duneY(tx / 240)
+    sc = 0.8 + noise(43, i * 0.6, 5) * 0.6
+    tone = needleTones.cycle(i)
+    stamp shadowBlob (tx - 6):(ty + 3) anchor center rot25
+    if i mod 2 == 0:
+      stamp pineTree(tone) tx:ty anchor bottom transform scale(sc)
+    else:
+      stamp pineTree(tone.lighten(6%)) tx:ty anchor bottom transform scale(sc)
+
+  for i 0..4:
+    tx = 172 + i * 17 + round(9 * noise(42, i * 0.41, 2))
+    ty = duneY(tx / 240)
+    sc = 0.8 + noise(44, i * 0.55, 6) * 0.6
+    tone = needleTones.cycle(i + 1)
+    stamp shadowBlob (tx - 6):(ty + 3) anchor center rot25
+    if i mod 2 == 0:
+      stamp pineTree(tone) tx:ty anchor bottom transform scale(sc)
+    else:
+      stamp pineTree(tone.lighten(6%)) tx:ty anchor bottom transform scale(sc)
+
+  mirror x=120:
+    curvePoly snowTones.3.alpha(70%) 4:159 2:148 10:146 14:156 fill
+
+  castShadow rockBody heroShadowOffset aoColor
+  fill rockLit rockBody
+  shadeRegion rockBody moonPt rockShadow 55%
+  lightRegion rockBody moonPt snowLit 18%
+  fill rockLit.lighten(22%) rockCrown
+  line rockShadow 14:139 10:157
+  line rockShadow 24:137 30:152
+  line rockShadow.alpha(60%) 30:145 26:158
+  fill snowTones.3 rockSnowCap
+  line snowShadowC.alpha(70%) 2:151 12:142
+  line snowShadowC.alpha(70%) 12:142 25:140
+  ellipse aoColor 20:157 16:2 fill
+  ambientOcclusion rockBody aoColor 45%
+
+  scatter spk 18 6 snowGround:
+    px starLite.alpha(0.3 + rand(15, spk.x * 3 + spk.y) * 0.5) spk
+
+  scatter fl 40 8 rect(0:0, 239:159):
+    px starLite.alpha(0.15 + rand(17, fl.x * 5 + fl.y * 2) * 0.25) fl
+  scatter fb 10 19 rect(0:0, 239:150):
+    circle starLite.alpha(22%) fb 1 fill
+
+export arctic arctic:
+  png @1 @4

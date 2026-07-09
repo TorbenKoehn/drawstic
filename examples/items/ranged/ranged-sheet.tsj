@@ -1,0 +1,14 @@
+{
+ "columns": 3,
+ "image": "ranged-sheet.png",
+ "imageheight": 64,
+ "imagewidth": 96,
+ "margin": 0,
+ "name": "rangedSheet",
+ "spacing": 0,
+ "tilecount": 6,
+ "tileheight": 32,
+ "tilewidth": 32,
+ "type": "tileset",
+ "version": "1.10"
+}

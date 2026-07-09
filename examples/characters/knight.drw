@@ -1,0 +1,470 @@
+# Knight — modular Ragnarok-Online-style chibi, front + side, two faction colors.
+# ~2.7 heads tall: a big helmeted head dominates a compact torso with massive
+# pauldrons over short armored legs; feet stand on a contact-shadow ellipse.
+# Light contract: one warm key light top-left -> speculars on upper-left metal
+# edges, core shadow lower-right; cool shadow complement, never pure black.
+# Silhouette wears a 1px warm-dark outline (o); steel ink (k) is the inner
+# separator / visor line.
+
+warm = #ffe9c4
+cool = #2a3450
+edge      = #2a2024
+steelInk  = #232838
+steelSpec = #eaf2fa
+steelLite = #b6c3d6
+steelMid  = #8494ac
+steelDark = #55617c
+crimson   = #a83836
+azure     = #2f5fb0
+
+fn litC(c)  = c.mix(warm, 24%)
+fn deepC(c) = c.darken(26%).mix(cool, 12%)
+
+# ---- front parts (components, never exported) -----------------------------
+
+# head: big helm — plume (faction) rows 0-3, dome, visor slit rows 10-11,
+# cheek guards, neck. Bottom-center seam at row 23 (silhouette reaches it).
+draw head(c) 22x24:
+  pal:
+    o = edge
+    k = steelInk
+    x = steelSpec
+    l = steelLite
+    s = steelMid
+    d = steelDark
+    f = c
+    g = litC(c)
+    v = deepC(c)
+  pixels:
+    ..........gf..........
+    .........ggfv.........
+    .........gffv.........
+    .........gffv.........
+    ........oxlsdo........
+    ......oxxllssddo......
+    .....oxxllsssdddo.....
+    ....oxxlllssssdddo....
+    ...oxxlllsssssddddo...
+    ...oxxlllsssssddddo...
+    ...oddddddddddddddo...
+    ...okkkxkkkkkkxkkko...
+    ...oxllsssssssddddo...
+    ...oxlssssssssddddo...
+    ....oxllssssssdddo....
+    ....oxllssssssdddo....
+    .....oxllsssssddo.....
+    ......oxllsssddo......
+    .......oxlssddo.......
+    ........olssdo........
+    ........odssdo........
+    ........odssdo........
+    ........odssdo........
+    ........okkkko........
+
+# torso: breastplate + massive pauldrons (rows 1-6, full width) + faction
+# tabard down the center + faulds (rows 14-19) covering the leg tops.
+# top seam row 0, bottom seam row 19.
+draw torso(c) 28x20:
+  pal:
+    o = edge
+    x = steelSpec
+    l = steelLite
+    s = steelMid
+    d = steelDark
+    f = c
+    g = litC(c)
+    v = deepC(c)
+  pixels:
+    .....oxxllssssssssddddo.....
+    ..oxxxllllsssssssssddddddo..
+    oxxxlllllsssssssssssdddddddo
+    oxxxlllllsssssssssssdddddddo
+    .oxxlllsssddgffvlsssssddddo.
+    ..oxllsssdddgffvlssssddddo..
+    ....oxlsssddgffvlsssdddo....
+    ......oxlsddgffvlsdddo......
+    .......oxlsdgffvlsddo.......
+    .......oxlsdgffvlsddo.......
+    .......oxlsdgffvlsddo.......
+    .......oxlsdgffvlsddo.......
+    .......oxlsdgffvlsddo.......
+    .......oxlsdgffvlsddo.......
+    ......oxlssdgffvlsssdo......
+    ......oxlssdgffvlsssdo......
+    ......oxlssdgffvlsssdo......
+    .......oxlsdgffvlsddo.......
+    .......oddddgffvddddo.......
+    ........odddgffvdddo........
+
+# armR: sword arm (viewer-left, lit). Top seam row 0 (under pauldron), fist row 15.
+draw armR 8x16:
+  pal:
+    o = edge
+    k = steelInk
+    x = steelSpec
+    l = steelLite
+    s = steelMid
+    d = steelDark
+  pixels:
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxssdo.
+    .oxssdo.
+    .okssdo.
+    .okkkko.
+
+# armL: shield arm (viewer-right, shadow side). Top seam row 0, fist row 15.
+draw armL 8x16:
+  pal:
+    o = edge
+    k = steelInk
+    l = steelLite
+    s = steelMid
+    d = steelDark
+  pixels:
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .osssdo.
+    .osssdo.
+    .okssdo.
+    .okkkko.
+
+# legL: left leg (lit). Top seam row 0 (tucked under faulds), sole row 21.
+draw legL 8x22:
+  pal:
+    o = edge
+    k = steelInk
+    x = steelSpec
+    l = steelLite
+    s = steelMid
+    d = steelDark
+  pixels:
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxssdo.
+    .okssdo.
+    .okssdo.
+    .okkkdo.
+    .okkkko.
+
+# legR: right leg (shadow). Top seam row 0, sole row 21.
+draw legR 8x22:
+  pal:
+    o = edge
+    k = steelInk
+    l = steelLite
+    s = steelMid
+    d = steelDark
+  pixels:
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .olssdo.
+    .osssdo.
+    .okssdo.
+    .okssdo.
+    .okkddo.
+    .okkkko.
+
+# sword: blade points up (spec left edge, dark-right outline), crossguard,
+# faction grip + pommel. Reused in the side view via flipy.
+draw sword(c) 8x30:
+  pal:
+    o = edge
+    x = steelSpec
+    l = steelLite
+    s = steelMid
+    d = steelDark
+    f = c
+    g = litC(c)
+    v = deepC(c)
+  pixels:
+    ....l...
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    ...xlsd.
+    oxlssddo
+    oxlssddo
+    ...gffv.
+    ...gffv.
+    ...gffv.
+    ...gffv.
+    ..gffv..
+    ...oo...
+
+# shield: heater shield — faction field, steel rim, spec cross emblem, point.
+draw shield(c) 16x15:
+  pal:
+    o = edge
+    x = steelSpec
+    l = steelLite
+    s = steelMid
+    d = steelDark
+    f = c
+    g = litC(c)
+    v = deepC(c)
+  pixels:
+    .oxxlllssssdddo.
+    oggffffffffffvvo
+    oggffffxxffffvvo
+    oggffffxxffffvvo
+    oggfxxxxxxxxfvvo
+    oggffffxxffffvvo
+    oggffffxxffffvvo
+    oggffffffffffvvo
+    .oggffffffffvvo.
+    ..oggffffffvvo..
+    ...oggffffvvo...
+    ....oggffvvo....
+    .....ogffvo.....
+    ......ofvo......
+    .......oo.......
+
+# ---- side-view parts (profile facing LEFT, toward the light) --------------
+# Genuinely redrawn, not flipped: visor juts forward-left, plume trails back,
+# chest curves forward, boots point forward. Reuses only the laterally
+# symmetric sword (flipped) and the far leg (near leg tinted + offset back).
+
+draw headSide(c) 22x24:
+  pal:
+    o = edge
+    k = steelInk
+    x = steelSpec
+    l = steelLite
+    s = steelMid
+    d = steelDark
+    f = c
+    g = litC(c)
+    v = deepC(c)
+  pixels:
+    ..............gffv....
+    .............ggffv....
+    ............gffffv....
+    ...........gfffv......
+    ....oxxxlllssssddo....
+    ...oxxxllllsssssddo...
+    ..oxxxlllllssssssddo..
+    ..oxxlllllssssssdddo..
+    ..oxxllllsssssssddo...
+    ..oddddddddddddddddo..
+    ..okkkxkkkkssssddddo..
+    ..oxlllssssssssddddo..
+    ...oxlllsssssssdddo...
+    ...oxllssssssssdddo...
+    ...oxllssssssssdddo...
+    ....oxllssssssdddo....
+    .....oxllsssssddo.....
+    ......oxllsssddo......
+    .......oxlssddo.......
+    ........olssdo........
+    ........odssdo........
+    ........odssdo........
+    ........odssdo........
+    ........okkkko........
+
+draw torsoSide(c) 20x20:
+  pal:
+    o = edge
+    x = steelSpec
+    l = steelLite
+    s = steelMid
+    d = steelDark
+    f = c
+    g = litC(c)
+    v = deepC(c)
+  pixels:
+    ....oxxlllsssddo....
+    ..oxxxllllsssdddo...
+    .oxxxlllllsssdddo...
+    .oxxlllsssssdddo....
+    ..ogffvsssssddo.....
+    ..ogffvlssssddo.....
+    ..ogffvlssssddo.....
+    ...ogffvssssddo.....
+    ...ogffvssssddo.....
+    ...ogffvssssddo.....
+    ...ogffvssssddo.....
+    ...ogffvssssddo.....
+    ...ogffvssssddo.....
+    ...ogffvssssdddo....
+    ..ogffvlssssdddo....
+    ..ogffvlssssdddo....
+    ..ogffvlssssdddo....
+    ...ogffvddddddo.....
+    ...ogffvddddddo.....
+    ....offvdddddo......
+
+draw armSide 8x16:
+  pal:
+    o = edge
+    k = steelInk
+    x = steelSpec
+    l = steelLite
+    s = steelMid
+    d = steelDark
+  pixels:
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxssdo.
+    .oxssdo.
+    .okssdo.
+    .okkkko.
+
+draw legSide 8x22:
+  pal:
+    o = edge
+    k = steelInk
+    x = steelSpec
+    l = steelLite
+    s = steelMid
+    d = steelDark
+  pixels:
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxlsdo.
+    .oxssdo.
+    .okssdo.
+    okssddo.
+    okkkddo.
+    okkkkko.
+
+# ---- full-body compositions -----------------------------------------------
+
+draw front(c) 44x64:
+  ellipse cool.alpha(32%) 22:61 12:2 fill
+  stamp legL 14:40
+  stamp legR 22:40
+  stamp armR 5:27
+  stamp armL 31:27
+  stamp torso(c) 8:22
+  stamp shield(c) 24:31
+  stamp sword(c) 3:14
+  stamp head(c) 11:2
+
+draw side(c) 44x64:
+  ellipse cool.alpha(32%) 21:61 13:2 fill
+  stamp shield(c) 26:26 tint #2b2b2b 45%
+  stamp legSide 24:40 tint #2b2b2b 45%
+  stamp legSide 18:40
+  stamp torsoSide(c) 13:22
+  stamp armSide 15:27
+  stamp sword(c) 12:34 flipy
+  stamp headSide(c) 11:2
+
+# ---- faction variants (parametric recolor via the parts) ------------------
+
+draw knightFront 44x64:
+  stamp front(crimson) 0:0
+
+draw knightFrontAzure 44x64:
+  stamp front(azure) 0:0
+
+draw knightSide 44x64:
+  stamp side(crimson) 0:0
+
+draw knightSideAzure 44x64:
+  stamp side(azure) 0:0
+
+# ---- exports --------------------------------------------------------------
+
+export knightFront knight/front:
+  png @1 @4
+
+export knightFrontAzure knight/frontAzure:
+  png @1 @4
+
+export knightSide knight/side:
+  png @1 @4
+
+export knightSideAzure knight/sideAzure:
+  png @1 @4

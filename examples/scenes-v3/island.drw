@@ -1,0 +1,227 @@
+# Tropeninsel — golden hour, sun low on the left, cay with two palms mid-right,
+# hazy islands + sailboat on the horizon, foreground fronds framing top-right.
+from std/shapes leaf, spark
+
+# distant island ridges (procedural silhouettes, baseline = horizon 55)
+fn isleFarY(nx) = 55 - round(sin(nx * pi) * (3 + noise(7, nx * 3, 0) * 5))
+fn isleFar2Y(nx) = 55 - round(sin(nx * pi) * (2 + noise(8, nx * 2.5, 0) * 3))
+
+# key regions (module scope so `render --inspect` reports them)
+mask isleR = curvePoly(98:87, 112:77, 132:72, 154:75, 170:81, 178:87).intersect(rect(96:68, 180:86))
+mask seaR = rect(0:55, 191:127)
+mask glitterR = poly(28:56, 46:56, 62:114, 6:114)
+
+draw bird:
+  pal k = #33435c
+  pixels:
+    k...k
+    .k.k.
+    ..k..
+
+draw boat:
+  pal s = #ffe9c6 d = #d9b98c k = #2e2a33
+  pixels:
+    ....k.....
+    ...sk.....
+    ..ssk.d...
+    .sssk.dd..
+    ssssk.ddd.
+    ....k.....
+    kkkkkkkkk.
+    .kkkkkkk..
+
+draw cloudA 48x16:
+  b = #dcc9d2
+  lt = #ffdca4
+  hi = #f7ecdc
+  dk = #ab94b2
+  curvePoly b 6:12 14:5 26:3 38:6 45:11 40:14 22:15 10:14 fill
+  curvePoly dk 26:8 38:8 45:11 40:14 26:13 fill
+  curvePoly lt 6:12 12:7 20:9 14:13 fill
+  curvePoly hi 16:5 26:3 34:5 26:7 fill
+
+draw cloudB 30x10:
+  b = #dbc6cc
+  lt = #ffd69e
+  curvePoly b 3:8 9:3 18:2 26:5 27:8 16:9 fill
+  curvePoly lt 3:8 8:5 14:7 8:9 fill
+
+# palm leaning LEFT: base 26:47, crown 13:12; flipx it for a right-leaner
+draw palm(f) 38x48:
+  tM = #8a6748
+  tL = #b28a5e
+  tD = #5c4530
+  lit = f.mix(#e0d070, 28%).lighten(3%)
+  drk = f.darken(20%)
+  dpp = f.darken(34%)
+  curve tM 26:47 21:35 16:24 13:13 w3
+  curve tL 25:47 20:35 15:24 12:13
+  curve tD 28:47 23:35 18:24 15:13
+  px tD 22:38
+  px tD 19:30
+  px tD 16:22
+  px tD 14:17
+  # crown core anchors the fronds and hides the trunk top
+  circle f 13:12 2 fill
+  # fronds — arched spines (rise, then droop), lit side left, short ones below
+  curve lit 13:12 10:4 4:5 w2
+  curve lit 13:12 7:6 0:11 w2
+  curve lit 13:12 5:11 1:18 w2
+  curve f 13:12 17:3 23:5 w2
+  curve f 13:12 21:7 27:13 w2
+  curve drk 13:12 18:14 20:19 w2
+  curve drk 13:12 9:15 8:19 w2
+  # leaflet fringe: short ticks just under each spine
+  line f 9:6 9:7
+  line f 7:7 7:8
+  line f 6:8 6:9
+  line f 3:11 3:12
+  line f 4:14 4:15
+  line f 2:19 2:20
+  line drk 18:6 18:7
+  line drk 21:7 21:8
+  line drk 22:10 22:11
+  line drk 25:13 25:14
+  line dpp 20:20 20:21
+  line dpp 8:20 8:21
+  # coconuts at the crown base
+  circle #4a3424 11:14 1 fill
+  circle #654832 15:14 1 fill
+  px #8a6748 14:13
+
+# big foreground frond from the top-right; lit ridge/top (a), shaded curtain (b)
+draw frondFg(a, b) 48x44:
+  curve b 47:0 36:7 28:16 22:27 19:38 w2
+  curve a 47:0 36:6 28:15 22:26
+  # shaded leaflet curtain: thick strands drooping down-right, slim light slits between
+  curve b 45:1 47:6 48:11 w2
+  curve b 42:4 44:9 45:15 w2
+  curve b 38:8 40:13 41:19 w2
+  curve b 34:12 36:17 37:23 w2
+  curve b 30:17 32:22 32:28 w2
+  curve b 27:22 28:27 28:33 w2
+  curve b 24:28 25:33 25:39 w2
+  curve b 21:33 22:38 22:43 w2
+  # lit top leaflets hooking up-left, catching the low sun
+  curve a 44:1 40:0 37:2
+  curve a 40:5 36:4 33:7
+  curve a 35:10 31:9 28:12
+  curve a 30:16 26:15 23:18
+  curve a 25:23 22:22 19:25
+
+draw island 192x128:
+  sun = 36:42
+  # ---- sky ----
+  grad skyG = linear(90, (#2c4a80, 0%), (#5c8cba, 42%), (#eeb87e, 84%), (#ffe0ae, 100%))
+  rect skyG 0:0 191:54 fill
+  circle #ffc878.alpha(8%) sun 22 fill
+  circle #ffc878.alpha(12%) sun 17 fill
+  circle #ffd48e.alpha(18%) sun 13 fill
+  circle #ffe2a8.alpha(30%) sun 10 fill
+  circle #ffedc4.alpha(55%) sun 8 fill
+  circle #fff6dd sun 6 fill
+  circle #fffdf2 sun 5 fill
+  # clouds — undersides lit warm by the low sun
+  stamp cloudA 108:8
+  stamp cloudB 8:6
+  stamp cloudB 128:30 flipx
+  ellipse #f2bc84.alpha(65%) 148:49 17:1 fill
+  ellipse #f7cf9d.alpha(55%) 96:46 11:1 fill
+  ellipse #eeb87e.alpha(50%) 20:51 13:1 fill
+  stamp bird 58:18
+  stamp bird 68:24
+  stamp bird 49:27
+  # distant haze islands, ridge kissed by the low sun
+  profile #7e94ae 12..66 isleFarY 55 fill
+  profile #92a6bd 70..96 isleFar2Y 55 fill
+  rim profile(12..66, isleFarY, 55) 0:1 #ffd9a0.alpha(55%) 1
+  rect #ffdba6.alpha(25%) 0:50 191:54 fill
+  # ---- sea ----
+  grad seaG = linear(90, (#93d2cc, 0%), (#3f8ba6, 36%), (#1f5980, 70%), (#123a5c, 100%))
+  rect seaG 0:55 191:127 fill
+  line #ffe6b8.alpha(65%) 0:55 191:55
+  # lagoon shallows around the cay
+  ellipse #63c2b4.alpha(45%) 138:88 55:8 fill
+  ellipse #8adfcf.alpha(40%) 138:87 42:5 fill
+  # warm sun-wash, then depth-graded ripple (calm far, livelier near)
+  lightRegion seaR sun #ffcf8f 26%
+  ripple rect(0:55, 191:79) 0.22 9 #dff2ec
+  ripple rect(0:80, 191:127) 0.4 10 #cfeae4
+  # waves — spacing widens toward the viewer
+  ys = 60, 64, 69, 75, 82, 91, 102, 115
+  for i 0..len(ys):
+    yw = ys[i]
+    for j 0..3:
+      x0 = floor(rand(31 + i, j) * 176)
+      line #cfeee6.alpha(20%) x0:yw (x0 + 5 + i * 2):yw
+  # sun glitter path, on top of the texture
+  scatter g 90 5 glitterR:
+    line #ffedc2.alpha(0.4 + rand(11, g.x + g.y) * 0.5) (g.x - 1):g.y (g.x + 1):g.y
+  stamp spark(#fff3d2) 30:66
+  stamp spark(#ffe4ae) 44:86
+  # ---- the cay ----
+  fill #d8b478 isleR
+  lightRegion isleR sun #ffe9b8 30%
+  shadeRegion isleR sun #7a4f28 40%
+  grain isleR 0.25 13 #8a6a42
+  grain isleR 0.12 14 #fff0c8
+  fill #a5794e.alpha(50%) isleR.intersect(rect(96:83, 180:86))
+  line #f6ecd2.alpha(85%) 101:87 176:87
+  line #eaf6ee.alpha(45%) 99:88 178:88
+  scatter p 12 21 isleR.intersect(rect(102:80, 174:86)):
+    px #a9835a.alpha(80%) p
+  scatter q 8 22 isleR.intersect(rect(104:82, 172:86)):
+    px #f2e2bc q
+  # shrubs on the mound, sunlit on their left
+  stamp leaf(#3c6b3d) 116:74
+  stamp leaf(#2f5a34) 127:71 flipx
+  stamp leaf(#48804a) 140:71
+  px #7fae62 117:75
+  px #6f9e56 128:72
+  px #8aba6c 141:72
+  # rocks (lit left, AO grounded)
+  mask rockR = curvePoly(157:86, 161:78, 169:79, 174:86).intersect(rect(155:76, 176:86))
+  mask rock2R = curvePoly(149:86, 152:82, 156:83, 158:86).intersect(rect(147:81, 160:86))
+  fill #9c9184 rockR
+  shadeRegion rockR sun #2c2622 26%
+  ambientOcclusion rockR #3a2c1e 22%
+  rim rockR.intersect(rect(155:76, 164:86)) 1:0 #e2d3b4 1
+  fill #85796b rock2R
+  shadeRegion rock2R sun #2c2622 35%
+  fill #3a2c20.alpha(28%) ellipse(172:86, 7:2).intersect(isleR)
+  # palm cast shadows (sun left => shadows lie right), clipped to the ground
+  pShad = #14283c.alpha(42%)
+  mask groundR = isleR.union(rect(96:87, 179:91))
+  fill pShad region(palm(#4a7f43)).transform(rotate(108).about(26:47)).shift(100:38).intersect(groundR)
+  fill pShad region(palm(#3f7040)).transform(rotate(112).about(26:47)).shift(120:38).intersect(groundR)
+  # palm reflections in the water (faded, cut short, then broken up by ripple)
+  mask reflR = rect(96:88, 191:106)
+  stamp palm(#4a7f43) 119:88 anchor top flipy tint #16394d 80% mask reflR
+  stamp palm(#3f7040) 154:88 anchor top flipy flipx tint #16394d 80% mask reflR
+  ripple rect(98:88, 191:112) 0.45 17 #2d6f8a
+  line #cfeee6.alpha(25%) 118:105 138:105
+  line #cfeee6.alpha(25%) 148:107 166:107
+  # the palms
+  stamp palm(#4a7f43) 100:38
+  stamp palm(#3f7040) 135:38 flipx
+  # contact shadows where trunks meet sand
+  fill #4a3016.alpha(50%) ellipse(126:85, 5:2).intersect(isleR)
+  fill #4a3016.alpha(50%) ellipse(146:85, 5:2).intersect(isleR)
+  # sailboat on the horizon + its broken reflection
+  stamp boat 64:47
+  line #2e3644.alpha(50%) 66:56 72:56
+  line #2e3644.alpha(35%) 67:58 71:58
+  # foreground swell crests, bottom-left
+  curve #dff2ea.alpha(45%) 8:114 30:112 52:115
+  curve #dff2ea.alpha(30%) 20:121 44:119 66:122
+  curve #dff2ea.alpha(35%) 58:108 78:106 96:109
+  # foreground frame: one lush frond from the top-right corner
+  stamp frondFg(#2f6a3c, #16351f) 142:0
+  # bright kiss of sun on the horizon below the disc
+  line #fff0c8.alpha(80%) 30:56 44:56
+  line #ffe9b8.alpha(50%) 27:57 47:57
+  # subtle vignette to pull the eye inward
+  shadeRegion rect(0:0, 191:127) 96:58 #0c1c34 12%
+
+export island island:
+  png @1 @4

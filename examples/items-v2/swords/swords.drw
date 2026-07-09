@@ -1,0 +1,150 @@
+theme swordSet:
+  pal:
+    k = #1b1720
+    e = #35404e
+    m = #9aa8ba
+    l = #eef6ff
+    w = #7b4a2a
+    q = #b98249
+    g = #c99a2e
+    z = #ffe08a
+    c = #50d8ff
+    p = #9b68ff
+  size 64x64
+  mode pixel
+  style """
+  64x64 transparent inventory swords. Light top-left, dark bottom-right.
+  Shared lower-left -> upper-right stance with 3-5 px breathing room.
+  Black-brown outline, cool steel core, 1-2 hard glints, warm wood/leather grips.
+  Silhouette distance first: dagger compact, short sword broad, long sword straight,
+  sabre curved, two-hander oversized, magic blade cyan with a split core.
+  """
+
+use swordSet
+
+draw dagger:
+  line k 21:45 42:24 w9
+  line m 22:44 40:26 w5
+  line l 24:42 38:28 w2
+  line e 19:47 38:28 w2
+  poly k 39:25 45:17 43:28 fill
+  poly m 40:25 44:19 42:27 fill
+  line g 15:43 23:51 w5
+  line z 16:43 22:49 w2
+  line w 20:48 10:58 w6
+  line q 19:47 11:55 w3
+  circle k 9:59 4 fill
+  circle g 9:59 2 fill
+  line e 14:52 18:56 w1
+  px l 32:34
+
+draw shortsword:
+  poly k 19:42 25:48 49:20 47:12 fill
+  poly m 21:42 25:46 47:20 45:16 fill
+  poly l 23:41 26:44 45:19 44:17 fill
+  line e 21:46 45:18 w2
+  line l 28:37 39:26 w1
+  line k 13:39 28:54 w6
+  line g 15:40 26:51 w4
+  line z 16:40 25:49 w1
+  line w 22:49 11:60 w7
+  line q 21:49 13:57 w4
+  line e 16:54 20:58 w1
+  circle k 9:61 4 fill
+  circle g 9:61 2 fill
+
+draw longsword:
+  poly k 15:48 21:54 56:18 53:7 fill
+  poly m 17:48 21:52 53:18 51:11 fill
+  poly l 19:47 22:50 51:17 50:13 fill
+  line e 17:52 50:19 w2
+  line l 27:39 45:21 w1
+  line k 8:43 28:63 w6
+  line g 10:44 26:60 w4
+  line z 11:44 25:58 w1
+  line w 21:52 9:64 w7
+  line q 20:52 10:61 w4
+  line e 13:58 18:63 w1
+  circle k 8:63 5 fill
+  circle g 8:63 3 fill
+
+draw scimitar:
+  curve k 16:51 28:38 42:22 54:9 w10
+  curve m 18:50 30:37 43:22 52:11 w6
+  curve l 19:47 31:35 43:20 50:10 w2
+  curve e 17:53 29:40 42:25 51:15 w2
+  poly k 50:8 59:4 54:16 fill
+  poly m 51:9 57:5 53:15 fill
+  line k 13:43 27:57 w6
+  curve g 13:43 18:50 27:57 w4
+  line z 14:43 25:54 w1
+  line w 22:52 11:63 w7
+  line q 21:52 12:60 w4
+  circle k 9:63 4 fill
+  circle g 9:63 2 fill
+  px l 39:24
+
+draw twoHander:
+  poly k 10:49 16:55 57:14 54:4 fill
+  poly m 12:49 16:53 54:14 52:8 fill
+  poly l 14:48 17:51 52:13 51:10 fill
+  line e 12:53 51:14 w2
+  line l 25:40 46:19 w1
+  line k 4:40 28:64 w8
+  line g 6:41 26:61 w5
+  line z 7:41 24:58 w2
+  line k 21:51 8:64 w8
+  line w 21:51 9:63 w5
+  line q 20:51 10:61 w2
+  line e 13:59 17:63 w1
+  circle k 7:63 5 fill
+  circle g 7:63 3 fill
+  circle z 6:62 1 fill
+
+draw magicBlade:
+  poly k 15:49 21:55 53:23 51:7 43:16 fill
+  poly c 18:49 21:52 49:23 48:14 42:19 fill
+  poly l 21:47 23:49 47:21 47:17 fill
+  poly p 25:51 43:30 39:28 21:53 fill
+  line c.lighten(22%) 25:45 46:20 w2
+  line e 17:53 44:26 w2
+  px l 44:18
+  px l 41:21
+  circle c.alpha(55%) 45:18 2 fill
+  px p 50:12
+  px c 38:26
+  line k 11:43 27:59 w7
+  line g 13:44 25:56 w4
+  circle p 27:43 4 fill
+  circle c 27:43 2 fill
+  line w 21:53 10:64 w6
+  line q 20:53 11:61 w3
+  circle k 8:64 4 fill
+  circle p 8:64 2 fill
+
+tileset swords 64x64:
+  tiles dagger, shortsword, longsword, scimitar, twoHander, magicBlade
+  cols 3
+
+export dagger dagger:
+  png @1 @4
+
+export shortsword shortsword:
+  png @1 @4
+
+export longsword longsword:
+  png @1 @4
+
+export scimitar scimitar:
+  png @1 @4
+
+export twoHander twoHander:
+  png @1 @4
+
+export magicBlade magicBlade:
+  png @1 @4
+
+export swords swords:
+  png @1 @4
+  tiled
+  atlasJson

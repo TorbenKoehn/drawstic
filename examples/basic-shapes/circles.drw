@@ -1,0 +1,22 @@
+draw circleIcon 16x16:
+  pal:
+    k = #1a1a1a
+    r = #c04040
+  bg #fff
+  circle k 8:8 7
+  circle r 8:8 5 fill
+
+draw circles 128x16:
+  pal:
+    k = #1a1a1a
+    r = #c04040
+  bg #fff
+  i = 0
+  for i 1..=8:
+    circle k (8 + i * 16):8 i
+    circle r (8 + i * 16):8 max(1, i - 2) fill
+    i += 1
+
+export circleIcon out/circle:
+  png @1 @2
+  svg ids classes

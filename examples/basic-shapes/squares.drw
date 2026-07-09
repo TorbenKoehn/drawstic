@@ -1,0 +1,31 @@
+# A hand-pixeled square with a border.
+draw squareDeclarative:
+  pal k=#fff y=#e0b070
+  pixels:
+    kkkkkkkk
+    kyyyyyyk
+    kyyyyyyk
+    kyyyyyyk
+    kyyyyyyk
+    kyyyyyyk
+    kyyyyyyk
+    kkkkkkkk
+
+draw squareImperative 8x8:
+  pal k=#fff y=#e0b070
+  rect k 0:0 7:7
+  rect y 1:1 6:6 fill
+
+draw squares 128x16:
+  pal:
+    k = #1a1a1a
+    a = #c04040
+  bg #fff
+  for i 1..=8:
+    c = (i*16-8):8
+    r = i:i
+    rect k c-r c+r-1
+    rect a c-r+2 c+r-3 fill
+
+export squares out/squares:
+  png

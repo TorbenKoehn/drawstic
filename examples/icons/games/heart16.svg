@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" shape-rendering="crispEdges">
+  <style>.c-k{fill:#22273a}.c-b{fill:#4d63d1}.c-l{fill:#8da6ff}.c-d{fill:#1b1c88}.c-a{fill:#ffb347}.c-p{fill:#ffe7cb}.c-q{fill:#cb8400}</style>
+  <rect x="3" y="4" width="1" height="1" id="px-0" class="c-k"/>
+  <rect x="4" y="4" width="2" height="1" id="px-1" class="c-a"/>
+  <rect x="6" y="4" width="1" height="1" id="px-2" class="c-k"/>
+  <rect x="9" y="4" width="1" height="1" id="px-3" class="c-k"/>
+  <rect x="10" y="4" width="2" height="1" id="px-4" class="c-a"/>
+  <rect x="12" y="4" width="1" height="1" id="px-5" class="c-k"/>
+  <rect x="3" y="5" width="1" height="1" id="px-6" class="c-k"/>
+  <rect x="4" y="5" width="2" height="1" id="px-7" class="c-p"/>
+  <rect x="6" y="5" width="6" height="1" id="px-8" class="c-a"/>
+  <rect x="12" y="5" width="1" height="1" id="px-9" class="c-k"/>
+  <rect x="3" y="6" width="1" height="1" id="px-10" class="c-k"/>
+  <rect x="4" y="6" width="8" height="1" id="px-11" class="c-a"/>
+  <rect x="12" y="6" width="1" height="1" id="px-12" class="c-k"/>
+  <rect x="3" y="7" width="1" height="1" id="px-13" class="c-k"/>
+  <rect x="4" y="7" width="8" height="1" id="px-14" class="c-a"/>
+  <rect x="12" y="7" width="1" height="1" id="px-15" class="c-k"/>
+  <rect x="4" y="8" width="1" height="1" id="px-16" class="c-k"/>
+  <rect x="5" y="8" width="4" height="1" id="px-17" class="c-a"/>
+  <rect x="9" y="8" width="2" height="1" id="px-18" class="c-q"/>
+  <rect x="11" y="8" width="1" height="1" id="px-19" class="c-k"/>
+  <rect x="5" y="9" width="1" height="1" id="px-20" class="c-k"/>
+  <rect x="6" y="9" width="2" height="1" id="px-21" class="c-a"/>
+  <rect x="8" y="9" width="2" height="1" id="px-22" class="c-q"/>
+  <rect x="10" y="9" width="1" height="1" id="px-23" class="c-k"/>
+  <rect x="6" y="10" width="1" height="1" id="px-24" class="c-k"/>
+  <rect x="7" y="10" width="2" height="1" id="px-25" class="c-a"/>
+  <rect x="9" y="10" width="1" height="1" id="px-26" class="c-k"/>
+  <rect x="7" y="11" width="2" height="1" id="px-27" class="c-k"/>
+</svg>

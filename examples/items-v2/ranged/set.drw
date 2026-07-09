@@ -1,0 +1,196 @@
+theme rangedSet:
+  pal:
+    k = #241a20
+    w = #8f6338
+    a = #c29159
+    d = #5d3e24
+    l = #6e4632
+    r = #9d7054
+    q = #4a2e22
+    m = #4f5a6d
+    n = #9cabc0
+    h = #eef4fb
+    f = #d2d6dd
+    g = #7e8899
+    s = #eadfbd
+  size 64x64
+  mode pixel
+  style """
+  64x64 transparent inventory sprites. Light upper left, shadow lower right.
+  4 px Luft. Lange Rangedteile lehnen von unten links nach oben rechts.
+  One dark outline. Wood is warm and three-step; metal is dark, mid, and bright,
+  leather stays muted and compact, bowstring stays bright and sparse.
+  """
+
+use rangedSet
+
+draw shortbow:
+  curve k 47:7 41:16 34:30 28:45 22:57 w5
+  curve w 46:8 40:16 33:30 27:44 21:56 w3
+  curve a 45:9 39:17 32:30 26:43 20:55
+  line k 44:11 22:53
+  line s 43:11 22:52
+  rect k 30:28 35:40 fill
+  rect l 31:29 34:39 fill
+  line r 31:30 34:30
+  line q 31:37 34:38
+  px h 42:12
+  px a 23:54
+
+draw longbow:
+  curve k 50:4 45:14 37:30 28:49 18:60 w5
+  curve w 49:5 44:14 36:30 27:48 17:59 w3
+  curve a 48:6 43:15 35:30 26:47 16:58
+  line k 46:8 18:56
+  line s 45:8 18:55
+  rect k 31:26 36:39 fill
+  rect l 32:27 35:38 fill
+  line r 32:28 35:28
+  line q 32:36 35:37
+  px h 44:9
+  px a 19:57
+
+draw crossbow:
+  line k 15:48 46:18 w7
+  line w 15:47 46:17 w5
+  line a 14:46 45:16
+  line d 17:49 47:19
+  curve k 35:18 42:13 48:12 56:14 w4
+  curve n 36:18 43:14 48:13 55:14 w2
+  curve k 35:16 43:21 49:22 57:20 w4
+  curve n 36:16 44:20 49:21 56:20 w2
+  line k 35:17 56:17
+  line s 36:17 55:17
+  rect m 37:20 42:24 fill
+  line h 37:20 41:20
+  rect k 22:39 29:46 fill
+  rect l 23:40 28:45 fill
+  line r 23:41 28:41
+  line k 53:14 58:18 w2
+  line k 53:22 58:18 w2
+  px h 57:18
+  line k 33:28 39:24 w3
+  line n 34:28 39:25
+
+draw arrowBundle:
+  line k 14:51 44:18 w3
+  line w 14:51 44:18
+  line k 18:55 48:22 w3
+  line w 18:55 48:22
+  line k 12:47 42:14 w3
+  line w 12:47 42:14
+  line k 16:49 46:16 w3
+  line w 16:49 46:16
+  poly k 42:14 49:12 47:20 fill
+  poly m 43:15 48:13 46:19 fill
+  poly h 44:15 47:14 46:18 fill
+  poly k 46:18 53:16 51:24 fill
+  poly m 47:19 52:17 50:23 fill
+  poly h 48:19 51:18 50:22 fill
+  poly k 40:10 47:8 45:16 fill
+  poly m 41:11 46:9 44:15 fill
+  poly h 42:11 45:10 44:14 fill
+  poly k 44:12 51:10 49:18 fill
+  poly m 45:13 50:11 48:17 fill
+  poly h 46:13 49:12 48:16 fill
+  poly k 13:50 6:53 11:58 fill
+  poly f 12:50 7:53 11:57 fill
+  poly g 10:53 6:56 10:57 fill
+  poly k 17:54 10:57 15:62 fill
+  poly f 16:54 11:57 15:61 fill
+  poly g 14:57 10:60 14:61 fill
+  poly k 11:46 4:49 9:54 fill
+  poly f 10:46 5:49 9:53 fill
+  poly g 8:49 4:52 8:53 fill
+  poly k 15:48 8:51 13:56 fill
+  poly f 14:48 9:51 13:55 fill
+  poly g 12:51 8:54 12:55 fill
+  line k 20:41 29:34 w4
+  line l 20:41 29:34 w2
+  line r 21:40 28:33
+  line k 27:34 36:27 w4
+  line l 27:34 36:27 w2
+  line q 28:35 35:28
+
+draw bolts:
+  line k 16:48 39:28 w4
+  line w 16:48 39:28 w2
+  line k 22:54 45:34 w4
+  line w 22:54 45:34 w2
+  line k 11:41 34:21 w4
+  line w 11:41 34:21 w2
+  poly k 37:24 46:21 43:31 fill
+  poly m 38:25 44:22 42:30 fill
+  poly h 39:25 43:23 41:29 fill
+  poly k 43:30 52:27 49:37 fill
+  poly m 44:31 50:28 48:36 fill
+  poly h 45:31 49:29 47:35 fill
+  poly k 32:17 41:14 38:24 fill
+  poly m 33:18 39:15 37:23 fill
+  poly h 34:18 38:16 36:22 fill
+  rect k 10:47 14:52 fill
+  rect f 11:48 13:51 fill
+  rect g 12:48 13:51 fill
+  rect k 16:53 20:58 fill
+  rect f 17:54 19:57 fill
+  rect g 18:54 19:57 fill
+  rect k 5:40 9:45 fill
+  rect f 6:41 8:44 fill
+  rect g 7:41 8:44 fill
+  line k 24:41 30:36 w4
+  line l 24:41 30:36 w2
+
+draw quiver:
+  poly k 14:55 26:11 42:16 33:60 fill
+  poly l 16:54 27:14 40:18 32:58 fill
+  poly r 18:52 28:16 35:19 29:54 fill
+  poly q 30:20 39:19 31:58 26:58 fill
+  ellipse k 34:16 10:6 fill
+  ellipse l 34:16 8:4 fill
+  ellipse r 31:15 4:2 fill
+  line k 13:47 41:23 w5
+  line l 13:47 41:23 w3
+  line r 12:46 40:22
+  line k 28:36 44:22 w4
+  line r 28:35 43:21 w2
+  line k 27:14 31:4 w3
+  line w 27:14 31:4
+  poly k 30:2 34:0 33:7 fill
+  poly m 31:2 33:1 32:6 fill
+  poly k 31:13 36:3 38:12 fill
+  poly f 32:12 36:4 37:11 fill
+  poly g 33:12 35:6 36:10 fill
+  line k 32:14 37:5 w3
+  line w 32:14 37:5
+  poly k 36:10 41:0 43:9 fill
+  poly f 37:9 41:1 42:8 fill
+  poly g 38:9 40:3 41:7 fill
+  line k 37:11 42:2 w3
+  line w 37:11 42:2
+
+tileset ranged 64x64:
+  tiles shortbow, longbow, crossbow, arrowBundle, bolts, quiver
+  cols 3
+
+export shortbow shortbow:
+  png @1 @4
+
+export longbow longbow:
+  png @1 @4
+
+export crossbow crossbow:
+  png @1 @4
+
+export arrowBundle arrowBundle:
+  png @1 @4
+
+export bolts bolts:
+  png @1 @4
+
+export quiver quiver:
+  png @1 @4
+
+export ranged ranged:
+  png @1 @4
+  tiled
+  atlasJson

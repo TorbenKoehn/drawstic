@@ -1,0 +1,294 @@
+# Dorfbewohnerin — modular villager, Ragnarok-Online chibi (front + side, faction recolor).
+# ONE light contract: sun top-left -> highlights upper-left, core shadow lower-right.
+# Warm materials (skin, hair, wicker) are shaded with `darken`, never a cool `mix` — a
+# warm base mixed toward a blue `cool` crosses the short OkLCh arc through magenta. `cool`
+# is used ONLY for the alpha contact-shadow ellipse (composited, no hue interpolation).
+# Cloth highlight uses hue-safe `lighten` so the SAME ramp works for a warm (rust) and a
+# cool (clan-blue) faction. 1px silhouette outline in `ink` (dark warm) via an inset
+# `stroke` of each part's unioned silhouette; internal material seams use the darkest ramp
+# tone. All fills are flat discrete zones -> SVG stays compact (no scanline gradients).
+
+warm = #ffe6c2
+cool = #2a3550
+ink  = #2a2024
+
+fn lit(c)  = c.lighten(14%)
+fn shd(c)  = c.darken(13%)
+fn deep(c) = c.darken(26%)
+
+# fixed materials -----------------------------------------------------------------
+skin   = #ecb079
+skinLt = skin.mix(warm, 16%)
+skinSh = skin.darken(12%)
+skinDp = skin.darken(22%)
+
+hair   = #7a4526
+hairHi = hair.mix(warm, 28%)
+hairSh = hair.darken(14%)
+hairDp = hair.darken(28%)
+
+apron  = #f3e6ca
+apronSh = apron.darken(11%)
+sash   = #7a4a2e
+sashSh = sash.darken(14%)
+shoe   = #4a3018
+shoeSh = shoe.darken(16%)
+eye    = #2a1a12
+mouth  = #b0604a
+
+wick   = #cf9a5a
+wickHi = wick.mix(warm, 22%)
+wickSh = wick.darken(15%)
+wickDp = wick.darken(28%)
+basketRim = #8a5a30
+handle = #6b4020
+
+# faction cloth (the recolor axis) ------------------------------------------------
+rustBlouse   = #c4552a
+mustardSkirt = #c58f2e
+clanBlouse   = #3f6fae
+clanSkirt    = #27567e
+
+# proportions — shared vertical lines, both views (~2.8 heads, chibi RO) ----------
+headTop      = 1
+shoulderLine = 22
+waistLine    = 34
+kneeLine     = 46
+footLine     = 59
+
+# =================================================================================
+# PARTS (front) — components, never exported
+# =================================================================================
+
+# head: big RO hair volume framing a small face. Bottom seam (neck) at row 20.
+draw head 24x22:
+  crown = ellipse(12:9, 11:9)
+  lockL = rrect(2:11, 7:20, 2)
+  lockR = rrect(16:11, 21:20, 2)
+  hairMass = crown.union(lockL).union(lockR)
+  face = ellipse(12:12, 6:7)
+  hairV = hairMass.subtract(face)
+  sil = hairMass.union(face)
+  fill skin face
+  fill skinLt face.intersect(rect(5:5, 12:11))
+  fill skinSh face.intersect(rect(13:13, 18:19))
+  fill hair hairV
+  fill hairHi hairV.intersect(rect(0:0, 10:9))
+  fill hairSh hairV.intersect(rect(15:8, 23:21))
+  fill hairDp hairV.intersect(rect(0:17, 23:21))
+  line hairDp 8:9 15:9
+  fill eye rect(9:12, 10:14)
+  fill eye rect(14:12, 15:14)
+  px skinLt 9:12
+  px skinLt 14:12
+  px hairDp 9:11
+  px hairDp 15:11
+  px skinLt 8:14
+  px skinSh 12:15
+  px skinSh 12:16
+  px mouth 11:18
+  px mouth 12:18
+  stroke ink sil
+
+# torso: bodice + neck. Top seam row 0, waist seam row 17.
+draw torso(c) 20x18:
+  body = rrect(1:3, 18:15, 4)
+  neck = rect(8:0, 11:4)
+  sil = body.union(neck)
+  fill skinSh neck
+  fill skin rect(8:0, 10:4)
+  fill c body
+  fill lit(c) body.intersect(rect(0:0, 8:15))
+  fill shd(c) body.intersect(rect(12:0, 19:15))
+  fill deep(c) body.intersect(rect(15:0, 19:15))
+  rect sash 1:14 18:16 fill
+  fill sashSh rect(1:16, 18:16)
+  fill apron rrect(6:5, 13:16, 2)
+  fill apronSh rrect(6:5, 13:16, 2).intersect(rect(10:5, 13:16))
+  stroke ink sil
+
+# arm: short puffed sleeve + forearm + small pointed hand. Shoulder seam row 0.
+draw arm(c) 6x17:
+  sleeve = rrect(0:0, 5:6, 2)
+  fore = rrect(1:6, 4:13, 1)
+  hand = ellipse(2:14, 2:2)
+  sil = sleeve.union(fore).union(hand)
+  fill c sleeve
+  fill lit(c) sleeve.intersect(rect(0:0, 2:6))
+  fill shd(c) sleeve.intersect(rect(4:0, 5:6))
+  fill skin fore.union(hand)
+  fill skinLt fore.intersect(rect(1:6, 1:13))
+  fill skinSh fore.union(hand).intersect(rect(3:6, 5:16))
+  stroke ink sil
+
+# skirt: A-line, apron panel over the front, waistband. Top seam row 0.
+draw skirt(c) 24x18:
+  body = poly(6:0, 17:0, 23:16, 0:16)
+  sil = body
+  fill c body
+  fill lit(c) body.intersect(rect(0:0, 8:16))
+  fill shd(c) body.intersect(rect(14:0, 23:16))
+  fill deep(c) body.intersect(rect(19:0, 23:16))
+  line deep(c) 4:6 2:16
+  line deep(c) 12:2 12:16
+  line deep(c) 18:5 21:16
+  fill apron poly(8:0, 15:0, 17:16, 6:16)
+  fill apronSh poly(12:0, 15:0, 17:16, 13:16)
+  rect sash 5:0 18:2 fill
+  fill sashSh rect(5:2, 18:2)
+  stroke ink sil
+
+# lower leg + shoe (pose-invariant, reused both views). Top seam row 0.
+draw leg 7x12:
+  shin = rect(1:0, 5:6)
+  foot = rrect(0:6, 6:11, 2)
+  sil = shin.union(foot)
+  fill skin shin
+  fill skinLt rect(1:0, 2:6)
+  fill skinSh rect(4:0, 5:6)
+  fill shoe foot
+  fill shoeSh foot.intersect(rect(3:6, 6:11))
+  px shoe 0:11
+  stroke ink sil
+
+# accessory: woven basket with an arched handle. Handle-grip pixel = 6:0.
+draw basket 14x12:
+  bowl = poly(1:4, 12:4, 10:11, 3:11)
+  fill wick bowl
+  fill wickHi bowl.intersect(rect(1:4, 5:7))
+  fill wickSh bowl.intersect(rect(8:4, 12:11))
+  fill wickDp bowl.intersect(rect(3:9, 10:11))
+  line wickDp 3:6 3:11
+  line wickDp 6:5 6:11
+  line wickDp 9:5 9:11
+  rect basketRim 0:3 13:5 fill
+  fill wickSh rect(9:4, 13:5)
+  stroke ink bowl.union(rect(0:3, 13:5))
+  curve handle 2:4 4:1 6:0 8:1 10:4 w1
+  px handle 6:0
+
+# =================================================================================
+# PARTS (side, faces right) — pose-leading parts redrawn
+# =================================================================================
+
+# headSide: profile facing right, nose juts right, hair volume swept back-left.
+draw headSide 22x22:
+  crown = ellipse(9:9, 10:9)
+  bun = ellipse(3:13, 4:5)
+  face = ellipse(13:12, 5:7)
+  hairMass = crown.union(bun)
+  hairV = hairMass.subtract(face)
+  sil = hairMass.union(face)
+  fill skin face
+  fill skinLt face.intersect(rect(9:5, 15:10))
+  fill skinSh face.intersect(rect(9:14, 17:19))
+  fill hair hairV
+  fill hairHi hairV.intersect(rect(0:0, 9:9))
+  fill hairSh hairV.intersect(rect(0:15, 12:21))
+  fill hairDp hairV.intersect(rect(0:17, 8:21))
+  poly skin 17:11 19:13 17:15 fill
+  px skinSh 18:14
+  fill eye rect(15:12, 16:14)
+  px hairDp 14:10
+  px mouth 17:16
+  stroke ink sil
+
+# torsoSide: profile bodice, slight forward lean. Top seam row 0, waist row 17.
+draw torsoSide(c) 16x18:
+  body = rrect(2:3, 13:15, 4)
+  neck = rect(7:0, 11:4)
+  sil = body.union(neck)
+  fill skinSh neck
+  fill skin rect(7:0, 9:4)
+  fill c body
+  fill lit(c) body.intersect(rect(0:0, 6:15))
+  fill shd(c) body.intersect(rect(10:0, 15:15))
+  fill deep(c) body.intersect(rect(12:0, 15:15))
+  rect sash 2:14 13:16 fill
+  fill sashSh rect(2:16, 13:16)
+  fill apron rrect(4:5, 11:16, 2)
+  fill apronSh rrect(4:5, 11:16, 2).intersect(rect(8:5, 11:16))
+  stroke ink sil
+
+# armSide: reaches forward, hand grips the basket handle. Shoulder seam row 0.
+draw armSide(c) 8x16:
+  sleeve = rrect(1:0, 7:6, 2)
+  fore = rrect(2:6, 6:12, 1)
+  hand = ellipse(4:13, 2:2)
+  sil = sleeve.union(fore).union(hand)
+  fill c sleeve
+  fill lit(c) sleeve.intersect(rect(1:0, 4:6))
+  fill shd(c) sleeve.intersect(rect(5:0, 7:6))
+  fill skin fore.union(hand)
+  fill skinLt fore.intersect(rect(2:6, 3:12))
+  fill skinSh fore.union(hand).intersect(rect(5:6, 7:15))
+  stroke ink sil
+
+# skirtSide: profile A-line drape. Top seam row 0.
+draw skirtSide(c) 20x18:
+  body = poly(5:0, 15:0, 19:16, 0:16)
+  sil = body
+  fill c body
+  fill lit(c) body.intersect(rect(0:0, 7:16))
+  fill shd(c) body.intersect(rect(12:0, 19:16))
+  fill deep(c) body.intersect(rect(16:0, 19:16))
+  line deep(c) 6:3 4:16
+  line deep(c) 13:3 15:16
+  fill apron poly(5:0, 12:0, 12:16, 2:16)
+  fill apronSh poly(9:0, 12:0, 12:16, 8:16)
+  rect sash 4:0 15:2 fill
+  fill sashSh rect(4:2, 15:2)
+  stroke ink sil
+
+# =================================================================================
+# COMPOSITES (parametric body) + thin export wrappers
+# =================================================================================
+
+draw front(blouseC, skirtC) 44x64:
+  fill cool.alpha(32%) ellipse(20:61, 13:2)
+  stamp leg 12:(footLine - 11)
+  stamp leg 21:(footLine - 11)
+  stamp skirt(skirtC) 8:(waistLine - 2)
+  stamp torso(blouseC) 10:(shoulderLine - 5)
+  stamp arm(blouseC) 7:(shoulderLine - 1)
+  stamp arm(blouseC) 27:(shoulderLine - 1)
+  stamp head 8:headTop
+  stamp basket 23:(shoulderLine + 13)
+
+draw side(blouseC, skirtC) 42x64:
+  fill cool.alpha(32%) ellipse(20:61, 13:2)
+  stamp leg 17:(footLine - 11) tint cool 15%
+  stamp leg 20:(footLine - 11)
+  stamp skirtSide(skirtC) 11:(waistLine + 3)
+  stamp torsoSide(blouseC) 13:(shoulderLine - 4)
+  stamp headSide 11:headTop
+  stamp armSide(blouseC) 20:(shoulderLine + 1)
+  stamp basket 24:(shoulderLine + 13)
+
+draw villagerFront 44x64:
+  stamp front(rustBlouse, mustardSkirt) 0:0
+
+draw villagerFrontClan 44x64:
+  stamp front(clanBlouse, clanSkirt) 0:0
+
+draw villagerSide 42x64:
+  stamp side(rustBlouse, mustardSkirt) 0:0
+
+draw villagerSideClan 42x64:
+  stamp side(clanBlouse, clanSkirt) 0:0
+
+export villagerFront villager/front:
+  png @1 @4
+  svg ids classes
+
+export villagerFrontClan villager/frontClan:
+  png @1 @4
+  svg ids classes
+
+export villagerSide villager/side:
+  png @1 @4
+  svg ids classes
+
+export villagerSideClan villager/sideClan:
+  png @1 @4
+  svg ids classes

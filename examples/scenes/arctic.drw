@@ -1,0 +1,171 @@
+drawstic 1
+
+from std/shapes spark, star4
+from std/themes pixelBase
+use std/themes pixelBase
+
+# ---- palette (semantic bindings) ----
+skyDeep = oklch(0.14, 0.05, 265)
+skyMid = oklch(0.22, 0.07, 250)
+skyHorizon = oklch(0.34, 0.10, 220)
+auroraA = oklch(0.78, 0.19, 150)
+auroraB = oklch(0.72, 0.16, 195)
+auroraC = oklch(0.6, 0.2, 300)
+moonCore = #f6f3e2
+moonRim = #cfd6a8
+craterCol = moonCore.darken(22%)
+snowLit = #eef4fb
+snowMid = #cddcee
+snowShade = #a7bdd6
+snowDeep = #7d97b8
+iceLit = #bfe6f2
+iceMid = #59a8cc
+iceDeep = #245b78
+waterDeep = #12324a
+blockLit = #e4edf7
+blockShade = #b4c6dc
+glowHot = #ffe3a0
+glowWarm = #ffab5c
+shadowCol = #0c1830
+shadowSoft = shadowCol.alpha(35%)
+starTones = #eef6ff.tones(-14%, 0%, 16%)
+auroraRamp = auroraA.mixes(auroraC, 5)
+
+fn twinkle(i) = 0.35 + rand(11, i) * 0.65
+fn starKind(i) = i mod 3
+fn starShape(i) = i mod 8
+fn driftY(x) = noise(21, x, 0) * 3 - 1.5
+fn crescent(cx, cy, r, dx) = circle(cx:cy, r).subtract(circle((cx + dx):cy, r))
+
+path auroraCore 160x50:
+  move 18:32
+  bezier 58:6 102:10 148:30
+  quad 128:18 140:26
+
+draw arcticFox:
+  pal f=#f4f2ee s=#d2cabd k=#241f1a
+  pixels:
+    .....kk......
+    ....kffk.....
+    ...kfkfffk...
+    ..kfffffffkss
+    .kffffffffsss
+    .kffffffkssss
+    ..kffffkssss.
+    ...kk........
+  shadow 1 1 shadowCol.alpha(40%)
+
+draw iceberg 24x18:
+  poly iceDeep 3:17 22:11 20:17 fill
+  poly iceMid 3:17 12:1 22:11 fill
+  poly iceLit 3:17 9:0 15:6 12:17 fill
+  mask bergShape = poly(3:17, 9:0, 15:6, 22:11, 20:17)
+  faceGlint = rect(4:2, 12:9).intersect(bergShape)
+  fill iceLit.lighten(15%) faceGlint
+  rim bergShape 1:-1 iceLit.alpha(70%) 2
+  ambientOcclusion bergShape shadowCol 0.35
+
+draw horizonBand 160x6:
+  rect skyHorizon 0:0 159:5 fill
+  dither skyHorizon skyHorizon.darken(8%) 0.5
+
+draw water 160x26:
+  grad waterGrad = linear(90, iceMid, waterDeep)
+  bg waterGrad
+  for x 0..160:
+    if x mod 13 < 6:
+      rect iceLit.alpha(30%) x:3 (x + 4):3 fill
+    if x mod 21 < 9:
+      rect waterDeep.alpha(40%) x:15 (x + 7):16 fill
+  ripple 0.35 33 iceLit.alpha(50%)
+  speckle 0.05 41 #ffffffb0
+
+draw snowField 160x26:
+  grad snowGrad = linear(90, snowLit, snowMid)
+  bg snowGrad
+  mask dip = ellipse(70:10, 16:5).subtract(ellipse(70:8, 11:3))
+  mask dip:
+    bg snowShade
+  ambientOcclusion dip shadowCol 0.3
+  grain 0.12 55 #ffffff
+  for i 0..6:
+    px shadowSoft (10 + i * 24 + rand(61, i) * 8):(19 + rand(62, i) * 4)
+  for x 0..160:
+    if x mod 9 < 1:
+      y = 5 + driftY(x)
+      px snowLit x:y
+  line snowDeep 0:23 159:23
+  quad snowMid.alpha(60%) 10:20 80:15 150:20
+
+draw igloo 30x20:
+  mask domeShape = ellipse(15:13, 14:12)
+  ellipse blockShade 15:14 14:12 fill
+  ellipse blockLit 15:13 12:11 fill
+  for row 0..4:
+    arc blockShade.darken(15%) 15:13 (12 - row * 2) 200 340
+  shadeRegion domeShape 27:1 blockShade 0.45
+
+  mask archShape = rect(12:12, 18:19).union(circle(15:12, 3))
+  fill blockShade archShape
+  rect shadowCol.alpha(75%) 13:13 17:19 fill
+  grad doorGlow = radial(glowHot, glowWarm)
+  ellipse doorGlow 15:16 3:3 fill
+  rect glowWarm.alpha(55%) 13:17 17:19 fill
+  line blockLit 13:19 13:16
+  line blockLit 17:19 17:16
+  ambientOcclusion archShape shadowCol 0.4
+
+draw arctic 160x96:
+  title "Polarnacht"
+  grad nightSky = linear(90, skyDeep, skyMid, skyHorizon)
+  bg nightSky
+  mask groundArea = rect(0:70, 159:95)
+  speckle 0.02 7 #ffffffcc
+
+  grad moonHalo = radial(moonRim.alpha(25%), transparent)
+  circle moonHalo 132:18 22 fill
+  circle shadowCol.alpha(85%) 132:18 10 fill
+  fill moonCore crescent(132, 18, 10, 5)
+  circle craterCol 126:16 1 fill
+  arc moonRim.alpha(55%) 132:18 14 200 340
+  mask glintMask = circle(150:8, 2).xor(circle(152:8, 2))
+  fill glowHot.alpha(60%) glintMask
+
+  for i 0..5:
+    ac = auroraRamp[i].alpha(0.22 + i * 0.03)
+    ay = 34 - i * 3
+    bezier ac 6:ay 55:(ay - 22) 100:(ay - 12) 152:(ay + 8) w2
+  stroke auroraB.alpha(50%) auroraCore w3
+
+  for i 0..30:
+    sx = rand(3, i) * w
+    sy = rand(5, i) * 46
+    sc = starTones[starKind(i)].alpha(twinkle(i))
+    match starShape(i):
+      0: stamp spark(sc) sx:sy
+      4: stamp star4(sc) sx:sy
+      else: px sc sx:sy
+
+  stamp horizonBand 0:44
+  stamp water 0:50
+
+  castShadow iceberg.region.shift(40:52) 2:2 shadowSoft
+  stamp iceberg 40:52
+  castShadow iceberg.region.shift(96:46) (-2):2 shadowSoft
+  stamp iceberg 96:46 flipx
+  stamp iceberg 4:52 scale2 tint skyMid 0.3
+
+  stamp snowField 0:70
+
+  castShadow igloo.region.shift(95:72) 5:3 shadowSoft
+  stamp igloo 95:72
+
+  stamp arcticFox 25:88 anchor bottom mask groundArea
+  stamp arcticFox 146:91 anchor bottom flipx shadow 1:1 shadowSoft mask groundArea
+
+  stamp spark(glowHot) 45:73 rot45
+  stamp star4(moonRim.alpha(60%)) 150:10 rot45
+
+export arctic scenes/arctic:
+  png @1 @2
+  svg ids classes

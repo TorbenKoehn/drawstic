@@ -1,0 +1,200 @@
+drawstic 2
+
+theme shieldSet:
+  pal:
+    k = #241a20
+    n = #4d5568
+    s = #93a0b5
+    h = #edf4fb
+    o = #8d5f35
+    t = #c89a66
+    u = #6b4a32
+    r = #9d2f3d
+    b = #345b9c
+    g = #c9a142
+    a = #6d62ff
+    l = #b9d6ff
+    c = #84f0ff
+  size 64x64
+  mode pixel
+  style """
+  64x64 transparent inventory shields. Light upper left, shadow lower right.
+  4-6 px breathing room. Shared 1 px outline in k, inner edges in n.
+  Metall = dunkle Flanke, mittlere Fuelle, knappe Glanzkanten.
+  Holz = warme Bretter, sparsame Maserung, eiserne Beschlaege.
+  Magic = compact aura, bright core, no fog blanket.
+  """
+
+use shieldSet
+
+fn heraldBody() = rrect(14:10, 50:34, 10).union(poly(18:29, 46:29, 32:58))
+fn heraldFace() = rrect(17:13, 47:34, 7).union(poly(20:31, 44:31, 32:54))
+fn towerBody() = poly(22:8, 42:8, 47:15, 47:45, 40:58, 24:58, 17:45, 17:15)
+fn towerFace() = poly(25:11, 39:11, 43:17, 43:46, 38:54, 26:54, 21:46, 21:17)
+fn woodBody() = poly(20:10, 44:10, 50:17, 49:49, 40:56, 24:56, 15:48, 14:18)
+fn woodFace() = poly(22:13, 42:13, 47:20, 46:47, 39:53, 25:53, 18:47, 18:21)
+fn barrierBody() = poly(32:8, 47:16, 55:31, 47:46, 32:54, 17:46, 9:31, 17:16)
+fn barrierCore() = poly(32:15, 43:21, 43:41, 32:47, 21:41, 21:21)
+
+draw roundShield:
+  body = circle(32:31, 21)
+  face = circle(32:31, 18)
+  ring = body.subtract(face)
+  boss = circle(32:31, 7)
+  bossCore = circle(32:31, 5)
+  fill n body
+  fill s ring
+  fill o face
+  fill t face.intersect(rect(12:12, 31:49))
+  fill u face.intersect(rect(33:12, 50:49))
+  line t 21:15 21:47 w2
+  line u 32:14 32:48 w2
+  line t 42:16 42:46 w2
+  fill n boss
+  fill s bossCore
+  fill h bossCore.intersect(rect(24:23, 31:38))
+  fill n bossCore.intersect(rect(32:23, 39:38))
+  line h 18:30 24:30
+  line h 40:30 46:30
+  line h 32:16 32:22
+  line n 32:40 32:46
+  px h 28:26
+  px h 30:24
+  stroke k body w1
+  stroke n face w1
+
+draw heraldShield:
+  body = heraldBody()
+  face = heraldFace()
+  fill n body
+  fill r face.intersect(rect(0:0, 31:63))
+  fill b face.intersect(rect(32:0, 63:63))
+  fill g poly(22:22, 32:16, 42:22, 37:29, 32:26, 27:29)
+  fill g poly(28:26, 32:30, 36:26, 36:41, 32:46, 28:41)
+  fill h rect(18:14, 24:17)
+  fill h poly(19:18, 24:18, 21:23)
+  fill n face.intersect(rect(41:14, 47:52))
+  line h 22:20 29:13
+  line h 30:13 38:20
+  stroke k body w1
+  stroke n face w1
+
+draw towerShield:
+  body = towerBody()
+  face = towerFace()
+  spine = rect(29:15, 35:50)
+  fill k body
+  fill n face
+  fill s face.intersect(rect(21:11, 31:54))
+  fill k face.intersect(rect(36:11, 43:54))
+  fill u spine
+  line t 31:16 31:49 w1
+  line k 33:16 33:49 w1
+  fill s rect(24:14, 40:17)
+  fill s rect(24:47, 40:50)
+  line h 24:18 24:43
+  circle g 24:22 1 fill
+  circle g 24:35 1 fill
+  circle g 40:22 1 fill
+  circle g 40:35 1 fill
+  circle g 32:49 1 fill
+  stroke k body w1
+  stroke n face w1
+
+draw buckler:
+  body = circle(32:31, 14)
+  face = circle(32:31, 11)
+  boss = circle(32:31, 6)
+  fill k body
+  fill n face
+  fill s face.intersect(rect(21:20, 31:42))
+  fill k face.intersect(rect(32:20, 42:42))
+  fill s boss
+  fill h boss.intersect(rect(27:25, 31:36))
+  fill n boss.intersect(rect(32:25, 37:36))
+  circle g 32:18 1 fill
+  circle g 45:31 1 fill
+  circle g 32:44 1 fill
+  circle g 19:31 1 fill
+  line h 24:31 27:31
+  line h 37:31 40:31
+  stroke k body w1
+  stroke n face w1
+
+draw woodShield:
+  body = woodBody()
+  face = woodFace()
+  bandTop = rect(19:21, 45:25)
+  bandBottom = rect(19:40, 45:44)
+  fill n body
+  fill o face
+  fill t face.intersect(rect(19:13, 32:53))
+  fill u face.intersect(rect(33:13, 47:53))
+  line t 24:15 24:50 w2
+  line o 31:14 31:51 w2
+  line t 39:15 39:50 w2
+  fill s bandTop.intersect(face)
+  fill s bandBottom.intersect(face)
+  fill h rect(20:21, 26:22)
+  fill h rect(20:40, 26:41)
+  circle k 24:23 1 fill
+  circle k 40:23 1 fill
+  circle k 24:42 1 fill
+  circle k 40:42 1 fill
+  stroke k body w1
+  stroke n face w1
+
+draw magicBarrier:
+  body = barrierBody()
+  core = barrierCore()
+  ring = body.subtract(core)
+  circle a.alpha(10%) 32:31 24 fill
+  circle c.alpha(14%) 32:31 21 fill
+  fill a.alpha(24%) body
+  fill c.alpha(30%) ring
+  fill l.alpha(42%) core
+  line c 32:14 32:48
+  line c 18:31 46:31
+  line l 22:21 42:41
+  line l 42:21 22:41
+  circle l 32:18 1 fill
+  circle l 45:31 1 fill
+  circle l 32:44 1 fill
+  circle l 19:31 1 fill
+  stroke k body w1
+  stroke a body w1
+  stroke c core w1
+
+tileset shieldsGrid 64x64:
+  tiles roundShield, heraldShield, towerShield, buckler, woodShield, magicBarrier
+  cols 3
+
+atlas shieldsAtlas:
+  sprites roundShield, heraldShield, towerShield, buckler, woodShield, magicBarrier
+  pad 1
+
+export roundShield round-shield:
+  png @1 @4
+
+export heraldShield herald-shield:
+  png @1 @4
+
+export towerShield tower-shield:
+  png @1 @4
+
+export buckler buckler:
+  png @1 @4
+
+export woodShield wood-shield:
+  png @1 @4
+
+export magicBarrier magic-barrier:
+  png @1 @4
+
+export shieldsGrid shields-grid:
+  png @1 @4
+  tiled
+
+export shieldsAtlas shields-atlas:
+  png @1 @4
+  atlasJson

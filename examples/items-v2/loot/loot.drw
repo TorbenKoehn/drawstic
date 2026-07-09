@@ -1,0 +1,130 @@
+theme lootSet:
+  pal:
+    k = #241912
+    s = #69717f
+    h = #f1f4fa
+    w = #8c5d35
+    l = #c99558
+    c = #7a5a44
+    g = #c8962d
+    j = #4f79de
+    r = #c65359
+  size 64x64
+  mode pixel
+  style """
+  64x64 transparent inventory sprites with 2-4 px breathing room.
+  One shared light direction: top-left light, bottom-right shadow.
+  Shared outline language: dark spine, compact glints, readable @1 silhouettes.
+  Metal = dark base, mid fill, tiny highlights. Wood = warm shaft with thin edge.
+  Cloth/leather stay sparse. Gem and gold accents stay tight and faceted.
+  """
+
+use lootSet
+
+draw pickaxe 64x64:
+  title "Pickaxe"
+  line k 23:51 42:20 w7
+  line w 24:50 41:21 w5
+  poly k 14:21 24:12 35:14 42:19 33:26 22:25 fill
+  poly s 16:21 25:14 33:15 39:18 31:24 23:23 fill
+  poly h 19:20 26:15 32:16 36:18 30:22 24:22 fill
+  poly k 11:18 19:11 24:13 17:21 fill
+  poly s 12:18 18:12 22:13 16:20 fill
+  line h 14:17 20:13 w1
+  rect k 29:19 35:25 fill
+  rect w 30:20 34:24 fill
+  rect h 30:20 32:21 fill
+
+draw axe 64x64:
+  title "Axe"
+  line k 23:51 43:20 w7
+  line w 24:50 42:21 w5
+  poly k 24:19 35:12 50:16 49:24 38:28 27:24 fill
+  poly s 26:19 36:14 45:17 44:22 37:25 29:22 fill
+  poly h 30:18 38:15 43:17 42:20 36:22 31:20 fill
+  rect k 27:18 34:25 fill
+  rect s 28:19 33:24 fill
+  rect h 29:19 31:21 fill
+  poly k 44:15 49:18 50:23 46:25 43:21 fill
+  line h 40:17 48:19 w1
+
+draw key 64x64:
+  title "Key"
+  stroke k circle(22:24, 9) w4
+  stroke g circle(22:24, 9) w2
+  stroke h circle(20:22, 7) w1
+  poly k 29:20 52:20 52:25 46:25 46:30 39:30 39:25 29:25 fill
+  poly g 31:22 50:22 50:24 44:24 44:28 40:28 40:24 31:24 fill
+  poly h 32:22 42:22 42:23 38:23 38:27 35:27 35:23 32:23 fill
+  rect k 44:25 48:31 fill
+  rect g 45:26 47:30 fill
+  rect h 45:26 46:27 fill
+  line h 31:23 41:23 w1
+
+draw coinPouch 64x64:
+  title "Coin pouch"
+  ellipse k 31:41 16:13 fill
+  ellipse c 31:42 12:10 fill
+  rrect k 24:23 39:32 3 fill
+  rrect c 26:25 37:30 2 fill
+  line h 27:25 38:25 w1
+  line k 31:31 29:37 w1
+  line k 34:31 36:37 w1
+  circle g 34:31 4 fill
+  circle h 33:30 2 fill
+  circle k 32:39 2 fill
+  circle k 29:40 1 fill
+  circle k 35:39 1 fill
+
+draw gem 64x64:
+  title "Gem"
+  poly k 32:11 49:28 32:52 15:28 fill
+  poly j 32:14 46:28 32:48 18:28 fill
+  poly #355dcc 32:14 25:28 32:48 18:28 fill
+  poly #6f95ff 32:14 39:28 32:48 46:28 fill
+  poly h 32:15 36:24 32:29 28:24 fill
+  line h 25:27 39:27 w1
+  line h 28:19 32:15 w1
+  line h 36:19 40:23 w1
+
+draw crown 64x64:
+  title "Crown"
+  poly k 17:43 22:23 28:34 32:14 36:34 42:23 47:43 44:51 20:51 fill
+  poly g 19:44 24:27 29:36 32:19 35:36 40:27 45:44 42:49 22:49 fill
+  poly l 21:44 25:30 29:38 32:23 35:38 39:30 43:44 40:47 24:47 fill
+  rect k 20:41 44:47 fill
+  rect g 22:42 42:46 fill
+  rect h 23:42 26:44 fill
+  rect h 39:42 41:44 fill
+  circle r 32:19 2 fill
+  circle j 26:28 2 fill
+  circle j 38:28 2 fill
+  line h 23:33 29:24 w1
+  line h 35:24 41:33 w1
+
+tileset loot 64x64:
+  tiles pickaxe, axe, key, coinPouch, gem, crown
+  cols 3
+
+export pickaxe pickaxe:
+  png @1 @4
+
+export axe axe:
+  png @1 @4
+
+export key key:
+  png @1 @4
+
+export coinPouch coinPouch:
+  png @1 @4
+
+export gem gem:
+  png @1 @4
+
+export crown crown:
+  png @1 @4
+
+export loot loot:
+  png @1 @4
+  tiled
+  atlasJson

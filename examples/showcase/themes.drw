@@ -1,0 +1,18 @@
+# themes.drw — the showcase theme set.
+theme pixelBase:
+  mode pixel
+  font small
+  style "No AA. 1px black outline. Light from top-left."
+
+theme warmPal:
+  pal:
+    k = #1a1a1a
+    y = #e0b070
+    r = #c04040
+
+theme dusk:
+  with pixelBase, warmPal
+  style "Cozy dusk mood; long soft shadows in 'r'."
+
+filter softShadow:
+  shadow 1 1 #10101080

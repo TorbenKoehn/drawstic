@@ -1,0 +1,159 @@
+# Vulkannacht — a volcano erupting at night: lava, embers, ash, moonlight.
+# Light discipline: primary warm light = the crater/lava (top-centre);
+# secondary cool light = the moon (upper-left). Volcano-facing = warm, away = cold.
+
+fn ridgeB(nx) = 132 - round(noise(3, nx * 3.5, 0) * 16)
+fn ridgeF(nx) = 144 - round(noise(7, nx * 5.0, 0) * 14)
+fn groundY(nx) = 150 + round(noise(11, nx * 6, 0) * 7) - 3
+
+draw volcano 256x192:
+  # ---- palette (semantic) ----------------------------------------------
+  skyTop   = #080a1e
+  skyMid   = #191436
+  skyWarm  = #3a1c22
+  moonCore = #eef1fb
+  moonHalo = #aeb8dc
+
+  rockWarm = #3a2620
+  rockBase = #201b28
+  rockCool = #100e18
+  rockShad = #08060e
+  moonLite = #5a6ea6
+  moonEdge = #313c58
+  ridgeFar = #171a30
+  ridgeMid = #12122a
+
+  lavaCore = #fff3c0
+  lavaHot  = #ffd23a
+  lavaMid  = #ff7a1a
+  lavaDeep = #db3d18
+  lavaDark = #7a1c12
+
+  ashLo    = #4a2a26
+  ashHi    = #26222e
+
+  # ---- sky -------------------------------------------------------------
+  grad sky = linear(90, skyTop, skyMid, skyWarm)
+  bg sky
+
+  # stars in the upper sky
+  scatter s 80 1 rect(0:0, (w-1):80):
+    px #ffffff.alpha(0.25 + rand(9, s.x + s.y) * 0.55) s
+
+  # moon (upper-left) — soft halo by stacked alpha discs, crescent by an offset dark disc
+  circle moonHalo.alpha(10%) 52:34 18 fill
+  circle moonHalo.alpha(16%) 52:34 13 fill
+  circle moonCore 52:34 8 fill
+  circle skyMid.alpha(45%) 57:31 7 fill
+
+  # ---- distant ridges (atmospheric perspective) ------------------------
+  profile ridgeFar 0..w ridgeB fill
+  profile ridgeMid 0..w ridgeF fill
+  # warm horizon haze — seats the ridges in depth, fades up into the night
+  grad haze = linear(90, skyWarm.alpha(0%), skyWarm.alpha(32%))
+  rect haze 0:118 (w-1):150 fill
+
+  # ---- ash plume (behind the peak, lit from below) ---------------------
+  grad ash = linear(90, ashHi, ashLo)
+  mask plume = curvePoly(122:72, 96:46, 106:16, 130:6, 158:20, 152:54)
+  fill ash plume
+  circle ashHi 118:20 12 fill
+  circle ashHi 138:14 10 fill
+  circle ashLo 128:30 14 fill
+  lightRegion plume 124:72 lavaMid 0.30
+  speckle plume 0.18 12 ashHi.alpha(50%)
+
+  # ---- volcano mass ----------------------------------------------------
+  mask volcano = poly(28:156, 62:112, 106:66, 122:78, 150:60, 196:114, 228:156)
+  grad rock = linear(90, rockWarm, rockBase, rockCool)
+  fill rock volcano
+
+  grain volcano 0.09 11 rockShad
+  # shadow veil — light biased left of the crater, so the right slope recedes darkest
+  shadeRegion volcano 116:72 rockShad.alpha(90%) 0.95
+  # cool moonlight washes the upper-left slope (brightest nearest the moon)
+  lightRegion volcano 52:34 moonLite 0.20
+  # warm crater light near the summit
+  lightRegion volcano 124:72 lavaMid 0.22
+  # cool moon rim on the LEFT silhouette edge (dir points right -> lights left edge) — dim, upper slope only
+  rim volcano.intersect(rect(0:66, 104:126)) 1:0 moonEdge 1
+  # hot rim along the upper slopes flanking the crater
+  rim volcano.intersect(rect(88:56, 162:104)) 0:1 lavaDeep 1
+  # cooling-lava glints: faint warm speckle on the mid slopes (surface texture)
+  scatter g 34 8 volcano.intersect(rect(92:84, 158:138)):
+    px lavaDeep.alpha(0.12 + rand(7, g.x + g.y) * 0.32) g
+  # crater light spilling down from the summit — a vertical warm wash, fading downslope
+  # (a linear alpha ramp dithers as soft bands; nested ellipses would ring the face)
+  grad face = linear(90, lavaDeep.alpha(24%), lavaDeep.alpha(0%))
+  mask volcano:
+    rect face 0:62 (w-1):150 fill
+
+  # ---- lava flows down the slopes --------------------------------------
+  grad lavaR = linear(90, lavaCore, lavaMid, lavaDeep, lavaDark)
+  curve lavaR 124:76 138:92 148:112 162:132 176:150 w3
+  curve lavaHot 124:76 138:92 148:112 162:132 176:150 w1
+  grad lavaL = linear(90, lavaHot, lavaDeep, lavaDark)
+  curve lavaL 120:78 110:98 102:120 96:140 92:151 w2
+  curve lavaHot 120:78 110:98 102:120 96:140 92:151 w1
+  # hotspots where flows reach the base
+  circle lavaHot.alpha(70%) 176:150 4 fill
+  circle lavaHot.alpha(70%) 93:151 3 fill
+
+  # ---- crater glow (elliptical bloom + fountain + core) ----------------
+  ellipse lavaDark.alpha(8%)  124:66 56:46 fill
+  ellipse lavaDark.alpha(12%) 124:66 42:35 fill
+  ellipse lavaDeep.alpha(22%) 124:68 26:21 fill
+  ellipse lavaMid.alpha(46%)  124:70 14:12 fill
+  ellipse lavaHot.alpha(55%)  124:60 5:16 fill
+  ellipse lavaHot.alpha(75%)  124:71 8:8 fill
+  circle lavaCore 124:71 3 fill
+  px #ffffff 124:71
+
+  # ---- embers rising ---------------------------------------------------
+  scatter e 76 4 rect(100:14, 152:76):
+    circle lavaHot.alpha(0.3 + rand(5, e.x + e.y) * 0.6) e (if rand(6, e.x * 3 + e.y) > 0.72 then 1 else 0) fill
+
+  # ---- foreground ground (irregular rocky rim) -------------------------
+  mask ground = profile(0..w, groundY)
+  grad soil = linear(90, rockBase, rockShad)
+  fill soil ground
+  grain ground 0.12 17 rockShad
+  rim ground 0:1 lavaDark 1
+
+  # foreground lava pool — dark crust ring with a glowing crack inside
+  mask crust = ellipse(120:180, 40:9)
+  fill rockShad crust
+  mask pool = ellipse(120:180, 32:6)
+  grad poolGrad = radial(lavaCore, lavaDeep)
+  fill poolGrad pool
+  ripple pool 0.4 21 lavaHot.alpha(60%)
+  lightRegion ground 120:180 lavaMid 0.34
+
+  # glowing seams creeping out of the pool (dark crust trough + hot core)
+  curve rockShad 84:181 66:185 46:181 w3
+  curve lavaMid.alpha(88%) 84:181 66:185 46:181 w1
+  curve rockShad 156:179 178:184 200:180 w3
+  curve lavaMid.alpha(88%) 156:179 178:184 200:180 w1
+
+  # ---- foreground boulders (rim-lit by the glow) -----------------------
+  mask rk1 = curvePoly(26:176, 42:160, 64:168, 70:187, 30:191)
+  fill rockShad rk1
+  ambientOcclusion rk1 rockShad 0.5
+  rim rk1 0:1 lavaMid.alpha(80%) 1
+  mask rk2 = curvePoly(198:176, 216:166, 234:174, 234:191, 200:191)
+  fill rockShad rk2
+  ambientOcclusion rk2 rockShad 0.5
+  rim rk2 0:1 lavaMid.alpha(80%) 1
+  mask rk3 = curvePoly(176:184, 186:178, 198:184, 194:191, 176:191)
+  fill rockShad rk3
+  ambientOcclusion rk3 rockShad 0.5
+  rim rk3 0:1 lavaDeep.alpha(85%) 1
+
+  # scattered rim-lit rubble on the floor (avoids pool + boulders)
+  scatter r 11 5 ground.subtract(crust).subtract(rk1).subtract(rk2).subtract(rk3):
+    circle rockShad r 1 fill
+    px lavaMid.alpha(45%) (r - 0:1)
+
+# ---- export ----------------------------------------------------------
+export volcano volcano:
+  png @1 @4

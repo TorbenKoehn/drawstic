@@ -1,0 +1,14 @@
+{
+ "columns": 3,
+ "image": "swords.png",
+ "imageheight": 128,
+ "imagewidth": 192,
+ "margin": 0,
+ "name": "swords",
+ "spacing": 0,
+ "tilecount": 6,
+ "tileheight": 64,
+ "tilewidth": 64,
+ "type": "tileset",
+ "version": "1.10"
+}

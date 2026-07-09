@@ -1,0 +1,408 @@
+# Marktplatz — belebter Marktplatz am spaeten Nachmittag.
+# Light: sun at upper left (70:46). All shadows fall down and right.
+# Ebenen: Himmel -> ferne Skyline -> Haeuserzeile -> Platz -> Brunnen -> Staende -> Vordergrund.
+
+ink = #2b2333
+shadowC = #322a48
+hazeC = #dfe2ec
+glass = #38445c
+glassHi = #57678a
+trimC = #4a3d33
+
+grad skyG = linear(90, #4a6cae, #f3d9a8)
+grad hazeG = linear(90, #e8dfd2.alpha(0%), #e8dfd2.alpha(45%))
+grad plazaG = linear(90, #cbbfa6, #8a7a66)
+
+fn sagPt(a, b, t, drop) = (lerp(a.x, b.x, t)):(lerp(a.y, b.y, t) + drop * 4 * t * (1 - t))
+
+# ---------- Bauteile ----------
+
+draw windowS(lit) 8x11:
+  if lit:
+    rect #ffca6e 0:0 7:10 fill
+    rect #ffe7ae 1:1 6:4 fill
+  else:
+    rect glass 0:0 7:10 fill
+    rect glassHi 1:1 6:3 fill
+  stroke trimC rect(0:0, 7:10)
+  line trimC 0:5 7:5
+  line trimC 4:0 4:10
+
+draw doorA(c) 12x18:
+  rrect c 0:0 11:17 3 fill
+  rrect c.lighten(12%) 1:1 5:16 2 fill
+  px #e8c87a 8:9
+  rect trimC 0:16 11:17 fill
+
+draw houseGable(wall, roof) 56x104:
+  wl = wall.lighten(10%)
+  wd = wall.darken(12%)
+  rect wall 2:34 53:103 fill
+  rect wl 2:34 6:103 fill
+  rect wd 49:34 53:103 fill
+  rect shadowC.alpha(25%) 2:36 53:39 fill
+  rect wall.darken(18%) 38:14 43:24 fill
+  rect wall.darken(30%) 38:14 43:15 fill
+  poly roof 0:36 27:4 55:36 fill
+  poly roof.lighten(14%) 0:36 27:4 27:36 fill
+  speckle poly(0:36, 27:4, 55:36) 0.05 3 roof.darken(22%).alpha(60%)
+  line roof.darken(20%) 0:36 55:36
+  circle glass 27:24 3 fill
+  stroke trimC circle(27:24, 3)
+  for wy 0..3:
+    for wx 0..3:
+      if !(wy == 2 & wx == 1):
+        lit = rand(5, wx * 7 + wy * 13) > 0.82
+        stamp windowS(lit) (8 + wx * 15):(44 + wy * 19)
+  for wx 0..3:
+    rect #3f6f3f (7 + wx * 15):55 (16 + wx * 15):57 fill
+    for fx 0..4:
+      px #c0503f (9 + wx * 15 + fx * 2):55
+  stamp doorA(wall.darken(35%)) 22:86
+
+draw houseTall(wall, roof) 44x120:
+  wl = wall.lighten(10%)
+  wd = wall.darken(12%)
+  rect wall 2:28 41:119 fill
+  rect wl 2:28 5:119 fill
+  rect wd 38:28 41:119 fill
+  rect shadowC.alpha(25%) 2:30 41:33 fill
+  poly roof 0:30 7:6 36:6 43:30 fill
+  poly roof.lighten(14%) 0:30 7:6 7:30 fill
+  speckle poly(0:30, 7:6, 36:6, 43:30) 0.05 4 roof.darken(22%).alpha(60%)
+  rect roof.darken(15%) 7:6 36:8 fill
+  for wy 0..4:
+    for wx 0..2:
+      lit = rand(6, wx * 11 + wy * 5) > 0.82
+      stamp windowS(lit) (8 + wx * 18):(36 + wy * 18)
+  stamp doorA(wall.darken(35%)) 16:102
+
+draw houseWide(wall, roof) 68x92:
+  wl = wall.lighten(10%)
+  wd = wall.darken(12%)
+  rect wall 2:30 65:91 fill
+  rect wl 2:30 6:91 fill
+  rect wd 61:30 65:91 fill
+  rect shadowC.alpha(25%) 2:32 65:35 fill
+  rect wall.darken(18%) 44:0 49:12 fill
+  rect wall.darken(30%) 44:0 49:1 fill
+  poly roof 0:32 11:8 56:8 67:32 fill
+  poly roof.lighten(14%) 0:32 11:8 11:32 fill
+  speckle poly(0:32, 11:8, 56:8, 67:32) 0.05 5 roof.darken(22%).alpha(60%)
+  rect roof.darken(15%) 11:8 56:10 fill
+  for wy 0..2:
+    for wx 0..4:
+      lit = rand(7, wx * 3 + wy * 17) > 0.82
+      stamp windowS(lit) (7 + wx * 15):(38 + wy * 17)
+  rect glass 8:74 30:88 fill
+  rect glassHi 9:75 29:79 fill
+  stroke trimC rect(8:74, 30:88)
+  stamp doorA(wall.darken(35%)) 42:74
+
+draw stall(ca, cb) 66x48:
+  wood = #7d5a3c
+  woodD = wood.darken(18%)
+  woodL = wood.lighten(14%)
+  rect woodD 6:31 59:45 fill
+  line woodD.darken(15%) 6:38 59:38
+  for pk 0..4:
+    line woodD.darken(10%) (17 + pk * 11):32 (17 + pk * 11):44
+  rect wood 4:27 61:31 fill
+  line woodL 4:27 61:27
+  rect woodD 4:10 6:27 fill
+  rect woodD 59:10 61:27 fill
+  # Kisten mit Ware auf dem Tresen
+  rect #a5713f 8:20 22:27 fill
+  for gi 0..7:
+    circle #d8642f (10 + gi * 2):21 1 fill
+  line #f08a50 10:20 20:20
+  rect #a5713f 26:20 40:27 fill
+  for gi 0..7:
+    circle #6f9f3f (28 + gi * 2):21 1 fill
+  line #93c363 28:20 38:20
+  rect #a5713f 44:20 58:27 fill
+  for gi 0..7:
+    circle #e0b040 (46 + gi * 2):21 1 fill
+  line #f5d070 46:20 56:20
+  # gestreifte, schraege Markise
+  stripes = ca, cb
+  for i 0..9:
+    x0 = 1 + i * 8
+    poly stripes.cycle(i) x0:0 (x0 + 8):0 (x0 + 11):10 (x0 + 3):10 fill
+  for i 0..8:
+    circle stripes.cycle(i) (8 + i * 8):10 3 fill
+  rect shadowC.alpha(30%) 4:13 61:16 fill
+
+draw fountain 85x62:
+  stone = #b0a493
+  stoneD = stone.darken(16%)
+  stoneL = stone.lighten(12%)
+  water = #6fb0c8
+  waterD = #3f7f9b
+  foam = #eaf6fa
+  # Becken
+  wallR = rect(2:48, 82:56).union(ellipse(42:56, 40:6))
+  fill stoneD wallR
+  ellipse stone 42:48 40:7 fill
+  rim ellipse(42:48, 40:7) 1:1 stoneL 1
+  ellipse waterD 42:48 33:5 fill
+  ellipse water 42:47 31:5 fill
+  ambientOcclusion ellipse(42:56, 40:6) #241f33 0.5
+  # Saeule + Schalen
+  rect stone 38:20 46:47 fill
+  rect stoneL 38:20 40:47 fill
+  rect stoneD 45:20 46:47 fill
+  ellipse stone 42:20 12:4 fill
+  ellipse stoneL 42:19 11:3 fill
+  rect stone 40:8 44:19 fill
+  rect stoneL 40:8 41:19 fill
+  ellipse stone 42:8 7:3 fill
+  ellipse water 42:7 5:2 fill
+  circle stone 42:4 2 fill
+  rim rect(36:6, 48:47) 1:0 stoneL 1
+  # Wasserstrahlen, gespiegelt
+  mirror x=42:
+    curve foam 44:6 52:14 56:32 55:45 w1
+    curve water.alpha(70%) 43:20 48:28 50:44 w1
+  scatter s 12 5 ellipse(42:47, 28:4):
+    px foam.alpha(70%) s
+  ripple ellipse(42:47, 31:5) 0.5 9 foam.alpha(50%)
+
+draw personFar(coat) 6x11:
+  skin = #e0b090
+  circle skin 3:2 1 fill
+  rect coat 1:4 4:8 fill
+  rect coat.darken(25%) 1:9 2:10 fill
+  rect coat.darken(25%) 3:9 4:10 fill
+
+draw person(coat, pants) 8x16:
+  skin = #e8b48c
+  hair = #4a3220
+  circle skin 4:3 2 fill
+  rect hair 2:1 6:2 fill
+  rect coat 2:6 6:11 fill
+  rect coat.darken(12%) 5:6 6:11 fill
+  rect coat 1:7 1:10 fill
+  rect coat 7:7 7:10 fill
+  rect pants 2:12 3:15 fill
+  rect pants 5:12 6:15 fill
+
+draw crate(c) 14x10:
+  base = #9a6f42
+  rect base 0:0 13:9 fill
+  rect c 1:1 12:3 fill
+  line base.darken(25%) 0:0 13:9
+  line base.darken(25%) 0:9 13:0
+  stroke base.darken(30%) rect(0:0, 13:9)
+
+draw barrel 12x14:
+  bw = #8a6142
+  rrect bw 0:1 11:13 3 fill
+  rect bw.lighten(14%) 2:1 4:13 fill
+  line #4f4a55 0:4 11:4
+  line #4f4a55 0:10 11:10
+  ellipse bw.darken(20%) 5:1 5:1 fill
+
+draw treeSmall 34x44:
+  trunk = #6e4a34
+  leafD = #4a7038
+  leaf = #5f8f46
+  leafL = #79a858
+  rect trunk 15:26 18:43 fill
+  rect trunk.darken(15%) 17:26 18:43 fill
+  canopy = circle(16:14, 12).union(circle(8:18, 8)).union(circle(25:17, 8)).union(circle(16:7, 8))
+  fill leafD canopy
+  fill leaf canopy.intersect(circle(12:11, 12))
+  fill leafL canopy.intersect(circle(9:9, 7))
+  speckle canopy 0.18 7 leafD.darken(20%)
+  rim canopy 1:1 leafL.lighten(10%) 1
+
+draw lampPost 12x40:
+  iron = #3a3742
+  rect iron 5:8 6:39 fill
+  quad iron 5:8 5:2 11:2
+  rect #2f2c38 3:38 8:39 fill
+  rrect #ffd98f 9:2 11:6 1 fill
+  circle #ffd98f.alpha(25%) 10:4 4 fill
+
+draw cart 26x16:
+  wood = #8a6142
+  woodD = wood.darken(20%)
+  poly wood 0:4 21:4 23:9 2:9 fill
+  line wood.lighten(15%) 0:4 21:4
+  line woodD 22:5 25:2
+  circle woodD 6:12 3 fill
+  circle woodD 17:12 3 fill
+  px wood.lighten(20%) 6:12
+  px wood.lighten(20%) 17:12
+  ellipse #d9c49a 7:3 3:2 fill
+  ellipse #cbb283 13:2 3:2 fill
+  ellipse #d9c49a 18:3 2:2 fill
+
+draw pigeon 4x3:
+  pal g=#8a8f9a d=#5a5f6a
+  pixels:
+    .gg.
+    gggd
+    .g..
+
+# ---------- Szene ----------
+
+draw market 480x300:
+  # Himmel + Sonne
+  bg skyG
+  circle #ffe9b0.alpha(10%) 70:46 34 fill
+  circle #ffe9b0.alpha(16%) 70:46 24 fill
+  circle #ffe9b0.alpha(28%) 70:46 15 fill
+  circle #fff2cf 70:46 9 fill
+  # Wolken
+  curvePoly #fff5e6.alpha(55%) 128:58 158:50 196:56 176:66 138:64 fill
+  curvePoly #fff5e6.alpha(45%) 316:40 342:34 368:42 344:48 fill
+  # Voegel
+  for bi 0..4:
+    bx = 200 + bi * 34
+    by = 36 + (bi mod 2) * 9
+    line ink.alpha(55%) (bx - 2):(by + 1) bx:by
+    line ink.alpha(55%) bx:by (bx + 2):(by + 1)
+  # ferne Skyline (Luftperspektive)
+  far = #b9c3d6
+  rect far 0:120 66:165 fill
+  poly far 6:120 32:98 58:120 fill
+  rect far 120:128 180:165 fill
+  poly far 126:128 150:106 174:128 fill
+  # ferner Kirchturm schliesst die Gasse auf der Mittelachse
+  tower = #aab4c8
+  rect tower 243:112 259:165 fill
+  poly tower 240:112 251:92 262:112 fill
+  rect #8e93a8 249:120 253:126 fill
+  rect far 300:124 360:165 fill
+  poly far 306:124 330:102 354:124 fill
+  rect far 430:126 479:165 fill
+  rect hazeG 0:60 479:165 fill
+  # Haeuserzeile (steht auf y=166)
+  stamp houseWide(#d9a86a, #7a4a3c) 0:166 anchor bottomLeft
+  stamp houseGable(#c47a5a, #5d4a5e) 72:166 anchor bottomLeft
+  stamp houseTall(#e3cfa8, #77504a) 131:166 anchor bottomLeft
+  stamp houseGable(#97a5b8, #6b4440) 178:166 anchor bottomLeft
+  stamp houseTall(#c9a27a, #59616e) 268:166 anchor bottomLeft
+  stamp houseWide(#b8826a, #6e4a3e) 315:166 anchor bottomLeft
+  stamp houseGable(#dbc292, #7a5a40) 386:166 anchor bottomLeft
+  stamp houseTall(#a9a2b0, #4f5866) 445:166 anchor bottomLeft
+  rect shadowC.alpha(28%) 0:166 479:168 fill
+  # Wimpelketten
+  flagCols = #c0503f, #e8d8b0, #3f7f78, #e0b040
+  bA = 100:96
+  bB = 226:104
+  curve ink.alpha(60%) sagPt(bA, bB, 0, 9) sagPt(bA, bB, 0.25, 9) sagPt(bA, bB, 0.5, 9) sagPt(bA, bB, 0.75, 9) sagPt(bA, bB, 1, 9)
+  for i 0..9:
+    fp = sagPt(bA, bB, (i + 0.5) / 9, 9)
+    poly flagCols.cycle(i) fp (fp + 5:0) (fp + 2:6) fill
+  cA = 292:98
+  cB = 420:102
+  curve ink.alpha(60%) sagPt(cA, cB, 0, 9) sagPt(cA, cB, 0.25, 9) sagPt(cA, cB, 0.5, 9) sagPt(cA, cB, 0.75, 9) sagPt(cA, cB, 1, 9)
+  for i 0..9:
+    fp = sagPt(cA, cB, (i + 0.5) / 9, 9)
+    poly flagCols.cycle(i + 2) fp (fp + 5:0) (fp + 2:6) fill
+  # Platz: Kopfsteinpflaster mit Perspektive (nah = grob, fern = fein + Dunst)
+  cobble = #b5a28c
+  cobbleHi = #d2bfa4
+  rect plazaG 0:160 479:299 fill
+  yy = 160
+  for r2 0..15:
+    rh = 4 + r2
+    cw = rh * 2 + 2
+    n = 480 // cw + 2
+    off = if r2 mod 2 == 0 then 0 else cw // 2
+    t3 = r2 / 12
+    for ci 0..n:
+      cx = ci * cw - off
+      v = noise(21, ci * 0.7, r2 * 0.9)
+      cc = cobble.mix(cobbleHi, v * (20% + t3 * 35%)).mix(hazeC, (1 - t3) * 42%).darken(t3 * 6%)
+      rr = if rh < 10 then 1 else 2
+      rrect cc cx:yy (cx + cw - 2):(yy + rh - 2) rr fill
+    yy += rh
+  scatter sp 130 11 rect(0:170, 479:299):
+    px cobbleHi.alpha(30%) sp
+  # Gassen-Durchblick zwischen den Haeusern, mit ferner Silhouette
+  poly hazeC.alpha(55%) 238:166 264:166 259:130 243:130 fill
+  rect #8e93a8 249:154 251:161 fill
+  # warmer Lichtteich um den Brunnen
+  ellipse #ffd98f.alpha(12%) 240:245 140:44 fill
+  # grosser weicher Gebaeudeschatten faellt nach rechts unten auf den Platz
+  poly shadowC.alpha(16%) 0:166 96:166 210:299 0:299 fill
+  # ferne Marktgaenger an der Haeuserzeile (Paare, leicht versetzt)
+  farFolk = #a05a54, #5a7a9a, #b08a4a, #6f8f5f, #8a6a8a, #c07a5a
+  farPts = 58:180, 68:182, 214:179, 300:183, 310:181, 436:182
+  for pf 0..6:
+    fpp = farPts[pf]
+    ellipse shadowC.alpha(20%) (fpp + 3:0) 4:1 fill
+    stamp personFar(farFolk.cycle(pf)) fpp anchor bottom
+  # Mittelgrund: Passanten-Paar links, Kind am Karren rechts
+  ellipse shadowC.alpha(26%) 179:245 6:2 fill
+  stamp person(#5a7a9a, #3a3648) 175:246 anchor bottom
+  ellipse shadowC.alpha(26%) 188:246 6:2 fill
+  stamp person(#c07a5a, #4a3a50) 185:247 anchor bottom flipx
+  ellipse shadowC.alpha(26%) 372:294 5:2 fill
+  stamp personFar(#c0503f) 369:294 anchor bottom
+  # Brunnen (Mittelpunkt) mit Boden- und Wurfschatten
+  ellipse shadowC.alpha(22%) 268:262 46:8 fill
+  ellipse shadowC.alpha(30%) 240:260 42:7 fill
+  stamp fountain 240:262 anchor bottom
+  # Laternen flankieren den Brunnen
+  ellipse shadowC.alpha(28%) 186:271 8:2 fill
+  stamp lampPost 182:272 anchor bottom
+  ellipse shadowC.alpha(28%) 302:275 8:2 fill
+  stamp lampPost 298:276 anchor bottom
+  # linker Stand (Haendler hinterm Tresen, Kunden davor)
+  stamp person(#7a3f4e, #3f3a4a) 100:232 anchor bottom
+  ellipse shadowC.alpha(26%) 103:250 42:6 fill
+  stamp stall(#c0503f, #ecdfc8) 70:250 anchor bottomLeft
+  poly shadowC.alpha(22%) 136:238 176:252 158:264 118:250 fill
+  ellipse shadowC.alpha(28%) 152:263 6:2 fill
+  stamp person(#3f6f5f, #4a3a50) 148:263 anchor bottom
+  ellipse shadowC.alpha(28%) 162:266 6:2 fill
+  stamp person(#b08a4a, #5a4a3a) 158:266 anchor bottom flipx
+  # rechter Stand
+  stamp person(#4a5f8a, #3a3648) 372:244 anchor bottom
+  ellipse shadowC.alpha(26%) 363:262 42:6 fill
+  stamp stall(#3f7f78, #ecdfc8) 330:262 anchor bottomLeft flipx
+  poly shadowC.alpha(22%) 396:250 440:264 420:278 378:262 fill
+  ellipse shadowC.alpha(28%) 318:274 6:2 fill
+  stamp person(#8a4a6a, #3f3a4a) 314:274 anchor bottom flipx
+  # Kisten + Fass am linken Vordergrund, oberste Kiste leicht verkantet
+  ellipse shadowC.alpha(30%) 36:296 24:4 fill
+  ellipse shadowC.alpha(28%) 60:296 10:3 fill
+  stamp crate(#6f9f3f) 18:296 anchor bottomLeft
+  stamp crate(#d8642f) 33:298 anchor bottomLeft
+  stamp crate(#e0b040) 20:276 transform rotate(-7).about(7:5)
+  stamp barrel 52:298 anchor bottomLeft
+  # Handkarren mit Saecken rechts im Vordergrund
+  ellipse shadowC.alpha(26%) 356:294 16:3 fill
+  stamp cart 340:296 anchor bottomLeft
+  # Baum rahmt rechts
+  ellipse shadowC.alpha(32%) 448:294 10:2 fill
+  ellipse shadowC.alpha(24%) 462:296 24:4 fill
+  stamp treeSmall 414:208 scale2
+  # Menschen am Brunnen + Tauben
+  ellipse shadowC.alpha(28%) 214:272 6:2 fill
+  stamp person(#c0503f, #3a3648) 210:272 anchor bottom
+  stamp pigeon 226:268
+  stamp pigeon 254:274 flipx
+  stamp pigeon 206:256
+  stamp pigeon 158:228 flipx
+  stamp pigeon 262:280
+  stamp pigeon 232:284 flipx
+  # auffliegende Taube
+  line #8a8f9a 268:238 271:236
+  line #8a8f9a 271:236 274:238
+  # Foreground passerby (large)
+  ellipse shadowC.alpha(28%) 259:297 14:3 fill
+  stamp person(#8a5a9a, #3a3648) 250:298 anchor bottom scale2
+  # Atmosphaere: warmes Sonnenlicht von links oben, kuehler Schleier rechts unten
+  plazaR = rect(0:160, 479:299)
+  grain plazaR 0.12 13 #6b5a4a
+  lightRegion rect(0:0, 479:299) 70:46 #ffd98f 18%
+  shadeRegion rect(0:0, 479:299) 70:46 #2f2a4a 10%
+
+export market market:
+  png @1 @4

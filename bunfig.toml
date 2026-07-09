@@ -1,0 +1,21 @@
+[test]
+# Coverage is opt-in (`bun test --coverage` / `bun run test:coverage`) so plain
+# `bun test` stays fast for dev; CI's coverage job enforces the thresholds below.
+#
+# Bun enforces coverageThreshold PER FILE (verified empirically on 1.3.9), so
+# the gate sits a hair under the two worst legitimate files — jpeg.ts (93.75%
+# funcs) and color.ts (99.55% lines). Aggregate achieved: 99.54% funcs /
+# 99.94% lines. The prior batch of proven-dead branches (lexer indent, lint
+# narrowing, parser #parseUnary, values defensive returns, eval dead flag/mix/
+# keyword branches, the unreachable-then-now-reachable import-cycle error) was
+# removed, so lines ratcheted up. What remains is a thin residue of
+# coverage-instrumentation artifacts and one legit gap, verified line by line —
+#   src/color.ts:348        one HSL hue branch (mx===g) that no fixture exercises
+#   src/png.ts / build.ts / cli.ts  instrumentation artifacts (break-after-IEND etc.)
+#   src/jpeg.ts / raster.ts phantom function records (type-only / default ctor)
+#   src/eval.ts             lcov per-function artifact (methods split across arrows)
+# The functions gate stays pinned by jpeg.ts's synthesized ctor (93.75%); it
+# can't rise even though eval.ts sits at 96.21%.
+coverageThreshold = { lines = 0.995, functions = 0.937 }
+coverageSkipTestFiles = true
+coverageReporter = ["text", "lcov"]

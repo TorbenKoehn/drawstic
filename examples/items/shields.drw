@@ -1,0 +1,216 @@
+theme shieldsTheme:
+  pal:
+    k = #1b2330
+    l = #dbe4ef
+    s = #94a2b6
+    d = #5a6678
+    w = #94643c
+    m = #654126
+    u = #704d34
+    c = #aa3f49
+    g = #c8a25e
+    b = #4d658e
+    n = #2d3a50
+    q = #ebe0c2
+    e = #84e7ff
+    t = #245c82
+    p = #3cbde7
+  size 64x64
+  mode pixel
+  style """
+  Shield item family, 64x64 transparent sprites.
+  One light contract: top-left light, bottom-right falloff on every shield body.
+  Common build: bottom shadow ellipse first, 2px outer outline, 1-2px steel rim, compact emblem detail.
+  Front-facing with a slight rightward lift; silhouettes stay vertically centered and bottom-weighted.
+  k=ink, l/s/d=steel ramp, w/m=wood ramp, u=leather, c=crimson, g=gold, b/n=blue ramp, q=bone cloth, e/t/p=magic cyan ramp.
+  """
+
+use shieldsTheme
+
+lightPt = -4:-4
+
+draw runeSpark(a) 5x5:
+  px a 2:0
+  px a 2:4
+  px a 0:2
+  px a 4:2
+  px a 2:2
+
+draw roundShieldBase 32x32:
+  ellipse k.alpha(18%) 16:27 9:2 fill
+  body = circle(16:15, 10)
+  face = circle(16:15, 8)
+  edge = body.subtract(face)
+  fill linear(90, l, d) edge
+  fill linear(90, w.lighten(8%), m) face
+  shadeRegion face lightPt m 0.2
+  lightRegion face lightPt q.alpha(55%) 0.14
+  stroke k body w2
+  circle linear(90, l, d) 16:15 3 fill
+  circle k 16:15 3
+  rect u 15:8 16:22 fill
+  rect u 10:14 22:15 fill
+  curve m 11:10 12:15 10:20
+  curve q.alpha(40%) 20:10 19:15 21:20
+  circle g 16:6 1 fill
+  circle g 24:15 1 fill
+  circle g 16:24 1 fill
+  circle g 7:15 1 fill
+  line q.alpha(55%) 10:8 18:8
+
+draw heraldShieldBase 32x32:
+  ellipse k.alpha(18%) 16:27 8:2 fill
+  body = rrect(8:5, 23:17, 4).union(poly(8:12, 23:12, 16:27))
+  face = rrect(10:7, 21:16, 3).union(poly(10:13, 21:13, 16:24))
+  edge = body.subtract(face)
+  fill linear(90, l, d) edge
+  fill linear(90, c.lighten(10%), c.darken(20%)) face
+  shadeRegion face lightPt c.darken(28%) 0.18
+  lightRegion face lightPt q.alpha(35%) 0.12
+  stroke k body w2
+  rect g 11:8 20:10 fill
+  rect g 15:8 16:21 fill
+  poly g 11:14 20:14 16:19 fill
+  line q 12:11 19:11
+  line q 12:12 14:20
+  line q 20:12 18:20
+  circle g 16:24 1 fill
+
+draw towerShieldBase 32x32:
+  ellipse k.alpha(18%) 16:28 8:2 fill
+  body = rrect(10:3, 21:28, 4)
+  face = rrect(12:5, 19:25, 3)
+  edge = body.subtract(face)
+  fill linear(90, l, d) edge
+  fill linear(90, b.lighten(10%), n) face
+  shadeRegion face lightPt n.darken(18%) 0.2
+  lightRegion face lightPt q.alpha(28%) 0.11
+  stroke k body w2
+  rect linear(90, l, d) 12:6 19:7 fill
+  rect linear(90, l, d) 15:6 16:24 fill
+  rect linear(90, d, l) 12:23 19:24 fill
+  rect u 12:8 13:22 fill
+  rect u 18:8 19:22 fill
+  line q.alpha(55%) 12:7 18:7
+  poly g 16:11 18:13 16:15 14:13 fill
+  circle g 13:10 1 fill
+  circle g 18:10 1 fill
+  circle g 13:19 1 fill
+  circle g 18:19 1 fill
+
+draw bucklerBase 32x32:
+  ellipse k.alpha(16%) 16:24 7:2 fill
+  body = circle(16:15, 7)
+  face = circle(16:15, 5)
+  edge = body.subtract(face)
+  fill linear(90, l, d) edge
+  fill linear(90, s.lighten(10%), d) face
+  shadeRegion face lightPt d.darken(15%) 0.18
+  lightRegion face lightPt q.alpha(30%) 0.12
+  stroke k body w2
+  circle linear(90, l, d) 16:15 3 fill
+  circle k 16:15 3
+  line d 16:10 16:12
+  line d 19:15 17:15
+  line d 16:20 16:18
+  line d 13:15 15:15
+  circle g 16:9 1 fill
+  circle g 22:15 1 fill
+  circle g 16:21 1 fill
+  circle g 10:15 1 fill
+  line q.alpha(45%) 12:11 18:11
+
+draw woodShieldBase 32x32:
+  ellipse k.alpha(18%) 16:28 9:2 fill
+  body = poly(7:7, 24:7, 27:13, 22:25, 9:25, 4:13)
+  face = poly(9:9, 22:9, 24:14, 20:23, 11:23, 7:14)
+  edge = body.subtract(face)
+  fill linear(90, s, d) edge
+  fill linear(90, w.lighten(10%), m) face
+  shadeRegion face lightPt m 0.22
+  lightRegion face lightPt q.alpha(40%) 0.11
+  stroke k body w2
+  line m 12:10 12:22
+  line m 16:10 16:22
+  line m 20:10 20:22
+  curve q.alpha(40%) 10:12 11:16 10:20
+  curve q.alpha(30%) 18:11 19:15 18:21
+  poly linear(90, l, d) 13:12 15:11 19:20 17:21 fill
+  circle g 14:13 1 fill
+  circle g 18:19 1 fill
+  circle g 8:14 1 fill
+  circle g 23:14 1 fill
+
+draw magicBarrierBase 32x32:
+  ellipse t.alpha(16%) 16:27 9:2 fill
+  body = poly(16:4, 23:8, 26:16, 23:24, 16:28, 9:24, 6:16, 9:8)
+  face = poly(16:7, 21:10, 23:16, 21:22, 16:25, 11:22, 9:16, 11:10)
+  edge = body.subtract(face)
+  fill linear(90, e.alpha(78%), t.alpha(78%)) edge
+  fill radial(p.alpha(36%), p.alpha(6%)) face
+  lightRegion body lightPt e.alpha(80%) 0.18
+  shadeRegion body lightPt t.alpha(80%) 0.12
+  stroke t body w2
+  stroke e face w1
+  line e 11:11 21:21
+  line e 21:11 11:21
+  rect e 15:9 16:22 fill
+  rect e 10:15 22:16 fill
+  stamp runeSpark(e) 16:7 anchor center
+  stamp runeSpark(e) 24:16 anchor center
+  stamp runeSpark(e) 16:25 anchor center
+  stamp runeSpark(e) 8:16 anchor center
+  circle q.alpha(45%) 13:12 1 fill
+  circle q.alpha(45%) 19:20 1 fill
+
+draw roundShield 64x64:
+  stamp roundShieldBase 0:0 scale2
+
+draw heraldShield 64x64:
+  stamp heraldShieldBase 0:0 scale2
+
+draw towerShield 64x64:
+  stamp towerShieldBase 0:0 scale2
+
+draw buckler 64x64:
+  stamp bucklerBase 0:0 scale2
+
+draw woodShield 64x64:
+  stamp woodShieldBase 0:0 scale2
+
+draw magicBarrier 64x64:
+  stamp magicBarrierBase 0:0 scale2
+
+tileset shields 64x64:
+  tiles roundShield, heraldShield, towerShield, buckler, woodShield, magicBarrier
+  cols 3
+
+atlas shieldsAtlas:
+  sprites roundShield, heraldShield, towerShield, buckler, woodShield, magicBarrier
+  pad 1
+
+export roundShield examples/items/shields/round-shield:
+  png @1 @4
+
+export heraldShield examples/items/shields/herald-shield:
+  png @1 @4
+
+export towerShield examples/items/shields/tower-shield:
+  png @1 @4
+
+export buckler examples/items/shields/buckler:
+  png @1 @4
+
+export woodShield examples/items/shields/wood-shield:
+  png @1 @4
+
+export magicBarrier examples/items/shields/magic-barrier:
+  png @1 @4
+
+export shields examples/items/shields/shields-tiles:
+  png
+  tiled
+
+export shieldsAtlas examples/items/shields/shields-atlas:
+  png
+  atlasJson

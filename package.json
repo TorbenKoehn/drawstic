@@ -1,0 +1,143 @@
+{
+  "name": "drawstic",
+  "version": "0.0.0",
+  "description": "Deterministic drawing engine with an LLM-optimized Recipe DSL — render icons, pixel art and graphics to PNG, SVG and JPEG from the CLI or as a library.",
+  "keywords": [
+    "drawstic",
+    "deterministic",
+    "drawing",
+    "rendering",
+    "pixel-art",
+    "icons",
+    "png",
+    "svg",
+    "jpeg",
+    "dsl",
+    "llm",
+    "cli",
+    "recipe"
+  ],
+  "license": "MIT",
+  "author": "Torben Koehn",
+  "homepage": "https://github.com/TorbenKoehn/drawstic#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TorbenKoehn/drawstic.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TorbenKoehn/drawstic/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "bin": {
+    "drawstic": "dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/eval.d.ts",
+      "import": "./dist/eval.js",
+      "default": "./dist/eval.js"
+    },
+    "./engine": {
+      "types": "./dist/eval.d.ts",
+      "import": "./dist/eval.js",
+      "default": "./dist/eval.js"
+    },
+    "./parser": {
+      "types": "./dist/parser.d.ts",
+      "import": "./dist/parser.js",
+      "default": "./dist/parser.js"
+    },
+    "./lexer": {
+      "types": "./dist/lexer.d.ts",
+      "import": "./dist/lexer.js",
+      "default": "./dist/lexer.js"
+    },
+    "./ast": {
+      "types": "./dist/ast.d.ts",
+      "import": "./dist/ast.js",
+      "default": "./dist/ast.js"
+    },
+    "./color": {
+      "types": "./dist/color.d.ts",
+      "import": "./dist/color.js",
+      "default": "./dist/color.js"
+    },
+    "./diagnostics": {
+      "types": "./dist/diagnostic.d.ts",
+      "import": "./dist/diagnostic.js",
+      "default": "./dist/diagnostic.js"
+    },
+    "./values": {
+      "types": "./dist/values.d.ts",
+      "import": "./dist/values.js",
+      "default": "./dist/values.js"
+    },
+    "./framebuffer": {
+      "types": "./dist/framebuffer.d.ts",
+      "import": "./dist/framebuffer.js",
+      "default": "./dist/framebuffer.js"
+    },
+    "./png": {
+      "types": "./dist/png.d.ts",
+      "import": "./dist/png.js",
+      "default": "./dist/png.js"
+    },
+    "./jpeg": {
+      "types": "./dist/jpeg.d.ts",
+      "import": "./dist/jpeg.js",
+      "default": "./dist/jpeg.js"
+    },
+    "./svg": {
+      "types": "./dist/svg.d.ts",
+      "import": "./dist/svg.js",
+      "default": "./dist/svg.js"
+    },
+    "./preview": {
+      "types": "./dist/preview.d.ts",
+      "import": "./dist/preview.js",
+      "default": "./dist/preview.js"
+    },
+    "./fmt": {
+      "types": "./dist/fmt.d.ts",
+      "import": "./dist/fmt.js",
+      "default": "./dist/fmt.js"
+    },
+    "./build": {
+      "types": "./dist/build.d.ts",
+      "import": "./dist/build.js",
+      "default": "./dist/build.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js",
+      "default": "./dist/cli.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "typecheck": "tsc --noEmit",
+    "format": "biome format --write .",
+    "lint": "biome check .",
+    "build": "tsc -p tsconfig.build.json",
+    "drawstic": "bun run src/cli.ts",
+    "prepublishOnly": "biome check . && tsc --noEmit && bun test && bun run build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.16",
+    "@types/bun": "latest",
+    "js-tiktoken": "^1.0.21",
+    "typescript": "^5.9.0"
+  }
+}

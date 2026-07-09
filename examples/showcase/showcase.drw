@@ -1,0 +1,60 @@
+# showcase.drw — exercises the full language surface end-to-end.
+drawstic 1
+
+from parts gem, eye
+from themes softShadow
+use themes dusk
+
+TILE = 16
+
+fn band(row) = row // 4 mod 2
+fn ring(c, r) = circle(c, r).subtract(circle(c, r - 2))
+
+mask keyhole = circle(8:5, 4).union(rect(6:5, 9:14))
+
+draw stripes 32x32:
+  cols = k, y
+  for row 0..h:
+    poly cols[band(row)] 0:row w:row
+
+draw face 16x16:
+  bg y
+  stamp eye 3:5
+  stamp eye 11:5 flipx
+  circle k 8:11 2
+
+draw badge 16x16:
+  title "Badge"
+  desc "A keyhole badge"
+  bg #fff
+  mask keyhole:
+    bg #e0b070
+  stroke k ring(8:8, 7) w2
+
+draw scene 32x24:
+  grad sky = linear(90, oklch(0.62, 0.15, 260), y)
+  bg sky
+  rect k 4:18 27:23 fill
+  stamp gem 6:10 scale2
+  stamp gem 20:4 rot45
+  text #ffffff 2:2 "9" font small
+  apply softShadow
+
+draw parametricDot(c) 8x8:
+  circle c 3:3 3 fill
+
+draw dots 24x8:
+  stamp parametricDot(r) 0:0
+  stamp parametricDot(lighten(r, 0.2)) 8:0
+  stamp parametricDot(darken(r, 0.2)) 16:0
+
+export scene showcase/scene:
+  png @1 @2 z9
+  svg ids classes
+  jpeg q80
+
+export badge showcase/badge:
+  png indexed
+
+export stripes showcase/stripes:
+  png

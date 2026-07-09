@@ -1,0 +1,193 @@
+theme armorTheme:
+  pal:
+    k = #241722
+    s = #59687c
+    m = #8d9db1
+    l = #dce6f3
+    d = #5a3925
+    w = #8d5d39
+    g = #caa45b
+    n = #324b69
+    o = #5a7fa6
+    p = #8eb0d3
+  size 64x64
+  mode pixel
+  style """
+  64x64 transparent inventory sprites for armor parts.
+  Light top-left, dark bottom-right.
+  2-4 px breathing room, centered silhouettes, one shared 1px outline.
+  Metal = dark spine, mid fill, pale glints; leather = warm and sparse; cloth = broad folds.
+  """
+
+use armorTheme
+
+draw helm 64x64:
+  shell = rrect(20:8, 44:42, 11)
+  face = rrect(25:20, 39:29, 2)
+  neck = poly(23:34, 41:34, 45:48, 19:48)
+  cheekL = poly(20:21, 24:18, 25:31, 22:37, 19:34, 18:26)
+  cheekR = poly(44:21, 40:18, 39:31, 42:37, 45:34, 46:26)
+  fill m shell
+  fill s shell.intersect(rect(31:8, 44:42))
+  fill l shell.intersect(rect(20:8, 31:23))
+  fill s neck
+  fill l neck.intersect(rect(23:34, 31:40))
+  fill s cheekL
+  fill s cheekR
+  fill k face
+  fill g rect(27:11, 36:14)
+  fill g circle(32:13, 1)
+  line l 27:16 35:16
+  line s 27:17 35:17
+  outline k
+
+draw breastplate 64x64:
+  shell = poly(23:10, 17:17, 15:27, 17:42, 23:51, 41:51, 47:42, 49:27, 47:17, 41:10)
+  collar = poly(22:13, 32:8, 42:13, 39:19, 25:19)
+  skirt = poly(22:41, 42:41, 45:51, 19:51)
+  ridge = poly(29:13, 35:13, 38:27, 35:43, 29:43, 26:27)
+  strapL = poly(19:17, 23:15, 26:21, 24:26, 20:23)
+  strapR = poly(45:17, 41:15, 38:21, 40:26, 44:23)
+  fill m shell
+  fill s shell.intersect(rect(31:10, 49:51))
+  fill l shell.intersect(rect(17:10, 31:25))
+  fill s collar
+  fill l collar.intersect(rect(24:8, 32:15))
+  fill s skirt
+  fill l ridge
+  fill g circle(32:24, 1)
+  fill g circle(32:35, 1)
+  fill g rect(31:25, 33:27)
+  fill d strapL
+  fill d strapR
+  line l 27:20 37:20
+  line s 27:21 37:21
+  outline k
+
+draw gloves 64x64:
+  back = poly(35:17, 28:20, 23:28, 24:39, 29:45, 35:44, 39:39, 40:31, 39:23)
+  front = poly(17:21, 12:28, 11:38, 14:46, 20:48, 26:45, 29:39, 28:29, 24:22)
+  cuffBack = poly(33:30, 29:34, 31:44, 38:43, 41:36, 39:31)
+  cuffFront = poly(15:34, 12:40, 14:49, 22:50, 26:44, 24:36)
+  fill d back
+  fill w back.intersect(rect(28:17, 40:44))
+  fill s back.intersect(rect(35:17, 40:44))
+  fill w front
+  fill d front.intersect(rect(17:21, 28:48))
+  fill s front.intersect(rect(22:21, 29:48))
+  fill s cuffBack
+  fill w cuffBack.intersect(rect(29:30, 41:43))
+  fill s cuffFront
+  fill d cuffFront.intersect(rect(15:34, 26:50))
+  line k 18:27 21:28
+  line k 19:31 22:32
+  line k 20:35 22:36
+  line k 33:24 36:25
+  line k 34:28 37:29
+  fill g circle(19:42, 1)
+  fill g circle(34:41, 1)
+  outline k
+
+draw boots 64x64:
+  left = poly(18:18, 26:14, 30:18, 29:31, 25:44, 18:50, 13:47, 14:37, 16:26)
+  right = poly(38:19, 45:15, 50:19, 49:32, 45:45, 38:51, 33:48, 34:38, 36:27)
+  shaftL = poly(20:8, 28:8, 31:18, 23:18)
+  shaftR = poly(40:9, 48:9, 51:19, 43:19)
+  toeL = poly(14:39, 27:39, 29:43, 25:47, 16:47, 13:44)
+  toeR = poly(35:40, 48:40, 50:44, 46:49, 37:49, 34:45)
+  soleL = poly(13:47, 26:47, 27:50, 15:50)
+  soleR = poly(34:49, 47:49, 48:52, 36:52)
+  fill w left
+  fill d left.intersect(rect(18:18, 30:50))
+  fill s left.intersect(rect(13:14, 21:50))
+  fill d right
+  fill s right.intersect(rect(38:19, 50:51))
+  fill l right.intersect(rect(44:15, 50:34))
+  fill d shaftL
+  fill s shaftL.intersect(rect(20:8, 31:18))
+  fill s shaftR
+  fill l shaftR.intersect(rect(40:9, 51:19))
+  fill s toeL
+  fill s toeR
+  fill k soleL
+  fill k soleR
+  line l 19:23 24:23
+  line l 39:24 45:24
+  fill g circle(24:46, 1)
+  fill g circle(42:48, 1)
+  outline k
+
+draw belt 64x64:
+  strap = poly(10:27, 16:23, 46:23, 54:27, 54:37, 46:41, 16:41, 10:37)
+  buckle = rrect(28:26, 37:36, 1)
+  buckleHole = rrect(30:29, 35:33, 1)
+  tongue = poly(44:30, 57:30, 56:34, 45:36)
+  keeper = poly(24:27, 29:27, 29:31, 24:31)
+  fill d strap
+  fill w strap.intersect(rect(12:23, 32:40))
+  fill s strap.intersect(rect(32:23, 54:40))
+  fill g buckle
+  fill l buckle.intersect(rect(28:26, 32:31))
+  fill s buckle.intersect(rect(33:26, 37:36))
+  fill k buckleHole
+  fill d tongue
+  fill w tongue.intersect(rect(46:30, 57:34))
+  fill s keeper
+  fill w keeper.intersect(rect(24:27, 29:31))
+  line l 19:29 26:29
+  line l 42:29 48:29
+  fill g circle(22:34, 1)
+  fill g circle(45:34, 1)
+  outline k
+
+draw cloak 64x64:
+  body = poly(20:13, 13:19, 10:31, 12:44, 18:53, 27:60, 35:58, 45:54, 52:45, 54:33, 52:21, 46:14, 34:11, 26:12)
+  hood = poly(23:11, 31:7, 39:11, 36:17, 26:17)
+  clasp = rrect(30:15, 35:21, 1)
+  hem = poly(16:49, 24:56, 31:61, 38:59, 46:54, 42:47, 32:53, 22:47)
+  foldL = poly(20:16, 15:29, 17:43, 23:50, 24:34, 23:22)
+  foldM = poly(30:16, 27:30, 29:48, 34:56, 35:36, 33:21)
+  foldR = poly(40:16, 44:29, 43:46, 38:54, 36:36, 38:22)
+  fill n body
+  fill o body.intersect(rect(10:13, 31:60))
+  fill n body.intersect(rect(32:13, 54:60))
+  fill p hood
+  fill n hood.intersect(rect(30:7, 40:17))
+  fill g clasp
+  fill l clasp.intersect(rect(30:15, 32:18))
+  fill s clasp.intersect(rect(33:15, 35:21))
+  fill o hem
+  fill p foldL
+  fill o foldM
+  fill n foldR
+  line p 24:21 22:44
+  line p 32:19 33:48
+  line o 41:21 40:44
+  outline k
+
+tileset armorSheet 64x64:
+  tiles helm, breastplate, gloves, boots, belt, cloak
+  cols 3
+
+export helm helm:
+  png @1 @4
+
+export breastplate breastplate:
+  png @1 @4
+
+export gloves gloves:
+  png @1 @4
+
+export boots boots:
+  png @1 @4
+
+export belt belt:
+  png @1 @4
+
+export cloak cloak:
+  png @1 @4
+
+export armorSheet armor-set:
+  png @1 @4
+  tiled
+  atlasJson

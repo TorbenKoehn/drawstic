@@ -1,0 +1,202 @@
+from std/shapes star4
+
+theme potionsBottles:
+  size 64x64
+  mode pixel
+  pal:
+    k = #2b221f
+    l = #f7fbff
+    g = #c7e8f4
+    d = #7f98a9
+    c = #8d6038
+    m = #aeb6c0
+    r = #ef6d7e
+    b = #59a9ff
+    p = #69c95b
+    y = #f1c34f
+    x = #30303b
+    e = #edf4fb
+  style """
+    Potion and bottle item family.
+    64x64 transparent sprites with one shared 3/4 glass flask footprint.
+    Bottle body sits in a 64px square with a 1px side margin and a narrow neck.
+    Light from top-left: pale left glass strip, darker right glass strip, warm outline.
+    Every item has one small front label/sign so @1 reads clearly.
+    k = outline, l = bright glass highlight, g/d = glass body tones,
+    c = cork, m = metal, r/b/p/y/x = item liquids and marks, e = empty glass.
+  """
+
+use potionsBottles
+
+fn bottleBody() = rrect(7:8, 24:29, 8)
+fn bottleNeck() = rrect(12:2, 20:10, 2)
+fn bottleShell() = bottleBody().union(bottleNeck())
+fn tagBox() = rrect(10:17, 20:24, 2)
+fn liquidBand(lt, rt) = poly(9:lt, 21:rt, 22:28, 9:28)
+
+draw healingPotionBase 32x32:
+  shell = bottleShell()
+  body = bottleBody()
+  fill g.alpha(36%) shell
+  fill l.alpha(24%) shell.intersect(rect(0:0, 13:31))
+  fill d.alpha(18%) shell.intersect(rect(17:0, 31:31))
+  rect l.alpha(65%) 10:4 11:22 fill
+  rect d.alpha(55%) 21:7 22:24 fill
+  fill r.alpha(86%) liquidBand(16, 15)
+  fill r.alpha(55%) poly(10:16, 20:15, 21:18, 20:19, 10:20)
+  fill c rrect(11:1, 21:6, 2)
+  fill c.darken(16%) rect(11:4, 21:6)
+  line l 12:2 20:2
+  line c.darken(20%) 12:5 20:5
+  fill r tagBox()
+  rect l 13:18 18:19 fill
+  rect l 15:17 16:23 fill
+  stroke k shell w1
+
+draw manaPotionBase 32x32:
+  shell = bottleShell()
+  body = bottleBody()
+  fill g.alpha(36%) shell
+  fill l.alpha(24%) shell.intersect(rect(0:0, 13:31))
+  fill d.alpha(18%) shell.intersect(rect(17:0, 31:31))
+  rect l.alpha(65%) 10:4 11:22 fill
+  rect d.alpha(55%) 21:7 22:24 fill
+  fill b.alpha(86%) liquidBand(15, 14)
+  fill b.alpha(52%) poly(10:15, 20:14, 21:18, 20:19, 10:19)
+  fill c rrect(11:1, 21:6, 2)
+  fill c.darken(16%) rect(11:4, 21:6)
+  line l 12:2 20:2
+  line c.darken(20%) 12:5 20:5
+  fill b tagBox()
+  poly l 15:18 18:20 15:22 12:20 fill
+  px l 15:20
+  stroke k shell w1
+
+draw poisonBottleBase 32x32:
+  shell = bottleShell()
+  body = bottleBody()
+  fill g.alpha(36%) shell
+  fill l.alpha(24%) shell.intersect(rect(0:0, 13:31))
+  fill d.alpha(18%) shell.intersect(rect(17:0, 31:31))
+  rect l.alpha(65%) 10:4 11:22 fill
+  rect d.alpha(55%) 21:7 22:24 fill
+  fill p.alpha(84%) liquidBand(17, 16)
+  fill p.darken(10%).alpha(54%) poly(10:17, 20:16, 21:19, 20:20, 10:21)
+  fill c rrect(11:1, 21:6, 2)
+  fill c.darken(16%) rect(11:4, 21:6)
+  line l 12:2 20:2
+  line c.darken(20%) 12:5 20:5
+  fill p tagBox()
+  circle l 15:20 2 fill
+  circle k 14:19 1 fill
+  circle k 16:19 1 fill
+  rect k 14:22 16:22 fill
+  line l 12:24 18:22
+  line l 12:22 18:24
+  stroke k shell w1
+
+draw elixirBottleBase 32x32:
+  shell = bottleShell()
+  body = bottleBody()
+  fill g.alpha(36%) shell
+  fill l.alpha(24%) shell.intersect(rect(0:0, 13:31))
+  fill d.alpha(18%) shell.intersect(rect(17:0, 31:31))
+  rect l.alpha(65%) 10:4 11:22 fill
+  rect d.alpha(55%) 21:7 22:24 fill
+  fill y.alpha(86%) liquidBand(14, 13)
+  fill y.alpha(54%) poly(10:14, 20:13, 21:18, 20:19, 10:18)
+  fill c rrect(11:1, 21:6, 2)
+  fill c.darken(16%) rect(11:4, 21:6)
+  line l 12:2 20:2
+  line c.darken(20%) 12:5 20:5
+  fill y tagBox()
+  stamp star4(l) 16:20 anchor center
+  circle l.alpha(70%) 15:19 1 fill
+  stroke k shell w1
+
+draw bombBottleBase 32x32:
+  shell = bottleShell()
+  body = bottleBody()
+  fill g.alpha(32%) shell
+  fill l.alpha(20%) shell.intersect(rect(0:0, 13:31))
+  fill d.alpha(22%) shell.intersect(rect(17:0, 31:31))
+  rect l.alpha(50%) 10:4 11:22 fill
+  rect d.alpha(65%) 21:7 22:24 fill
+  fill x.alpha(90%) liquidBand(18, 17)
+  fill x.darken(10%).alpha(60%) poly(10:18, 20:17, 21:20, 20:21, 10:22)
+  fill m rrect(11:1, 21:6, 2)
+  fill x.darken(12%) rect(11:4, 21:6)
+  line l 12:2 20:2
+  line m.darken(16%) 12:5 20:5
+  line y 20:1 25:-1 w2
+  line y 22:0 26:-2 w2
+  circle y 24:0 1 fill
+  fill x tagBox()
+  stamp star4(y) 16:20 anchor center
+  stroke k shell w1
+
+draw emptyVialBase 32x32:
+  shell = bottleShell()
+  body = bottleBody()
+  fill e.alpha(30%) shell
+  fill l.alpha(24%) shell.intersect(rect(0:0, 13:31))
+  fill d.alpha(14%) shell.intersect(rect(17:0, 31:31))
+  rect l.alpha(65%) 10:4 11:22 fill
+  rect d.alpha(45%) 21:7 22:24 fill
+  fill e.alpha(14%) body
+  fill e.alpha(8%) poly(10:17, 20:16, 21:18, 20:19, 10:21)
+  fill m rrect(11:1, 21:5, 2)
+  fill e.alpha(10%) rect(11:3, 21:5)
+  line l 12:2 20:2
+  line m.darken(12%) 12:4 20:4
+  fill m tagBox()
+  line k 12:19 19:22
+  line k 12:22 19:19
+  line l 21:11 24:14
+  line l 24:14 21:17
+  stroke k shell w1
+
+draw healingPotion 64x64:
+  stamp healingPotionBase 0:0 scale2
+
+draw manaPotion 64x64:
+  stamp manaPotionBase 0:0 scale2
+
+draw poisonBottle 64x64:
+  stamp poisonBottleBase 0:0 scale2
+
+draw elixirBottle 64x64:
+  stamp elixirBottleBase 0:0 scale2
+
+draw bombBottle 64x64:
+  stamp bombBottleBase 0:0 scale2
+
+draw emptyVial 64x64:
+  stamp emptyVialBase 0:0 scale2
+
+tileset potionsBottlesSheet 64x64:
+  tiles healingPotion, manaPotion, poisonBottle, elixirBottle, bombBottle, emptyVial
+  cols 3
+
+export healingPotion healing-potion:
+  png @1 @4
+
+export manaPotion mana-potion:
+  png @1 @4
+
+export poisonBottle poison-bottle:
+  png @1 @4
+
+export elixirBottle elixir-bottle:
+  png @1 @4
+
+export bombBottle bomb-bottle:
+  png @1 @4
+
+export emptyVial empty-vial:
+  png @1 @4
+
+export potionsBottlesSheet potions-bottles:
+  png
+  atlasJson
+  tiled

@@ -1,0 +1,184 @@
+use media                              # local theme (defined below) — family palette + defaults
+
+# ── Media app-icon family ────────────────────────────────────────────────
+# 6 glyphs (music/video/camera/gallery/mic/podcast) on a rounded accent tile.
+# ONE light direction: top-left. Tile = 135° gradient (light top-left → dark
+# bottom-right) + 1px rim on the top edge; every glyph is a bold white
+# silhouette with a 1px down-right drop shadow. Fixed L/C accents, hue only.
+
+theme media:
+  size 32x32
+  mode pixel
+  pal:
+    k = #20242e                        # ink
+    l = #ffffff                        # glyph (white)
+    d = #10121a                        # glyph drop-shadow
+    m = oklch(0.62, 0.15, 300)         # music  · violet
+    v = oklch(0.62, 0.15, 28)          # video  · red
+    c = oklch(0.62, 0.15, 245)         # camera · blue
+    g = oklch(0.62, 0.15, 152)         # gallery· green
+    n = oklch(0.62, 0.15, 62)          # mic    · amber
+    p = oklch(0.62, 0.15, 340)         # podcast· magenta
+  style """
+    Media app-icon family. Rounded-square tile filling the canvas (1px
+    transparent margin @32/64, flush @16), corner radius ~22% of size
+    (7@32, 3@16, 14@64). Per-icon accent at fixed lightness/chroma, hue
+    only. Light comes from the TOP-LEFT for the whole family: tile is a
+    135° gradient (lighter top-left, darker bottom-right) with a 1px
+    rim-light on the top edge; every glyph is a bold pure-white silhouette,
+    optically centered, carrying a 1px down-right drop shadow. Glyph stroke
+    ~2px @32 (1px @16, 4px @64). Silhouette-first: each glyph must read at
+    100% zoom on its native size.
+  """
+
+# ── Tiles (one per native size, parametric on accent) ─────────────────────
+draw tile32(a) 32x32:
+  grad tg = linear(135, a.lighten(16%), a.darken(20%))
+  mask t = rrect(1:1, 30:30, 7)
+  fill tg t
+  rim t 0:1 a.lighten(40%) 1
+
+draw tile16(a) 16x16:
+  grad tg = linear(135, a.lighten(16%), a.darken(20%))
+  mask t = rrect(1:1, 14:14, 3)
+  fill tg t
+  rim t 0:1 a.lighten(40%) 1
+
+draw tile64(a) 64x64:
+  grad tg = linear(135, a.lighten(16%), a.darken(20%))
+  mask t = rrect(2:2, 61:61, 14)
+  fill tg t
+  rim t 0:1 a.lighten(40%) 1
+
+# ── Glyph silhouettes (white on transparent; stamped with a drop shadow) ──
+draw gMusic 32x32:                       # beamed eighth notes
+  rect l 14:9 15:23 fill                 # left stem
+  rect l 21:9 22:23 fill                 # right stem
+  poly l 14:7 22:7 22:11 14:11 fill      # beam
+  ellipse l 12:23 3:2 fill               # left head
+  ellipse l 19:23 3:2 fill               # right head
+
+draw gVideo 32x32:                       # player screen with cut-out play triangle
+  mask s = rrect(5:9, 26:23, 3).subtract(poly(11:11, 11:21, 21:16))
+  fill l s
+
+draw gCamera 32x32:                      # body + viewfinder bump + lens hole + glint
+  mask b = rrect(4:12, 27:26, 3).union(rect(10:9, 16:12)).subtract(circle(16:19, 5))
+  fill l b
+  circle l 14:17 1 fill                  # top-left glint
+
+draw gGallery 32x32:                     # framed landscape photo
+  rrect l 6:8 25:24 3 w2                 # frame
+  circle l 12:13 2 fill                  # sun (top-left)
+  poly l 7:23 15:15 20:23 fill           # near hill
+  poly l 16:23 22:18 25:23 fill          # far hill
+
+draw gMic 32x32:                         # studio mic seated in a cradle
+  rrect l 13:4 18:16 2 fill              # capsule
+  rect k 14:8 17:8 fill                  # grille slot
+  rect k 14:11 17:11 fill                # grille slot
+  arc l 15:13 7 10 170 w2                # cradle U (opens up, hugs capsule)
+  rect l 15:20 16:25 fill                # stem
+  rrect l 11:25 20:27 2 fill             # base
+
+draw gPodcast 32x32:                     # dot + broadcast arcs
+  circle l 16:23 3 fill
+  arc l 16:24 6 200 340 w2
+  arc l 16:24 10 200 340 w2
+  arc l 16:24 14 200 340 w2
+
+# ── Native 16px redraws (not scaled — bolder, simpler silhouettes) ─────────
+draw gMusic16 16x16:                     # single eighth note
+  rect l 8:3 9:11 fill                   # stem
+  ellipse l 6:11 2:2 fill                # head
+  poly l 9:3 12:5 12:6 9:5 fill          # flag
+
+draw gVideo16 16x16:                     # player screen + play triangle
+  mask s = rrect(2:4, 13:11, 2).subtract(poly(6:5, 6:10, 11:8))
+  fill l s
+
+# ── Native 64px detail redraw (camera with a modelled lens) ───────────────
+draw gCamera64 64x64:
+  mask b = rrect(8:24, 55:53, 8).union(rect(20:17, 33:24))
+  fill l b                               # body + viewfinder bump
+  rect c.darken(18%) 44:27 51:31 fill    # flash window
+  circle c.darken(18%) 32:39 12 fill     # lens: dark glass
+  circle l 32:39 12 w2                    # white rim
+  circle c 32:39 8 fill                    # mid glass
+  circle c.darken(30%) 32:39 4 fill        # inner
+  circle l 27:34 3 fill                    # glint (top-left)
+
+# ── 32px masters (theme size default) ─────────────────────────────────────
+draw music:
+  stamp tile32(m) 0:0
+  stamp gMusic 0:0 shadow 1:1 d.alpha(45%)
+
+draw video:
+  stamp tile32(v) 0:0
+  stamp gVideo 0:0 shadow 1:1 d.alpha(45%)
+
+draw camera:
+  stamp tile32(c) 0:0
+  stamp gCamera 0:0 shadow 1:1 d.alpha(45%)
+
+draw gallery:
+  stamp tile32(g) 0:0
+  stamp gGallery 0:0 shadow 1:1 d.alpha(45%)
+
+draw mic:
+  stamp tile32(n) 0:0
+  stamp gMic 0:0 shadow 1:1 d.alpha(45%)
+
+draw podcast:
+  stamp tile32(p) 0:0
+  stamp gPodcast 0:0 shadow 1:1 d.alpha(45%)
+
+# multi-size family members
+draw music16 16x16:
+  stamp tile16(m) 0:0
+  stamp gMusic16 0:0 shadow 1:1 d.alpha(45%)
+
+draw video16 16x16:
+  stamp tile16(v) 0:0
+  stamp gVideo16 0:0 shadow 1:1 d.alpha(45%)
+
+draw camera64 64x64:
+  stamp tile64(c) 0:0
+  stamp gCamera64 0:0 shadow 2:2 d.alpha(45%)
+
+# ── Exports ───────────────────────────────────────────────────────────────
+export music media/music:
+  png @1 @2
+  svg
+
+export video media/video:
+  png @1 @2
+  svg
+
+export camera media/camera:
+  png @1 @2
+  svg
+
+export gallery media/gallery:
+  png @1 @2
+  svg
+
+export mic media/mic:
+  png @1 @2
+  svg
+
+export podcast media/podcast:
+  png @1 @2
+  svg
+
+export music16 media/music16:
+  png @1 @2
+  svg
+
+export video16 media/video16:
+  png @1 @2
+  svg
+
+export camera64 media/camera64:
+  png @1 @2
+  svg

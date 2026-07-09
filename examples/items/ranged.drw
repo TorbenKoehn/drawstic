@@ -1,0 +1,190 @@
+theme rangedTheme:
+  pal:
+    k = #24160f
+    d = #5b341c
+    b = #8a562f
+    h = #bd8350
+    s = #dbcaa8
+    m = #8f9aa3
+    n = #dce6ee
+    r = #7b4b29
+    l = #a86a3c
+    g = #5f7d4b
+  size 64x64
+  mode pixel
+  style """
+  Ranged inventory set on transparent ground, 64x64 per item.
+  Light fixed top-left. Clear 2-4px breathing margin. Dominant silhouette first, one material cue second.
+  k=outline, d/b/h=wood dark/base/highlight, s=string + pale feather edge, m/n=metal dark/light, r/l=leather dark/base, g=shared fletching accent.
+  Bows lean bottom-left to top-right; crossbow points right; bundles keep the same diagonal family; quiver stands upright with a slight right lean.
+  """
+
+use rangedTheme
+
+draw shortbowBase 32x32:
+  curve d 11:26 8:22 8:17 10:12 13:8 18:7 21:9 22:13 22:18 19:22 17:25
+  curve b 12:26 9:22 9:17 11:12 14:8 18:8 20:10 21:13 21:17 18:21 16:24
+  curve h 13:24 11:20 11:16 12:12 15:9 18:9 19:11 19:14 19:17 17:20 15:22
+  line s 11:26 18:8
+  px m 11:26
+  px n 18:8
+  rrect r 13:13 16:19 2 fill
+  line l 14:14 15:18
+  line s 13:16 16:19
+  line s 13:18 15:20
+  line k 12:12 13:13
+  line k 16:19 17:20
+
+draw longbowBase 32x32:
+  curve d 8:29 6:24 6:17 7:11 9:6 13:3 18:3 22:7 24:13 24:20 22:26 19:29
+  curve b 9:29 7:24 7:17 8:11 10:6 13:4 17:4 21:8 23:13 23:19 21:25 18:28
+  curve h 10:27 8:22 8:16 9:11 11:7 13:5 16:5 19:8 21:13 21:18 19:23 17:26
+  line s 8:29 19:4
+  px m 8:29
+  px n 19:4
+  rrect r 12:14 15:21 2 fill
+  line l 13:15 14:20
+  line s 12:17 15:20
+  line s 12:19 14:22
+
+draw crossbowBase 32x32:
+  mask stock = poly(5:18,17:18,24:15,27:16,24:19,17:20,5:20)
+  fill b stock
+  fill d stock.intersect(rect(5:19,27:20))
+  stroke k stock
+  poly r 10:20 14:20 13:27 9:27 fill
+  poly k 10:20 14:20 13:27 9:27
+  line l 11:21 12:26
+  curve d 23:8 27:10 29:16 27:22 23:24 w2
+  curve h 23:10 26:12 27:16 26:20 23:22
+  line s 24:8 24:24
+  line h 11:16 23:16
+  poly m 28:16 23:13 23:19 fill
+  poly n 27:16 24:14 24:18 fill
+  line k 11:17 23:17
+  px m 18:16
+  px n 19:16
+
+draw arrowBundleBase 32x32:
+  line d 6:26 20:12
+  line b 7:26 21:12
+  line h 7:25 21:11
+  line d 10:24 24:10
+  line b 11:24 25:10
+  line h 11:23 25:9
+  line d 14:22 28:8
+  line b 15:22 29:8
+  line h 15:21 29:7
+  poly m 21:12 25:8 23:14 fill
+  poly n 21:11 24:8 23:12 fill
+  poly m 25:10 29:6 27:12 fill
+  poly n 25:9 28:6 27:10 fill
+  poly m 29:8 31:5 30:10 fill
+  poly n 29:7 31:5 30:9 fill
+  poly g 5:26 8:24 7:20 fill
+  poly s 6:27 10:24 8:20 fill
+  poly g 9:24 12:22 11:18 fill
+  poly s 10:25 14:22 12:18 fill
+  poly g 13:22 16:20 15:16 fill
+  poly s 14:23 18:20 16:16 fill
+  line r 12:21 18:15
+  line l 13:21 19:15
+  line r 14:23 20:17
+  line l 15:23 21:17
+
+draw boltsBase 32x32:
+  line d 7:22 16:18
+  line b 8:22 17:18
+  line h 8:21 17:17
+  line d 10:17 19:13
+  line b 11:17 20:13
+  line h 11:16 20:12
+  line d 13:12 22:8
+  line b 14:12 23:8
+  line h 14:11 23:7
+  poly m 17:18 23:16 19:20 fill
+  poly n 17:17 22:16 19:19 fill
+  poly m 20:13 26:11 22:15 fill
+  poly n 20:12 25:11 22:14 fill
+  poly m 23:8 29:6 25:10 fill
+  poly n 23:7 28:6 25:9 fill
+  rect g 5:21 7:23 fill
+  rect s 7:21 8:23 fill
+  rect g 8:16 10:18 fill
+  rect s 10:16 11:18 fill
+  rect g 11:11 13:13 fill
+  rect s 13:11 14:13 fill
+  line r 10:18 15:16
+  line l 11:18 16:16
+
+draw quiverBase 32x32:
+  line d 12:11 12:3
+  line b 13:11 13:3
+  line d 15:10 15:2
+  line b 16:10 16:2
+  line d 18:12 18:4
+  line b 19:12 19:4
+  poly g 11:3 13:1 13:4 fill
+  poly s 12:4 14:1 14:5 fill
+  poly g 14:2 16:0 16:3 fill
+  poly s 15:3 17:0 17:4 fill
+  poly g 17:4 19:2 19:5 fill
+  poly s 18:5 20:2 20:6 fill
+  mask body = poly(11:9,22:12,19:28,8:25)
+  fill r body
+  fill d body.intersect(poly(17:10,22:12,19:28,15:26))
+  stroke k body
+  ellipse l 16:10 6:2 fill
+  ellipse k 16:10 6:2
+  line h 12:12 19:14
+  line l 10:18 18:20
+  line k 10:19 18:21
+  line s 8:15 5:23
+  line k 9:15 6:23
+  px n 20:15
+  px m 19:16
+
+draw shortbow 64x64:
+  stamp shortbowBase 0:0 scale2
+
+draw longbow 64x64:
+  stamp longbowBase 0:0 scale2
+
+draw crossbow 64x64:
+  stamp crossbowBase 0:0 scale2
+
+draw arrowBundle 64x64:
+  stamp arrowBundleBase 0:0 scale2
+
+draw bolts 64x64:
+  stamp boltsBase 0:0 scale2
+
+draw quiver 64x64:
+  stamp quiverBase 0:0 scale2
+
+tileset rangedSheet 64x64:
+  tiles shortbow, longbow, crossbow, arrowBundle, bolts, quiver
+  cols 3
+
+export shortbow ranged/shortbow:
+  png @1 @4
+
+export longbow ranged/longbow:
+  png @1 @4
+
+export crossbow ranged/crossbow:
+  png @1 @4
+
+export arrowBundle ranged/arrowBundle:
+  png @1 @4
+
+export bolts ranged/bolts:
+  png @1 @4
+
+export quiver ranged/quiver:
+  png @1 @4
+
+export rangedSheet ranged/ranged-sheet:
+  png
+  tiled
+  atlasJson

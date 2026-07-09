@@ -1,0 +1,192 @@
+# desert.drw — desert caravan at sunset (dunes, low sun, oasis, long shadows)
+drawstic 1
+
+from std/shapes blob, dot, capsule, tri
+from std/themes pixelBase
+
+theme duneDusk:
+  with pixelBase
+  style """
+    Desert sunset caravan. Warm low sun on the horizon; long raking shadows away
+    from the sun. Sand as three dune layers: hazy far ridge, stippled mid dune,
+    richly textured sunlit near dune. Camels are flat dark silhouettes.
+  """
+
+use duneDusk
+
+# --- palette ---------------------------------------------------------------
+skyZenith = oklch(0.32, 0.09, 285)
+skyMid = oklch(0.62, 0.14, 35)
+skyHorizon = oklch(0.88, 0.10, 75)
+grad sky = linear(90, skyZenith, skyMid, skyHorizon)
+
+sunCore = #fff6d8
+sunGold = #ffb347
+sunHaze = sunGold.alpha(35%)
+moonPale = oklch(0.9, 0.02, 250).alpha(55%)
+
+duneBase = oklch(0.62, 0.11, 55)
+duneFar = duneBase.mix(skyHorizon, 55%)
+duneFarDark = duneFar.darken(15%)
+duneMid = duneBase
+duneMidDark = duneMid.darken(10%)
+duneNear = duneBase.lighten(12%)
+duneNearDark = duneBase.darken(20%)
+rippleA, rippleB = duneNear.tones(-6%, 6%)
+pebble = duneBase.darken(30%)
+shadowPaint = duneNearDark.alpha(45%)
+trailColor = duneNearDark.darken(8%)
+
+oasisDeep, oasisLite = oklch(0.55, 0.09, 200).tones(-10%, 18%)
+grad water = linear(90, oasisDeep, oasisLite)
+waterBands = oasisDeep.mixes(oasisLite, 3)
+
+palmTrunk = #6b4226
+palmTrunkDark = palmTrunk.darken(20%)
+palmLeaf = oklch(0.5, 0.12, 140)
+palmLeafDark = palmLeaf.darken(18%)
+palmLeafRib = palmLeaf.lighten(18%)
+reedColor = oklch(0.5, 0.1, 130)
+
+rockColor = oklch(0.48, 0.03, 70)
+tentColor = oklch(0.55, 0.05, 50)
+tentDark = tentColor.darken(20%)
+
+silhouette = #201007
+cargo = #b0453c
+
+fn hazy(c) = c.mix(skyHorizon, 45%)
+hazyCamel = hazy(silhouette)
+
+fn ridgeY(seed, x) = 52 + round(noise(seed, x * 0.06, 0) * 10)
+
+path pondOutline:
+  move 20:74
+  quad 28:66 40:68
+  quad 52:72 46:80
+  quad 34:84 22:80
+  close
+
+path trail:
+  move 12:90
+  quad 40:80 65:84
+  bezier 90:78 110:72 138:60
+
+# --- camel silhouette (single palette key, hand-pixeled) --------------------
+draw camel 24x16:
+  pal:
+    k = silhouette
+  pixels:
+    ........................
+    ....................kk..
+    ...................kkkk.
+    ..................kkkkk.
+    ................kkkkkk..
+    .......kkkkkk.kkkkkk....
+    .....kkkkkkkk.kkkkk.....
+    ..kkkkkkkkkkkkkkkkkk....
+    .kkkkkkkkkkkkkkkkkkkk...
+    .kkkkkkkkkkkkkkkkkkkkk..
+    kkkkkkkkkkkkkkkkkkkkkk..
+    kkkkkkkkkkkkkkkkkkkkkk..
+    kkkkkkkkkkkkkkkkkkkkkk..
+    ....kk..kk.....kk..kk...
+    ....kk..kk.....kk..kk...
+    ....kk..kk.....kk..kk...
+
+# --- palm tree component (poly trunk + bezier/quad fronds) -----------------
+draw palmTree 30x34:
+  poly palmTrunkDark 13:33 19:33 17:11 15:11 fill
+  poly palmTrunk 15:33 19:33 17:11 16:11 fill
+
+  poly palmLeafDark 15:11 2:4 17:11 fill
+  poly palmLeaf 15:12 0:16 17:12 fill
+  poly palmLeaf 15:11 29:4 17:11 fill
+  poly palmLeafDark 15:12 29:18 17:12 fill
+  poly palmLeaf 15:10 17:1 18:10 fill
+  poly palmLeafDark 15:12 8:18 17:12 fill
+
+  bezier palmLeafRib 16:11 6:4 2:6 3:9
+  bezier palmLeafRib 16:11 24:4 28:6 27:9
+  quad palmLeafRib 16:11 10:15 9:17
+
+# --- main scene --------------------------------------------------------------
+draw desert 160x96:
+  sunC = 118:44
+
+  bg sky
+  speckle 0.015 5 #ffffffb0
+
+  mask moon = circle(18:14, 7).subtract(circle(22:12, 7))
+  fill moonPale moon
+
+  mask corona = circle(sunC, 18).xor(circle(sunC, 13))
+  fill sunHaze corona
+  circle sunGold sunC 11 fill
+  circle sunCore sunC 6 fill
+  arc sunHaze sunC 26 200 340
+
+  for x 0..160:
+    line duneFar x:ridgeY(3, x) x:70
+
+  stamp tri(duneFarDark) 145:56 scale2
+  stamp tri(duneFarDark) 6:56 rot45
+  stamp dot 100:60 anchor center scale2
+
+  mask midDuneRegion = poly(0:96, 0:66, 22:60, 50:65, 80:58, 112:64, 140:60, 160:67, 160:96)
+  fill duneMid midDuneRegion
+  mask midDuneRegion:
+    dither duneMid duneMidDark 0.5
+
+  mask pond = pondOutline.fill()
+  mask pond:
+    bg water
+  rect waterBands.0 24:78 44:79 fill
+  rect waterBands.1 26:80 42:81 fill
+  rect waterBands.2 28:82 40:82 fill
+
+  line reedColor 20:80 18:72
+  line reedColor 24:81 26:71
+  line reedColor 30:82 29:73
+
+  mask rockCluster = circle(56:78, 3).union(circle(60:80, 2))
+  fill rockColor rockCluster
+  castShadow rockCluster 4:1 shadowPaint
+  ambientOcclusion rockCluster #000000 0.3
+
+  stamp blob(pebble) 66:82 flipy mask rect(66:82, 73:85)
+
+  rect tentColor 6:78 18:88 fill
+  poly tentDark 5:78 19:78 12:70 fill
+
+  stamp palmTree 14:84 anchor bottom shadow 30:6 shadowPaint
+  stamp palmTree 46:82 anchor bottom
+
+  mask nearDuneRegion = poly(55:96, 55:80, 70:68, 90:62, 115:59, 135:63, 150:68, 160:72, 160:96)
+  fill duneNear nearDuneRegion
+  shadeRegion nearDuneRegion sunC duneNearDark 0.45
+  mask nearDuneRegion:
+    grain 0.07 41 duneNear
+    ripple 0.05 53 rippleA
+    speckle 0.02 61 pebble
+
+  stroke trailColor trail w2
+
+  for i 0..3:
+    match i:
+      0: stamp camel 95:45 tint hazyCamel 0.75 shadow (-14):5 shadowPaint
+      1: stamp camel 118:44 shadow 4:6 shadowPaint
+      else: stamp camel 140:48 flipx shadow 22:5 shadowPaint
+
+  stamp capsule(cargo) 124:46
+  rim camel.region.shift(118:44) 0:(-1) #fff8d8a0 1
+  ambientOcclusion rect(118:58, 142:60) #000000 0.35
+
+  for i 0..8:
+    p = (20 + round(rand(23, i) * 130)):(80 + round(rand(29, i) * 12))
+    if rand(31, i) > 0.35:
+      px pebble p
+
+export desert scenes/desert:
+  png @1 @2
+  svg ids classes

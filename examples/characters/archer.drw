@@ -1,0 +1,265 @@
+# Archer — modular chibi character sprite (Ragnarok-Online style, front + side, faction recolor)
+# ONE light contract: sun top-left -> highlights top-left, shadows bottom-right.
+# Big hooded head (~1/3 of the figure), compact torso, short legs, bow near body-height.
+
+warm = #ffe8bf            # light colour
+cool = #2c3550            # cool shadow complement, never pure black
+
+fn lit(c)  = c.mix(warm, 22%)
+fn shd(c)  = c.darken(10%).mix(cool, 20%)
+fn deep(c) = c.darken(20%).mix(cool, 34%)
+
+# warm materials: shade via darken only (a cool mix runs OkLCh through magenta)
+fn litW(c) = c.mix(warm, 20%)
+fn shdW(c) = c.darken(14%)
+fn dpW(c)  = c.darken(28%)
+
+# materials (fixed across factions)
+skin    = #e8b489
+hair    = #6b4a2c
+leather = #7a5330
+wood    = #9c6330
+pants   = #b58a52
+strng   = #efe6cd
+metal   = #c3c8d0
+fletch  = #d9532e
+edge    = #2a2024          # silhouette outline (very dark warm)
+
+# faction cloth colours (the palette-swap axis)
+green = #3f7a3e
+red   = #a83a36
+
+# proportions for a ~60px chibi figure (~2.7 heads). Shared by front AND side.
+headTop      = 1
+shoulderLine = 21
+hipLine      = 38
+kneeLine     = 48
+footLine     = 58
+
+# ---------------------------------------------------------------- parts (front)
+
+# head: big hood + face. bottom-center neck seam at row 20 (silhouette reaches row 21).
+draw head(cloth) 22x22:
+  hood = rrect(1:0, 20:18, 9)
+  face = ellipse(11:12, 5:6)
+  neck = rect(9:17, 12:21)
+  fill skin neck
+  fill cloth hood.subtract(face)
+  fill skin face
+  hoodV = hood.subtract(face)
+  fill lit(cloth) hoodV.intersect(rect(0:0, 9:8))
+  fill shd(cloth) hoodV.intersect(rect(13:7, 21:21))
+  fill deep(cloth) hoodV.intersect(rect(0:15, 21:21))
+  fill shdW(skin) face.intersect(rect(13:9, 21:21))
+  fill shdW(skin) neck.intersect(rect(11:17, 12:21))
+  fill hair rect(6:6, 16:8).intersect(face)
+  fill shdW(hair) rect(6:8, 16:8).intersect(face)
+  fill edge rect(8:11, 9:12)
+  fill edge rect(13:11, 14:12)
+  px warm 8:11
+  px warm 13:11
+  px shdW(skin) 11:14
+  line shdW(skin) 10:16 12:16
+
+# torso: tunic + belt + quiver strap. top seam row 0, hem row 21 (covers leg tops).
+draw torso(cloth) 16x22:
+  body = poly(2:1, 13:1, 15:9, 14:21, 1:21, 0:9)
+  fill cloth body
+  fill lit(cloth) body.intersect(rect(0:0, 6:21))
+  fill shd(cloth) body.intersect(rect(11:0, 15:21))
+  fill deep(cloth) body.intersect(rect(11:15, 15:21))
+  fill skin rect(6:0, 9:2)
+  fill shdW(skin) rect(8:0, 9:2)
+  line leather 2:2 13:14
+  line dpW(leather) 2:3 13:15
+  fill leather rect(1:16, 14:18)
+  fill dpW(leather) rect(1:18, 14:18)
+  px metal 7:17
+
+# leg: pants + boot. top seam row 0 (hip), boot bottom row 21.
+draw leg 8x22:
+  fill pants rect(1:0, 6:13)
+  fill litW(pants) rect(1:0, 2:12)
+  fill shdW(pants) rect(5:1, 6:13)
+  fill leather poly(1:13, 6:13, 7:21, 0:21)
+  fill litW(leather) rect(1:13, 2:16)
+  fill shdW(leather) poly(5:14, 7:21, 5:21)
+  fill dpW(leather) rect(0:20, 7:21)
+
+# front arm hanging, fist grips the bow at the bottom. shoulder row 0, fist rows 13..17.
+draw armBow(cloth) 6x18:
+  fill cloth rect(1:0, 4:6)
+  fill lit(cloth) rect(1:0, 1:6)
+  fill shd(cloth) rect(4:1, 4:6)
+  fill skin rect(1:6, 4:12)
+  fill litW(skin) rect(1:6, 1:11)
+  fill shdW(skin) rect(4:7, 4:12)
+  fill skin rect(0:12, 5:17)
+  fill shdW(skin) rect(4:13, 5:17)
+  px litW(skin) 0:12
+
+# front arm bent up, hand reaches back to nock an arrow. shoulder row 14, hand row 0.
+draw armReach(cloth) 9x16:
+  fill cloth rect(3:9, 7:15)
+  fill lit(cloth) rect(3:9, 4:15)
+  fill shd(cloth) rect(6:10, 7:15)
+  fill skin poly(4:10, 7:9, 8:1, 5:1)
+  fill litW(skin) poly(4:10, 5:10, 6:1, 5:1)
+  fill shdW(skin) poly(7:9, 8:1, 7:1)
+  fill skin rect(4:0, 8:2)
+  fill shdW(skin) rect(7:1, 8:2)
+
+# accessory: recurve bow, near body-height. reused in both views.
+draw bow 12x46:
+  curve wood 5:1 9:12 10:23 9:34 5:45 w2
+  curve litW(wood) 5:1 8:12 9:23 8:34 5:45
+  fill leather rect(6:20, 10:26)
+  fill shdW(leather) rect(9:21, 10:26)
+  px litW(leather) 6:20
+
+# accessory: quiver with fletched arrows poking out the top. reused in both views.
+draw quiver 10x22:
+  line wood 3:0 3:6
+  line wood 5:0 5:6
+  line wood 7:0 7:6
+  fill fletch rect(2:0, 3:3)
+  fill fletch rect(4:0, 5:3)
+  fill fletch rect(6:0, 7:3)
+  px litW(fletch) 2:0
+  px litW(fletch) 4:0
+  fill leather rrect(1:6, 8:19, 3)
+  fill litW(leather) rect(1:7, 2:18)
+  fill shdW(leather) rect(7:7, 8:18)
+  fill dpW(leather) rect(1:11, 8:12)
+  fill dpW(leather) rect(1:16, 8:17)
+
+# ------------------------------------------------------------ full body: FRONT
+
+draw figFront(cloth) 40x62:
+  stamp quiver 2:2
+  stamp bow 24:11
+  line strng 29:13 29:55
+  stamp leg 12:37
+  stamp leg 20:37
+  stamp torso(cloth) 12:19
+  stamp armReach(cloth) 5:6
+  stamp armBow(cloth) 24:20
+  stamp head(cloth) 9:1
+  outline edge
+
+draw archerFront(cloth) 40x64:
+  fill cool.alpha(30%) ellipse(20:61, 11:2)
+  stamp figFront(cloth) 0:0
+
+# ---------------------------------------------------------- parts (side, faces right)
+
+# head profile: nose/hood point right. bottom-center neck seam row 20.
+draw headSide(cloth) 20x22:
+  hood = rrect(1:0, 17:18, 9)
+  face = ellipse(11:12, 5:6)
+  neck = rect(9:17, 13:21)
+  fill skin neck
+  fill cloth hood.subtract(face)
+  fill skin face
+  fill skin poly(15:10, 18:12, 15:15)
+  hoodV = hood.subtract(face)
+  fill lit(cloth) hoodV.intersect(rect(0:0, 8:8))
+  fill shd(cloth) hoodV.intersect(rect(0:15, 17:21))
+  fill shdW(skin) face.intersect(rect(9:14, 21:21))
+  fill hair rect(4:5, 9:8).intersect(hoodV)
+  fill edge rect(13:11, 14:12)
+  px warm 13:11
+  px shdW(skin) 16:13
+  line shdW(skin) 14:15 16:15
+
+# torso profile: front drape right, back left. top seam row 0, hem row 21.
+draw torsoSide(cloth) 14x22:
+  body = poly(3:1, 11:1, 12:9, 11:21, 2:21, 2:9)
+  fill cloth body
+  fill lit(cloth) body.intersect(rect(0:0, 5:21))
+  fill shd(cloth) body.intersect(rect(9:0, 13:21))
+  fill deep(cloth) body.intersect(rect(9:15, 13:21))
+  fill skin rect(6:0, 9:2)
+  fill shdW(skin) rect(8:0, 9:2)
+  fill leather rect(2:16, 11:18)
+  fill dpW(leather) rect(2:18, 11:18)
+  px metal 6:17
+
+# leg profile. same top seam row 0, boot toe points right.
+draw legSide 9x22:
+  fill pants rect(1:0, 6:13)
+  fill litW(pants) rect(1:0, 2:12)
+  fill shdW(pants) rect(5:1, 6:13)
+  fill leather poly(1:13, 6:13, 8:21, 0:21)
+  fill litW(leather) rect(1:13, 2:16)
+  fill shdW(leather) poly(5:14, 8:21, 5:21)
+  fill dpW(leather) rect(0:20, 8:21)
+
+# side front arm: extends right to the bow grip. shoulder row 1, hand rows 3..7 far right.
+draw armBowSide(cloth) 14x9:
+  fill cloth rect(0:1, 4:6)
+  fill lit(cloth) rect(0:1, 4:1)
+  fill shd(cloth) rect(0:6, 4:6)
+  fill skin rect(4:2, 11:6)
+  fill litW(skin) rect(4:2, 11:2)
+  fill shdW(skin) rect(4:6, 11:6)
+  fill skin rect(11:2, 13:7)
+  fill shdW(skin) rect(12:3, 13:7)
+
+# side back arm: bent, hand pulls the string back to the cheek. shoulder row 1.
+draw armDrawSide(cloth) 12x11:
+  fill cloth poly(1:2, 5:1, 6:5, 2:9)
+  fill lit(cloth) poly(1:2, 3:2, 3:8, 2:8)
+  fill shd(cloth) poly(5:2, 6:5, 5:6)
+  fill skin poly(6:3, 10:4, 10:7, 6:6)
+  fill litW(skin) rect(6:3, 10:3)
+  fill shdW(skin) rect(6:6, 10:7)
+
+# ------------------------------------------------------------- full body: SIDE
+
+draw figSide(cloth) 52x62:
+  stamp quiver 4:6
+  stamp legSide 15:37
+  stamp legSide 23:37
+  stamp torsoSide(cloth) 15:19
+  stamp armDrawSide(cloth) 21:22
+  stamp headSide(cloth) 13:1
+  stamp bow 36:9
+  line strng 40:12 30:26
+  line strng 40:52 30:26
+  line wood 30:26 49:26
+  poly metal 49:24 52:26 49:28 fill
+  px fletch 30:24
+  px fletch 30:28
+  stamp armBowSide(cloth) 30:22
+  outline edge
+
+draw archerSide(cloth) 52x64:
+  fill cool.alpha(30%) ellipse(26:61, 14:2)
+  stamp figSide(cloth) 0:0
+
+# --------------------------------------------------- export wrappers + variants
+
+draw frontGreen 40x64:
+  stamp archerFront(green) 0:0
+
+draw frontRed 40x64:
+  stamp archerFront(red) 0:0
+
+draw sideGreen 52x64:
+  stamp archerSide(green) 0:0
+
+draw sideRed 52x64:
+  stamp archerSide(red) 0:0
+
+export frontGreen archer/front-green:
+  png @1 @4
+
+export frontRed archer/front-red:
+  png @1 @4
+
+export sideGreen archer/side-green:
+  png @1 @4
+
+export sideRed archer/side-red:
+  png @1 @4

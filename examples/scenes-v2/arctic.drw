@@ -1,0 +1,128 @@
+# arctic — polar night: aurora, snowbound ridge, frozen pond, igloo
+
+fn auroraTop1(nx) = 6 + round(noise(11, nx * 6, 0) * 12)
+fn auroraTop2(nx) = 10 + round(noise(23, nx * 5, 0) * 11)
+fn auroraTop3(nx) = 16 + round(noise(37, nx * 7, 0) * 14)
+fn ridgeY(nx) = 36 + round(noise(5, nx * 6, 0) * 10)
+fn groundY(nx) = 58 + round(noise(41, nx * 8, 0) * 4)
+
+mask ridge = profile(0..120, ridgeY)
+mask ground = profile(0..120, groundY)
+mask pond = curvePoly(60:68, 78:66, 92:70, 95:76, 82:80, 66:79, 58:73)
+
+path dipper:
+  move 14:8
+  line 22:6
+  line 30:9
+  line 36:7
+  line 42:12
+  line 36:16
+  line 30:9
+
+draw snowflake 9x9:
+  c = #dceeff.alpha(55%)
+  mirror x=4:
+    mirror y=4:
+      line c 4:4 4:1
+      line c 4:4 1:4
+      px c 2:2
+
+draw pine 9x13:
+  pal k=#0d1a12 w=#eef4ff s=#1c130d
+  pixels:
+    ....k....
+    ...kkk...
+    ..kkwkk..
+    .kkkkkkk.
+    ..kkkkk..
+    .kkkkkkk.
+    kkkkkkkkk
+    ..kkkkk..
+    .kkkkkkk.
+    kkkkkkkkk
+    ....s....
+    ....s....
+    ....s....
+
+draw igloo 12x8:
+  pal k=#1c2c4a d=#050a14 y=#f7c96a
+  pixels:
+    ....kkkk....
+    ..kkkkkkkk..
+    .kkkkkkkkkk.
+    kkkkkyykkkkk
+    kkkkkkkkkkkk
+    kkkkddddkkkk
+    kkkkddddkkkk
+    kkkkkkkkkkkk
+
+draw arctic 120x80:
+  grad sky = linear(90, #03050d, #16233f)
+  bg sky
+
+  scatter s 70 3 rect(0:0, (w - 1):52):
+    px #eaf2ff.alpha(0.25 + rand(9, s.x + s.y) * 0.65) s
+
+  grad auroraPurple = linear(90, (#8a6fe0.alpha(45%), 0%), (#8a6fe0.alpha(0%), 100%))
+  grad auroraTeal = linear(90, (#3fb6d8.alpha(55%), 0%), (#3fb6d8.alpha(0%), 100%))
+  grad auroraGreen = linear(90, (#57e6ab.alpha(65%), 0%), (#57e6ab.alpha(0%), 100%))
+  profile auroraPurple 0..w auroraTop3 fill
+  profile auroraTeal 0..w auroraTop2 fill
+  profile auroraGreen 0..w auroraTop1 fill
+
+  stroke #eaf7ff.alpha(60%) dipper w1
+  curve #eaf5ff.alpha(90%) 50:16 58:9 66:5 w1
+
+  moonC = 94:16
+  grad moonGlow = radial(oklch(0.85, 0.05, 250).alpha(35%), transparent)
+  circle moonGlow moonC 24 fill
+  arc #bcd4ff.alpha(18%) moonC 32 190 350
+  circle #eef3ff moonC 6 fill
+
+  starColors = #eaf2ff.tones(-8%, 0%, 10%)
+  scatter g 8 55 rect(0:0, (w - 1):52):
+    px starColors.cycle(g.x + g.y) g
+
+  profile #1b2740 0..w ridgeY fill
+  shadeRegion ridge moonC #050912 45%
+  lightRegion ridge moonC #cfe0ff.alpha(60%) 35%
+  rim ridge 0:1 #dfe9fb.alpha(70%) 1
+
+  grad snowGrad = linear(90, #eef3fc, #b7c7e6)
+  profile snowGrad 0..w groundY fill
+  grain ground 0.05 13 #ffffff.alpha(30%)
+  speckle ground 0.04 17 #ffffff.alpha(80%)
+  lightRegion ground moonC #dbe8ff.alpha(50%) 30%
+  ambientOcclusion ground #0a1220.alpha(70%) 40%
+
+  stamp igloo 42:58
+
+  iceTones = #294a68.mixes(#4a7398, 3)
+  fill iceTones.cycle(1) pond
+  mask deepPond = ellipse(76:74, 8:3)
+  dither deepPond iceTones.cycle(0) iceTones.cycle(2) 45%
+  ellipse #bcd4ff.alpha(25%) 88:74 8:3 fill
+  ripple pond 0.35 8 #dfe9fb.alpha(15%)
+  ambientOcclusion pond #04101c.alpha(80%) 55%
+
+  mask boulder = ellipse(52:76, 6:4)
+  castShadow boulder -3:2 #05070d.alpha(35%)
+  fill #7f92ac boulder
+  rim boulder 0:1 #eef3fc.alpha(60%) 1
+
+  treeXs = 8, 26, 104, 114
+  for i 0..4:
+    tx = treeXs.cycle(i)
+    ty = round(groundY(tx / w))
+    match i mod 2:
+      0: stamp pine tx:ty anchor bottom shadow -2:1 #05070d55
+      else: stamp pine tx:ty anchor bottom flipx shadow -2:1 #05070d55
+
+  scatter fl 2 6 pond:
+    stamp snowflake fl anchor center
+
+  scatter sn 40 21 rect(0:0, (w - 1):(h - 1)):
+    px #ffffff.alpha(0.2 + rand(19, sn.x * 3 + sn.y) * 0.6) sn
+
+export arctic arctic:
+  png

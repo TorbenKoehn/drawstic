@@ -1,0 +1,69 @@
+draw station 47x22:
+  title "modular space station"
+  panel = #163a72
+  panelCell = #0d2148
+  panelEdge = #3a6bb0
+  metal = #cfd3d9
+  metalMid = #9298a1
+  metalDark = #555b65
+  glow = #ffd27a
+  radiator = #e3e7ec
+
+  mirror x=23:
+    # truss beam from hub out to the panel
+    rect metalDark 24:10 34:12 fill
+    line metalMid 24:9 34:9
+    # solar panel
+    rect panel 34:2 46:19 fill
+    stroke panelEdge rect(34:2, 46:19)
+    line panelCell 38:2 38:19
+    line panelCell 42:2 42:19
+    line panelCell 34:10 46:10
+    # central hub (spans the axis)
+    rrect metal 17:5 29:16 3 fill
+    rect metalMid 17:9 29:12 fill
+    circle glow 23:10 1 fill
+    # top antenna dish
+    line metal 23:5 23:1
+    circle radiator 23:1 1 fill
+
+grad space = linear(155, #0b1026, #01020a)
+grad ocean = linear(120, oklch(0.58, 0.12, 242), oklch(0.40, 0.11, 253))
+mask planet = circle(80:206, 141)
+
+draw orbit 160x112:
+  title "space station in low orbit"
+  land = oklch(0.56, 0.10, 148)
+  landDry = oklch(0.62, 0.09, 96)
+  cloud = #f4f8ff.alpha(50%)
+  night = oklch(0.15, 0.05, 262)
+  oceanDeep = oklch(0.36, 0.11, 255)
+  sunGlow = oklch(0.90, 0.09, 92)
+  atmo = oklch(0.85, 0.11, 232).alpha(70%)
+  star = #ffffff
+  sun = 150:6
+
+  bg space
+  # star field, confined to the sky above the horizon
+  scatter s 90 3 rect(0:0, w-1:62):
+    px star.alpha(0.30 + rand(9, s.x + s.y) * 0.6) s
+  scatter b 7 5 rect(6:5, 150:58):
+    circle star b 1 fill
+
+  # planet
+  fill ocean planet
+  mask planet:
+    curvePoly land 28:90 54:78 80:86 70:106 38:108 fill
+    curvePoly landDry 100:102 122:88 142:98 132:110 106:112 fill
+    curvePoly cloud 46:80 66:75 88:80 68:84 fill
+    curvePoly cloud 98:73 118:71 136:79 114:82 fill
+    grain 0.10 4 oceanDeep
+  shadeRegion planet sun night 0.85
+  lightRegion planet sun sunGlow 0.5
+  stroke atmo circle(80:207, 142) w2
+
+  # the station, banked slightly along its orbit
+  stamp station 98:30 anchor center
+
+export orbit orbit:
+  png @1 @2

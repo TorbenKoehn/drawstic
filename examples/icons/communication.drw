@@ -1,0 +1,159 @@
+# Communication app-icon family — one recipe, one theme, one light direction.
+# Light: top-left. Tile catches a light rim (top+left) and a shadow rim (bottom+right).
+# Glyphs are white on the shared blue tile; family identity = shared tile, radius, palette.
+
+theme comms:
+  pal:
+    t = #2f6fed          # tile accent (communication blue)
+    l = t.lighten(16%)   # top-left light rim
+    d = t.darken(22%)    # bottom-right shadow rim + glyph seat
+    g = #ffffff          # glyph (white)
+  size 32x32
+  mode pixel
+  style """
+  Communication family. Every icon = a shared rounded-square blue tile + a white glyph.
+  Corner radius ~19% of size (32->6, 16->3, 64->12). One light source, top-left:
+  tile top+left edges get a light rim (l), bottom+right get a shadow rim (d).
+  Glyphs are pure white, ~2px visual weight, optically centered, silhouette-first.
+  16px variants drop tile padding and use a bolder simplified glyph (legibility redraw).
+  """
+
+use comms
+
+# --- shared tiles (components, stamped by every icon) ---
+
+draw tile32 32x32:
+  rrect t 1:1 30:30 6 fill
+  line l 7:1 24:1
+  line l 1:7 1:24
+  line d 7:30 24:30
+  line d 30:7 30:24
+
+draw tile16 16x16:
+  rrect t 0:0 15:15 3 fill
+  line l 4:0 11:0
+  line l 0:4 0:11
+  line d 4:15 11:15
+  line d 15:4 15:11
+
+draw tile64 64x64:
+  rrect t 2:2 61:61 12 fill
+  line l 14:2 49:2
+  line l 2:14 2:49
+  line d 14:61 49:61
+  line d 61:14 61:49
+
+# --- 32px masters ---
+
+draw chat:
+  title "Chat"
+  stamp tile32 0:0
+  rrect g 6:7 26:21 5 fill              # bubble
+  poly g 9:19 9:27 16:20 fill           # tail, bottom-left
+  rect t 11:13 12:14 fill               # typing dots
+  rect t 15:13 16:14 fill
+  rect t 19:13 20:14 fill
+
+draw phone:
+  title "Phone"
+  stamp tile32 0:0
+  arc g 16:8 13 35 145 w3               # handset body (concave-up smile)
+  circle g 6:16 3 fill                  # earpiece
+  circle g 25:16 3 fill                 # mouthpiece
+
+draw contacts:
+  title "Contacts"
+  stamp tile32 0:0
+  circle g 16:11 4 fill                 # head
+  rrect g 7:19 24:30 7 fill             # shoulders / bust
+
+draw videocall:
+  title "Videocall"
+  stamp tile32 0:0
+  rrect g 4:9 19:23 3 fill              # camera body (taller than wedge → notch)
+  poly g 20:12 20:20 28:16 fill         # lens wedge, points right
+  circle t 9:16 2 fill                  # lens
+
+draw share:
+  title "Share"
+  stamp tile32 0:0
+  line g 9:16 24:8 w2                   # link to top node
+  line g 9:16 24:24 w2                  # link to bottom node
+  circle g 9:16 3 fill                  # left node
+  circle g 24:8 3 fill                  # top-right node
+  circle g 24:24 3 fill                 # bottom-right node
+
+draw feed:
+  title "Feed"
+  stamp tile32 0:0
+  circle g 10:23 2 fill                 # source dot
+  arc g 10:23 7 -90 0 w2                # inner wave
+  arc g 10:23 12 -90 0 w2               # outer wave
+
+# --- 16px legibility redraws (bolder, simplified glyph) ---
+
+draw chat16 16x16:
+  stamp tile16 0:0
+  rrect g 3:3 12:10 2 fill              # bubble
+  poly g 4:9 4:14 8:10 fill             # tail
+  px t 5:6
+  px t 8:6
+  px t 11:6
+
+draw phone16 16x16:
+  stamp tile16 0:0
+  arc g 8:4 6 30 150 w2                 # handset smile
+  circle g 3:8 1 fill                   # earpiece
+  circle g 12:8 1 fill                  # mouthpiece
+
+# --- 64px detail version ---
+
+draw videocall64 64x64:
+  title "Videocall (detail)"
+  stamp tile64 0:0
+  rrect g 10:18 44:47 6 fill            # camera body
+  rrect d 10:18 44:47 6                 # body edge (seat)
+  poly g 45:26 45:39 60:32 fill         # lens wedge (narrower → notch)
+  circle t 20:32 5 fill                 # screen lens
+  circle g 20:32 5                      # lens ring
+  circle g 18:30 1 fill                 # lens glint (top-left, matches light)
+  rect d 36:23 40:24 fill               # top vent detail
+  rect d 36:41 40:42 fill               # bottom vent detail
+
+# --- exports: png @1 @2 + svg for every icon ---
+
+export chat communication/chat:
+  png @1 @2
+  svg ids classes
+
+export phone communication/phone:
+  png @1 @2
+  svg ids classes
+
+export contacts communication/contacts:
+  png @1 @2
+  svg ids classes
+
+export videocall communication/videocall:
+  png @1 @2
+  svg ids classes
+
+export share communication/share:
+  png @1 @2
+  svg ids classes
+
+export feed communication/feed:
+  png @1 @2
+  svg ids classes
+
+export chat16 communication/chat16:
+  png @1 @2
+  svg ids classes
+
+export phone16 communication/phone16:
+  png @1 @2
+  svg ids classes
+
+export videocall64 communication/videocall64:
+  png @1 @2
+  svg ids classes

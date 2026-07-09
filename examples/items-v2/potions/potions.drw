@@ -1,0 +1,148 @@
+theme potionSet:
+  pal:
+    k = #24161f
+    g = #a4d7ff
+    h = #f2fbff
+    d = #476580
+    c = #8c5b36
+    x = #5a3520
+    l = #f4e7cf
+    r = #da4c59
+    u = #5f79ff
+    p = #59bf4a
+    e = #e4ba4c
+    b = #5f4b54
+    s = #786471
+    o = #ffad57
+    a = #fff0a8
+    n = #d8ecff
+    t = #eef8ff
+  size 64x64
+  mode pixel
+  style """
+  64x64 transparent inventory sprites. Light top-left, dark bottom-right.
+  Shared center axis x=32. 4 px breathing room. One dark outline language everywhere.
+  Glass reads by left highlight, right shadow strip, and a clear fill band.
+  Healing/mana/poison/elixir are bottle variants; bomb is a fuse bottle; empty vial stays slim and nearly clear.
+  """
+
+use potionSet
+
+fn healingShell() = rrect(18:18, 45:52, 8).union(rrect(26:7, 37:18, 3)).union(poly(18:18, 22:12, 26:8, 37:8, 41:12, 45:18, 18:18))
+fn manaShell() = rrect(21:16, 42:52, 7).union(rrect(27:6, 36:17, 3)).union(poly(21:17, 24:11, 28:7, 35:7, 39:11, 42:17, 21:17))
+fn poisonShell() = poly(22:52, 18:38, 18:25, 22:15, 27:8, 37:8, 42:15, 46:25, 46:38, 42:52, 22:52).union(rrect(28:6, 35:14, 2))
+fn elixirShell() = poly(18:52, 20:28, 24:14, 29:8, 35:8, 40:14, 44:28, 46:52, 18:52).union(rrect(28:4, 35:13, 2))
+fn bombShell() = ellipse(32:37, 15:16).union(rrect(28:9, 35:17, 2)).union(poly(26:52, 22:42, 23:23, 28:15, 36:15, 41:23, 42:42, 38:52, 26:52))
+fn vialShell() = rrect(27:13, 36:52, 4).union(rrect(28:6, 35:14, 2)).union(poly(27:15, 28:9, 30:7, 34:7, 36:9, 37:15, 27:15))
+
+draw healingPotion 64x64:
+  shell = healingShell()
+  fill g.alpha(34%) shell
+  fill h.alpha(28%) shell.intersect(rect(18:6, 30:54))
+  fill d.alpha(16%) shell.intersect(rect(33:6, 45:54))
+  fill r.alpha(90%) poly(23:49, 23:35, 25:28, 30:24, 34:24, 39:28, 41:35, 41:49, 23:49)
+  fill l shell.intersect(rect(24:33, 40:42))
+  fill k rect(29:34, 34:41)
+  fill k rect(26:36, 37:38)
+  fill k rect(31:32, 33:42)
+  fill c rect(27:2, 36:14)
+  fill x rect(27:2, 36:8)
+  stroke k shell w1
+
+draw manaPotion 64x64:
+  shell = manaShell()
+  fill g.alpha(34%) shell
+  fill h.alpha(30%) shell.intersect(rect(21:6, 31:54))
+  fill d.alpha(16%) shell.intersect(rect(33:6, 42:54))
+  fill u.alpha(90%) poly(24:49, 24:35, 26:28, 31:24, 33:24, 38:28, 40:35, 40:49, 24:49)
+  fill l shell.intersect(rect(26:33, 38:42))
+  fill a circle(32:37, 3)
+  fill a rect(31:33, 32:41)
+  fill a rect(29:35, 30:34)
+  fill c rect(28:2, 36:13)
+  fill x rect(28:2, 36:8)
+  fill #ffffff.alpha(18%) circle(40:15, 3)
+  stroke k shell w1
+
+draw poisonPotion 64x64:
+  shell = poisonShell()
+  fill g.alpha(32%) shell
+  fill h.alpha(26%) shell.intersect(rect(18:6, 31:54))
+  fill d.alpha(18%) shell.intersect(rect(34:6, 46:54))
+  fill p.alpha(90%) poly(20:49, 19:35, 21:25, 26:19, 32:17, 38:19, 43:25, 45:35, 44:49, 20:49)
+  fill l shell.intersect(rect(24:33, 40:42))
+  fill k poly(31:35, 35:40, 27:40, 31:35)
+  fill k circle(30:37, 1)
+  fill k circle(34:37, 1)
+  fill k rect(31:38, 33:39)
+  fill c rect(28:2, 36:13)
+  fill x rect(28:2, 36:8)
+  fill p.alpha(26%) circle(44:14, 4)
+  stroke k shell w1
+
+draw elixirPotion 64x64:
+  shell = elixirShell()
+  fill g.alpha(34%) shell
+  fill h.alpha(30%) shell.intersect(rect(18:6, 30:54))
+  fill d.alpha(16%) shell.intersect(rect(33:6, 46:54))
+  fill e.alpha(90%) poly(20:49, 21:33, 24:24, 28:20, 36:20, 40:24, 43:33, 44:49, 20:49)
+  fill l shell.intersect(rect(24:33, 41:42))
+  fill a circle(32:37, 3)
+  fill a rect(31:34, 28:42)
+  fill a rect(28:36, 31:33)
+  fill c rect(28:2, 36:12)
+  fill x rect(28:2, 36:8)
+  fill #ffffff.alpha(16%) circle(39:13, 3)
+  stroke k shell w1
+
+draw bombPotion 64x64:
+  shell = bombShell()
+  fill s.alpha(80%) shell
+  fill h.alpha(18%) shell.intersect(rect(17:10, 29:54))
+  fill d.alpha(22%) shell.intersect(rect(34:10, 47:54))
+  fill b.alpha(78%) poly(21:46, 19:34, 22:24, 28:19, 36:19, 42:24, 45:34, 43:46, 21:46)
+  fill s.alpha(34%) circle(32:37, 6)
+  fill c rect(28:7, 36:17)
+  fill x rect(28:7, 36:12)
+  line o 37:10 49:3 w2
+  circle o 51:4 2 fill
+  fill a circle(49:4, 1)
+  stroke k shell w1
+
+draw emptyVial 64x64:
+  shell = vialShell()
+  fill n.alpha(24%) shell
+  fill h.alpha(28%) shell.intersect(rect(27:6, 31:54))
+  fill d.alpha(12%) shell.intersect(rect(33:6, 36:54))
+  fill t.alpha(16%) shell.intersect(rect(29:40, 35:50))
+  fill t.alpha(20%) circle(32:43, 2)
+  fill c rect(28:2, 35:13)
+  fill x rect(28:2, 35:7)
+  stroke k shell w1
+
+tileset potionSheet 64x64:
+  tiles healingPotion, manaPotion, poisonPotion, elixirPotion, bombPotion, emptyVial
+  cols 3
+
+export healingPotion healing-potion:
+  png @1 @4
+
+export manaPotion mana-potion:
+  png @1 @4
+
+export poisonPotion poison-potion:
+  png @1 @4
+
+export elixirPotion elixir-potion:
+  png @1 @4
+
+export bombPotion bomb-potion:
+  png @1 @4
+
+export emptyVial empty-vial:
+  png @1 @4
+
+export potionSheet potions:
+  png @1 @4
+  tiled
+  atlasJson
