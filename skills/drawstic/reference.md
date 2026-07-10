@@ -398,6 +398,29 @@ rotates first). Sugar: `rot45` ≡ `transform rotate(45).about(((w−1)/2):((h�
 flip → scale → rotate. Pixel mode resamples nearest-neighbour (no new colors); mirrors,
 quarter-turns, integer shifts/scales are lossless; non-invertible transforms are errors.
 
+## Anchored assembly — pin / fit (ADR-0087)
+
+```drw
+pin <key> <pt>                              # attach point in this drawing's own space
+fit <partB>[.<pin>] <partA>.<pin> [shadow]  # land partB's pin on partA's placed pin (contact-guaranteed)
+fit <partB>.<pin> <x:y> [shadow]            # ground oracle: land the pin on a computed point
+```
+
+- **`pin key pt`** — a bare key in a **part** (`pin shoulder 4:0`) exports on the rendered sprite;
+  a dotted `part.name` in an **assembly** (`pin torso.shoulder 16:14`) seeds a canvas attach point.
+- **`fit b.pin a.pin`** solves the translation so `b`'s pin lands exactly on `a`'s placed pin, then
+  registers `b`'s pins in canvas space so the next `fit` chains (`fit hand.wrist arm.wrist`). Bare
+  `fit b a` auto-matches a single shared pin name. Replaces hand-stamped socket offsets.
+- **Contact guarantee:** no pixel contact after placing ⇒ non-fatal **`W010`** gap warning (the
+  seam `critique` C007 also measures) — never silent. `fit` reuses the `stamp` blit (same
+  alpha/palette).
+- **Ground oracle:** a computed-point source plants on terrain — `fit tree.base x:duneY(x/(w-1))`
+  (needs a named target pin) → floating/sinking impossible.
+- **`shadow`** flag: auto contact-shadow ellipse under the footprint, drawn first (feet cover it),
+  cool from the light in scope.
+
+`pin`/`fit` are contextual keywords (only in these statement shapes) — bindable as names elsewhere.
+
 ## Expressions, functions, loops
 
 ```drw

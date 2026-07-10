@@ -42,7 +42,7 @@ import {
   toHexColor,
   withAlpha,
 } from './color.js'
-import { DrawsticError, ERROR_CODE, error, type TextSpan } from './diagnostic.js'
+import { type Diagnostic, DrawsticError, ERROR_CODE, error, type TextSpan } from './diagnostic.js'
 import {
   datan2,
   dcos,
@@ -96,7 +96,7 @@ import {
   strokeRegion,
   type UserFontResolved,
 } from './raster.js'
-import { lightPointFor, lowerMaterial, type ShadeOp } from './shading.js'
+import { contactShadowColor, lightPointFor, lowerMaterial, type ShadeOp } from './shading.js'
 import { STD_GLOBAL_FONTS, STD_MODULES } from './std.js'
 import {
   aboutPoint,
@@ -449,6 +449,13 @@ type DrawState = {
    * never a silent default.
    */
   light: Light | null
+  /**
+   * The drawing's attach-point registry (ADR-0087): `pin KEY PT` writes `KEY → {x,y}` in this
+   * drawing's own coordinate space, and `fit` reads a source part's already-placed pins and writes
+   * a fitted part's pins back (as `head.name`). Captured onto the rendered {@link Sprite.pins} so a
+   * part exports its local pins to whatever assembles it.
+   */
+  readonly pins: Map<string, { readonly x: number; readonly y: number }>
   /**
    * The active `mirror` reflection (ADR-0078) during the reflected pass, or `null`
    * outside any mirror / during the normal pass. `matrix` maps author → real
@@ -858,6 +865,15 @@ export class Engine {
    * the collected trace. `null` (the default) disables collection with zero overhead.
    */
   explain: ExplainRecord[] | null = null
+
+  /**
+   * Non-fatal render-time warnings collected during evaluation (ADR-0087): a `fit` that leaves a
+   * part with no pixel contact appends a positioned `W010` gap warning here rather than failing
+   * silently. Read by the CLI (`render` surfaces them in its `diagnostics`) and by tests; the
+   * structural defect itself is also caught downstream by `critique`'s C007. Accumulates across a
+   * run; the sprite cache means a given draw's `fit`s warn once.
+   */
+  readonly warnings: Diagnostic[] = []
 
   /**
    * The `root` directory bounds every relative import/image path (ADR-0035
@@ -1840,6 +1856,7 @@ export class Engine {
       // light, so every view/variant using the theme shares one source; a `lit L:` block
       // overrides it for its body, an explicit `light L` argument for a single command.
       light: theme.light,
+      pins: new Map(),
       mirror: null,
     }
     const state: State = { module: mod, budget: this.budget, draw, functionDepth: 0 }
@@ -1871,6 +1888,8 @@ export class Engine {
       pal: palette,
       title: draw.title,
       desc: draw.description,
+      // Export the drawing's own attach points (ADR-0087) so an assembling `fit` can read them.
+      ...(draw.pins.size > 0 ? { pins: new Map(draw.pins) } : {}),
     }
   }
 
@@ -2053,6 +2072,310 @@ export class Engine {
     } finally {
       draw.light = prev
     }
+  }
+
+  /**
+   * Execute a `pin KEY PT` declaration (ADR-0087): evaluate the point in the current drawing's
+   * coordinate space and register it in {@link DrawState.pins} under `KEY`. In a part draw the key
+   * is a bare name (`shoulder`) exported on the rendered sprite; in an assembly the key is a dotted
+   * `part.name` that seeds a canvas-space attach point for `fit`.
+   */
+  #execPinDeclaration(
+    stmt: Extract<Statement, { readonly kind: 'pinDeclaration' }>,
+    env: Environment,
+    state: State,
+  ): void {
+    const draw = state.draw
+    if (!draw) {
+      throw error(
+        ERROR_CODE.syntax,
+        "'pin' belongs in a drawing body",
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const value = this.evalExpr(stmt.point, env, state)
+    if (typeof value !== 'object' || value?.type !== 'point' || value.rel) {
+      throw error(
+        ERROR_CODE.typeError,
+        `pin '${stmt.name}' needs an absolute point, got ${typeName(value)}`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    draw.pins.set(stmt.name, { x: value.x, y: value.y })
+  }
+
+  /**
+   * Execute a `fit TARGET SOURCE [shadow]` placement (ADR-0087): solve the translation that lands
+   * the target part's named pin exactly on the source attach point, drop an optional contact
+   * shadow, stamp the part, register the part's now-canvas-space pins for later `fit`s, and warn
+   * (W010, non-fatal) if the placement leaves no pixel contact with existing content. Reuses the
+   * `stamp` blit path — a `fit` is a stamp with a pin-derived offset and a contact guarantee.
+   */
+  #execFit(
+    stmt: Extract<Statement, { readonly kind: 'fit' }>,
+    env: Environment,
+    state: State,
+  ): void {
+    const draw = state.draw
+    if (!draw) {
+      throw error(
+        ERROR_CODE.syntax,
+        "'fit' belongs in a drawing body",
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    // 1 — resolve the target part sprite (its local pins ride along on `.pins`).
+    const targetValue = this.evalExpr(
+      { kind: 'name', name: stmt.target.head, span: stmt.span },
+      env,
+      state,
+    )
+    if (typeof targetValue !== 'object' || targetValue?.type !== 'sprite') {
+      throw error(
+        ERROR_CODE.typeError,
+        `fit target '${stmt.target.head}' is not a drawing, got ${typeName(targetValue)}`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const sprite = targetValue
+    const localPins = sprite.pins ?? new Map<string, { readonly x: number; readonly y: number }>()
+
+    // 2 — resolve the source contact point (canvas) and the pin name to attach by.
+    const { canvas: cp, pinName } = this.#resolveFitSource(stmt, localPins, env, state)
+
+    // 3 — the target's local pin to land on the source.
+    const localPin = localPins.get(pinName)
+    if (!localPin) {
+      throw error(
+        ERROR_CODE.unknownName,
+        `fit target '${stmt.target.head}' has no pin '${pinName}'`,
+        state.module.displayPath,
+        stmt.span,
+        `declare it in ${sprite.name} with 'pin ${pinName} X:Y', or fit by a pin both parts share`,
+      )
+    }
+
+    // 4 — the identity-blit origin so the local pin maps to the canvas contact point.
+    const origin = { x: quantInt(cp.x - localPin.x), y: quantInt(cp.y - localPin.y) }
+
+    // 5 — snapshot coverage before painting so the contact check ignores the shadow we add next.
+    const before = this.#coverageSnapshot(draw.context.buffer)
+
+    // 6 — auto contact-shadow (opt-in): an ellipse under the footprint, painted BEFORE the part so
+    // the part (e.g. feet) overdraws it. Centred on the resolved contact point — derived from the
+    // same solve, so it cannot drift from the actual contact pixel (ADR-0087).
+    if (stmt.shadow) {
+      this.#dropContactShadow(draw, sprite, cp)
+    }
+
+    // 7 — stamp the part (identity blit; reuses the stamp path) and fold its palette.
+    stampSprite(draw.context, sprite, origin.x, origin.y)
+    if (!draw.sprite.stamped.includes(sprite)) {
+      draw.sprite.stamped.push(sprite)
+    }
+
+    // 8 — register the fitted part's pins in canvas space (`head.name`) so later fits can chain.
+    for (const [name, p] of localPins) {
+      draw.pins.set(`${stmt.target.head}.${name}`, { x: origin.x + p.x, y: origin.y + p.y })
+    }
+
+    // 9 — contact guarantee: warn (never throw) if the placed part touches nothing already drawn.
+    if (!this.#hasContact(draw.context.buffer, before, sprite, origin)) {
+      this.warnings.push({
+        severity: 'warning',
+        code: 'W010',
+        message: `fit gap: '${stmt.target.head}' pin '${pinName}' lands at ${cp.x}:${cp.y} but the part touches no existing content`,
+        file: state.module.displayPath,
+        line: stmt.span.line,
+        column: stmt.span.column,
+        ...(stmt.span.endLine === undefined ? {} : { endLine: stmt.span.endLine }),
+        ...(stmt.span.endColumn === undefined ? {} : { endColumn: stmt.span.endColumn }),
+        hint: 'the pins coincide but the parts have no pixel overlap/adjacency there — move the pin onto solid pixels, overlap the seam by 1–2px, or add the missing part first',
+      })
+    }
+  }
+
+  /**
+   * Resolve a `fit` source to a canvas contact point and the pin name to attach by. A `point`
+   * source is a canvas coordinate (the ground-placement oracle) and requires an explicit target
+   * pin. A `ref` source reads an already-registered `head.pin` (or auto-matches the single pin name
+   * both parts share when either side is bare).
+   */
+  #resolveFitSource(
+    stmt: Extract<Statement, { readonly kind: 'fit' }>,
+    localPins: ReadonlyMap<string, { readonly x: number; readonly y: number }>,
+    env: Environment,
+    state: State,
+  ): { readonly canvas: { readonly x: number; readonly y: number }; readonly pinName: string } {
+    const draw = state.draw as DrawState
+    if (stmt.source.kind === 'point') {
+      const value = this.evalExpr(stmt.source.expression, env, state)
+      if (typeof value !== 'object' || value?.type !== 'point' || value.rel) {
+        throw error(
+          ERROR_CODE.typeError,
+          `fit source needs an absolute point, got ${typeName(value)}`,
+          state.module.displayPath,
+          stmt.span,
+        )
+      }
+      if (!stmt.target.pin) {
+        throw error(
+          ERROR_CODE.syntax,
+          `fit onto a point needs a named target pin (e.g. 'fit ${stmt.target.head}.base X:Y')`,
+          state.module.displayPath,
+          stmt.span,
+        )
+      }
+      return { canvas: { x: value.x, y: value.y }, pinName: stmt.target.pin }
+    }
+    const head = stmt.source.head
+    // explicit source pin: read the registered canvas point directly.
+    if (stmt.source.pin) {
+      const key = `${head}.${stmt.source.pin}`
+      const cp = draw.pins.get(key)
+      if (!cp) {
+        throw error(
+          ERROR_CODE.unknownName,
+          `fit source pin '${key}' is not placed yet`,
+          state.module.displayPath,
+          stmt.span,
+          `place '${head}' first (stamp it and 'pin ${key} X:Y', or 'fit ${head}…'), then fit onto its pin`,
+        )
+      }
+      const pinName = stmt.target.pin ?? stmt.source.pin
+      return { canvas: cp, pinName }
+    }
+    // bare source: auto-match a single pin name shared between the source's registered pins and the
+    // target's local pins.
+    const sourceNames = new Set<string>()
+    for (const key of draw.pins.keys()) {
+      if (key.startsWith(`${head}.`)) {
+        sourceNames.add(key.slice(head.length + 1))
+      }
+    }
+    if (sourceNames.size === 0) {
+      throw error(
+        ERROR_CODE.unknownName,
+        `fit source '${head}' has no placed pins`,
+        state.module.displayPath,
+        stmt.span,
+        `place '${head}' first (stamp it and 'pin ${head}.NAME X:Y', or 'fit ${head}…')`,
+      )
+    }
+    const shared = [...sourceNames].filter((n) => localPins.has(n))
+    const candidates = stmt.target.pin ? shared.filter((n) => n === stmt.target.pin) : shared
+    if (candidates.length !== 1) {
+      throw error(
+        ERROR_CODE.syntax,
+        candidates.length === 0
+          ? `fit '${stmt.target.head}' and '${head}' share no pin name`
+          : `fit '${stmt.target.head}' and '${head}' share ${candidates.length} pin names — name one (e.g. 'fit ${stmt.target.head}.NAME ${head}.NAME')`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const pinName = candidates[0] as string
+    return { canvas: draw.pins.get(`${head}.${pinName}`) as { x: number; y: number }, pinName }
+  }
+
+  /**
+   * Drop an auto contact-shadow ellipse (ADR-0087) under a fitted part's footprint: a soft cool
+   * pool centred on the contact point, its width from the part's covered footprint. Painted before
+   * the part so feet/base overdraw it. Uses the light in scope for its cool colour, else the
+   * canonical cool.
+   */
+  #dropContactShadow(
+    draw: DrawState,
+    sprite: Sprite,
+    cp: { readonly x: number; readonly y: number },
+  ): void {
+    const box = this.#coveredBBox(sprite)
+    if (!box) {
+      return
+    }
+    const footWidth = box.x1 - box.x0 + 1
+    const rx = Math.max(1, roundHalfUp(footWidth * 0.45))
+    const ry = Math.max(1, roundHalfUp(rx * 0.35))
+    fillRegion(
+      draw.context,
+      ellipseRegion(quantInt(cp.x), quantInt(cp.y), rx, ry),
+      contactShadowColor(draw.light),
+    )
+  }
+
+  /** A per-pixel `alpha>0` snapshot of the buffer's current coverage (for the `fit` contact check). */
+  #coverageSnapshot(buffer: Framebuffer): Uint8Array {
+    const w = buffer.width
+    const h = buffer.height
+    const covered = new Uint8Array(w * h)
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (buffer.alphaAt(x, y) > 0) {
+          covered[y * w + x] = 1
+        }
+      }
+    }
+    return covered
+  }
+
+  /** The tight covered (`alpha>0`) bounding box of a sprite's own pixels, or `null` when empty. */
+  #coveredBBox(
+    sprite: Sprite,
+  ): { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null {
+    let x0 = sprite.w
+    let y0 = sprite.h
+    let x1 = -1
+    let y1 = -1
+    for (let y = 0; y < sprite.h; y++) {
+      for (let x = 0; x < sprite.w; x++) {
+        if ((sprite.data[(y * sprite.w + x) * 4 + 3] ?? 0) > 0) {
+          x0 = Math.min(x0, x)
+          y0 = Math.min(y0, y)
+          x1 = Math.max(x1, x)
+          y1 = Math.max(y1, y)
+        }
+      }
+    }
+    return x1 < 0 ? null : { x0, y0, x1, y1 }
+  }
+
+  /**
+   * Whether an identity-blitted part at `origin` makes pixel contact with content that existed
+   * before it (the `before` coverage snapshot): any of the part's covered pixels overlaps or is
+   * 8-adjacent to a pre-existing covered pixel. This is exactly the signature `critique`'s C007
+   * measures — a `fit` that fails it is a floating/seamed part.
+   */
+  #hasContact(
+    buffer: Framebuffer,
+    before: Uint8Array,
+    sprite: Sprite,
+    origin: { readonly x: number; readonly y: number },
+  ): boolean {
+    const w = buffer.width
+    const h = buffer.height
+    const preAt = (x: number, y: number): boolean =>
+      x >= 0 && y >= 0 && x < w && y < h && before[y * w + x] === 1
+    for (let sy = 0; sy < sprite.h; sy++) {
+      for (let sx = 0; sx < sprite.w; sx++) {
+        if ((sprite.data[(sy * sprite.w + sx) * 4 + 3] ?? 0) === 0) {
+          continue
+        }
+        const cx = origin.x + sx
+        const cy = origin.y + sy
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (preAt(cx + dx, cy + dy)) {
+              return true
+            }
+          }
+        }
+      }
+    }
+    return false
   }
 
   #execIf(stmt: Extract<Statement, { readonly kind: 'if' }>, env: Environment, state: State): void {
@@ -2372,6 +2695,12 @@ export class Engine {
         return
       case 'litBlock':
         this.#execLitBlock(stmt, env, state)
+        return
+      case 'pinDeclaration':
+        this.#execPinDeclaration(stmt, env, state)
+        return
+      case 'fit':
+        this.#execFit(stmt, env, state)
         return
       case 'if':
         this.#execIf(stmt, env, state)

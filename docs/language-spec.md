@@ -636,6 +636,54 @@ draw face 16x16:
 For a whole symmetric *passage* (not just one stamp), wrap it in a **`mirror x=<n>:` block**
 (§11.2) — it draws the body and its axis reflection, stamps flip, axis pixels paint once.
 
+### Anchored assembly — `pin` / `fit` ([ADR-0087](decisions/0087-anchored-assembly.md))
+
+```drw
+pin <key> <pt>                         # declare a named attach point in this drawing's space
+fit <partB>[.<pin>] <partA>.<pin> [shadow]   # place partB so its pin lands on partA's placed pin
+fit <partB>.<pin> <x:y> [shadow]       # ground-placement oracle: land the pin on a computed point
+```
+
+Instead of computing a `stamp` point by hand — which guarantees nothing about the *result*, since
+a bbox overlap is not pixel contact — a part **declares named attach points** and the engine
+**solves the placement and guarantees contact**:
+
+- **`pin <key> <pt>`** registers a named point in the current drawing's coordinate space. In a
+  **part** draw the key is a bare name (`pin shoulder 4:0`); it is exported on the rendered
+  drawing, so an assembler can read it. In an **assembly** the key is a dotted `part.name`
+  (`pin torso.shoulder 16:14`) that seeds a **canvas-space** attach point.
+- **`fit partB.pin partA.pin`** places `partB` so its named pin lands *exactly* on `partA`'s
+  already-placed pin — a contact-guaranteed replacement for a hand-stamped socket-offset. It then
+  registers `partB`'s pins in canvas space, so the next `fit` chains off them
+  (`fit hand.wrist arm.wrist`). When each side has one pin of the same name, the shorter
+  `fit partB partA` **auto-matches** it. A named pin absent on one side is a positioned error.
+- **Contact guarantee.** After placing, `fit` checks that the part touches existing content (pixel
+  overlap or 8-adjacency). No contact ⇒ a non-fatal **`W010` gap warning** (the same seam the
+  `critique` **C007** check measures) — never a silent float.
+- **Ground-placement oracle.** A `fit` whose source is a **computed point** plants a part on a
+  terrain function: `fit tree.base x:duneY(x/(w-1))` (scene-craft §2's *"terrain is a function"*
+  formalized) makes floating/sinking structurally impossible. A point source needs a named target
+  pin.
+- **`shadow`** drops an auto contact-shadow ellipse under the footprint first (so feet overdraw
+  it), cool-tinted from the light in scope — the pool cannot drift from the contact pixel because
+  it is centred on the same solve.
+
+```drw
+draw arm(c) 8x20:                       # a part exports its own attach points
+  …
+  pin shoulder 4:0
+  pin wrist    4:19
+draw knight 32x48:
+  stamp torso 12:10
+  pin torso.shoulder 16:14              # seed the root attach point
+  fit armLeft.shoulder torso.shoulder   # contact-guaranteed; registers armLeft.wrist
+  fit handLeft.wrist  armLeft.wrist     # chains
+```
+
+`pin` and `fit` are keywords **only** in these statement positions (D7) — bindable as ordinary
+names anywhere else. `fit` is at its core a `stamp` with a pin-derived offset, so alpha/palette
+semantics are identical.
+
 **Alpha compositing.** The framebuffer is straight-alpha **RGBA8**; painting composites
 **source-over** with a fixed round-half-up rule, in integer math (deterministic). `stamp`
 honours the source's **alpha** (not 1-bit); fully transparent pixels are skipped. Pixel mode

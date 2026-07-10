@@ -387,6 +387,20 @@ class Parser {
           return { kind: 'litBlock', expression, body, span: s }
         }
         break
+      case 'pin':
+        // D7: `pin NAME …` / `pin part.name …` → an attach-point declaration; `pin = …`, `pin(…)`,
+        // or `pin` as a value all leave it an ordinary bindable/call name (contextual).
+        if (this.#peek(1).kind === 'name') {
+          return this.#parsePinDeclaration()
+        }
+        break
+      case 'fit':
+        // D7: `fit REF REF` → an anchored-assembly placement; `fit = …`, `fit(…)`, or `fit` as a
+        // value leave it an ordinary bindable/call name (contextual).
+        if (this.#peek(1).kind === 'name') {
+          return this.#parseFit()
+        }
+        break
       case 'filter':
         if (
           this.#peek(1).kind === 'name' &&
@@ -664,6 +678,85 @@ class Parser {
     }
     this.#expectNL()
     return { kind: 'materialBinding', name, color, response, span: s }
+  }
+
+  /**
+   * A `fit`/`pin` reference head: a bare `NAME` optionally followed by an unspaced `.NAME`
+   * (`torso`, `torso.shoulder`). Returns the head and the pin (`undefined` for the bare form).
+   * Consumes exactly those tokens.
+   */
+  readonly #parseFitRef = (): { readonly head: string; readonly pin: string | undefined } => {
+    const head = this.#expect('name', undefined, 'a part name').text
+    let pin: string | undefined
+    if (this.#at('op', '.') && !this.#peek().spaced && this.#peek(1).kind === 'name') {
+      this.#next() // .
+      pin = this.#next().text
+    }
+    return { head, pin }
+  }
+
+  /** Whether the upcoming tokens form a bare `fit` reference (`NAME` or `NAME.NAME`) rather than a point expression. */
+  readonly #atFitRef = (): boolean => {
+    if (this.#peek().kind !== 'name') {
+      return false
+    }
+    const n1 = this.#peek(1)
+    // bare ref: a lone name ending the line, or a name followed by the trailing `shadow` flag.
+    if (n1.kind === 'nl' || n1.kind === 'eof' || n1.kind === 'dedent') {
+      return true
+    }
+    if (n1.kind === 'name' && n1.text === 'shadow') {
+      return true
+    }
+    // dotted ref: NAME.NAME (unspaced dot). A point expression (`x:y`, `x+1`) instead has an
+    // operator like ':' or '+' at n1, so it falls through to the expression branch.
+    return n1.kind === 'op' && n1.text === '.' && !n1.spaced && this.#peek(2).kind === 'name'
+  }
+
+  /**
+   * Parses `pin KEY PT` (§17.4 `pin-decl`, ADR-0087): the attach-point key (a bare `NAME` or a
+   * dotted `part.name`) followed by a point expression in command-arg mode. Only reached on the
+   * `pin NAME …` shape, so `pin` never reserves the word elsewhere.
+   */
+  readonly #parsePinDeclaration = (): Statement => {
+    const s = this.#span(this.#peek())
+    this.#next() // pin
+    let name = this.#expect('name', undefined, 'an attach-point name').text
+    if (this.#at('op', '.') && !this.#peek().spaced && this.#peek(1).kind === 'name') {
+      this.#next() // .
+      name += `.${this.#next().text}`
+    }
+    const pt = this.#parseCmdArgExpr()
+    this.#expectNL()
+    return { kind: 'pinDeclaration', name, point: pt, span: s }
+  }
+
+  /**
+   * Parses `fit TARGET SOURCE [shadow]` (§17.4 `fit-stmt`, ADR-0087). `TARGET` is always a
+   * reference (`NAME`/`NAME.pin`); `SOURCE` is a reference too, or — when it isn't the bare-ref
+   * shape — a canvas point expression (the ground-placement oracle). A trailing `shadow` flag opts
+   * into an auto contact-shadow ellipse.
+   */
+  readonly #parseFit = (): Statement => {
+    const s = this.#span(this.#peek())
+    this.#next() // fit
+    const target = this.#parseFitRef()
+    let source:
+      | { readonly kind: 'ref'; readonly head: string; readonly pin: string | undefined }
+      | { readonly kind: 'point'; readonly expression: Expression }
+    if (this.#atFitRef()) {
+      const ref = this.#parseFitRef()
+      source = { kind: 'ref', head: ref.head, pin: ref.pin }
+    } else {
+      source = { kind: 'point', expression: this.#parseCmdArgExpr() }
+    }
+    let shadow = false
+    if (this.#atName('shadow')) {
+      this.#next()
+      shadow = true
+    }
+    this.#expectNL()
+    return { kind: 'fit', target, source, shadow, span: s }
   }
 
   readonly #parseFnDef = (): Statement => {

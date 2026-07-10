@@ -33,8 +33,11 @@ footY = duneY(cx / (w - 1))                            # place anything standing
 
 One `fn` gives you three things from one source: **silhouette** (fill), **region** (mask/filter),
 and **placement oracle** (`y = f(x/(w-1))`). Everything standing on the ground calls it for its y, so
-floating/sinking objects are structurally impossible. Point lists (`curvePoly`) can't be a placement
-oracle — use `profile` for any line that carries objects. Extra shading zones must be
+floating/sinking objects are structurally impossible. The oracle is now first-class via **`fit`**
+(ADR-0087): a standing part declares a `pin base`, and `fit tree.base cx:duneY(cx/(w-1)) shadow`
+lands that base pin exactly on the terrain line with an auto contact-shadow — the object cannot drift
+from the ground because its y comes from the same `fn` that drew it. Point lists (`curvePoly`) can't
+be a placement oracle — use `profile` for any line that carries objects. Extra shading zones must be
 **terrain-following** regions (profile intersects, silhouettes), **never bare `rect` boxes** — an
 axis-aligned light box leaves a visible vertical seam across the scene.
 

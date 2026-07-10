@@ -948,7 +948,7 @@ const runRender = (cli: CliArguments): number => {
         process.stdout.write(
           `${JSON.stringify(
             {
-              diagnostics: [],
+              diagnostics: engine.warnings,
               render: {
                 drawing: targetRef.drawing,
                 width: sprite.w,
@@ -978,7 +978,7 @@ const runRender = (cli: CliArguments): number => {
         process.stdout.write(
           `${JSON.stringify(
             {
-              diagnostics: [],
+              diagnostics: engine.warnings,
               render: {
                 drawing: targetRef.drawing,
                 width: sprite.w,
@@ -1008,7 +1008,7 @@ const runRender = (cli: CliArguments): number => {
         process.stdout.write(
           `${JSON.stringify(
             {
-              diagnostics: [],
+              diagnostics: engine.warnings,
               render: {
                 drawing: targetRef.drawing,
                 width: sprite.w,
@@ -1036,7 +1036,7 @@ const runRender = (cli: CliArguments): number => {
         process.stdout.write(
           `${JSON.stringify(
             {
-              diagnostics: [],
+              diagnostics: engine.warnings,
               render: {
                 drawing: targetRef.drawing,
                 width: sprite.w,
@@ -1075,7 +1075,7 @@ const runRender = (cli: CliArguments): number => {
       process.stdout.write(
         `${JSON.stringify(
           {
-            diagnostics: [],
+            diagnostics: engine.warnings,
             render: {
               drawing: targetRef.drawing,
               width,
@@ -1096,6 +1096,9 @@ const runRender = (cli: CliArguments): number => {
       )
     } else {
       process.stdout.write(`wrote ${resolve(out)} (${width}x${height})\n`)
+      for (const w of engine.warnings) {
+        process.stdout.write(`${formatDiagnostic(w)}\n`)
+      }
       if (diff) {
         process.stdout.write(`${formatDiffSummary(diff)}\n`)
       }

@@ -96,6 +96,13 @@ export type Sprite = {
   pal: { key: string; color: Color; source: string }[]
   title: string | undefined
   desc: string | undefined
+  /**
+   * The drawing's exported attach points (ADR-0087): each `pin NAME PT` in the body registers a
+   * named point in this sprite's own local coordinate space, so `fit` can land one part's pin
+   * exactly on another's. `undefined`/empty for a drawing with no pins. Sprites produced by paths,
+   * image imports, tilesets, and atlases carry none.
+   */
+  pins?: ReadonlyMap<string, { readonly x: number; readonly y: number }>
 }
 
 /**

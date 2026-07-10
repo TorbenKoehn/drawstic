@@ -23,8 +23,10 @@ The order that wins on the first attempt — do not reorder:
    1–2 varying colours become draw params**, everything else fixed (§7).
 3. **Proportions-constant head** — `headTop/shoulderLine/hipLine/kneeLine/footLine` as module
    constants, before the first part (§2).
-4. **Parametric parts** — non-exported `draw part(c)`, each with a **socket comment** (§3, §4).
-5. **Full body back-to-front via `stamp`**, contact-shadow `ellipse` as the **first** statement (§5).
+4. **Parametric parts** — non-exported `draw part(c)`, each declaring its seam rows as **`pin`s** in
+   its own space (`pin shoulder 4:0`; `pin` replaces the socket *comment* — §3, §4).
+5. **Full body back-to-front via `fit`** (pin-anchored, contact-guaranteed — §4); plant standing
+   parts with `fit … shadow` (auto contact-shadow) instead of a hand `ellipse` (§5).
 6. **Bright accents last** (emissive lights, glints, orbs) — like scene-craft, so the shade pass
    never dims them.
 
@@ -89,20 +91,32 @@ replace shd(red) shd(blue)
 ## 4. Seam contract — no floating limbs
 
 The character-specific core bug (5/7 first runs; each gap cost ~1 full iteration). **A bbox overlap
-does not prove pixel contact** (smith's fist↔haft overlapped in bbox, rendered separate). Four rules
-make gaps structurally impossible:
+does not prove pixel contact** (smith's fist↔haft overlapped in bbox, rendered separate). The
+structural fix is **`pin`/`fit`** (ADR-0087): a part declares its seam rows as `pin`s in its own
+space, and `fit` *solves* the placement so the pins coincide — contact is guaranteed by the engine,
+not by a hand-computed `stamp` coordinate, and a residual seam raises **`W010`** (render) / **C007**
+(`critique`) instead of shipping silently. Four rules:
 
-- **(a) Socket comment + body adds offsets, never a shared `y`.** Each part documents its seam row in
-  its **own** coordinate space; the body computes each stamp from the shared line. Verified:
+- **(a) Pin each seam in the part's own space; `fit`, don't hand-stamp.** Each part carries a `pin`
+  at its seam row; the body seeds the root pin once and fits the rest, which auto-registers the
+  fitted part's pins so the chain continues. Verified pattern:
 
   ```drw
-  # head: bottom-center seam at row 15 (silhouette reaches row 15 — no buffer row)
-  # torso: top seam at row 0, bottom seam at row 17
+  draw torso(c) 12x18:
+    …
+    pin neck     6:0     # top seam (bottom-centre of head lands here)
+    pin shoulder 11:3
   draw figure(c) 24x60:
-    fill cool.alpha(30%) ellipse(12:56, 8:2)   # contact shadow FIRST — feet cover it
-    stamp torso(c) 4:(shoulderLine - 2)         # top seam overlaps head by 2px
-    stamp head(c) 4:(shoulderLine - 15)         # bottom seam (row 15) sits on shoulderLine
+    stamp torso(c) 6:(shoulderLine - 2)
+    pin torso.neck (6+6):(shoulderLine - 2)     # seed the root attach point (canvas space)
+    fit head.chin torso.neck shadow             # contact-guaranteed; `shadow` = auto contact pool
+    fit armL.shoulder torso.shoulder             # chains off torso's registered shoulder
   ```
+
+  The old hand-offset form (`stamp head 4:(shoulderLine - 15)` with a socket *comment*) still works
+  but reintroduces the off-by-one gap `fit` removes — prefer `fit`. **Plant standing figures with
+  the `shadow` flag**, not a hand `ellipse cool.alpha(30%)` — it centres on the actual contact
+  pixel, so it cannot drift.
 
 - **(b) Cut parts along the overlap, not the anatomy.** Pauldron belongs to the *arm* (covers the
   torso shoulder when stamped), faulds/skirt to the *torso* (covers the leg tops) → a slightly wrong

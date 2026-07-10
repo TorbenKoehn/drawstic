@@ -143,6 +143,14 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
   Fügen, Gap-Meldung); Ground-Placement-Oracle formalisieren; Auto-Contact-Shadow. Kreis/Ellipse auf
   eine Zentrierungs-Konvention + Off-by-one-Footprint fixen (`values.ts`). C007 muss clean sein.
   Product-Skill + Spec nachziehen; `craft-eval` (Character) fahren, Report in `docs/`.
+  → **3a-Assembly erledigt** (dieser Commit): `pin`/`fit` (AST/Parser kontextuell D7, `#execPinDeclaration`/
+  `#execFit` in eval), `Sprite.pins`-Export + `DrawState.pins`-Registry, Kontakt-Garantie via
+  Coverage-Snapshot + 8-Adjazenz-Check → non-fatal **W010**-Gap-Warnung (`Engine.warnings`, in `render`-
+  Diagnostics + human-Ausgabe), Auto-Match gleichnamiger Pins, Ground-Oracle (Point-Source `fit b.base
+  x:groundY(x)`), Auto-Contact-Shadow (`fit … shadow`, `contactShadowColor` in shading.ts). `stampSprite`-
+  Pfad wiederverwendet. 13 Tests (`tests/unit/assembly.test.ts`), 748 gesamt grün, tsc+biome clean.
+  Product-Skill + language-spec §9 + reference.md + character-craft §1/§4 + scene-craft §2 synchron.
+  **Checkbox bleibt offen**: 3b-Zentrierung (s. Emergente Punkte) + `craft-eval`-Character-Lauf stehen aus.
 
 ## Phase 4 — Break schließen
 
@@ -153,6 +161,20 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
 ## Emergente Punkte
 
 _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen anhängen.)_
+
+- [ ] **3b-centering** Kreis/Ellipse auf eine Zentrierungs-Konvention (ellipse → circles even-diameter,
+  ADR-0087) + Off-by-one-Footprint in `values.ts` (`ellipseRegion` → even `c-rx..c+rx-1` × `c-ry..c+ry-1`,
+  Corner-centred wie `circleRegion`); betroffene Tests/examples anpassen. **Separater Teil, NICHT in 3a.**
+- [ ] **3a-finding: fit-Source-Bareword ist immer Pin-Ref** Ein Bare-Name als `fit`-Source (`fit b a`)
+  ist stets eine Pin-Referenz (Auto-Match), nie ein Point-wertiges Binding — ein Punkt als Source muss
+  als Point-Literal (`x:y`) oder geklammert geschrieben werden (Disambiguierung, sonst wäre `fit b pt`
+  mehrdeutig). Dokumentiert in language-spec §9 / reference. Falls je ein Point-Binding als Source
+  gebraucht wird: `fit b.pin (pt)` klammern.
+- [ ] **3a-finding: W010 nur über gerenderte Pfade sichtbar** Die Gap-Warnung sammelt sich in
+  `Engine.warnings` und wird von `render` (JSON-`diagnostics` + human) ausgegeben; `build`/`sheet`
+  reichen sie heute NICHT durch (kein Regressionsrisiko — der strukturelle Defekt wird ohnehin von
+  `critique` C007 gefangen). Falls `build` die Gap-Warnung surface soll: `engine.warnings` in den
+  build-Diagnostics-Sammler einfalten (Phase 4).
 
 - [ ] **measure-phase2** craft-eval (eine Kategorie, Charaktere) gegen die dokumentierten Baselines
   fahren (schwer, Multi-Agent, Review-Bedarf) — konsolidiert am Ende/Human-getriggert. Deckt die

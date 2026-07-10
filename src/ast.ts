@@ -295,6 +295,38 @@ export type Statement =
       readonly response: string | undefined
       readonly span: TextSpan
     }
+  | {
+      /**
+       * A `pin KEY PT` attach-point declaration (ADR-0087): registers a named point `KEY` in the
+       * enclosing drawing's own coordinate space. `KEY` is a bare name in a part draw
+       * (`pin shoulder 4:0`, exported on the rendered sprite) or a dotted `part.name`
+       * (`pin torso.shoulder 16:14`) that seeds a canvas-space attach point for `fit`. `pin` is a
+       * keyword *only* in this `pin NAME …` statement position (contextual, D7).
+       */
+      readonly kind: 'pinDeclaration'
+      readonly name: string
+      readonly point: Expression
+      readonly span: TextSpan
+    }
+  | {
+      /**
+       * A `fit TARGET SOURCE [shadow]` anchored-assembly placement (ADR-0087): places `TARGET`'s
+       * part so its named pin lands exactly on `SOURCE` — a contact-guaranteed replacement for a
+       * hand-computed `stamp` point. `target` names the part (a bare name resolving to a drawing/
+       * sprite) and its pin (`undefined` ⇒ auto-match the single pin name shared with the source).
+       * `source` is either another placed part's already-registered pin (`ref`) or a canvas point
+       * expression (`point` — the ground-placement oracle: `fit tree.base x:groundY(x)`). `shadow`
+       * drops an auto contact-shadow ellipse under the footprint first. `fit` is a keyword *only* in
+       * this statement position (contextual, D7).
+       */
+      readonly kind: 'fit'
+      readonly target: { readonly head: string; readonly pin: string | undefined }
+      readonly source:
+        | { readonly kind: 'ref'; readonly head: string; readonly pin: string | undefined }
+        | { readonly kind: 'point'; readonly expression: Expression }
+      readonly shadow: boolean
+      readonly span: TextSpan
+    }
   | { readonly kind: 'palette'; readonly entries: PaletteEntry[]; readonly span: TextSpan }
   | { readonly kind: 'pixels'; readonly rows: PixelRow[]; readonly span: TextSpan }
   | {

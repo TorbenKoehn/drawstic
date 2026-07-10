@@ -144,6 +144,15 @@ draw scene 32x24:
   `text p pt "s" [font name]` · `flood p pt`.
 - **Stamp** `stamp name[(args)] pt [anchor center|bottom|…] [flipx] [flipy] [rot45] [scale2]
   [transform t] [tint p 0.3] [shadow 1:1 #0006] [mask r]`.
+- **Anchored assembly** (default for modular composition, ADR-0087) — a part declares named attach
+  points; the engine solves placement and **guarantees pixel contact** instead of trusting a
+  hand-computed `stamp` point: `pin shoulder 4:0` (a part's own-space attach point; exported) ·
+  `fit armL.shoulder torso.shoulder` (land armL's pin exactly on torso's placed pin; registers
+  armL's pins so the next `fit` chains; bare `fit armL torso` auto-matches a shared name). Seed the
+  root with a dotted `pin torso.shoulder 16:14`. No contact after fit ⇒ non-fatal **`W010`** gap
+  warning (the seam C007 also catches). **Ground oracle:** `fit tree.base x:duneY(x/(w-1))` plants a
+  part on a terrain fn (needs a named target pin) → no floating/sinking. `shadow` flag = auto
+  contact-shadow ellipse. `pin`/`fit` are keywords only in these slots.
 - **Declarative light + material** (default shading path, ADR-0086) — one named light drives
   everything, so encodings can't drift: `light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%` (travel dir;
   source up-left ⇒ up-left edge lit) or `light torch = at 12:8 #ffb060 gain 1.4` (point source;
@@ -266,10 +275,13 @@ side** in front AND side (the structural fix for "light mirrored per view" — A
 `warm`/`cool` + `fn lit/shd/deep` colour system is the ≤64px fallback where `shadeRegion`/`rim` are
 too weak). Side is a different pose, **not** a mirror; the theme light stays put across both.
 (2) **proportions constants** (`headTop/shoulderLine/hipLine/kneeLine/footLine` at module scope; ~4
-heads for 48–64px). (3) **parametric parts** (`draw part(c)`), each with a **socket comment** (its
-seam row in its own space). (4) full body **back-to-front via `stamp`**, contact-shadow
-`ellipse cool.alpha(30–35%)` as the **first** statement (feet cover it). (5) **recolor
-parametrically, never themes** (a theme palette does not cross a `stamp`; pass the 1–2 variant
+heads for 48–64px). (3) **parametric parts** (`draw part(c)`), each declaring its seam rows as
+**`pin`s** in its own space (`pin shoulder 4:0` — replaces the old socket *comment*). (4) full body
+**back-to-front via `fit`** (not hand-computed `stamp` points): seed the root with `pin
+torso.shoulder …`, then `fit armL.shoulder torso.shoulder` — pixel contact is now structural and a
+seam raises `W010`/C007 instead of shipping silently. Plant a standing figure with `fit base`
++ its `shadow` flag (auto contact-shadow) rather than a hand `ellipse`. (5) **recolor
+parametrically, never themes** (a theme palette does not cross a `stamp`/`fit`; pass the 1–2 variant
 colours, thin wrapper per variant). (6) **redraw pose-leading parts for the side, reuse
 pose-invariant ones** (side ≠ flip; far limb via neutral-grey `tint`).
 

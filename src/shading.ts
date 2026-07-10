@@ -38,6 +38,19 @@ const clamp01 = (v: number): number => Math.max(0, Math.min(1, v))
 /** ADR-0086's canonical cool ambient (`#2a3a5e`); the fallback shadow hue when a light has no `amb`. */
 const DEFAULT_COOL: Color = color(42, 58, 94)
 
+/** The auto contact-shadow alpha (ADR-0087) — a soft 30 % cool pool under a fitted part's footprint. */
+const CONTACT_SHADOW_ALPHA = 0.3
+
+/**
+ * The colour of the auto contact-shadow ellipse a `fit … shadow` drops under a part's footprint
+ * (ADR-0087). Cool and semi-transparent — the light's ambient/`amb` colour when present, else the
+ * canonical {@link DEFAULT_COOL} — so a fitted part reads as *grounded*, never floating, with a
+ * hue that stays coherent with the same light that shades it. Deterministic; independent of the
+ * light's direction (a contact pool sits under the object, not off to one side).
+ */
+export const contactShadowColor = (lt: Light | null): Color =>
+  withAlpha(lt?.amb?.color ?? DEFAULT_COOL, CONTACT_SHADOW_ALPHA)
+
 // ── geometry helpers ────────────────────────────────────────────────────────
 
 /** The region bbox centre (canvas coords); `(0, 0)` for a bbox-less region. */
