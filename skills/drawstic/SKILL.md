@@ -311,8 +311,8 @@ counter-check `<rect>` count. `check` catches almost nothing here — icon quali
 
 ## Characters — modular figure workflow
 
-For a modular game figure (parts stamped into a body, front + side, faction recolor), build the
-**parts first, the body last** — full recipes, ramps, seam + two-view rules in
+For a modular game figure (parts stamped into a body, front/side/back, faction recolor), build the
+**parts first, the body last** — full recipes, ramps, seam + three-view rules in
 [character-craft.md](character-craft.md), load it before building any figure.
 
 **Mandatory order:** (1) **light contract** — put ONE `light` in a `theme` and `use` it, so every
@@ -328,18 +328,24 @@ torso.shoulder …`, then `fit armL.shoulder torso.shoulder` — pixel contact i
 seam raises `W010`/C007 instead of shipping silently. Plant a standing figure with `fit base`
 + its `shadow` flag (auto contact-shadow) rather than a hand `ellipse`. (5) **recolor
 parametrically, never themes** (a theme palette does not cross a `stamp`/`fit`; pass the 1–2 variant
-colours, thin wrapper per variant). (6) **redraw pose-leading parts for the side, reuse
-pose-invariant ones** (side ≠ flip; far limb via neutral-grey `tint`). (7) **the RO silhouette
-outline is ONE bare `outline` as the last statement of the assembly draw** (ADR-0090) — over the
-composited figure, width 1, colour derived-or-`ink`. Never bake `outline` per part (rings become
-internal seams); the 50%-alpha floor means a soft contact shadow painted first is not ringed.
+colours, thin wrapper per variant). (6) **redraw pose-leading parts for side AND back — neither is a
+flip.** Side: reuse pose-invariant limbs, far limb via neutral-grey `tint`. Back: its own part set
+(no face — hair/nape instead), **inverted prop z-order** (a hidden prop fits/stamps *before* the
+torso on front/side, a mounted prop/cape fits *after* every limb on back), and **mirrored left-right**
+shoulder/hip attach vs. front (character-craft.md §5b). (7) **the RO silhouette outline is ONE bare
+`outline` as the last statement of the assembly draw** (ADR-0090) — over the composited figure, width
+1, colour derived-or-`ink`. Never bake `outline` per part (rings become internal seams); the
+50%-alpha floor means a soft contact shadow painted first is not ringed.
 
 **Checklist before "done":** run **`critique --as character`** (must-fix C007 catches a floating/
-seamed part under `--strict`; answer its seam-contact rubric), `--silhouette` black-out reads as the
-archetype and shows connected seams; per-joint `--crop` (bbox overlap ≠ pixel contact); native `@1`
-reads; body adds socket offsets, never a shared `y`; warm materials shaded via `darken` (a raw cool
-`mix` → magenta); `sheet` across the variant wrappers. `check` verifies grammar only — every
-seam/silhouette failure is silent.
+seamed part under `--strict`; a composed presentation sheet no longer needs excluding by hand — the
+family auto-drops it and never fires C009 between a subject's own front/side/back views, so
+`pass:true` doesn't require a sheet-split; answer its seam-contact rubric), `--silhouette` black-out
+reads as the archetype and shows connected seams on every view including the back; per-joint `--crop`
+(bbox overlap ≠ pixel contact); native `@1` reads; body adds socket offsets, never a shared `y`; warm
+materials shaded via `darken` (a raw cool `mix` → magenta); `sheet` across the variant wrappers.
+`check` verifies grammar only — every seam/silhouette failure is silent, and a clean `critique --strict`
+verifies structure, not craft — look at the render.
 
 ## Items — equipment set workflow
 

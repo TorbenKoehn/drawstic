@@ -1,7 +1,7 @@
 # Drawstic character craft
 
-How to build a **modular game figure** (48–64px, front + side view, faction recolor) that reads as
-the archetype on the **first attempt with few iterations**. SKILL.md § Characters gives the mandatory
+How to build a **modular game figure** (48–64px, or 64×128 chibi with front/side/back — ADR-0089/0090,
+§5–7) that reads as the archetype on the **first attempt with few iterations**. SKILL.md § Characters gives the mandatory
 order + checklist; this is the detail. Every rule comes from a shipped, check-clean recipe
 (`examples/characters/*.drw`) or a rendered probe. `check` verifies grammar only — **seam contact,
 silhouette legibility, a genuine side view, and archetype/sex reading are 100 % visual and silent to
@@ -12,7 +12,7 @@ carried by a `theme` `light` + `model`/`cel` (ADR-0089 form shading works at chi
 and the contact-shadow ellipse. Keep from icon-craft: small-raster discipline — the *raw*
 `shadeRegion`/`rim` distance veils are still too weak/thin at ≤64px, but **`model` (form-based) is
 not**; reach for `model`/`cel`, not the low-level primitives. Add what is character-specific: parts,
-**seams**, two views, faction recolor. The dominant bug class here is the **floating limb / 2–3px
+**seams**, three views, faction recolor. The dominant bug class here is the **floating limb / 2–3px
 seam gap** (5 of 7 first-run builds hit it) — §4 makes it structurally impossible.
 
 ## 1. The fixed build order
@@ -22,15 +22,18 @@ The order that wins on the first attempt — do not reorder:
 1. **Light contract** — ONE `light` in a `theme`, `use`d so every view/variant shares it (the
    structural cross-view fix); `warm`/`cool` + `fn lit/shd/deep` is the ≤64px colour-system fallback (§6).
 2. **Material ramps + faction colour set** — metal/skin/cloth/bone as module bindings; **only the
-   1–2 varying colours become draw params**, everything else fixed (§7).
+   1–2 varying colours become draw params**, everything else fixed (§3, §6).
 3. **Proportions-constant head** — `headTop/shoulderLine/hipLine/kneeLine/footLine` as module
    constants, before the first part (§2).
 4. **Parametric parts** — non-exported `draw part(c)`, each declaring its seam rows as **`pin`s** in
    its own space (`pin shoulder 4:0`; `pin` replaces the socket *comment* — §3, §4).
 5. **Full body back-to-front via `fit`** (pin-anchored, contact-guaranteed — §4); plant standing
-   parts with `fit … shadow` (auto contact-shadow) instead of a hand `ellipse` (§5).
-6. **Bright accents last** (emissive lights, glints, orbs) — like scene-craft, so the shade pass
-   never dims them.
+   parts with `fit … shadow` (auto contact-shadow) instead of a hand `ellipse` (§4).
+6. **Three composers — front, side, back** (§5): side redraws pose-leading parts, back redraws the
+   head (no face) and **inverts prop z-order** (mounted props/cape fit *after* the body, not before).
+7. **Bright accents, then ONE bare `outline` last** — emissive lights/glints/orbs (like scene-craft,
+   so the shade pass never dims them), then a single `outline` as the assembly draw's **final**
+   statement closes the silhouette (§6, ADR-0090).
 
 ## 2. Proportions constants — the head before the first part
 
@@ -56,6 +59,11 @@ footLine     = 55
 **Share the vertical lines across views; re-derive horizontal attach-x per view** (§5) — a profile
 shifts its mass forward, so the same `shoulderLine` is safe but the same shoulder-x is not.
 Confirm centering with `--inspect` `alphaCoverageBBox`.
+
+**Budget vertical headroom for tall headgear explicitly.** A pointed hat/plume/crest eats into the
+space above `headTop`; the constants block doesn't remove that arithmetic — check `tip-y ≥ 0` by hand
+before the first render, or the tip clips the canvas top on a chibi figure that's already ~4 heads
+tall in a fixed `H`.
 
 ## 3. Faction recolor — parametric parts, never themes
 
@@ -121,7 +129,10 @@ not by a hand-computed `stamp` coordinate, and a residual seam raises **`W010`**
   works but reintroduces the off-by-one gap `fit` removes — prefer `fit`. **Plant standing figures
   with the `shadow` flag**, not a hand `ellipse cool.alpha(30%)` — it pools under the part's footprint
   bottom (the feet), not the fit pin, so a joint-to-joint fit (`leg.hip → torso.hip`) still drops
-  the shadow under the feet, never at the hip.
+  the shadow under the feet, never at the hip. `fit` checks contact at the **moment it runs**, not on
+  the final composite — fit a covering part (a robe hem, a back-mounted cape, §5(b)) only after the
+  part it must cover is already placed, and expect a harmless `W010` on an assembly's very first
+  (root/ground-oracle) `fit`, since nothing precedes it yet. Both are expected, not bugs.
 
 - **(b) Cut parts along the overlap, not the anatomy.** Pauldron belongs to the *arm* (covers the
   torso shoulder when stamped), faulds/skirt to the *torso* (covers the leg tops) → a slightly wrong
@@ -144,13 +155,17 @@ not by a hand-computed `stamp` coordinate, and a residual seam raises **`W010`**
 neighbour can hide a multi-pixel gap (villager's torso rip showed **only** under `--silhouette`).
 `W011` and `--explain` catch the *placement* class the crop's eyeball is meant to; use both.
 
-## 5. Two views — side ≠ flip
+## 5. Views — front, side, back
+
+### 5a. Front vs. side — a different pose, not a mirror
 
 Front→side is a **different pose**, not a mirror (`flip`/`mirror` only swaps left/right *within* a
 pose). All 7 runs confirmed the split:
 
 - **Redraw** the parts that **lead the pose axis**: head (nose/visor/brim point forward), torso
-  (front vs. back drape), the leading arm.
+  (front vs. back drape), the leading arm. A profile also reads **thinner** than a front — widen the
+  side torso to ~0.8× the head width, or the head dominates and the figure looks bobble-headed
+  (Knight).
 - **Reuse** the **pose-invariant** parts: bow, quiver, staff, hammer, boot, leg.
 - **Held prop: grip it, don't hand-flip it (HV6).** Give the prop a `grip` pin, author it once in its
   true orientation (blade up), and `fit sword.grip hand.grip` in every view — the grip stays in the
@@ -165,6 +180,60 @@ pose). All 7 runs confirmed the split:
 - **Symmetric pair once, not twice:** draw one limb, mirror it — `mirror x=24: stamp leg(e) 20:36
   anchor top`, or `flipx` on the second stamp. Both work first-try; don't hand-copy two near-identical
   stamps (skeleton did and paid the boilerplate).
+
+### 5b. Back view — the third view, not front-flipped either (HV4)
+
+Back gets its **own composer and, unlike side, an inverted prop z-order** — the 2026-07-10 run's
+worst-scoring structural bug after shading (Assassin, human-graded worst of four). Four rules, each
+probe-verified (a compact 4-part front/side/back rig, `--png@6`, scratchpad — not shipped):
+
+**(a) Part selection: no face; a front-posed limb still reads as "facing front" from behind.** The
+back head draws hair/nape/collar — **never** eyes/brows/mouth. A pose-invariant limb (a straight
+sleeve, a hanging arm) reuses as-is; a limb posed *toward the viewer* (raised to hold a bow, reaching
+forward) still reads as facing front when reused unchanged on the back — redraw it relaxed, or accept
+the left-right swap in (c) below instead of a literal redraw.
+
+**(b) Z-order inverts vs. front/side: a mounted prop paints AFTER the body, not before it.**
+Front/side hide a prop behind the torso (`stamp quiver …` **before** the root `fit`, so the torso
+covers most of it — archer's `archerFront`); back mounts the same class of prop *over* the assembled
+figure, so it must fit/stamp **last**, after every limb:
+
+```drw
+draw figureBack WxH:
+  fit torsoBack.neck cx:shoulderY          # root first, as always
+  fit headBack.nape torsoBack.neck
+  fit armL.shoulder torsoBack.shoulderL    # arms BEFORE the prop — tucked under it
+  fit armR.shoulder torsoBack.shoulderR
+  fit cape.attach torsoBack.cape           # prop LAST — on top, fully visible
+  outline
+```
+
+Backwards (prop fit ahead of the arms) is the 2026-07-10 Assassin bug: the cloak painted before the
+sleeves, so the arms landed on top of it and read as pasted onto the back instead of tucked beneath.
+
+**(c) Front and back mirror left↔right at the shoulder/hip attach — the figure turned around, the
+part didn't.** Reuse the identical, non-mirrored part draws and swap which named pin each fits to:
+
+```drw
+# front: armA -> shoulderL, armB -> shoulderR
+# back:  armB -> shoulderL, armA -> shoulderR     (same two arms, sides swapped)
+```
+
+A same-side limb/prop front *and* back is also what collapses `critique`'s C009 sibling check by
+construction — the mirror fixes both the read and the metric at once.
+
+**(d) Side view: clamp a loose part to the body's own silhouette instead of letting it overstep.** A
+cape/cloak authored with its attach pin at the shape's geometric middle (not its edge) hangs half
+*behind* the body and half *over* it — the 2026-07-10 Assassin side-cape bug ("juts too far right,
+into the character"). Clamp the region to the half behind the attach pin before shading it:
+
+```drw
+draw cloakSide WxH:
+  raw      = curvePoly(…)                         # authored generously, spans past the attach pin
+  cloakReg = raw.intersect(rect(0:0, attachX:h))   # keep only the far side of the pin
+  cel cloakReg cloakMat 3
+  pin attach attachX:0
+```
 
 ## 6. Material ramps & light (baked in the colour system)
 
@@ -215,6 +284,17 @@ short OkLCh arc through magenta → a pink "shadow" (hit by archer, villager, sm
 via `tint`). Full rule + the safe `darken().mix(cool, 12%)` recipe: SKILL.md / reference.md § Color.
 A raw `mix(cool)` is safe only on **already-cool** cloth (mage's indigo robe).
 
+**Dark material needs a deliberate value-spread dose, or `critique`'s C004 stays red** (Assassin,
+Wizard). A `cel`/`model` pass on a near-black base can sit under C004's 0.15 luminance-spread floor
+even after shading — a `litTone(warm, X%)` corner patch has almost no measurable effect below ~35 %,
+then overshoots above ~50 %, with no usable middle to search. The verified fix is a **pair**, not one
+bigger dose — a thin low-alpha edge for crispness plus a moderate corner fill for the metric:
+
+```drw
+rim darkReg 1:1 warm.alpha(55%) 1                                              # thin edge, w1
+fill darkC.litTone(warm, 44%) darkReg.intersect(rect(0:0, (w*7//10):(h//5)))   # ~15–20% corner
+```
+
 Verified ramps (module bindings; each part pulls its tones from these):
 
 | Material | Tones (light → dark) | Source |
@@ -245,12 +325,51 @@ and still outline last. It only paints *outside* the mass, so fingers/staff core
 deliberate part-to-part separator line? That is the one case for a local per-part `outline` (or a
 `line ink`), applied on purpose — not the silhouette default.
 
-## 7. Verification cadence
+## 7. Chibi face — readable at 64×128 (HV3)
 
-`check` catches almost nothing here — quality is ~100 % visual. After each edit batch:
+A face at chibi part-scale (`headFront`/`headSide`/`headBack` ≈ 18–28px wide) reads as "two dots" if
+you stop at pupils — the worst-graded defect of the 2026-07-10 run (Archer). Five marks make it a
+face, in this order, on the **head part** (not the composer):
+
+1. **Skin base via `model`, not `cel 2`.** `model face skinMat` gives a smooth, form-following
+   terminator at any size (ADR-0089) — a small `cel N` band on a face is a **value trap**: `cel skin
+   2` throws half the face into the dark band and reads as stubble/beard (Wizard). Want cel bands on
+   a face anyway? Use `N ≥ 3` so the darkest band stays confined to the far corner.
+2. **Eyes: white + iris + pupil + one highlight pixel, not a bare dot.** Four layers, four lines —
+   white almond, coloured iris, dark pupil, one light pixel offset toward the brow:
+
+   ```drw
+   eyeL = ellipse(10:19, 3:2)
+   fill white eyeL
+   circle iris 10:19 2 fill
+   px pupil 10:19
+   px highlight.alpha(90%) 9:18
+   ```
+
+3. **Brows: a short 1px stroke above each eye, clear of the hairline.** `line brow 8:15 12:14 w1` —
+   leave ≥2px of skin between the bang's bottom edge and the brow line, or the two dark shapes merge
+   into one shadow and the brow disappears.
+4. **Nose: one 1–2px shadow tick, never an outline.** A stroked nose bridge at this scale reads as a
+   wart; a single darker vertical `line`/`px` between the eyes is enough.
+5. **Mouth: one short stroke, not a filled shape.** A 3–4px `line` at ~70 % alpha reads as a closed
+   chibi mouth; a filled shape reads as a wound.
+
+Probe-verified (`--png@8`/`--png@1`, scratchpad, not shipped): this five-layer recipe on a 28×34
+`headFront` reads with legible eyes/brows/nose/mouth at both inspection and native scale — the
+two-dot failure is a missing-layer problem, not a resolution ceiling.
+
+## 8. Verification cadence
+
+`check` catches almost nothing here — quality is ~100 % visual, and `critique --strict` passing
+verifies **structure** (contact, colour-count, silhouette parity), not craft — the 2026-07-10 run
+shipped harsh shading, a floating head, a reversed sword, arms on the back, a two-dot face, and weak
+outlines all green. The render you look at, not the exit code, is the craft gate. After each edit
+batch:
 
 0. **Gate:** `critique --as character --strict --json` → `pass:true` (must-fix C007 catches a
-   floating/seamed part under `--strict`), then **answer its seam-contact rubric** by looking.
+   floating/seamed part under `--strict`; a composed presentation sheet is auto-excluded from the
+   C009/C011 family, and C009 never fires between a subject's own front/side/back views — `pass:true`
+   no longer needs a sheet-split workaround), then **answer its seam-contact rubric** by looking.
 1. `check --lint --json` = `[]` (W002 catches a part that's neither exported, stamped, nor
    `fit`-attached; **W009** the transparent end-row).
 2. **Part fragment `--png@6–8`** — each part isolated with literal args (`#head(#a83a36)`); reuse the

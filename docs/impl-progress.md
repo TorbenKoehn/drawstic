@@ -225,8 +225,25 @@ adressieren die human-visuellen Befunde HV1–HV6 + Gesichter, oben (§9) nach H
   Flip ist ein **separater** `fit`, der das Prop nie berührt → Front/Side/Back zeigen denselben Griff. Ein
   bewusster Prop-Flip nutzt den eigenen `fit … flipx` (horizontal, Klinge bleibt oben — Pin reitet die
   Transform). Idiom in character-craft §5 + language-spec/reference/SKILL dokumentiert; Probe-Test grün.
-- [ ] **d — Back-View Part-Selektion + Prop-z-Order-Idiom (HV4, §5.17)**: Rear-View wählt rear-Parts und
-  invertiert die Prop-z-Order (Prop nach dem Torso bei Back), keine Arme auf dem Rücken.
+- [x] **d — Back-View Part-Selektion + Prop-z-Order-Idiom (HV4, §5.17)**: reine Craft-/Doku-Einheit
+  (kein Engine-Umbau — die Amendment-2-Fit-Transform aus b/c trägt bereits). Neues `character-craft.md`
+  §5b (vier Regeln, alle probe-verifiziert über ein 4-Part Front/Side/Back-Rig im Scratchpad,
+  `check --json`=`[]`, `--png@6`): (a) **Part-Selektion** — Rückkopf zeichnet Haar/Nacken, nie
+  Gesicht; ein vorwärts-posiertes Glied (Bogenarm) liest auch von hinten als „nach vorn" und muss
+  entweder umgezeichnet oder über (c) gespiegelt werden. (b) **Z-Order invertiert**: ein
+  rückenmontiertes Prop (Umhang/Köcher) fittet NACH allen Gliedmaßen (oben, sichtbar); vorn/seitlich
+  wird dasselbe Prop VOR dem Torso-Root gestampt (verdeckt) — der belegte Assassin-Bug (Umhang vor den
+  Armen gefittet → Arme lagen sichtbar über dem Umhang). (c) **Front/Back spiegeln links↔rechts** an
+  Schulter/Hüfte — dieselben ungespiegelten Part-Draws, nur der Ziel-Pin-Name tauscht Seite (behebt
+  zugleich C009-Kollaps bei gleicher Prop-Seite). (d) **Side-Clamp**: ein loses Teil (Umhang) mit
+  mittigem statt kantennahem Attach-Pin hängt hälftig in die Figur hinein — Fix per
+  `.intersect(rect(0:0, attachX:h))` auf die pin-ferne Hälfte, der belegte Assassin-Side-Cape-Bug
+  (Probe zeigt geklemmt vs. ungeklemmt nebeneinander). §1 (Build-Order), §2 (Vertikal-Budget hohe
+  Kopfbedeckung), §4 (W010 ist fit-zeitpunkt-sensitiv, erster Root-`fit` warnt harmlos), §6
+  (C004-Dosis-Rezept für dunkles Material) im selben Kohärenz-Pass ergänzt; zwei stale interne
+  §-Verweise gefixt (§7→§3,§6 und §5→§4). `SKILL.md` §Characters Schritt 6/Checklist um Back-Idiom +
+  Sheet-Auto-Exclusion nachgezogen (siehe unten). Scratchpad-Proben (`face-probe.drw`,
+  `back-view-probe.drw`) sind Verifikationsartefakte, nicht Teil des Commits.
 - [x] **e — Verlässliche Silhouetten-Outline für zusammengesetzte Figuren (HV5, alle 4)**
   ([ADR-0090](decisions/0090-reliable-silhouette-outline.md)). Diagnose per `--png@8` der realen
   Builder-Ausgaben + Proben: der `outline`-Filter (Dilatation → Ring) ist **kein Dilatations-Bug**,
@@ -249,8 +266,16 @@ adressieren die human-visuellen Befunde HV1–HV6 + Gesichter, oben (§9) nach H
   dünnes-Feature-Kern-Überlebt, abgeleiteter Dunkelton, beide-optional-Parse). Doku: language-spec
   §Filters + Grammatik, reference.md (Filterzeile + Compositing-Bullet), SKILL.md §Characters (Schritt 7),
   character-craft §6 (RO-Outline-Idiom).
-- [ ] **f — Chibi-Gesicht/Klein-Detail bei 64×128 (HV3, schlechteste Note)**: engine-gestützter
-  Gesichts-Pfad/validiertes Face-Primitive, damit ein Gesicht mehr als 2 Punkte ist.
+- [x] **f — Chibi-Gesicht/Klein-Detail bei 64×128 (HV3, schlechteste Note)**: ebenfalls reine
+  Craft-/Doku-Einheit — kein neues Face-Primitive, sondern ein kopierbares Fünf-Schicht-Rezept aus
+  bestehenden Primitiven, neu in `character-craft.md` §7: (1) Hautbasis via `model`, nicht `cel 2`
+  (die Wizard-„Beard"-Falle bei kleinen Massen — `cel N≥3` falls doch gewünscht); (2) Auge = weiße
+  Mandel + farbige Iris + dunkle Pupille + 1 Licht-Pixel (vier Zeilen, kein bloßer Punkt); (3) Braue =
+  1px-Strich mit sichtbarem Abstand zum Pony; (4) Nase = 1–2px Schattenstrich, nie eine Kontur; (5)
+  Mund = kurzer Strich bei ~70% Alpha. Probe-verifiziert (`face-probe.drw` im Scratchpad, 28×34
+  `headFront`, `check --json`=`[]`, `--png@8`+`--png@1`): Auge mit Iris/Highlight, Braue getrennt vom
+  Haar, Nase/Mund sichtbar bei beiden Renderskalen — kein „2-Punkte"-Gesicht mehr. §6-Verweis auf die
+  ADR-0089-Form-Schattierung bei Chibi-Skala bereits vorher korrekt (kein Fix nötig).
 - [ ] **g — Re-Render aller vier Charaktere + Human-Vision-Pass** gegen die neue Schattierung/Placement.
 
 ## Emergente Punkte
