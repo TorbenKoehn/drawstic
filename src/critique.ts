@@ -1071,6 +1071,28 @@ const SIGNATURE_GRID = 32
 const COLLAPSE_DISTANCE = 0.12
 
 /**
+ * The character-craft three-view naming suffixes (SKILL.md/character-craft.md's mandated
+ * front/side/back workflow), longest first so `…Front`/`…Side`/`…Back` never partially
+ * shadow a shorter false match.
+ */
+const VIEW_SUFFIXES = ['Front', 'Side', 'Back'] as const
+
+/**
+ * The naming stem `name` shares with its own front/side/back siblings (character-DX 2026-07-10
+ * rerun §5.2/§9.6): strips one trailing view suffix, so `knightFront`/`knightSide`/`knightBack`
+ * all derive the subject `knight`. Returns `name` unchanged when no known suffix matches, so an
+ * unsuffixed drawing is never accidentally grouped with anything but an exact-name match.
+ */
+const viewSubjectStem = (name: string): string => {
+  for (const suffix of VIEW_SUFFIXES) {
+    if (name.length > suffix.length && name.endsWith(suffix)) {
+      return name.slice(0, -suffix.length)
+    }
+  }
+  return name
+}
+
+/**
  * **Known limitation (docs/impl-progress.md "1c-followup C009-Plate-Blindheit"), advisory
  * by design, not fixed here.** {@link silhouetteSignature} is built from the sprite's *full*
  * covered mask — for an icon with an opaque plate/background tile, the covered mask (and
@@ -1325,8 +1347,17 @@ export const critiqueFamily = (
   }
   const median = medianOf(facts.map((f) => f.coveredPixelCount))
   const checks: FamilyCheck[] = []
+  // A `character` family's own front/side/back views are SUPPOSED to read as one silhouette
+  // (character-DX 2026-07-10 rerun §5.2/§9.6/named contradiction) — C009 stays live for real
+  // near-neighbour siblings (different characters/items in the same family) but never fires
+  // between two views that share a view-suffix-stripped subject stem.
+  const sameCharacterViews = options.profile?.name === 'character'
   for (const m of familyMembers) {
-    if (m.nearest && m.nearest.distance < COLLAPSE_DISTANCE) {
+    const collapsesOwnView =
+      sameCharacterViews &&
+      m.nearest !== null &&
+      viewSubjectStem(m.name) === viewSubjectStem(m.nearest.name)
+    if (m.nearest && m.nearest.distance < COLLAPSE_DISTANCE && !collapsesOwnView) {
       checks.push({
         target: m.name,
         code: CRITIQUE_CODE.siblingCollapse,

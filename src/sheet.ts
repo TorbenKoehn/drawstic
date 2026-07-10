@@ -6,10 +6,12 @@
 // module's export/definition order. Composed with the same render/raster
 // infrastructure as everything else (import-only).
 
+import type { Statement } from './ast.js'
 import { type Color, rgb } from './color.js'
 import type { TextSpan } from './diagnostic.js'
 import type { DefinitionEntry, Engine, ModuleRecord } from './eval.js'
 import { Framebuffer } from './framebuffer.js'
+import { stampTargetName, walkStatements } from './lint.js'
 import { type Context, drawText, type FontResolved, stampSprite } from './raster.js'
 import type { Sprite } from './values.js'
 
@@ -93,6 +95,52 @@ export const selectSheetDrawings = (
   // an export-only module whose exports are all parametric/tilesets: fall back
   // to every drawing rather than emit an empty sheet.
   return out.length > 0 ? out : allDraws()
+}
+
+/**
+ * True iff `body` `stamp`s two or more OTHER names from `candidateNames` — the structural
+ * signature of a hand-authored presentation sheet (`draw xSheet: stamp xFront …; stamp xSide …`)
+ * that visually composes its own siblings onto one panel, as opposed to an independent view.
+ */
+const stampsMultipleCandidates = (
+  body: readonly Statement[],
+  ownName: string,
+  candidateNames: ReadonlySet<string>,
+): boolean => {
+  const stamped = new Set<string>()
+  walkStatements(body, (stmt) => {
+    if (stmt.kind !== 'call' || stmt.callee !== 'stamp') {
+      return
+    }
+    const name = stampTargetName(stmt.args[0])
+    if (name && name !== ownName && candidateNames.has(name)) {
+      stamped.add(name)
+    }
+  })
+  return stamped.size >= 2
+}
+
+/**
+ * Select the drawings a **critique family** should compare (ADR-0085, hardened for the
+ * character-DX 2026-07-10 rerun §5.1/§9.8): the same candidate set as {@link selectSheetDrawings}
+ * (exported drawings by default, every drawing under `all`), MINUS any candidate that is itself a
+ * composed presentation of ≥2 other candidates ({@link stampsMultipleCandidates}) — a hand-built
+ * `draw xSheet: stamp xFront …; stamp xSide …` panel. Structural, not name-based: the moment a
+ * drawing visually assembles its own family it is disqualified as a "view," because its combined
+ * mass/palette is exactly what pollutes C009 (sibling-silhouette collapse) and C011 (weight
+ * parity) with noise unrelated to the individual views' craft. The `sheet` CLI command still uses
+ * {@link selectSheetDrawings} directly — composing an on-demand presentation sheet is legitimate;
+ * only the critique family excludes one that's already checked in as its own export.
+ */
+export const selectCritiqueFamily = (
+  mod: ModuleRecord,
+  all: boolean,
+): Extract<DefinitionEntry, { readonly kind: 'draw' }>[] => {
+  const candidates = selectSheetDrawings(mod, all)
+  const candidateNames = new Set(candidates.map((c) => c.definition.name))
+  return candidates.filter(
+    (c) => !stampsMultipleCandidates(c.definition.body, c.definition.name, candidateNames),
+  )
 }
 
 /** Fills an opaque axis-aligned rectangle straight into the buffer. */

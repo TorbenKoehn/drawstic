@@ -585,6 +585,39 @@ describe('C009 sibling-silhouette collapse (critiqueFamily)', () => {
     expect(critiqueFamily([])).toBeNull()
   })
 
+  test('character profile: one character’s own front/side/back views never fire C009 against each other', () => {
+    // character-DX 2026-07-10 rerun §5.2/§9.6 (named contradiction): a character's own views are
+    // SUPPOSED to read as one silhouette — C009 must not punish that under `--as character`.
+    const fam = critiqueFamily(
+      [
+        { name: 'knightFront', sprite: triA('knightFront', DARK) },
+        { name: 'knightBack', sprite: triA('knightBack', LIGHT) },
+      ],
+      { profile: character },
+    )
+    expect(fam?.checks.some((c) => c.code === CRITIQUE_CODE.siblingCollapse)).toBe(false)
+  })
+
+  test('character profile: C009 still fires between different characters (real near-neighbour siblings)', () => {
+    const fam = critiqueFamily(
+      [
+        { name: 'knightFront', sprite: triA('knightFront', DARK) },
+        { name: 'mageFront', sprite: triA('mageFront', LIGHT) },
+      ],
+      { profile: character },
+    )
+    const c9 = fam?.checks.filter((c) => c.code === CRITIQUE_CODE.siblingCollapse) ?? []
+    expect(c9.map((c) => c.target).sort()).toEqual(['knightFront', 'mageFront'])
+  })
+
+  test('without a character profile, same-name-stem siblings still fire C009 (exemption is profile-gated)', () => {
+    const fam = critiqueFamily([
+      { name: 'knightFront', sprite: triA('knightFront', DARK) },
+      { name: 'knightBack', sprite: triA('knightBack', LIGHT) },
+    ])
+    expect(fam?.checks.some((c) => c.code === CRITIQUE_CODE.siblingCollapse)).toBe(true)
+  })
+
   test('familyMetrics exposes a symmetric distance matrix (zero diagonal), nearest, and median', () => {
     const fam = critiqueFamily([
       { name: 'a', sprite: synthSprite('a', 16, 16, () => LIGHT) },
@@ -712,6 +745,46 @@ describe('critique CLI family selection + rubric payload', () => {
       const fm = (all.json as { critique: { familyMetrics: { members: { name: string }[] } } })
         .critique.familyMetrics
       expect(fm.members.map((m) => m.name)).toEqual(['a', 'b', 'c'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('the default family excludes a composed presentation sheet that stamps ≥2 siblings', () => {
+    // character-DX 2026-07-10 rerun §5.1/§9.8: a hand-authored `draw sheet: stamp front …; stamp
+    // side …` panel that is itself exported must not enter the default critique family — its
+    // combined mass/palette is noise, not a view. `--family` can still name it explicitly.
+    const dir = mkdtempSync(join(tmpdir(), 'drawstic-family-'))
+    const file = join(dir, 'sheetFamily.drw')
+    const src = [
+      'draw front 8x8:',
+      '  bg #c04040',
+      'draw side 8x8:',
+      '  bg #40c040',
+      'draw sheet 20x10:',
+      '  stamp front 0:0',
+      '  stamp side 10:0',
+      'export front out/front:',
+      '  png @1',
+      'export side out/side:',
+      '  png @1',
+      'export sheet out/sheet:',
+      '  png @1',
+      '',
+    ].join('\n')
+    writeFileSync(file, src)
+    try {
+      const def = runCapture(['critique', file, '--as', 'item', '--json'])
+      const critique = (
+        def.json as { critique: { familyMetrics: { members: { name: string }[] } } }
+      ).critique
+      expect(critique.familyMetrics.members.map((m) => m.name)).toEqual(['front', 'side'])
+
+      const withSheet = runCapture(['critique', file, '--family', 'front,side,sheet', '--json'])
+      const fm = (
+        withSheet.json as { critique: { familyMetrics: { members: { name: string }[] } } }
+      ).critique.familyMetrics
+      expect(fm.members.map((m) => m.name)).toEqual(['front', 'side', 'sheet'])
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

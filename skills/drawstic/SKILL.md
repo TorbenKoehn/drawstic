@@ -65,7 +65,8 @@ hatch (§ Idioms). Steps in full:
    runs pixel-based, vision-free quality checks (`C0xx`) `check` structurally can't — off-center,
    floating/seamed parts, flat value, edge-clip, sibling-silhouette collapse — each with
    `{measured, threshold, fix}`. Pass `--as` (thresholds are per-category; sibling checks C009/C011
-   compare the exported family, `--family a,b,c` overrides). `--strict` → exit 1 on the must-fix
+   compare the exported family minus any composed presentation sheet, `--family a,b,c` overrides;
+   under `--as character` C009 never fires between a subject's own front/side/back views). `--strict` → exit 1 on the must-fix
    subset (C001 empty, C007 character seam, +C003 icon centering) — the CI gate. **`pass`≠exit
    code**: `critique.pass` in the JSON goes `false` on *any* fired finding, must-fix or advisory
    (a lone C009/C011/C012 warning flips it), while `--strict`'s exit code trips only on the

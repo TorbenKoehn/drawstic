@@ -42,18 +42,18 @@ const warning = (
 
 /**
  * Runs every lint check against `mod`'s own drawings (not imported ones).
- * Stamp usage is collected across all of `mod` first, so a drawing used only
- * as another drawing's stamp target isn't flagged `W002` even if defined
- * before its user.
+ * Part usage (`stamp`/`fit` targets) is collected across all of `mod` first, so
+ * a drawing used only as another drawing's stamp/fit target isn't flagged
+ * `W002` even if defined before its user.
  */
 export const lintModule = (engine: Engine, mod: ModuleRecord): Diagnostic[] => {
   const diagnostics: Diagnostic[] = []
   const exported = new Set(mod.exports.map((ex) => ex.name))
-  const stamped = new Set<string>()
+  const used = new Set<string>()
   const fontCache = new Map<string, FontResolved | null>()
   for (const [, entry] of mod.definitions) {
     if (entry.kind === 'draw' && entry.module === mod) {
-      collectStamped(entry.definition.body, stamped)
+      collectUsedAsPart(entry.definition.body, used)
     }
   }
   for (const [name, entry] of mod.definitions) {
@@ -67,14 +67,14 @@ export const lintModule = (engine: Engine, mod: ModuleRecord): Diagnostic[] => {
     lintCoveredStamps(engine, mod, entry.definition, diagnostics)
     lintUnknownGlyphs(engine, mod, entry.definition, diagnostics, fontCache)
     lintTransparentLastRow(entry.definition, mod, diagnostics)
-    if (!exported.has(name) && !stamped.has(name)) {
+    if (!exported.has(name) && !used.has(name)) {
       diagnostics.push(
         warning(
           'W002',
-          `drawing '${name}' is neither exported nor stamped`,
+          `drawing '${name}' is neither exported, stamped, nor fitted`,
           mod.displayPath,
           entry.definition.span,
-          'export it or stamp it from another drawing',
+          'export it, stamp it, or fit it from another drawing',
         ),
       )
     }
@@ -728,16 +728,25 @@ const lintTransparentLastRow = (
 }
 
 /**
- * Collects every drawing name referenced by a `stamp` call in `body`, so
- * `W002` doesn't flag drawings that are used only as stamp targets.
+ * Collects every drawing name referenced as a `stamp` or `fit` target in `body`,
+ * so `W002` doesn't flag drawings that are used only to assemble another drawing
+ * (character-DX 2026-07-10 rerun §5.4: a `fit`-attached part is real usage, exactly
+ * like a `stamp` target — omitting it made W002 fire on nearly every part of a
+ * `pin`/`fit`-built character). A `fit`'s SOURCE (`stmt.source.head` for a `ref`
+ * source) is a canvas-space pin-registry label, not necessarily a drawing name —
+ * only the TARGET (`stmt.target.head`, the part being placed) is counted here.
  */
-const collectStamped = (body: readonly Statement[], out: Set<string>): void => {
+const collectUsedAsPart = (body: readonly Statement[], out: Set<string>): void => {
   walkStatements(body, (stmt) => {
     if (stmt.kind === 'call' && stmt.callee === 'stamp') {
       const name = stampTargetName(stmt.args[0])
       if (name) {
         out.add(name)
       }
+      return
+    }
+    if (stmt.kind === 'fit') {
+      out.add(stmt.target.head)
     }
   })
 }
@@ -746,7 +755,7 @@ const collectStamped = (body: readonly Statement[], out: Set<string>): void => {
  * Extracts a stamp call's target drawing name, whether written as a bare
  * name or a parametric call expression; `null` if it isn't statically a name.
  */
-const stampTargetName = (arg: Argument | undefined): string | null => {
+export const stampTargetName = (arg: Argument | undefined): string | null => {
   if (arg?.kind !== 'expression') {
     return null
   }
@@ -788,9 +797,12 @@ const literalNumber = (expr: Expression): number | null => {
 // generic AST walkers shared by the checks above: `walkStatements` recurses
 // into every nested statement body (`if`/`match`/`repeat`/`for`/`while`/
 // `maskBlock`); `walkStatementExprs`/`walkArg`/`walkExpr` recurse into every
-// expression subtree, collecting referenced names.
+// expression subtree, collecting referenced names. `walkStatements` and
+// `stampTargetName` are exported — `sheet.ts` reuses them to detect a
+// composed-presentation drawing (one that `stamp`s its own critique siblings)
+// for the critique family default (character-DX 2026-07-10 rerun §5.1).
 
-const walkStatements = (
+export const walkStatements = (
   statements: readonly Statement[],
   visit: (stmt: Statement) => void,
 ): void => {

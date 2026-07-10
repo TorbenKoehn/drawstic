@@ -11,16 +11,16 @@ const load = (src: string): { engine: Engine; mod: ModuleRecord } => {
 }
 
 describe('lintModule', () => {
-  test('W002: flags a drawing that is neither exported nor stamped', () => {
+  test('W002: flags a drawing that is neither exported, stamped, nor fitted', () => {
     const { engine, mod } = load('draw orphan 2x2:\n  pal k=#000000\n  pixels:\n    kk\n    kk\n')
     const diags = lintModule(engine, mod)
     expect(diags).toHaveLength(1)
     expect(diags[0]).toMatchObject({
       severity: 'warning',
       code: 'W002',
-      message: "drawing 'orphan' is neither exported nor stamped",
+      message: "drawing 'orphan' is neither exported, stamped, nor fitted",
       file: 'lint.drw',
-      hint: 'export it or stamp it from another drawing',
+      hint: 'export it, stamp it, or fit it from another drawing',
     })
   })
 
@@ -28,6 +28,31 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       'draw dot 2x2:\n  pal k=#000000\n  pixels:\n    kk\n    kk\n\ndraw scene 4x4:\n  stamp dot 1:1\n\nexport scene icons/scene:\n  png\n',
     )
+    expect(lintModule(engine, mod)).toEqual([])
+  })
+
+  test('W002 is avoided when the only use of a drawing is a `fit` target (pin/fit-built character)', () => {
+    const { engine, mod } = load(
+      [
+        'draw torso 12x20:',
+        '  fill #6a5030 rect(0:0, 11:19)',
+        '  pin shoulder 10:3',
+        '',
+        'draw arm 6x14:',
+        '  fill #8a5a3a rect(0:0, 5:13)',
+        '  pin shoulder 0:2',
+        '',
+        'draw fig 30x30:',
+        '  stamp torso 4:2',
+        '  pin torso.shoulder 14:5',
+        '  fit arm.shoulder torso.shoulder',
+        '',
+        'export fig chars/fig:',
+        '  png',
+        '',
+      ].join('\n'),
+    )
+    // `arm` is never `stamp`ed or `export`ed — only `fit`-attached — and must not W002.
     expect(lintModule(engine, mod)).toEqual([])
   })
 
@@ -112,8 +137,8 @@ describe('lintModule', () => {
     expect(diags[0]).toMatchObject({
       severity: 'warning',
       code: 'W002',
-      message: "drawing 'unused' is neither exported nor stamped",
-      hint: 'export it or stamp it from another drawing',
+      message: "drawing 'unused' is neither exported, stamped, nor fitted",
+      hint: 'export it, stamp it, or fit it from another drawing',
     })
   })
 

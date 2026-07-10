@@ -54,7 +54,7 @@ import {
   spriteToAscii,
 } from './preview.js'
 import { scaleBitmap } from './raster.js'
-import { buildSheet, type SheetLayout, selectSheetDrawings } from './sheet.js'
+import { buildSheet, type SheetLayout, selectCritiqueFamily } from './sheet.js'
 import type { Light, Region, Sprite } from './values.js'
 
 // union of every subcommand's flags; each `run*` handler reads only the
@@ -1386,8 +1386,10 @@ const sheetJson = (
  * resolved {@link resolveProfile} profile into the profile-gated checks C002
  * (edge-clip), C005 (stroke width) and C007 (floating part) plus its category
  * thresholds — without it, an info advisory nudges the agent to set one. The
- * family defaults to the sheet selection ({@link selectSheetDrawings} — exported
- * draws, or every draw with `--all`); `--family` overrides it. Family checks run
+ * family defaults to {@link selectCritiqueFamily} (exported draws, or every draw with
+ * `--all`, minus any drawing that is itself a composed presentation of ≥2 other
+ * candidates — a hand-built `sheet`-style panel never belongs in its own family, character-DX
+ * 2026-07-10 rerun §5.1); `--family` overrides it. Family checks run
  * only with ≥2 members. Findings default to `warning` (exit 0 — never blocking);
  * `--strict` promotes the must-fix subset to `error` (exit 1), the CI regression
  * gate. The `--json` payload adds `critique: {pass, profile, strict, failedCodes,
@@ -1436,7 +1438,7 @@ const runCritique = (cli: CliArguments): number => {
     const byName = new Map(rendered.map((r) => [r.name, r]))
     const familyNames = cli.family
       ? cli.family
-      : selectSheetDrawings(mod, cli.all).map((e) => e.definition.name)
+      : selectCritiqueFamily(mod, cli.all).map((e) => e.definition.name)
     const members = familyNames
       .map((name) => byName.get(name))
       .filter((r): r is (typeof rendered)[number] => r !== undefined)
