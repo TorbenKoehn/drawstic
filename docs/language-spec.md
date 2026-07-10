@@ -1185,7 +1185,8 @@ A filter post-processes the current framebuffer (or a drawing). Apply built-ins 
 commands:
 
 ```drw
-outline k          # 1px outline around opaque pixels  (outline k 2 = 2px)
+outline            # 1px silhouette outline, derived-dark ink  (colour+width optional; ADR-0090)
+outline k          # …explicit colour  (outline k 2 = 2px; outline 2 = derived ink, 2px)
 replace y r        # swap one colour for another
 tint r 0.3         # blend everything toward r by 0.3
 shadow 1:1 k       # whole-frame drop shadow, offset dx:dy, colour k (ADR-0070)
@@ -1946,7 +1947,7 @@ stamp-flag     = "flipx" | "flipy" | ROT-FLAG | SCALE-FLAG          (* pinned su
                | "transform" expr | "tint" paint expr | "mask" NAME
                | "anchor" NAME | "shadow" point paint ;
 
-filter-cmd     = "outline" paint [ expr ]           (* built-in filter set (§12); *)
+filter-cmd     = "outline" [ paint ] [ expr ]       (* built-in filter set (§12); paint+width optional, ADR-0090 *)
                | "replace" paint paint              (* extensible — new filters   *)
                | "tint"    paint expr               (* follow the same shape      *)
                | "shadow"  point paint              (* whole-frame drop shadow: dx:dy (ADR-0070) *)

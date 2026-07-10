@@ -387,6 +387,22 @@ const clampMag = (v: number, m: number): number => Math.max(-m, Math.min(m, v))
  */
 export const litTone = (base: Color, light: Color, amt: number): Color => mix(base, light, amt)
 
+/** Target OkLCh lightness of a derived outline ink — near-black but not crushed to #000. */
+const INK_L = 0.15
+/** Max chroma kept in a derived ink — a hint of the figure's hue, never a saturated line. */
+const INK_C = 0.05
+
+/**
+ * Derive a near-black outline "ink" from a silhouette's (mean) colour: keep a hint of its hue,
+ * crush lightness to {@link INK_L} and clamp chroma to {@link INK_C} so a whole figure gets one
+ * consistent dark contour (a warm figure → warm-black, a cool figure → cool-black). Deterministic;
+ * used as the default paint when `outline` is given no colour.
+ */
+export const inkTone = (base: Color): Color => {
+  const o = colorToOklch(base)
+  return oklchToColor({ l: INK_L, c: Math.min(o.c, INK_C), h: o.h, alpha: 1 })
+}
+
 /** Max degrees a `shadowTone` hue is nudged toward `cool` — never a full cross-hue swing. */
 const SHADOW_HUE_CAP = 20
 /** Fraction of `amt` that also desaturates the shadow (shadows read slightly greyer). */

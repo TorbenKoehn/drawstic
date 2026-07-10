@@ -2,7 +2,7 @@
 // pinned primitives, region eliminators, gradients (ordered-dithered in
 // pixel mode), stamps (inverse-mapped NN), filters, text.
 
-import { type Color, litTone, mix, shadowTone, TRANSPARENT } from './color.js'
+import { type Color, color, inkTone, litTone, mix, shadowTone, TRANSPARENT } from './color.js'
 import { dcosDeg, dhypot, dsinDeg, roundHalfUp } from './dmath.js'
 import { type BitmapFont, missingGlyph } from './fonts.js'
 import type { Framebuffer } from './framebuffer.js'
@@ -938,25 +938,53 @@ const dilateStep = (
 }
 
 /**
- * N-pixel outline filter: dilate the opaque silhouette width times (4-connected) and paint the
- * newly-covered, still-non-opaque ring.
+ * Silhouette-coverage floor: only pixels at least half-covered count as the figure, so a soft
+ * contact shadow (`alpha 38%`) or an anti-aliased fringe is *not* treated as silhouette and does
+ * not get ringed — the outline hugs the solid figure at its 50 %-coverage contour.
  */
-export const filterOutline = (ctx: Context, paint: Paint, width: number): void => {
+const OUTLINE_ALPHA_MIN = 128
+
+/**
+ * N-pixel silhouette outline (spec §12): build the figure's silhouette from substantially-opaque
+ * pixels (≥ {@link OUTLINE_ALPHA_MIN}), dilate it `width` times (4-connected — no diagonal corner
+ * nubs, the pixel-art-correct hug) and paint the newly-covered outer/interior-hole ring. Because it
+ * only ever paints *outside* the silhouette, it never eats thin features (a 1px staff/finger keeps
+ * its core). Run once over the *composited* figure (the last statement of the assembly draw) for a
+ * single clean contour; run per-part and the seams between parts get ringed too. When `paint` is
+ * null the colour is derived from the silhouette's mean via {@link inkTone} — one consistent dark
+ * contour with a hint of the figure's own hue.
+ */
+export const filterOutline = (ctx: Context, paint: Paint | null, width: number): void => {
   const buffer = ctx.buffer
   const opaque = new Uint8Array(buffer.width * buffer.height)
+  let sr = 0
+  let sg = 0
+  let sb = 0
+  let count = 0
   for (let y = 0; y < buffer.height; y++) {
     for (let x = 0; x < buffer.width; x++) {
-      if (buffer.alphaAt(x, y) > 0) {
+      if (buffer.alphaAt(x, y) >= OUTLINE_ALPHA_MIN) {
         opaque[y * buffer.width + x] = 1
+        if (!paint) {
+          const c = buffer.get(x, y)
+          sr += c.r
+          sg += c.g
+          sb += c.b
+          count++
+        }
       }
     }
   }
+  if (count === 0 && !paint) {
+    return
+  }
+  const resolved: Paint = paint ?? inkTone(color(sr / count, sg / count, sb / count))
   let current: Uint8Array = opaque
   const sink = new PixelSink()
   for (let n = 0; n < width; n++) {
     current = dilateStep(current, opaque, sink, buffer.width, buffer.height)
   }
-  sink.paint(ctx, paint)
+  sink.paint(ctx, resolved)
 }
 
 /**

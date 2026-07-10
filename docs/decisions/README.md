@@ -95,3 +95,4 @@ add an ADR here and reflect it in [AGENTS.md](../../AGENTS.md) and the affected 
 | [0087](0087-anchored-assembly.md) | Anchored assembly (`pin`/`fit`); ellipse unified to circle's centering | Accepted (supersedes 0028 point 3 for `ellipse`; refines 0024, 0064, 0072) |
 | [0088](0088-in-place-v1-break.md) | In-place v1 break: collapse `drawstic 1`/`drawstic 2` double semantics | Accepted (supersedes 0029 point 3; refines 0068, 0069, 0070, 0072) |
 | [0089](0089-form-based-shading.md) | Form-based (normal) shading as the `model` default; `cel` = the same body as opt-in bands | Accepted (refines 0086) |
+| [0090](0090-reliable-silhouette-outline.md) | Reliable silhouette `outline`: 50 %-coverage floor (ignores soft shadows/AA), optional derived-dark colour, composited-figure idiom | Accepted (refines 0009 §filters) |

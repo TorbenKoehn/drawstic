@@ -624,7 +624,7 @@ pixel-mode ramp reads as soft — accept a crisp core or hand-pixel it.
 Filter commands (post-process framebuffer; `r` = a region where shown). All four shadow
 surfaces share one `[region] dx:dy paint` shape (ADR-0070); the four texture filters take an
 optional leading region scope (ADR-0071):
-`outline k [2]` · `replace a b` · `tint p 0.3` · `shadow dx:dy p` (whole-frame drop) ·
+`outline [k] [2]` (silhouette outline; colour+width both optional — bare `outline` = 1px derived-dark ink; builds the silhouette from ≥50%-alpha pixels, so it ignores soft shadows/AA and never eats thin features — ADR-0090) · `replace a b` · `tint p 0.3` · `shadow dx:dy p` (whole-frame drop) ·
 `castShadow r 2:3 p` / `shadow r 2:3 p` (local, region-first) · `grain [r] amount seed p` ·
 `speckle [r] density seed p` · `ripple [r] strength seed p` · `dither [r] a b threshold` ·
 `shadeRegion r lightPt base amount` · `lightRegion r lightPt paint amount` ·
@@ -652,6 +652,12 @@ optional leading region scope (ADR-0071):
   is nearly invisible even at high `w` (raise `w`, or skip it and rely on a lit cap zone).
 - `ambientOcclusion r p amount` = a 1px **inner-boundary stroke** of `r` at `p`'s alpha ×
   `amount` — not a soft gradient.
+- `outline [k] [w]` rings the **outer silhouette** of everything painted so far (dilate `w`px,
+  paint the outside ring). Run it **once as the last statement of the assembly draw**, over the
+  composited figure — not per part, or every part-to-part seam gets its own dark ring. Colour+width
+  optional (`outline` = 1px derived-dark; `outline k` explicit; `outline 2` derived+2px). Silhouette
+  = pixels ≥50% alpha, so a soft contact shadow or AA fringe is **not** ringed; it only paints
+  outside, so a 1px staff/finger keeps its core (width 2 still clubs a 2px prop — stay at 1 for RO).
 - `dither a b t` is a **raw set, not a blend** — every opaque pixel is overwritten with `a`/`b`
   (Bayer-picked by `t`), so an `alpha(0%)` partner punches a transparency hole, not a no-op.
   Small/radial fills show a hard checkerboard, not a smooth gradient.

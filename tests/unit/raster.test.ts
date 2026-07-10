@@ -482,6 +482,41 @@ describe('filters', () => {
     expect(px(none, 0, 1)).toEqual([0, 0, 0, 0])
   })
 
+  test('filterOutline silhouette floors at 50% coverage: a soft (<128 alpha) pixel is not ringed', () => {
+    const soft = ctx(5, 5)
+    soft.buffer.set(2, 2, color(0, 0, 0, 97)) // a 38%-alpha contact-shadow-like pixel
+    filterOutline(soft, red, 1)
+    expect(px(soft, 1, 2)).toEqual([0, 0, 0, 0]) // not treated as silhouette → no ring
+    expect(px(soft, 2, 2)).toEqual([0, 0, 0, 97]) // soft pixel itself untouched
+
+    const solid = ctx(5, 5)
+    solid.buffer.set(2, 2, color(0, 0, 0, 200)) // ≥128 → silhouette
+    filterOutline(solid, red, 1)
+    expect(px(solid, 1, 2)).toEqual([255, 0, 0, 255]) // ringed
+  })
+
+  test('filterOutline never eats a thin feature: a 1px line keeps its core, gains only an outer ring', () => {
+    const c = ctx(5, 7)
+    for (let y = 1; y <= 5; y++) {
+      c.buffer.set(2, y, blue) // a 1px-wide vertical bar
+    }
+    filterOutline(c, black, 1)
+    expect(px(c, 2, 3)).toEqual([0, 0, 255, 255]) // core survives
+    expect(px(c, 1, 3)).toEqual([0, 0, 0, 255]) // left ring
+    expect(px(c, 3, 3)).toEqual([0, 0, 0, 255]) // right ring
+  })
+
+  test('filterOutline with null paint derives a near-black ink from the silhouette', () => {
+    const c = ctx(5, 5)
+    c.buffer.set(2, 2, color(80, 200, 120, 255)) // a green figure pixel
+    filterOutline(c, null, 1)
+    const ring = px(c, 1, 2)
+    expect(ring[3]).toBe(255) // opaque ring
+    // near-black (L≈0.15): every channel well below the source's brightest
+    expect(Math.max(ring[0], ring[1], ring[2])).toBeLessThan(90)
+    expect(px(c, 2, 2)).toEqual([80, 200, 120, 255]) // figure pixel untouched
+  })
+
   test('filterReplace swaps exact matches and respects the mask', () => {
     const c = ctx(3, 1)
     c.buffer.set(0, 0, black)

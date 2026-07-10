@@ -721,6 +721,18 @@ draw d 2x2:
     expect(px(s, 3, 3)).toEqual([255, 0, 0, 255])
   })
 
+  test('outline: colour and width both optional — bare `outline` derives a dark ink', () => {
+    // bare `outline` → 1px derived-dark ring over the silhouette
+    const bare = render('draw d 6x6:\n  px #50c878 3:3\n  outline\n', 'd')
+    const ring = px(bare, 3, 2)
+    expect(ring[3]).toBe(255)
+    expect(Math.max(ring[0], ring[1], ring[2])).toBeLessThan(90) // near-black
+    expect(px(bare, 3, 3)).toEqual([80, 200, 120, 255]) // #50c878 core untouched
+    // `outline 2` → derived ink, explicit width 2
+    const w2 = render('draw d 8x8:\n  px #50c878 4:4\n  outline 2\n', 'd')
+    expect(px(w2, 2, 4)[3]).toBe(255) // 2px ring reaches two out
+  })
+
   test('local shadows, texture filters, and lighting helpers', () => {
     const shadowed = render(
       'draw d 6x4:\n  r = rect(1:1, 2:2)\n  castShadow r 2:0 #ff0000\n  fill #000000 r\n',

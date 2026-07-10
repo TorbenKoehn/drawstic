@@ -3854,7 +3854,9 @@ export class Engine {
       }
       // built-in filters (§12)
       case 'outline': {
-        const paint = args.paint()
+        // Both args optional: `outline` → 1px derived-dark ink over the composited silhouette;
+        // `outline ink` / `outline ink 2` / `outline 2` also valid (ADR-0090).
+        const paint = args.optPaint()
         const width = args.empty() ? 1 : args.num()
         args.done()
         filterOutline(ctx, paint, quantInt(width))
@@ -6703,6 +6705,28 @@ class Args {
       this.#state.module.displayPath,
       expr.span,
     )
+  }
+
+  /**
+   * An optional leading paint: when the current argument evaluates to a colour/gradient, consume and
+   * return it; otherwise leave it in place (so a following reader can take it as, e.g., a width
+   * number) and return null. Used by `outline`, whose colour and width are both optional (ADR-0090).
+   */
+  optPaint(): Paint | null {
+    const arg = this.#items[this.#index]
+    if (arg?.kind !== 'expression') {
+      return null
+    }
+    const value = this.#engine.evalExpr(arg.expression, this.#env, this.#state)
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      (value.type === 'color' || value.type === 'grad')
+    ) {
+      this.#index++
+      return value
+    }
+    return null
   }
 
   color(): Color {

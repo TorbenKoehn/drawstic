@@ -233,6 +233,18 @@ blade a club. **Never `stroke` a form ≤~4px min-extent** — the inner border 
 (skeleton's rib erosion; SKILL.md § Gotchas). Contour thin bones/blades via colour contrast + value
 shading instead.
 
+**RO silhouette outline — one `outline` over the composited figure (ADR-0090).** The signature dark
+contour is a **single** whole-figure pass: put a bare **`outline`** as the **last statement of the
+assembly `draw`**, after every `pin`/`fit`/`stamp`. Bare = 1px, colour derived from the figure
+(warm-black for warm, cool-black for cool); pass a colour to pin it (`outline ink`). **Do not bake
+`outline` into each part** — per-part rings survive assembly as internal dark seams and never form
+one clean silhouette (the biggest outline failure of the 07-10 run). Stay at **width 1** for 64×128
+chibi — `outline 2` clubs a thin bow/staff. The pass floors the silhouette at 50% alpha, so a soft
+contact shadow (`alpha 38%`) or AA fringe is **not** ringed — you may paint the contact shadow first
+and still outline last. It only paints *outside* the mass, so fingers/staff cores stay intact. Want a
+deliberate part-to-part separator line? That is the one case for a local per-part `outline` (or a
+`line ink`), applied on purpose — not the silhouette default.
+
 ## 7. Verification cadence
 
 `check` catches almost nothing here — quality is ~100 % visual. After each edit batch:

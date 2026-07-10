@@ -227,7 +227,28 @@ adressieren die human-visuellen Befunde HV1–HV6 + Gesichter, oben (§9) nach H
   Transform). Idiom in character-craft §5 + language-spec/reference/SKILL dokumentiert; Probe-Test grün.
 - [ ] **d — Back-View Part-Selektion + Prop-z-Order-Idiom (HV4, §5.17)**: Rear-View wählt rear-Parts und
   invertiert die Prop-z-Order (Prop nach dem Torso bei Back), keine Arme auf dem Rücken.
-- [ ] **e — Outline-Mechanismus (HV5, alle 4)**: dunkle RO-Silhouetten-Outline sauber bei 64×128.
+- [x] **e — Verlässliche Silhouetten-Outline für zusammengesetzte Figuren (HV5, alle 4)**
+  ([ADR-0090](decisions/0090-reliable-silhouette-outline.md)). Diagnose per `--png@8` der realen
+  Builder-Ausgaben + Proben: der `outline`-Filter (Dilatation → Ring) ist **kein Dilatations-Bug**,
+  sondern scheitert an drei Punkten. (1) **Kein Composited-Pfad → Pro-Part-Backing**: das
+  guide-nahe Idiom legte `outline` in jedes Part-`draw` (Knight 15×, Wizard 12×); nach `pin`/`fit`
+  werden die Pro-Part-Ringe zu **internen dunklen Nähten**, die eine Silhouette nie schließt.
+  (2) **`alpha > 0` verschluckte weiche/AA-Pixel**: bei Whole-figure-Nutzung (Archer) bekam der
+  **gemandatete weiche Kontaktschatten** (`alpha 38%`) einen eigenen Ring (Probe reproduziert den
+  Schatten-Ring). (3) **Schwache Defaults**: Farbe Pflicht + Breite 2 klobt einen 2px-Bogen/Stab zum
+  Club. Fixes in `filterOutline` (`raster.ts`): **Silhouette ab 50% Deckung** (`OUTLINE_ALPHA_MIN=128`
+  → ignoriert Schatten/AA-Fringe), **Farbe optional mit abgeleitetem Dunkelton** (`inkTone` in
+  `color.ts`: OkLCh L≈0.15, C≤0.05, Hue erhalten → warm-/kühl-black je Figur), **Breite Default 1**,
+  4-connected (keine Diagonal-Nubs, pixel-art-korrekt). `Args.optPaint()` (`eval.ts`) macht Farbe+Breite
+  beide optional: `outline` · `outline ink` · `outline ink 2` · `outline 2`. Da nur **außerhalb** der
+  Silhouette gemalt wird, frisst der Ring keine dünnen Features (1px-Stab/Finger behält Kern).
+  RO-Default-Idiom: **ein bare `outline` als letzte Anweisung des Assembly-`draw`** über die
+  Gesamtsilhouette — nicht pro Part. Probe-Renders (`--png@8`): Whole-figure-Bare-Outline schließt
+  sauber, weicher Schatten NICHT geringt, dünner + diagonaler Stab intakt; alte `outline ink 2` klobt,
+  alte 1px-Version ringt den Schatten. `tsc`+`biome` clean, 805 Tests grün (4 neue: 50%-Boden,
+  dünnes-Feature-Kern-Überlebt, abgeleiteter Dunkelton, beide-optional-Parse). Doku: language-spec
+  §Filters + Grammatik, reference.md (Filterzeile + Compositing-Bullet), SKILL.md §Characters (Schritt 7),
+  character-craft §6 (RO-Outline-Idiom).
 - [ ] **f — Chibi-Gesicht/Klein-Detail bei 64×128 (HV3, schlechteste Note)**: engine-gestützter
   Gesichts-Pfad/validiertes Face-Primitive, damit ein Gesicht mehr als 2 Punkte ist.
 - [ ] **g — Re-Render aller vier Charaktere + Human-Vision-Pass** gegen die neue Schattierung/Placement.

@@ -329,7 +329,10 @@ seam raises `W010`/C007 instead of shipping silently. Plant a standing figure wi
 + its `shadow` flag (auto contact-shadow) rather than a hand `ellipse`. (5) **recolor
 parametrically, never themes** (a theme palette does not cross a `stamp`/`fit`; pass the 1–2 variant
 colours, thin wrapper per variant). (6) **redraw pose-leading parts for the side, reuse
-pose-invariant ones** (side ≠ flip; far limb via neutral-grey `tint`).
+pose-invariant ones** (side ≠ flip; far limb via neutral-grey `tint`). (7) **the RO silhouette
+outline is ONE bare `outline` as the last statement of the assembly draw** (ADR-0090) — over the
+composited figure, width 1, colour derived-or-`ink`. Never bake `outline` per part (rings become
+internal seams); the 50%-alpha floor means a soft contact shadow painted first is not ringed.
 
 **Checklist before "done":** run **`critique --as character`** (must-fix C007 catches a floating/
 seamed part under `--strict`; answer its seam-contact rubric), `--silhouette` black-out reads as the
