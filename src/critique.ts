@@ -6,11 +6,18 @@
 // Phase 1a scope: the cheap, vision-free checks that need only a single metric
 // bundle computed once from the framebuffer — C001 (empty/near-empty), C003
 // (optical centering), C004 (value/contrast spread), C006 (palette/complexity
-// budget), C008 (pinholes), C012 (dynamic transparent trailing edge row). The
-// component/silhouette checks (C002/C005/C007/C009/C011) and `--as` profiles
-// arrive in 1b/1c. Metric computation reuses `inspectSprite` (src/inspect.ts),
-// `spritePreviewStats` (src/preview.ts) and `relativeLuminance` (src/color.ts):
-// no metric is computed twice.
+// budget), C008 (pinholes), C012 (dynamic transparent trailing edge row).
+//
+// Phase 1b adds the pixel-geometry checks that need one component/distance-
+// transform scan (also computed once, only when a `--as` profile asks for it):
+// C007 (floating-part/seam — 8-connected components, chamfer distance from the
+// body) and C005 (stroke width — chamfer distance to the nearest uncovered
+// pixel). A `CritiqueProfile` (`--as icon|scene|character|item`) selects which
+// of these apply plus the category thresholds; `strict` promotes the must-fix
+// subset from `warning` to `error`. The silhouette-signature checks
+// (C002/C009/C011) arrive in 1c. Metric computation reuses `inspectSprite`
+// (src/inspect.ts), `spritePreviewStats` (src/preview.ts) and `relativeLuminance`
+// (src/color.ts): no metric is computed twice.
 
 import { relativeLuminance } from './color.js'
 import type { Diagnostic, Severity, TextSpan } from './diagnostic.js'
@@ -23,7 +30,9 @@ export const CRITIQUE_CODE = {
   empty: 'C001',
   centering: 'C003',
   valueSpread: 'C004',
+  strokeWidth: 'C005',
   paletteBudget: 'C006',
+  floatingPart: 'C007',
   pinhole: 'C008',
   trailingEdgeRow: 'C012',
 } as const
@@ -41,8 +50,86 @@ const MIN_VALUE_SPREAD = 0.15
 /** Skip C004 below this many covered pixels — too small for a meaningful histogram. */
 const MIN_SPREAD_SAMPLE = 8
 
+/** Canvas size (`max(w,h)`) below which C005 is skipped — hairline strokes read fine on tiny sprites. */
+const STROKE_MIN_SIZE = 32
+
+/**
+ * Fraction of the medial-axis skeleton that must fall under the stroke floor
+ * before C005 fires. Deliberately high: a single thin detail (a bow limb, a
+ * staff, a rain streak) is legitimate; only a sprite whose *load-bearing*
+ * strokes are overwhelmingly hairline reads as "drawn as outlines, not filled".
+ * Calibrated above the thinnest check-clean example (`bow` at 0.75) so the
+ * bundled icon/item/character draws never false-fire (test-asserted).
+ */
+const STROKE_DOMINATION = 0.85
+
+/** A flagged floating part (C007) must be at least this fraction of the body (min {@link MIN_PART_FLOOR}px) — filters AA specks. */
+const MIN_PART_FRACTION = 0.01
+const MIN_PART_FLOOR = 4
+
 /** Rounds a fraction to 4 decimal places (matches inspect.ts' round4 convention). */
 const round4 = (v: number): number => Math.round(v * 10000) / 10000
+
+/** The four Drawstic asset categories a critique profile can target (ADR-0085 §4). */
+export type CritiqueCategory = 'icon' | 'scene' | 'character' | 'item'
+
+/**
+ * A category threshold table (ADR-0085 §4) — never inferred, only chosen via
+ * `--as`. Every field is a per-category *applicability/threshold* switch, not a
+ * scale constant: the one absolute figure (min stroke width) is derived per
+ * sprite as `round(2·size/32)`. `checkStroke`/`checkFloatingPart` gate the two
+ * pixel-geometry checks to the categories where they are craft floors — C007
+ * (floating part) only for `character`, because a bbox-overlapping detached
+ * component is a compositional feature for icons/scenes (a weather icon's sun +
+ * cloud) and a pair for items (two boots), but a seam bug for an assembled
+ * character; C005 (stroke width) everywhere a subject has real strokes.
+ */
+export type CritiqueProfile = {
+  readonly name: CritiqueCategory
+  /** C006 distinct-colour ceiling; today the agnostic default for every category (1c re-baselines and tightens it). */
+  readonly colorCeiling: number
+  /** C005 applies (stroke discipline is a craft floor for this category). */
+  readonly checkStroke: boolean
+  /** C007 applies (a bbox-overlapping detached component signals a seam, not composition). */
+  readonly checkFloatingPart: boolean
+  /** Under `strict`, C003 (optical centering) joins the must-fix subset for this category. */
+  readonly strictCentering: boolean
+}
+
+const PROFILES: Record<CritiqueCategory, CritiqueProfile> = {
+  icon: {
+    name: 'icon',
+    colorCeiling: DEFAULT_COLOR_CEILING,
+    checkStroke: true,
+    checkFloatingPart: false,
+    strictCentering: true,
+  },
+  item: {
+    name: 'item',
+    colorCeiling: DEFAULT_COLOR_CEILING,
+    checkStroke: true,
+    checkFloatingPart: false,
+    strictCentering: true,
+  },
+  character: {
+    name: 'character',
+    colorCeiling: DEFAULT_COLOR_CEILING,
+    checkStroke: true,
+    checkFloatingPart: true,
+    strictCentering: false,
+  },
+  scene: {
+    name: 'scene',
+    colorCeiling: DEFAULT_COLOR_CEILING,
+    checkStroke: false,
+    checkFloatingPart: false,
+    strictCentering: false,
+  },
+}
+
+/** Resolves a `--as` category name to its {@link CritiqueProfile}; `null` for an absent/unknown name (no inference). */
+export const resolveProfile = (name: string | null | undefined): CritiqueProfile | null =>
+  name != null && name in PROFILES ? PROFILES[name as CritiqueCategory] : null
 
 /**
  * A single critique finding: the standard diagnostic fields plus the auditable
@@ -88,15 +175,26 @@ export type CritiqueMetrics = {
   } | null
 }
 
-/** One drawing's critique report: its metric bundle plus the checks that fired. */
+/**
+ * One drawing's critique report: its metric bundle plus the checks that fired.
+ * `componentCount`/`minStrokeWidth` are the phase-1b geometry facts — present
+ * only when a `--as` profile requested the component/stroke scan (`undefined`
+ * otherwise, `minStrokeWidth` `null` when the sprite has no measurable stroke).
+ */
 export type CritiqueDrawing = CritiqueMetrics & {
   readonly name: string
   readonly checks: readonly CritiqueCheck[]
+  readonly componentCount?: number
+  readonly minStrokeWidth?: number | null
 }
 
 /** The whole-file critique report carried in the CLI payload. */
 export type CritiqueReport = {
   readonly pass: boolean
+  /** The active `--as` category, or `null` when none was given (agnostic subset only). */
+  readonly profile: CritiqueCategory | null
+  /** Whether `--strict` promoted the must-fix subset to `error`. */
+  readonly strict: boolean
   readonly failedCodes: readonly string[]
   readonly drawings: readonly CritiqueDrawing[]
 }
@@ -347,17 +445,20 @@ const checkValueSpread = (metrics: CritiqueMetrics): CritiqueCheck | null => {
   }
 }
 
-/** C006: palette/complexity budget — flags distinct colours over the generous default ceiling. */
-const checkPaletteBudget = (metrics: CritiqueMetrics): CritiqueCheck | null => {
-  if (metrics.distinctColorCount <= DEFAULT_COLOR_CEILING) {
+/** C006: palette/complexity budget — flags distinct colours over the ceiling (agnostic default, or the profile's). */
+const checkPaletteBudget = (
+  metrics: CritiqueMetrics,
+  ceiling: number = DEFAULT_COLOR_CEILING,
+): CritiqueCheck | null => {
+  if (metrics.distinctColorCount <= ceiling) {
     return null
   }
   return {
     code: CRITIQUE_CODE.paletteBudget,
     severity: 'warning',
-    message: `palette budget: ${metrics.distinctColorCount} distinct colors exceeds ${DEFAULT_COLOR_CEILING}`,
+    message: `palette budget: ${metrics.distinctColorCount} distinct colors exceeds ${ceiling}`,
     measured: metrics.distinctColorCount,
-    threshold: DEFAULT_COLOR_CEILING,
+    threshold: ceiling,
     fix: `quantize the palette or drop gradient/AA sprawl (${metrics.unknownColorCount} colors are outside the declared pal)`,
     detail: { unknownColorCount: metrics.unknownColorCount },
   }
@@ -396,13 +497,389 @@ const checkTrailingEdgeRow = (metrics: CritiqueMetrics): CritiqueCheck | null =>
   }
 }
 
+// ── pixel geometry (phase 1b: C005 stroke width, C007 floating part) ──────────
+
+/** A sentinel "unreachable" distance for the chamfer transforms (well above any real canvas distance). */
+const INF_DIST = 1 << 29
+
+/** Inclusive integer bbox of a labelled component. */
+type CompBBox = {
+  readonly x0: number
+  readonly y0: number
+  readonly x1: number
+  readonly y1: number
+}
+
+/** 8-connected component labels of the covered mask, with per-component pixel count and bbox. */
+type Components = {
+  readonly label: Int32Array
+  readonly sizes: readonly number[]
+  readonly bboxes: readonly CompBBox[]
+}
+
+/** Iterative 8-connected flood fill over the covered mask; `label[p]` is the component index (`-1` uncovered). O(w·h). */
+const labelComponents = (covered: Uint8Array, w: number, h: number): Components => {
+  const n = w * h
+  const label = new Int32Array(n).fill(-1)
+  const sizes: number[] = []
+  const bboxes: CompBBox[] = []
+  const stack: number[] = []
+  let comp = 0
+  for (let s = 0; s < n; s++) {
+    if (covered[s] === 0 || label[s] !== -1) {
+      continue
+    }
+    stack.length = 0
+    stack.push(s)
+    label[s] = comp
+    let size = 0
+    let x0 = w
+    let y0 = h
+    let x1 = -1
+    let y1 = -1
+    while (stack.length > 0) {
+      const p = stack.pop() as number
+      const x = p % w
+      const y = (p - x) / w
+      size++
+      x0 = Math.min(x0, x)
+      x1 = Math.max(x1, x)
+      y0 = Math.min(y0, y)
+      y1 = Math.max(y1, y)
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) {
+            continue
+          }
+          const nx = x + dx
+          const ny = y + dy
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) {
+            continue
+          }
+          const q = ny * w + nx
+          if (covered[q] === 1 && label[q] === -1) {
+            label[q] = comp
+            stack.push(q)
+          }
+        }
+      }
+    }
+    sizes.push(size)
+    bboxes.push({ x0, y0, x1, y1 })
+    comp++
+  }
+  return { label, sizes, bboxes }
+}
+
 /**
- * Runs the phase-1a check catalog against one rendered sprite and returns its
- * {@link CritiqueDrawing} report (metric bundle + fired checks). Pure and
- * vision-free — the same sprite always yields the same report.
+ * Two-pass Chebyshev (chamfer 1,1) distance transform: `dt[p]=0` where
+ * `seed[p]===1`, else the Chebyshev distance to the nearest seed. Out-of-canvas
+ * is not a seed (a subject running off the edge is treated as continuing, not
+ * bounded). O(w·h) forward + backward. `dt[p]` stays {@link INF_DIST} where no
+ * seed is reachable (a fully covered region has no uncovered seed).
  */
-export const critiqueSprite = (name: string, sprite: Sprite): CritiqueDrawing => {
-  const { luminances } = scanCoverage(sprite)
+const chamferDistance = (seed: Uint8Array, w: number, h: number): Int32Array => {
+  const dt = new Int32Array(w * h)
+  for (let p = 0; p < dt.length; p++) {
+    dt[p] = seed[p] === 1 ? 0 : INF_DIST
+  }
+  const relax = (p: number, q: number): void => {
+    const v = (dt[q] ?? INF_DIST) + 1
+    if (v < (dt[p] ?? INF_DIST)) {
+      dt[p] = v
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const p = y * w + x
+      if (dt[p] === 0) {
+        continue
+      }
+      if (x > 0) {
+        relax(p, p - 1)
+      }
+      if (y > 0) {
+        relax(p, p - w)
+      }
+      if (x > 0 && y > 0) {
+        relax(p, p - w - 1)
+      }
+      if (x < w - 1 && y > 0) {
+        relax(p, p - w + 1)
+      }
+    }
+  }
+  for (let y = h - 1; y >= 0; y--) {
+    for (let x = w - 1; x >= 0; x--) {
+      const p = y * w + x
+      if (dt[p] === 0) {
+        continue
+      }
+      if (x < w - 1) {
+        relax(p, p + 1)
+      }
+      if (y < h - 1) {
+        relax(p, p + w)
+      }
+      if (x < w - 1 && y < h - 1) {
+        relax(p, p + w + 1)
+      }
+      if (x > 0 && y < h - 1) {
+        relax(p, p + w - 1)
+      }
+    }
+  }
+  return dt
+}
+
+/** A non-body component that overlaps the body bbox yet sits a pixel gap clear of it — the C007 signature. */
+type FloatingPart = {
+  readonly size: number
+  readonly gapPx: number
+  readonly bbox: {
+    readonly x: number
+    readonly y: number
+    readonly width: number
+    readonly height: number
+  }
+}
+
+/**
+ * C007 support: 8-connected components, body = the largest, chamfer distance
+ * from the body mask. Returns the components whose bbox overlaps (or sits ≤1px
+ * from) the body bbox *and* that stay ≥1px clear of it — the "meant-to-touch
+ * but doesn't" seam signature. Legitimately orbiting parts (bbox far from the
+ * body) and sub-{@link MIN_PART_FLOOR} specks are excluded.
+ */
+const scanFloatingParts = (
+  covered: Uint8Array,
+  w: number,
+  h: number,
+): { readonly componentCount: number; readonly floatingParts: readonly FloatingPart[] } => {
+  const { label, sizes, bboxes } = labelComponents(covered, w, h)
+  const componentCount = sizes.length
+  if (componentCount <= 1) {
+    return { componentCount, floatingParts: [] }
+  }
+  let body = 0
+  for (let i = 1; i < sizes.length; i++) {
+    if ((sizes[i] ?? 0) > (sizes[body] ?? 0)) {
+      body = i
+    }
+  }
+  const bodyMask = new Uint8Array(w * h)
+  for (let p = 0; p < bodyMask.length; p++) {
+    if (label[p] === body) {
+      bodyMask[p] = 1
+    }
+  }
+  const dt = chamferDistance(bodyMask, w, h)
+  const gaps = new Array<number>(componentCount).fill(INF_DIST)
+  for (let p = 0; p < label.length; p++) {
+    const c = label[p] ?? -1
+    if (c < 0 || c === body) {
+      continue
+    }
+    const d = dt[p] ?? INF_DIST
+    if (d < (gaps[c] ?? INF_DIST)) {
+      gaps[c] = d
+    }
+  }
+  const bb = bboxes[body] as CompBBox
+  const minPart = Math.max(MIN_PART_FLOOR, Math.round((sizes[body] ?? 0) * MIN_PART_FRACTION))
+  const floatingParts: FloatingPart[] = []
+  for (let c = 0; c < componentCount; c++) {
+    if (c === body || (sizes[c] ?? 0) < minPart) {
+      continue
+    }
+    const box = bboxes[c] as CompBBox
+    const overlaps =
+      box.x0 - 1 <= bb.x1 && box.x1 + 1 >= bb.x0 && box.y0 - 1 <= bb.y1 && box.y1 + 1 >= bb.y0
+    const gapPx = (gaps[c] ?? INF_DIST) - 1
+    if (!overlaps || gapPx < 1) {
+      continue
+    }
+    floatingParts.push({
+      size: sizes[c] ?? 0,
+      gapPx,
+      bbox: { x: box.x0, y: box.y0, width: box.x1 - box.x0 + 1, height: box.y1 - box.y0 + 1 },
+    })
+  }
+  return { componentCount, floatingParts }
+}
+
+/** The stroke-width facts for C005: min load-bearing stroke, how thin-dominated the skeleton is, and the scale floor. */
+type StrokeScan = {
+  readonly minStrokeWidth: number | null
+  readonly thinStrokeFraction: number
+  readonly ridgeCount: number
+  readonly strokeFloor: number
+}
+
+/**
+ * C005 support: chamfer distance from every covered pixel to the nearest
+ * uncovered pixel (its local half-width), then the medial-axis ridge (local
+ * maxima). Local stroke width ≈ `2·ridgeDistance`; `thinStrokeFraction` is the
+ * share of the ridge under the scale floor `round(2·size/32)`. A solid fill
+ * (no uncovered pixel reachable) yields no ridge and never reads as thin.
+ */
+const scanStroke = (covered: Uint8Array, w: number, h: number): StrokeScan => {
+  const size = Math.max(w, h)
+  const strokeFloor = Math.round((2 * size) / 32)
+  const seed = new Uint8Array(w * h)
+  for (let p = 0; p < seed.length; p++) {
+    if (covered[p] === 0) {
+      seed[p] = 1
+    }
+  }
+  const dt = chamferDistance(seed, w, h)
+  let minWidth = INF_DIST
+  let thin = 0
+  let ridge = 0
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const p = y * w + x
+      const d = dt[p] ?? 0
+      if (d <= 0 || d >= INF_DIST) {
+        continue
+      }
+      let isRidge = true
+      for (let dy = -1; dy <= 1 && isRidge; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) {
+            continue
+          }
+          const nx = x + dx
+          const ny = y + dy
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) {
+            continue
+          }
+          if ((dt[ny * w + nx] ?? 0) > d) {
+            isRidge = false
+            break
+          }
+        }
+      }
+      if (!isRidge) {
+        continue
+      }
+      ridge++
+      const width = 2 * d
+      minWidth = Math.min(minWidth, width)
+      if (width < strokeFloor) {
+        thin++
+      }
+    }
+  }
+  return {
+    minStrokeWidth: ridge > 0 ? minWidth : null,
+    thinStrokeFraction: ridge > 0 ? round4(thin / ridge) : 0,
+    ridgeCount: ridge,
+    strokeFloor,
+  }
+}
+
+/** C007: floating part / seam — the largest body-overlapping detached component with a pixel gap (ADR-0085 §3). */
+const checkFloatingPart = (name: string, parts: readonly FloatingPart[]): CritiqueCheck | null => {
+  if (parts.length === 0) {
+    return null
+  }
+  let worst = parts[0] as FloatingPart
+  for (const p of parts) {
+    if (p.size > worst.size) {
+      worst = p
+    }
+  }
+  const pad = Math.max(2, worst.gapPx + 1)
+  const cx = Math.max(0, worst.bbox.x - pad)
+  const cy = Math.max(0, worst.bbox.y - pad)
+  const cw = worst.bbox.width + pad * 2
+  const ch = worst.bbox.height + pad * 2
+  return {
+    code: CRITIQUE_CODE.floatingPart,
+    severity: 'warning',
+    message: `floating part: a ${worst.size}px component overlaps the body bbox but sits ${worst.gapPx}px clear of it (seam / detached limb)`,
+    measured: worst.gapPx,
+    threshold: 0,
+    fix: `close the seam: render #${name} --crop ${cx}:${cy} ${cw}x${ch} --silhouette to see the gap, then fit/move the part onto the body`,
+    detail: {
+      partCount: parts.length,
+      partSize: worst.size,
+      partX: worst.bbox.x,
+      partY: worst.bbox.y,
+    },
+  }
+}
+
+/** C005: stroke width — fires when load-bearing strokes are overwhelmingly under the scale floor at ≥32px (ADR-0085 §3). */
+const checkStrokeWidth = (metrics: CritiqueMetrics, stroke: StrokeScan): CritiqueCheck | null => {
+  const size = Math.max(metrics.width, metrics.height)
+  if (
+    size < STROKE_MIN_SIZE ||
+    stroke.minStrokeWidth === null ||
+    stroke.ridgeCount === 0 ||
+    stroke.thinStrokeFraction < STROKE_DOMINATION
+  ) {
+    return null
+  }
+  return {
+    code: CRITIQUE_CODE.strokeWidth,
+    severity: 'warning',
+    message: `thin strokes dominate: ${Math.round(stroke.thinStrokeFraction * 100)}% of load-bearing strokes are under ${stroke.strokeFloor}px (min ${stroke.minStrokeWidth}px)`,
+    measured: stroke.minStrokeWidth,
+    threshold: stroke.strokeFloor,
+    fix: `thicken the dominant strokes to ≥ ${stroke.strokeFloor}px; this ${size}px sprite reads as a wall of hairlines, not filled forms`,
+    detail: { thinStrokeFraction: stroke.thinStrokeFraction, ridgeCount: stroke.ridgeCount },
+  }
+}
+
+/** The must-fix `C0xx` subset `--strict` promotes to `error` regardless of profile (ADR-0085 §5 + phase-1b task). */
+const STRICT_MUST_FIX: readonly string[] = [
+  CRITIQUE_CODE.empty,
+  CRITIQUE_CODE.floatingPart,
+  CRITIQUE_CODE.pinhole,
+  CRITIQUE_CODE.trailingEdgeRow,
+]
+
+/** Under `strict`, promotes {@link STRICT_MUST_FIX} (plus C003 for icon/item) from `warning` to `error`. */
+const promoteStrict = (
+  checks: readonly CritiqueCheck[],
+  profile: CritiqueProfile | null,
+  strict: boolean,
+): CritiqueCheck[] => {
+  const list = checks.slice()
+  if (!strict) {
+    return list
+  }
+  const mustFix = new Set<string>(STRICT_MUST_FIX)
+  if (profile?.strictCentering) {
+    mustFix.add(CRITIQUE_CODE.centering)
+  }
+  return list.map((c) => (mustFix.has(c.code) ? { ...c, severity: 'error' as const } : c))
+}
+
+/** Options for {@link critiqueSprite}: the resolved category profile and the strict gate (both optional; agnostic subset by default). */
+export type CritiqueOptions = {
+  readonly profile?: CritiqueProfile | null
+  readonly strict?: boolean
+}
+
+/**
+ * Runs the critique catalog against one rendered sprite and returns its
+ * {@link CritiqueDrawing} report (metric bundle + fired checks). Pure and
+ * vision-free — the same sprite + options always yield the same report. The
+ * agnostic checks (C001/C003/C004/C006/C008/C012) always run; the pixel-geometry
+ * checks C007 (floating part) and C005 (stroke width) run only when the
+ * `profile` opts them in via `checkFloatingPart`/`checkStroke`. `strict`
+ * promotes the must-fix subset to `error`.
+ */
+export const critiqueSprite = (
+  name: string,
+  sprite: Sprite,
+  options: CritiqueOptions = {},
+): CritiqueDrawing => {
+  const profile = options.profile ?? null
+  const { covered, luminances } = scanCoverage(sprite)
   const metrics = computeCritiqueMetrics(sprite, luminances)
   const checks: CritiqueCheck[] = []
   const push = (c: CritiqueCheck | null): void => {
@@ -413,10 +890,31 @@ export const critiqueSprite = (name: string, sprite: Sprite): CritiqueDrawing =>
   push(checkEmpty(metrics))
   push(checkCentering(metrics))
   push(checkValueSpread(metrics))
-  push(checkPaletteBudget(metrics))
+  push(checkPaletteBudget(metrics, profile?.colorCeiling))
   push(checkPinholes(sprite))
   push(checkTrailingEdgeRow(metrics))
-  return { name, ...metrics, checks }
+
+  let componentCount: number | undefined
+  let minStrokeWidth: number | null | undefined
+  if (profile?.checkFloatingPart) {
+    const scan = scanFloatingParts(covered, sprite.w, sprite.h)
+    componentCount = scan.componentCount
+    push(checkFloatingPart(name, scan.floatingParts))
+  }
+  if (profile?.checkStroke) {
+    const stroke = scanStroke(covered, sprite.w, sprite.h)
+    minStrokeWidth = stroke.minStrokeWidth
+    push(checkStrokeWidth(metrics, stroke))
+  }
+
+  const finalChecks = promoteStrict(checks, profile, options.strict ?? false)
+  return {
+    name,
+    ...metrics,
+    checks: finalChecks,
+    ...(componentCount === undefined ? {} : { componentCount }),
+    ...(minStrokeWidth === undefined ? {} : { minStrokeWidth }),
+  }
 }
 
 /** Anchors a {@link CritiqueCheck} to a `draw` span as a standard {@link Diagnostic}. */

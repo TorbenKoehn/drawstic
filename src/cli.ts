@@ -20,7 +20,12 @@ import { resolve } from 'node:path'
 import type { DrawDefinition, FormatLine, Statement } from './ast.js'
 import { buildModule, validateExport } from './build.js'
 import { toHexColor } from './color.js'
-import { type CritiqueDrawing, critiqueCheckDiagnostic, critiqueSprite } from './critique.js'
+import {
+  type CritiqueDrawing,
+  critiqueCheckDiagnostic,
+  critiqueSprite,
+  resolveProfile,
+} from './critique.js'
 import {
   type Diagnostic,
   DrawsticError,
@@ -78,6 +83,8 @@ type CliArguments = {
   readonly pngScale: number
   readonly mode: 'pixel' | 'smooth' | null
   readonly budgetSteps: number | null
+  readonly as: string | null
+  readonly strict: boolean
 }
 
 type Writable<T> = { -readonly [P in keyof T]: T[P] }
@@ -111,6 +118,8 @@ const parseArguments = (argv: string[]): CliArguments => {
     pngScale: 1,
     mode: null,
     budgetSteps: null,
+    as: null,
+    strict: false,
   }
 
   for (let i = 1; i < argv.length; i++) {
@@ -162,6 +171,10 @@ const parseArguments = (argv: string[]): CliArguments => {
       }
     } else if (a === '--budget') {
       cli.budgetSteps = Number.parseInt(argv[++i] ?? '0', 10) || null
+    } else if (a === '--as') {
+      cli.as = argv[++i] ?? null
+    } else if (a === '--strict') {
+      cli.strict = true
     } else if (/^--png@\d+$/.test(a)) {
       cli.pngScale = Number.parseInt(a.slice(6), 10)
     } else if (!a.startsWith('--') && cli.target === null) {
@@ -1239,19 +1252,24 @@ const sheetJson = (
 // ── critique (ADR-0085) ──────────────────────────────────────────────────────
 
 /**
- * Runs `drawstic critique <file>`: renders every non-parametric `draw` and runs
- * the pixel-based, vision-free `C0xx` check catalog (phase 1a — ADR-0085 §3:
- * C001/C003/C004/C006/C008/C012). Every finding is a `warning` (exit 0 — never
- * blocking) carrying `{measured, threshold, fix}`; the `--json` payload adds
- * `critique: {pass, failedCodes, drawings}`, where each drawing exposes the full
- * metric bundle (a superset of `render --inspect`) so an agent reads facts even
- * at zero findings. A render failure surfaces as its ordinary `E0xx` diagnostic,
- * exactly as in `check`.
+ * Runs `drawstic critique <file> [--as icon|scene|character|item] [--strict]`:
+ * renders every non-parametric `draw` and runs the pixel-based, vision-free
+ * `C0xx` catalog. The agnostic checks (C001/C003/C004/C006/C008/C012) always
+ * run; `--as` opts a resolved {@link resolveProfile} profile into the
+ * pixel-geometry checks C005 (stroke width) and C007 (floating part) and its
+ * category thresholds — without it, an info advisory nudges the agent to set
+ * one. Findings default to `warning` (exit 0 — never blocking); `--strict`
+ * promotes the must-fix subset to `error` (exit 1), the CI regression gate. The
+ * `--json` payload adds `critique: {pass, profile, strict, failedCodes,
+ * drawings}`, each drawing exposing the full metric bundle (a superset of
+ * `render --inspect`). A render failure surfaces as its ordinary `E0xx`
+ * diagnostic, exactly as in `check`.
  */
 const runCritique = (cli: CliArguments): number => {
   const file = cli.target ?? ''
   const diags: Diagnostic[] = []
   const drawings: CritiqueDrawing[] = []
+  const profile = resolveProfile(cli.as)
   try {
     const engine = createEngine(cli)
     const mod = engine.loadEntry(file)
@@ -1265,7 +1283,10 @@ const runCritique = (cli: CliArguments): number => {
       }
       try {
         const sprite = engine.renderDraw(entry, [], entry.definition.span)
-        const report = critiqueSprite(entry.definition.name, sprite)
+        const report = critiqueSprite(entry.definition.name, sprite, {
+          profile,
+          strict: cli.strict,
+        })
         drawings.push(report)
         for (const check of report.checks) {
           diags.push(critiqueCheckDiagnostic(check, mod.displayPath, entry.definition.span))
@@ -1278,8 +1299,21 @@ const runCritique = (cli: CliArguments): number => {
     diags.push(toDiagnostic(e, file))
     return emit(diags, cli.json)
   }
+  if (!profile) {
+    diags.push({
+      severity: 'info',
+      code: 'C000',
+      message:
+        'no --as profile: ran the category-agnostic checks only (C005 stroke width and C007 floating-part need a profile)',
+      file,
+      line: 1,
+      column: 1,
+      hint: 'pass --as icon|scene|character|item to enable the category checks and thresholds',
+    })
+  }
   const failedCodes = [...new Set(drawings.flatMap((d) => d.checks.map((c) => c.code)))].sort()
-  const report = { pass: diags.length === 0, failedCodes, drawings }
+  const pass = !diags.some((d) => d.severity === 'warning' || d.severity === 'error')
+  const report = { pass, profile: profile?.name ?? null, strict: cli.strict, failedCodes, drawings }
   return emitObject(diags, cli.json, { critique: report })
 }
 
@@ -1297,7 +1331,7 @@ usage:
                   [--mode pixel|smooth] [--json]
   drawstic sheet <file> [--all] [--cols N] [--png@N] [--out <path>]
                   [--stdout] [--ascii] [--preview] [--json]
-  drawstic critique <file> [--json]
+  drawstic critique <file> [--as icon|scene|character|item] [--strict] [--json]
 options:
   --json     stable diagnostic records
   --budget N evaluation-step budget

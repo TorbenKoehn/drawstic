@@ -28,9 +28,24 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
   `{diagnostics, critique:{pass, failedCodes, drawings}}`), 12 Tests grün. Verb-Eintrag in
   `skills/drawstic/reference.md`. Alle Checks default `warning`/Exit 0. Smoke: `critique
   examples/showcase/showcase.drw` meldet C004+C012 (nicht blockierend), Rest der `examples/` `pass:true`.
-- [ ] **1b** C007 (Floating-Part/Seam via 8-connected Components + Chamfer-Distanztransform, Signatur
+- [x] **1b** C007 (Floating-Part/Seam via 8-connected Components + Chamfer-Distanztransform, Signatur
   bbox-Overlap+Gap≥1) und C005 (Strichbreite via Distanztransform); `--strict` (Exit-Gate);
   `CritiqueProfile` + `--as icon|scene|character|item`; Tests.
+  → `src/critique.ts`: `CRITIQUE_CODE` um C005/C007 erweitert; `CritiqueProfile`/`CritiqueCategory`/
+  `PROFILES`/`resolveProfile` (Threshold-Tabelle, keine Inferenz); Geometrie-Scan einmalig nur bei aktivem
+  Profil (`labelComponents` 8-connected, `chamferDistance` Zwei-Pass Chebyshev, `scanFloatingParts`,
+  `scanStroke`); `checkFloatingPart`/`checkStrokeWidth`; `promoteStrict` (Must-fix C001/C007/C008/C012,
+  +C003 bei icon/item → `error`); `critiqueSprite(name, sprite, {profile, strict})` + optionale
+  `componentCount`/`minStrokeWidth` im Report. `src/cli.ts`: `--as`/`--strict` geparst, `runCritique`
+  verdrahtet, `C000`-Advisory ohne Profil, `pass` = kein warning/error, Report trägt `profile`/`strict`.
+  **Scoping-Entscheidung (kalibriert an den Beispielen):** C007 nur `character` (alle Character-Beispiele
+  sind ncomp=1 bzw. der Skeleton-Skull hat `bboxOverlap=false` → FP-frei; icon/item feuern legitim
+  mehrteilig — weather-Icons, Stiefelpaare — würden sonst falsch flaggen). C005 domination-gated
+  (`STROKE_DOMINATION=0.85`, über dem dünnsten sauberen Beispiel `bow`=0.75; `width=2·ridgeDistance`,
+  `floor=round(2·size/32)`, effektiv ab ≥48px greifend). `tests/unit/critique.test.ts`: +13 Tests
+  (Floating-Part feuert/orbit-clean/verbunden-clean, Hairline C005 feuert/thick-clean/no-profile-silent,
+  `resolveProfile`-Auswahl, Strict-Promotion inkl. C003-Profilabhängigkeit, CLI-Exit-Gate 0 vs 1) — 25
+  critique-Tests grün, 669 gesamt. Reference.md `critique`-Eintrag um `--as`/`--strict` ergänzt.
 - [ ] **1c** Silhouetten-Signaturen (Alpha→32×32 box-resample, L1-Distanz); C009 (Geschwister-Kollaps,
   Schwelle <~0.12) + C011 (Familien-Gewichts/Margin-Parität); Familie default via `selectSheetDrawings`
   (`sheet.ts`); `--family a,b,c`; Vision-Rubrik-Block; Tests. Danach: Workflow in `skills/drawstic/SKILL.md`
@@ -74,3 +89,14 @@ _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen an
   (transparente Endzeile) auf prozeduralen Showcase-Draws. Prüfen, ob echte Craft-Mängel oder
   Threshold-Rauschen; ggf. beim `examples/`-Re-Baseline in 1c adressieren (Thresholds als gemessener
   Boden test-asserted).
+- [ ] **1b-followup C012-Strict** `critique examples/icons/*.drw --as icon --strict` exit=1, weil viele
+  prozedurale Icons C012 (transparente Endzeile) feuern und C012 in der Must-fix-Teilmenge liegt. Beim
+  `examples/`-Re-Baseline in 1c entscheiden: Draws trimmen, Canvas-Höhe anpassen, oder C012 aus dem
+  Strict-Must-fix nehmen — bevor `critique --strict` als CI-Gate über `examples/` verankert wird.
+- [ ] **1b-followup C006-Profile** `CritiqueProfile.colorCeiling` steht für alle Kategorien noch auf dem
+  agnostischen Default 64 (icon feuert C006 bereits auf `controller64`). In 1c pro Kategorie als
+  gemessenen Boden tightenen (Icons enger als Scenes), ohne neue Fehlalarme auf sauberen Beispielen.
+- [ ] **1b-followup C005-Untergrenze** `width=2·ridgeDistance` lässt C005 wegen `floor=round(2·size/32)`
+  erst ab ≥48px greifen (bei 32px ist der Floor 2 = Breite eines 1px-Strichs). Falls 1c 32px-Icons mit
+  Hairline-Dominanz fangen soll, `width=2·ridge−1` erwägen — dann Character/Item-Kalibrierung neu prüfen
+  (even/odd-Unterschätzung könnte legitime 3–4px-Striche fälschlich flaggen).
