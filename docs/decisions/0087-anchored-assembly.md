@@ -100,3 +100,36 @@ fitted part's **footprint bottom (the feet)**, not the resolved fit pin. For a g
 two coincide (the base pin sits at the feet), but for a joint-to-joint fit (`leg.hip → torso.hip`)
 the fit pin is at the hip — the old pin-anchored pool dropped the shadow at the hip. Anchoring at the
 footprint bottom keeps the pool under the feet regardless of which pin the fit used (finding §5.6).
+
+**Amendment 2 (2026-07-10, character-DX rerun — placement correctness, HV2/HV6).** The rerun's human
+review found `pin`/`fit` guarantees *contact*, not *correct placement*: a Wizard head sat above the
+neck and a Knight sword reversed across views, both green under C007. The gap is that C007 measures
+adjacency, and `fit` had no transform surface, so props were free-`stamp`ed with a per-view `flipy`
+that inverted them. Four hardening changes, all reusing the existing `pin`/`fit` surface (no new
+keyword):
+
+1. **`fit` takes the `stamp` transform/paint flags** (`flipx`/`flipy`/`rotN`/`scaleN`/`transform`/
+   `tint`/`mask`), applied about the footprint centre. The origin solves `origin = target − M(pin)`,
+   and the part's other pins are **registered through the same `M`**, so the pin rides the transform:
+   a left-shoulder pin becomes the correctly-located right shoulder after `flipx`, and a `fit … flipx`
+   still lands the fit pin *exactly* on its target. This closes finding §5.10 (fit lacked
+   flip/tint/mask) and makes mirrored side/back assembly and the depth-tint far-limb idiom reliable.
+2. **`pin HEAD.KEY PT` seeds all of HEAD's pins** when HEAD resolves to an already-drawn part sprite
+   owning KEY (origin from the one anchor), not just KEY — so a later `fit …HEAD.other` chains instead
+   of throwing (finding §5.8). A bare hand-label (`a.hipL`, head not a part) still registers one key.
+3. **Held-prop idiom, not a mechanism change.** A prop declares a `grip` pin, is authored once in its
+   true orientation, and is gripped with `fit prop.grip hand.grip`; the per-view *figure* flip is a
+   separate `fit` that never touches the prop, so the blade direction stays constant across
+   front/side/back. Deliberate mirroring uses the prop's own `fit … flipx`, never a figure-wide flip
+   (HV6).
+4. **Placement self-check beyond C007.** `fit` measures the target pin's Chebyshev distance to the
+   part's own ink; **>2 px warns `W011` (loose pin)** — the pins coincide but the join floats because
+   the pin sits in empty part space (the Wizard chin below the head). `render --explain` gains a
+   per-`fit` placement report (landed coords, coincidence, pin-to-ink gap) so a misplacement is
+   *visible*, not silently green — a high-confidence, part-local check with no composite false-positive
+   flood.
+
+Touches `src/ast.ts`/`src/parser.ts` (`fit` trailing flags), `src/eval.ts` (`#execFit` transform +
+pin-through-`M` registration, `#execPinDeclaration` seed-all, `W011`, `PlacementRecord`), `src/cli.ts`
+(`render --explain` placements), [spec § Anchored assembly](../language-spec.md#anchored-assembly--pin--fit),
+and the product skill (`SKILL.md`, `reference.md`, `character-craft.md`).

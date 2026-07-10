@@ -640,8 +640,8 @@ For a whole symmetric *passage* (not just one stamp), wrap it in a **`mirror x=<
 
 ```drw
 pin <key> <pt>                         # declare a named attach point in this drawing's space
-fit <partB>[.<pin>] <partA>.<pin> [shadow]   # place partB so its pin lands on partA's placed pin
-fit <partB>.<pin> <x:y> [shadow]       # ground-placement oracle: land the pin on a computed point
+fit <partB>[.<pin>] <partA>.<pin> [flags] [shadow]   # place partB so its pin lands on partA's pin
+fit <partB>.<pin> <x:y> [flags] [shadow]       # ground-placement oracle: pin lands on a computed point
 ```
 
 Instead of computing a `stamp` point by hand — which guarantees nothing about the *result*, since
@@ -651,12 +651,28 @@ a bbox overlap is not pixel contact — a part **declares named attach points** 
 - **`pin <key> <pt>`** registers a named point in the current drawing's coordinate space. In a
   **part** draw the key is a bare name (`pin shoulder 4:0`); it is exported on the rendered
   drawing, so an assembler can read it. In an **assembly** the key is a dotted `part.name`
-  (`pin torso.shoulder 16:14`) that seeds a **canvas-space** attach point.
+  (`pin torso.shoulder 16:14`) that seeds a **canvas-space** attach point. When `part` names an
+  already-drawn part sprite that owns that pin, this seeds **all** of the part's pins from the one
+  anchor — so a later `fit …torso.hip` chains without re-declaring it (a bare hand-label like
+  `a.spot`, whose head is not a part, still registers just that one key).
 - **`fit partB.pin partA.pin`** places `partB` so its named pin lands *exactly* on `partA`'s
   already-placed pin — a contact-guaranteed replacement for a hand-stamped socket-offset. It then
   registers `partB`'s pins in canvas space, so the next `fit` chains off them
   (`fit hand.wrist arm.wrist`). When each side has one pin of the same name, the shorter
   `fit partB partA` **auto-matches** it. A named pin absent on one side is a positioned error.
+- **Transform flags — the pin rides the transform.** `fit` takes the same modifiers as `stamp`
+  (`flipx`/`flipy`/`rotN`/`scaleN`/`transform t`/`tint c p%`/`mask r`), applied to the part about
+  its footprint centre. The pin still lands *exactly* on the target (the engine solves
+  `origin = target − M(pin)`) and the part's **other** pins are registered through the same `M`, so
+  a pin on the left shoulder becomes the correctly-located right shoulder after `flipx`. This makes
+  the depth-tint far-limb idiom (`fit armFar.shoulder a.shoulder tint #2b2b2b 45%`) and mirrored
+  side/back assembly reliable.
+- **Placement self-check.** Contact is not correctness: `fit` also measures how far the target pin
+  sits from the part's **own ink**. A pin in empty part space (a chin below the head, a hand off the
+  sleeve) lands the join floating even though the pins coincide — a non-fatal **`W011` loose-pin
+  warning** with the exact gap, distinct from the `W010`/C007 contact gap. `render --explain` prints
+  a per-`fit` placement line — where each pin landed, whether they coincide, and the pin-to-ink gap —
+  so a misplacement is *visible*, not silently green.
 - **Contact guarantee.** Checked against the drawing's **final composite**, once the whole `draw`
   body has painted — not at `fit`-statement time — so deliberate back-to-front layering (e.g.
   fitting feet before the covering robe is stamped over them, closing the seam) never false-warns
@@ -681,10 +697,17 @@ draw arm(c) 8x20:                       # a part exports its own attach points
   pin wrist    4:19
 draw knight 32x48:
   stamp torso 12:10
-  pin torso.shoulder 16:14              # seed the root attach point
+  pin torso.shoulder 16:14              # seeds ALL torso pins in canvas space
   fit armLeft.shoulder torso.shoulder   # contact-guaranteed; registers armLeft.wrist
   fit handLeft.wrist  armLeft.wrist     # chains
 ```
+
+- **Held props keep grip + orientation across views.** A prop (sword, staff) declares a `grip` pin
+  and is authored once in its true orientation (blade up). Grip it with `fit sword.grip hand.grip` —
+  the grip stays in the hand and the blade keeps its authored direction. A **per-view flip of the
+  figure never touches the prop**: it is a separate `fit`, so front/side/back show the same grip.
+  Mirror the prop *deliberately* only when the view needs it (`fit sword.grip hand.grip flipx` mirrors
+  horizontally, keeping the blade up) — never let a figure-wide flip invert it.
 
 `pin` and `fit` are keywords **only** in these statement positions (D7) — bindable as ordinary
 names anywhere else. `fit` is at its core a `stamp` with a pin-derived offset, so alpha/palette
@@ -1559,7 +1582,7 @@ recursion exist. The budget is configurable via the CLI with a sensible default.
 | `drawstic fmt <file> [--check] [--stdout] [--diff]` | canonical formatter (indentation, layout); idempotent; `--check` exits non-zero on unformatted input. |
 | `drawstic context <file>` | emit the resolved **design brief** for the file (§ below), including export plans. |
 | `drawstic build <file>` | run every `export` in the file, writing artifacts to disk. |
-| `drawstic render <file>#<drawing>[(args)] [--png@2] [--stdout] [--ascii] [--preview] [--silhouette] [--inspect] [--explain] [--fit WxH] [--crop x:y WxH] [--grid N] [--diff <png>]` | ad-hoc render of one drawing; can stream. A parametric drawing takes literal arguments in the fragment — `file#house(#c04040, 3)` (number, color, string, point, boolean only; [ADR-0067](decisions/0067-render-fragment-literal-arguments.md)). `--ascii` = luminance-ramp grayscale text; `--preview` = half-block ANSI colour; `--silhouette` = shape-only black-out ([ADR-0083](decisions/0083-render-silhouette.md)); `--inspect --json` emits render facts; `--explain --json` prints every `model`/`cel`'s lowered primitive expansion instead of an image ([ADR-0086](decisions/0086-declarative-light-and-material.md) §6). Output-kind precedence `--ascii` > `--preview` > `--inspect` > `--explain` > PNG. `--grid N`/`--diff <png>` are debug-only PNG aids, below. |
+| `drawstic render <file>#<drawing>[(args)] [--png@2] [--stdout] [--ascii] [--preview] [--silhouette] [--inspect] [--explain] [--fit WxH] [--crop x:y WxH] [--grid N] [--diff <png>]` | ad-hoc render of one drawing; can stream. A parametric drawing takes literal arguments in the fragment — `file#house(#c04040, 3)` (number, color, string, point, boolean only; [ADR-0067](decisions/0067-render-fragment-literal-arguments.md)). `--ascii` = luminance-ramp grayscale text; `--preview` = half-block ANSI colour; `--silhouette` = shape-only black-out ([ADR-0083](decisions/0083-render-silhouette.md)); `--inspect --json` emits render facts; `--explain` prints every `model`/`cel`'s lowered primitive expansion ([ADR-0086](decisions/0086-declarative-light-and-material.md) §6) **and every `fit`'s placement** — where each pin landed, whether the pins coincide, and the pin-to-ink gap ([ADR-0087](decisions/0087-anchored-assembly.md)) — instead of an image. Output-kind precedence `--ascii` > `--preview` > `--inspect` > `--explain` > PNG. `--grid N`/`--diff <png>` are debug-only PNG aids, below. |
 | `drawstic sheet <file> [--all] [--cols N] [--png@N] [--out <path>] [--stdout] [--ascii] [--preview]` | family contact sheet ([ADR-0082](decisions/0082-sheet-contact-sheet-cli.md)): composes the selected drawings size-normalized into ONE labeled comparison grid for cross-drawing consistency QA (§ below). Default selection = the module's `export`ed drawings in export order; `--all` = every non-parametric drawing. Reuses the renderer; never part of `build`. |
 | `drawstic critique <file> [--as icon\|scene\|character\|item] [--family a,b,c] [--strict]` | pixel-based, vision-free quality checks (`C0xx`) over every rendered drawing, plus family checks across siblings ([ADR-0085](decisions/0085-critique-command.md); § below). `--as` selects a category threshold profile; `--strict` promotes the must-fix subset to `error` (exit 1) as a CI gate. Complements `check` (grammar) — catches the visual, silent bug class. |
 
@@ -1696,6 +1719,8 @@ skipped rather than guessed at, so a lint pass never produces a false positive.
 | `W007` | a `stamp` is fully covered by a later, provably opaque `stamp`/`rect …fill`/`bg` in the same drawing | reorder the stamps, or delete the dead one |
 | `W008` | a `text` command's **literal** string contains character(s) that have no glyph in the resolved font (font resolution: per-`text` `font` flag > theme/draw/module directive > `small`), so they render silently as the unknown-glyph box | add the glyphs to the font, pick a font that has them, or drop them |
 | `W009` | a `pixels:` grid's **last row** is fully transparent (`.`) while a row above it has content — because stamps place by the sprite's top-left corner, that trailing empty row silently enlarges the footprint and seams a 1px gap below adjacently stamped parts. Scoped to the last row only (never the first row, never a column — side-padding and top-centring are legitimate) | trim the trailing row, or account for the offset |
+| `W010` | a `fit` part touches no other content in the **final composite** (a floating/seamed part — the same gap `critique` **C007** measures); checked after the whole `draw` body paints, so back-to-front layering never false-warns | move the pin onto solid pixels, overlap the seam 1–2px, or add the missing part |
+| `W011` | a `fit` target pin sits **>2 px off the part's own ink** (`ADR-0087`): the pins coincide but the join floats because the pin is in empty part space (a chin below the head). Contact-blind, so C007 misses it; inspect with `render --explain` | move the `pin` onto the part's real contact edge, or pick the pin that marks it |
 
 ---
 

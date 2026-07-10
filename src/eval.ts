@@ -486,6 +486,7 @@ type DrawState = {
   readonly pendingFits: {
     readonly sprite: Sprite
     readonly origin: { readonly x: number; readonly y: number }
+    readonly matrix: readonly number[] | undefined
     readonly targetHead: string
     readonly pinName: string
     readonly cp: { readonly x: number; readonly y: number }
@@ -534,6 +535,13 @@ const STAMP_ANCHORS: readonly StampAnchor[] = [
 
 const isStampAnchor = (value: string | null): value is StampAnchor =>
   value !== null && STAMP_ANCHORS.includes(value as StampAnchor)
+
+/**
+ * The largest Chebyshev gap (px) tolerated between a `fit` target pin and the part's own ink before
+ * W011 fires (ADR-0087 amendment 2). 2 leaves a diagonal-corner cushion for edge pins; a pin sitting
+ * further out sits in empty part space, so the join visibly floats even though the pins coincide.
+ */
+const LOOSE_PIN_MAX = 2
 
 /**
  * Ambient evaluation context threaded through every eval/exec call: which
@@ -822,6 +830,25 @@ export type ExplainRecord = {
   readonly steps: ExplainStep[]
 }
 
+/**
+ * One recorded `fit` placement for `render --explain` and the W011 loose-pin self-check (ADR-0087
+ * amendment 2). `target`/`source` are the two pins by name; `landed` is where the target pin ended
+ * up in canvas space and `at` is the source contact point — equal when the fit brought them to
+ * coincidence (`coincident`). `pinToInk` is the Chebyshev distance from the (transformed) target
+ * pin to the part's nearest own opaque pixel: 0–1 for a pin on the ink, larger when the pin sits in
+ * empty part space so the join visibly floats even though the pins coincide (the wizard-head defect
+ * C007 misses). `transformed` flags a fit that mirrored/rotated the part.
+ */
+export type PlacementRecord = {
+  readonly target: string
+  readonly source: string
+  readonly landed: { readonly x: number; readonly y: number }
+  readonly at: { readonly x: number; readonly y: number }
+  readonly coincident: boolean
+  readonly pinToInk: number
+  readonly transformed: boolean
+}
+
 const round3 = (v: number): number => Math.round(v * 1000) / 1000
 const roundVec = (v: { readonly x: number; readonly y: number }): { x: number; y: number } => ({
   x: round3(v.x),
@@ -912,6 +939,14 @@ export class Engine {
    * the collected trace. `null` (the default) disables collection with zero overhead.
    */
   explain: ExplainRecord[] | null = null
+
+  /**
+   * When non-null, every `fit` appends a {@link PlacementRecord} here (ADR-0087 amendment 2) — the
+   * CLI's `render --explain` sets it to `[]` so an agent can inspect exactly where each fit landed
+   * its source and target pin, whether the two coincide, and how far the target pin sits from the
+   * part's own ink (the loose-pin/float signal C007 can't see). `null` disables collection.
+   */
+  placements: PlacementRecord[] | null = null
 
   /**
    * Non-fatal render-time warnings collected during evaluation (ADR-0087): a `fit` that leaves a
@@ -2166,15 +2201,65 @@ export class Engine {
         stmt.span,
       )
     }
+    // `pin HEAD.KEY PT` in an assembly: when HEAD names an already-drawn part sprite that owns a
+    // local pin KEY, seed ALL of that part's pins into canvas space from the one anchor (KEY→PT),
+    // not just KEY — so a later `fit …HEAD.other` chains instead of throwing (ADR-0087 amendment 2;
+    // character-DX §5.8). A bare label (`a.hipL`) or unknown HEAD falls through to the single-key
+    // registration, keeping hand-labelled anchors working.
+    const dot = stmt.name.indexOf('.')
+    if (dot > 0) {
+      const head = stmt.name.slice(0, dot)
+      const key = stmt.name.slice(dot + 1)
+      const part = this.#tryResolveSprite(head, env, state, stmt.span)
+      const localPin = part?.pins?.get(key)
+      if (part?.pins && localPin) {
+        const ox = value.x - localPin.x
+        const oy = value.y - localPin.y
+        for (const [name, p] of part.pins) {
+          draw.pins.set(`${head}.${name}`, { x: quantInt(ox + p.x), y: quantInt(oy + p.y) })
+        }
+        return
+      }
+    }
     draw.pins.set(stmt.name, { x: value.x, y: value.y })
   }
 
   /**
-   * Execute a `fit TARGET SOURCE [shadow]` placement (ADR-0087): solve the translation that lands
-   * the target part's named pin exactly on the source attach point, drop an optional contact
-   * shadow, stamp the part, register the part's now-canvas-space pins for later `fit`s, and warn
-   * (W010, non-fatal) if the placement leaves no pixel contact with existing content. Reuses the
-   * `stamp` blit path — a `fit` is a stamp with a pin-derived offset and a contact guarantee.
+   * Resolve `name` to an already-buildable sprite WITHOUT throwing: an in-scope binding whose value
+   * is a sprite, or a non-parametric drawing definition (rendered/cached). Returns `undefined` for
+   * an unbound name, a parametric drawing, or any non-sprite value — so a caller can probe whether a
+   * `pin HEAD.KEY` head names a real part (seed all its pins) or is a bare hand-labelled anchor.
+   */
+  #tryResolveSprite(
+    name: string,
+    env: Environment,
+    state: State,
+    span: TextSpan,
+  ): Sprite | undefined {
+    const binding = env.lookup(name)
+    if (binding) {
+      const v = binding.value
+      return typeof v === 'object' && v?.type === 'sprite' ? v : undefined
+    }
+    const entry = state.module.definitions.get(name)
+    if (
+      entry?.kind === 'draw' &&
+      !(entry.definition.params && entry.definition.params.length > 0)
+    ) {
+      return this.renderDraw(entry, [], span)
+    }
+    return undefined
+  }
+
+  /**
+   * Execute a `fit TARGET SOURCE [flags] [shadow]` placement (ADR-0087): solve the translation (and
+   * optional flip/rotate/scale/transform of the part about its footprint centre) that lands the
+   * target part's named pin exactly on the source attach point, drop an optional contact shadow,
+   * stamp the part, register the part's now-canvas-space pins — each carried through the SAME
+   * transform so a downstream `fit` chains correctly — and warn on a loose pin (W011) or a final
+   * non-contact (W010). The pins ride the transform, so a pin on the left shoulder becomes the
+   * (correctly located) right shoulder after `flipx`. Reuses the `stamp` blit path — a `fit` is a
+   * transformed stamp with a pin-derived origin and a contact guarantee (ADR-0087 amendment 2).
    */
   #execFit(
     stmt: Extract<Statement, { readonly kind: 'fit' }>,
@@ -2222,40 +2307,140 @@ export class Engine {
       )
     }
 
-    // 4 — the identity-blit origin so the local pin maps to the canvas contact point.
-    const origin = { x: quantInt(cp.x - localPin.x), y: quantInt(cp.y - localPin.y) }
-
-    // 5 — auto contact-shadow (opt-in): an ellipse under the part's footprint bottom (the feet/ground
-    // line), painted BEFORE the part so the feet overdraw it. Anchored at the footprint, not the fit
-    // pin, so a joint-to-joint fit (leg.hip → torso.hip) still pools the shadow under the feet rather
-    // than at the hip (ADR-0087; character-DX §5.6).
-    if (stmt.shadow) {
-      this.#dropContactShadow(draw, sprite, origin)
+    // 4 — compile the trailing flags (same grammar as `stamp`) into one part-local transform matrix
+    // about the footprint centre; `anchor` is meaningless for `fit` (the pin IS the anchor).
+    const flags = this.#parseStampFlags(
+      new Args(this, stmt.flags, env, state, stmt.span),
+      state,
+      stmt.span,
+    )
+    const matrix = this.#buildStampMatrix(sprite, flags)
+    const map = (p: { readonly x: number; readonly y: number }): { x: number; y: number } => {
+      if (!matrix) {
+        return { x: p.x, y: p.y }
+      }
+      const m = applyMatrix(matrix, p.x, p.y)
+      if (!m) {
+        throw error(
+          ERROR_CODE.nonInvertible,
+          'fit transform is not invertible',
+          state.module.displayPath,
+          stmt.span,
+        )
+      }
+      return m
     }
 
-    // 6 — stamp the part (identity blit; reuses the stamp path) and fold its palette.
-    stampSprite(draw.context, sprite, origin.x, origin.y)
+    // 5 — origin so the TRANSFORMED target pin lands on the source contact point: the part paints
+    // dest = origin + M(src), so origin = cp − M(localPin) keeps the pin on `cp` through any flip/rot.
+    const mPin = map(localPin)
+    const origin = { x: quantInt(cp.x - mPin.x), y: quantInt(cp.y - mPin.y) }
+
+    // 6 — auto contact-shadow (opt-in): an ellipse under the part's (transformed) footprint bottom,
+    // painted BEFORE the part so the feet overdraw it. Anchored at the footprint, not the fit pin, so
+    // a joint-to-joint fit (leg.hip → torso.hip) still pools under the feet (character-DX §5.6).
+    if (stmt.shadow) {
+      this.#dropContactShadow(draw, sprite, origin, matrix)
+    }
+
+    // 7 — stamp the part (reuses the stamp path, with the same transform/tint/mask) and fold palette.
+    const ok = stampSprite(draw.context, sprite, origin.x, origin.y, matrix, flags.tint, flags.mask)
+    if (!ok) {
+      throw error(
+        ERROR_CODE.nonInvertible,
+        'fit transform is not invertible',
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
     if (!draw.sprite.stamped.includes(sprite)) {
       draw.sprite.stamped.push(sprite)
     }
 
-    // 7 — register the fitted part's pins in canvas space (`head.name`) so later fits can chain.
+    // 8 — register the fitted part's pins in canvas space (`head.name`), each through M, so later
+    // fits chain onto the transformed part correctly.
     for (const [name, p] of localPins) {
-      draw.pins.set(`${stmt.target.head}.${name}`, { x: origin.x + p.x, y: origin.y + p.y })
+      const mp = map(p)
+      draw.pins.set(`${stmt.target.head}.${name}`, {
+        x: quantInt(origin.x + mp.x),
+        y: quantInt(origin.y + mp.y),
+      })
     }
 
-    // 8 — defer the contact guarantee: a same-statement-time check false-fires on deliberate
+    // 9 — placement self-check (ADR-0087 amendment 2): where the target pin actually landed, whether
+    // it coincides with the source, and how far it sits from the part's own ink. A pin in empty part
+    // space (the wizard-head float) lands the join off the ink even though the pins coincide — C007
+    // measures contact, not this. Records feed `render --explain`; a loose pin warns (W011).
+    const landed = { x: quantInt(origin.x + mPin.x), y: quantInt(origin.y + mPin.y) }
+    const coincident = Math.abs(landed.x - cp.x) <= 1 && Math.abs(landed.y - cp.y) <= 1
+    const pinToInk = this.#pinToInkDistance(sprite, localPin.x, localPin.y)
+    if (this.placements) {
+      this.placements.push({
+        target: `${stmt.target.head}.${pinName}`,
+        source: this.#fitSourceLabel(stmt),
+        landed,
+        at: { x: quantInt(cp.x), y: quantInt(cp.y) },
+        coincident,
+        pinToInk: Number.isFinite(pinToInk) ? pinToInk : -1,
+        transformed: matrix !== undefined,
+      })
+    }
+    if (Number.isFinite(pinToInk) && pinToInk > LOOSE_PIN_MAX) {
+      this.warnings.push({
+        severity: 'warning',
+        code: 'W011',
+        message: `loose fit pin: '${stmt.target.head}.${pinName}' sits ${pinToInk}px off '${stmt.target.head}''s own pixels, so the join floats even though the pins coincide at ${landed.x}:${landed.y}`,
+        file: state.module.displayPath,
+        line: stmt.span.line,
+        column: stmt.span.column,
+        ...(stmt.span.endLine === undefined ? {} : { endLine: stmt.span.endLine }),
+        ...(stmt.span.endColumn === undefined ? {} : { endColumn: stmt.span.endColumn }),
+        hint: `move 'pin ${pinName}' onto the part's edge pixels (it is in empty space now), or pick the pin that marks the real contact edge`,
+      })
+    }
+
+    // 10 — defer the contact guarantee: a same-statement-time check false-fires on deliberate
     // back-to-front layering (e.g. fitting feet before the covering robe is stamped over them,
     // where the robe hasn't painted yet). `#renderDrawBody` checks every pending fit against the
     // FINAL composite once the whole body has painted (W010, non-fatal).
     draw.pendingFits.push({
       sprite,
       origin,
+      matrix,
       targetHead: stmt.target.head,
       pinName,
       cp,
       span: stmt.span,
     })
+  }
+
+  /** A human label for a `fit` source (the ground point or the `head.pin`/`head` ref), for --explain. */
+  #fitSourceLabel(stmt: Extract<Statement, { readonly kind: 'fit' }>): string {
+    if (stmt.source.kind === 'point') {
+      return 'point'
+    }
+    return stmt.source.pin ? `${stmt.source.head}.${stmt.source.pin}` : stmt.source.head
+  }
+
+  /**
+   * Chebyshev distance from a part-local pin `(px,py)` to the part's nearest own opaque pixel —
+   * 0–1 for a pin on/adjacent to the ink, larger when the pin sits in empty part space (so a `fit`
+   * onto it floats the join). `Infinity` for a fully-transparent part. Measured in local space; a
+   * flip/rotate is an isometry, so the transformed distance is the same (ADR-0087 amendment 2).
+   */
+  #pinToInkDistance(sprite: Sprite, px: number, py: number): number {
+    let best = Number.POSITIVE_INFINITY
+    for (let y = 0; y < sprite.h; y++) {
+      for (let x = 0; x < sprite.w; x++) {
+        if ((sprite.data[(y * sprite.w + x) * 4 + 3] ?? 0) > 0) {
+          const d = Math.max(Math.abs(x - px), Math.abs(y - py))
+          if (d < best) {
+            best = d
+          }
+        }
+      }
+    }
+    return best
   }
 
   /**
@@ -2353,16 +2538,38 @@ export class Engine {
     draw: DrawState,
     sprite: Sprite,
     origin: { readonly x: number; readonly y: number },
+    matrix: readonly number[] | undefined,
   ): void {
     const box = this.#coveredBBox(sprite)
     if (!box) {
       return
     }
-    const footWidth = box.x1 - box.x0 + 1
+    // The footprint on canvas is the part's covered bbox forward-mapped through the fit transform
+    // (its axis-aligned span after any flip/rotate), so the pool still hugs the visible feet.
+    let minX = Number.POSITIVE_INFINITY
+    let minY = Number.POSITIVE_INFINITY
+    let maxX = Number.NEGATIVE_INFINITY
+    let maxY = Number.NEGATIVE_INFINITY
+    for (const [x, y] of [
+      [box.x0, box.y0],
+      [box.x1, box.y0],
+      [box.x0, box.y1],
+      [box.x1, box.y1],
+    ] as const) {
+      const p = matrix ? applyMatrix(matrix, x, y) : { x, y }
+      if (!p) {
+        return
+      }
+      minX = Math.min(minX, p.x)
+      minY = Math.min(minY, p.y)
+      maxX = Math.max(maxX, p.x)
+      maxY = Math.max(maxY, p.y)
+    }
+    const footWidth = maxX - minX + 1
     const rx = Math.max(1, roundHalfUp(footWidth * 0.45))
     const ry = Math.max(1, roundHalfUp(rx * 0.35))
-    const cx = origin.x + (box.x0 + box.x1) / 2
-    const cy = origin.y + box.y1
+    const cx = origin.x + (minX + maxX) / 2
+    const cy = origin.y + maxY
     fillRegion(
       draw.context,
       ellipseRegion(quantInt(cx), quantInt(cy), rx, ry),
@@ -2380,7 +2587,7 @@ export class Engine {
    */
   #resolvePendingFits(draw: DrawState, file: string): void {
     for (const pending of draw.pendingFits) {
-      if (this.#hasContact(draw.context.buffer, pending.sprite, pending.origin)) {
+      if (this.#hasContact(draw.context.buffer, pending.sprite, pending.origin, pending.matrix)) {
         continue
       }
       this.warnings.push({
@@ -2419,10 +2626,85 @@ export class Engine {
   }
 
   /**
-   * Whether an identity-blitted part at `origin` makes pixel contact with content OTHER than
-   * itself, read from `buffer` — the FINAL composite once the whole `draw` body has painted (see
-   * {@link resolvePendingFits}): any of the part's covered pixels is 8-adjacent to a covered pixel
-   * that isn't one of the part's own footprint pixels at `origin`. Self-exclusion by position (not
+   * The set of canvas pixels a part covers when stamped at `origin` with `matrix` — packed `y*w+x`,
+   * clipped to the buffer. Identity blits map `origin + (sx,sy)`; a transformed blit inverse-maps
+   * each dest pixel in the transformed footprint bbox back to its texel (mirroring
+   * {@link stampSprite}'s own nearest-neighbour mapping), so ownership matches the painted pixels
+   * exactly. Used by {@link #hasContact} to test adjacency without re-scanning the whole buffer.
+   */
+  #stampedFootprint(
+    sprite: Sprite,
+    origin: { readonly x: number; readonly y: number },
+    matrix: readonly number[] | undefined,
+    w: number,
+    h: number,
+  ): Set<number> {
+    const own = new Set<number>()
+    const add = (cx: number, cy: number): void => {
+      if (cx >= 0 && cy >= 0 && cx < w && cy < h) {
+        own.add(cy * w + cx)
+      }
+    }
+    if (!matrix) {
+      for (let sy = 0; sy < sprite.h; sy++) {
+        for (let sx = 0; sx < sprite.w; sx++) {
+          if ((sprite.data[(sy * sprite.w + sx) * 4 + 3] ?? 0) > 0) {
+            add(origin.x + sx, origin.y + sy)
+          }
+        }
+      }
+      return own
+    }
+    const inverse = invertMatrix(matrix)
+    if (!inverse) {
+      return own
+    }
+    let minX = Number.POSITIVE_INFINITY
+    let minY = Number.POSITIVE_INFINITY
+    let maxX = Number.NEGATIVE_INFINITY
+    let maxY = Number.NEGATIVE_INFINITY
+    for (const [x, y] of [
+      [0, 0],
+      [sprite.w - 1, 0],
+      [0, sprite.h - 1],
+      [sprite.w - 1, sprite.h - 1],
+    ] as const) {
+      const p = applyMatrix(matrix, x, y)
+      if (!p) {
+        return own
+      }
+      minX = Math.min(minX, p.x)
+      minY = Math.min(minY, p.y)
+      maxX = Math.max(maxX, p.x)
+      maxY = Math.max(maxY, p.y)
+    }
+    for (let dy = Math.floor(minY); dy <= Math.ceil(maxY); dy++) {
+      for (let dx = Math.floor(minX); dx <= Math.ceil(maxX); dx++) {
+        const s = applyMatrix(inverse, dx, dy)
+        if (!s) {
+          continue
+        }
+        const sx = roundHalfUp(s.x)
+        const sy = roundHalfUp(s.y)
+        if (
+          sx >= 0 &&
+          sy >= 0 &&
+          sx < sprite.w &&
+          sy < sprite.h &&
+          (sprite.data[(sy * sprite.w + sx) * 4 + 3] ?? 0) > 0
+        ) {
+          add(origin.x + dx, origin.y + dy)
+        }
+      }
+    }
+    return own
+  }
+
+  /**
+   * Whether a part stamped at `origin` (with optional `matrix`) makes pixel contact with content
+   * OTHER than itself, read from `buffer` — the FINAL composite once the whole `draw` body has
+   * painted (see {@link resolvePendingFits}): any of the part's covered pixels is 8-adjacent to a
+   * covered pixel that isn't one of the part's own footprint pixels. Self-exclusion by position (not
    * by paint identity) is what makes this safe to run against the final buffer — without it, every
    * multi-pixel sprite would trivially "contact" its own interior. This is exactly the signature
    * `critique`'s C007 measures — a `fit` that fails it is a floating/seamed part.
@@ -2431,37 +2713,23 @@ export class Engine {
     buffer: Framebuffer,
     sprite: Sprite,
     origin: { readonly x: number; readonly y: number },
+    matrix: readonly number[] | undefined,
   ): boolean {
     const w = buffer.width
     const h = buffer.height
-    const isOwnPixel = (x: number, y: number): boolean => {
-      const sx = x - origin.x
-      const sy = y - origin.y
-      return (
-        sx >= 0 &&
-        sy >= 0 &&
-        sx < sprite.w &&
-        sy < sprite.h &&
-        (sprite.data[(sy * sprite.w + sx) * 4 + 3] ?? 0) > 0
-      )
-    }
-    for (let sy = 0; sy < sprite.h; sy++) {
-      for (let sx = 0; sx < sprite.w; sx++) {
-        if ((sprite.data[(sy * sprite.w + sx) * 4 + 3] ?? 0) === 0) {
-          continue
-        }
-        const cx = origin.x + sx
-        const cy = origin.y + sy
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            const nx = cx + dx
-            const ny = cy + dy
-            if (nx < 0 || ny < 0 || nx >= w || ny >= h || isOwnPixel(nx, ny)) {
-              continue
-            }
-            if (buffer.alphaAt(nx, ny) > 0) {
-              return true
-            }
+    const own = this.#stampedFootprint(sprite, origin, matrix, w, h)
+    for (const packed of own) {
+      const cx = packed % w
+      const cy = (packed - cx) / w
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = cx + dx
+          const ny = cy + dy
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h || own.has(ny * w + nx)) {
+            continue
+          }
+          if (buffer.alphaAt(nx, ny) > 0) {
+            return true
           }
         }
       }

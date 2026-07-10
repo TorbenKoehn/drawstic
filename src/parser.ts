@@ -732,10 +732,12 @@ class Parser {
   }
 
   /**
-   * Parses `fit TARGET SOURCE [shadow]` (§17.4 `fit-stmt`, ADR-0087). `TARGET` is always a
+   * Parses `fit TARGET SOURCE [flags] [shadow]` (§17.4 `fit-stmt`, ADR-0087). `TARGET` is always a
    * reference (`NAME`/`NAME.pin`); `SOURCE` is a reference too, or — when it isn't the bare-ref
-   * shape — a canvas point expression (the ground-placement oracle). A trailing `shadow` flag opts
-   * into an auto contact-shadow ellipse.
+   * shape — a canvas point expression (the ground-placement oracle). Trailing `flags` are the same
+   * `stamp` transform/paint modifiers (`flipx`/`flipy`/`rotN`/`scaleN`/`transform:`/`tint:`/`mask:`,
+   * ADR-0087 amendment 2); the bare `shadow` flag opts into an auto contact-shadow ellipse. `shadow`
+   * is always bare in a `fit` (the auto pool), so it is read here directly rather than as a keyword.
    */
   readonly #parseFit = (): Statement => {
     const s = this.#span(this.#peek())
@@ -750,13 +752,31 @@ class Parser {
     } else {
       source = { kind: 'point', expression: this.#parseCmdArgExpr() }
     }
+    // Trailing modifiers: the stamp transform/paint flags (same grammar as a `call`'s arg run) plus
+    // the bare `shadow` boolean — special-cased before the keyword check so it never eats args.
+    const flags: Argument[] = []
     let shadow = false
-    if (this.#atName('shadow')) {
-      this.#next()
-      shadow = true
+    while (!this.#at('nl') && !this.#at('eof') && !this.#at('dedent')) {
+      const f = this.#peek()
+      if (f.kind === 'name' && f.text === 'shadow') {
+        this.#next()
+        shadow = true
+        continue
+      }
+      if (f.kind === 'name' && KW_ARG_ARITY[f.text] !== undefined) {
+        const kw = this.#next().text
+        const arity = KW_ARG_ARITY[kw] ?? 1
+        const parts: Expression[] = []
+        for (let i = 0; i < arity; i++) {
+          parts.push(this.#parseCmdArgExpr())
+        }
+        flags.push({ kind: 'keyword', keyword: kw, parts, span: this.#span(f) })
+        continue
+      }
+      flags.push({ kind: 'expression', expression: this.#parseCmdArgExpr(), span: this.#span(f) })
     }
     this.#expectNL()
-    return { kind: 'fit', target, source, shadow, span: s }
+    return { kind: 'fit', target, source, flags, shadow, span: s }
   }
 
   readonly #parseFnDef = (): Statement => {

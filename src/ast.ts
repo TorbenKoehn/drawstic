@@ -310,12 +310,15 @@ export type Statement =
     }
   | {
       /**
-       * A `fit TARGET SOURCE [shadow]` anchored-assembly placement (ADR-0087): places `TARGET`'s
-       * part so its named pin lands exactly on `SOURCE` — a contact-guaranteed replacement for a
-       * hand-computed `stamp` point. `target` names the part (a bare name resolving to a drawing/
+       * A `fit TARGET SOURCE [flags] [shadow]` anchored-assembly placement (ADR-0087): places
+       * `TARGET`'s part so its named pin lands exactly on `SOURCE` — a contact-guaranteed replacement
+       * for a hand-computed `stamp` point. `target` names the part (a bare name resolving to a drawing/
        * sprite) and its pin (`undefined` ⇒ auto-match the single pin name shared with the source).
        * `source` is either another placed part's already-registered pin (`ref`) or a canvas point
-       * expression (`point` — the ground-placement oracle: `fit tree.base x:groundY(x)`). `shadow`
+       * expression (`point` — the ground-placement oracle: `fit tree.base x:groundY(x)`). `flags` are
+       * the same `stamp` transform/paint modifiers (`flipx`/`flipy`/`rotN`/`scaleN`/`transform:`/
+       * `tint:`/`mask:`), applied to the part about its footprint centre; the pins ride the same
+       * transform so the fit pin still lands exactly on `SOURCE` (ADR-0087 amendment 2). `shadow`
        * drops an auto contact-shadow ellipse under the footprint first. `fit` is a keyword *only* in
        * this statement position (contextual, D7).
        */
@@ -324,6 +327,7 @@ export type Statement =
       readonly source:
         | { readonly kind: 'ref'; readonly head: string; readonly pin: string | undefined }
         | { readonly kind: 'point'; readonly expression: Expression }
+      readonly flags: Argument[]
       readonly shadow: boolean
       readonly span: TextSpan
     }

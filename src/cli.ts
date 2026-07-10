@@ -37,7 +37,13 @@ import {
   formatDiagnostic,
   type TextSpan,
 } from './diagnostic.js'
-import { defaultBudget, Engine, type ExplainRecord, type ModuleRecord } from './eval.js'
+import {
+  defaultBudget,
+  Engine,
+  type ExplainRecord,
+  type ModuleRecord,
+  type PlacementRecord,
+} from './eval.js'
 import { format, formatDiff } from './fmt.js'
 import { inspectSprite } from './inspect.js'
 import { lintModule } from './lint.js'
@@ -896,10 +902,12 @@ const runRender = (cli: CliArguments): number => {
       return emit(diags, cli.json)
     }
     const engine = createEngine(cli)
-    // `--explain` collects each model/cel command's lowered primitive sequence during the render
-    // (ADR-0086 §6) — a predictability guardrail, not a render output.
+    // `--explain` collects each model/cel command's lowered primitive sequence (ADR-0086 §6) and
+    // each `fit`'s placement (ADR-0087 amendment 2) during the render — a predictability guardrail,
+    // not a render output.
     if (cli.explain) {
       engine.explain = []
+      engine.placements = []
     }
     const mod = engine.loadEntry(file)
     const entry = mod.definitions.get(targetRef.drawing)
@@ -1039,6 +1047,7 @@ const runRender = (cli: CliArguments): number => {
     }
     if (cli.explain) {
       const explain = engine.explain ?? []
+      const placements = engine.placements ?? []
       if (cli.json) {
         process.stdout.write(
           `${JSON.stringify(
@@ -1051,6 +1060,7 @@ const runRender = (cli: CliArguments): number => {
                 kind: 'explain',
                 output: null,
                 explain,
+                placements,
               },
             },
             null,
@@ -1058,7 +1068,7 @@ const runRender = (cli: CliArguments): number => {
           )}\n`,
         )
       } else {
-        process.stdout.write(formatExplain(targetRef.drawing, explain))
+        process.stdout.write(formatExplain(targetRef.drawing, explain, placements))
       }
       return 0
     }
@@ -1180,11 +1190,28 @@ const formatDiffSummary = (diff: RasterDiff): string => {
  * Human-readable `render --explain` output (ADR-0086 §6): each `model`/`cel` command with the
  * exact primitive sequence it lowered to — one line per step, colours/amounts already resolved.
  */
-const formatExplain = (drawing: string, records: readonly ExplainRecord[]): string => {
-  if (records.length === 0) {
-    return `${drawing}: no model/cel commands to explain\n`
+const formatExplain = (
+  drawing: string,
+  records: readonly ExplainRecord[],
+  placements: readonly PlacementRecord[] = [],
+): string => {
+  if (records.length === 0 && placements.length === 0) {
+    return `${drawing}: no model/cel commands or fits to explain\n`
   }
   const lines: string[] = []
+  // Placement report (ADR-0087 amendment 2): where every `fit` landed its pins, whether they
+  // coincide, and how far the target pin sits from the part's own ink (the float signal).
+  for (const p of placements) {
+    const flip = p.transformed ? ' transformed' : ''
+    const coincide = p.coincident ? 'coincident' : 'NOT COINCIDENT'
+    const ink =
+      p.pinToInk < 0
+        ? ''
+        : ` pin-to-ink ${p.pinToInk}px${p.pinToInk > 2 ? ' (LOOSE — join floats)' : ''}`
+    lines.push(
+      `fit ${p.target} ← ${p.source}: lands ${p.landed.x}:${p.landed.y} (source ${p.at.x}:${p.at.y}) ${coincide}${ink}${flip}`,
+    )
+  }
   for (const r of records) {
     const target = r.region ? ` ${r.region}` : ''
     const at = r.light ? ` (light ${r.light.x}:${r.light.y})` : ''
@@ -1475,6 +1502,10 @@ const runCritique = (cli: CliArguments): number => {
         }
       }
     }
+    // Surface the render-time assembly warnings (W010 gap, W011 loose pin — ADR-0087) the renders
+    // collected, so the done-gate REPORTS a floating head/loose join it structurally can't see via
+    // the pixel checks (they are `warning`s, so the `--strict` error-only exit is unaffected).
+    diags.push(...engine.warnings)
   } catch (e) {
     diags.push(toDiagnostic(e, file))
     return emit(diags, cli.json)

@@ -201,11 +201,30 @@ adressieren die human-visuellen Befunde HV1–HV6 + Gesichter, oben (§9) nach H
   Zylinder liest als Zylinder; `cel 4` zeigt gekrümmte Bänder. `tsc`+`biome` clean, 792 Tests grün
   (shading/model/cel/light-material/cli-explain auf die neue Semantik konvertiert + neue Form-Tests).
   Alt-Primitive `shadeRegion`/`lightRegion`/`celRegion` bleiben als Floor/Escape-Hatch.
-- [ ] **b — `pin`/`fit` Platzierungs-*Korrektheit*, nicht nur Kontakt (HV2, schlechteste Grades)**: Slot/
-  Anchor-System härten + Placement-Check (erwarteter Slot vs. tatsächlich, z. B. Kopf-auf-Hals) jenseits
-  von C007-Konnektivität, damit ein schwebender Kopf nicht grün passiert.
-- [ ] **c — Held-Prop: Grip-Pin in der Hand + Orientierungs-Konstanz über Views (HV6)**: ein Per-View-Flip
-  darf die Prop-Orientierung nicht invertieren; Front/Side/Back zeigen denselben Griff.
+- [x] **b — `pin`/`fit` Platzierungs-*Korrektheit*, nicht nur Kontakt (HV2, schlechteste Grades)**
+  ([ADR-0087](decisions/0087-anchored-assembly.md) Amendment 2). Diagnose per `--png@8`: der Wizard-Kopf
+  schwebte, weil sein `chin`-Pin (lokal y34) 4–5px **unter** der Kopf-Tinte (Schädel endet ~y29) liegt —
+  `fit` bringt die Pins exakt zur Deckung, aber der Pin sitzt in leerem Part-Raum, also schwebt der
+  sichtbare Kopf; C007 misst Kontakt, nicht das. Der Knight-Schwert-Kipp entstand durch freies
+  `stamp sword … flipy` pro View (Front hoch, Side/Back runter). Fixes: (1) **`fit` nimmt die
+  `stamp`-Transform-Flags** (`flipx`/`flipy`/`rotN`/`scaleN`/`transform`/`tint`/`mask`) um die
+  Footprint-Mitte; die Pins **wandern mit der Transform** (`origin = ziel − M(pin)`, andere Pins über
+  dasselbe `M` registriert → Links-Schulter wird korrekt verortete Rechts-Schulter nach `flipx`, Fit-Pin
+  landet exakt). (2) **`pin HEAD.KEY PT` seedet ALLE Pins** des Parts, wenn HEAD ein reales Part-Sprite
+  ist (§5.8-Bug behoben; Hand-Label wie `a.hipL` weiterhin Einzelkey). (3) **Placement-Selbstcheck**:
+  Chebyshev-Distanz Ziel-Pin → eigene Part-Tinte; >2px ⇒ **`W011`** (loose pin, hochkonfident,
+  part-lokal, keine False-Positive-Flut); `render … --explain` berichtet je `fit` Landepunkt,
+  Koinzidenz und Pin-zu-Tinte-Lücke. `#hasContact`/Contact-Shadow transform-aware. Probe-Recipe
+  (`--png@8`): Kopf sitzt auf dem Hals, `fit … flipx` hält den Grip-Pin exakt in der Hand. `tsc`+`biome`
+  clean, 801 Tests grün (9 neue Assembly-Tests: Pin-Koinzidenz exakt, Pin überlebt flip, Pins-durch-`M`,
+  Prop-Orientierung über Views, W011 feuert/feuert-nicht, seed-all). Berührt `ast.ts`/`parser.ts`/
+  `eval.ts`/`cli.ts` + spec §Anchored-assembly + SKILL/reference/character-craft.
+- [x] **c — Held-Prop: Grip-Pin in der Hand + Orientierungs-Konstanz über Views (HV6)** — mit b geliefert
+  (dieselbe ADR-0087-Amendment-2-Änderung). Prop trägt einen `grip`-Pin, wird einmal in wahrer
+  Orientierung (Klinge oben) authored und per `fit sword.grip hand.grip` gegriffen; der Per-View-*Figur*-
+  Flip ist ein **separater** `fit`, der das Prop nie berührt → Front/Side/Back zeigen denselben Griff. Ein
+  bewusster Prop-Flip nutzt den eigenen `fit … flipx` (horizontal, Klinge bleibt oben — Pin reitet die
+  Transform). Idiom in character-craft §5 + language-spec/reference/SKILL dokumentiert; Probe-Test grün.
 - [ ] **d — Back-View Part-Selektion + Prop-z-Order-Idiom (HV4, §5.17)**: Rear-View wählt rear-Parts und
   invertiert die Prop-z-Order (Prop nach dem Torso bei Back), keine Arme auf dem Rücken.
 - [ ] **e — Outline-Mechanismus (HV5, alle 4)**: dunkle RO-Silhouetten-Outline sauber bei 64×128.
@@ -384,3 +403,19 @@ _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen an
   Konsequenz für Phase 4: falls die Reservierung dieser Namen doch gewünscht ist, gehört das
   begleitende Umbenennen der `ramp`-Bindings in allen Examples in den „Legacy kollabieren"-Schritt,
   nicht in 2a. Inline-Kommentar an den `#builtinColor`-Cases hinterlegt.
+- [ ] **b-finding: `pin HEAD.KEY`-seed-all kennt die Stamp-Transform NICHT.** `pin torso.neck …`
+  löst die Origin aus dem **untransformierten** Part-Sprite; steht davor ein `stamp torso … flipx`,
+  seedet der manuelle Pin die anderen Pins an der *unflippten* Position (Schulter-Seite stimmt dann
+  nicht). Grund: `stamp` merkt sich seine Transform nicht. Idiom-Ausweg (dokumentiert): den
+  gespiegelten Part per `fit` platzieren statt `stamp`+manuellem `pin` — dann reiten die Pins die
+  Transform korrekt. Ein sauberer Fix bräuchte transform-tragende Stamp-Registrierung (größerer
+  Umbau, außerhalb b-Scope). Für unflippte Roots (der Normalfall) irrelevant.
+- [ ] **b-finding: W011-Schwelle ist Chebyshev >2px, part-lokal.** Bewusst hochkonfident/eng: fängt
+  echte Float-Joints (Wizard-`chin` 4–5px daneben) ohne False-Positive-Flut. Kanten-Pins (0–1px) und
+  1px-Overlap-Nähte (§4d) bleiben still. Falls je zu streng: die Konstante `LOOSE_PIN_MAX` in
+  `eval.ts` heben. Misst nur die **Ziel**-Part-Seite (der platzierte Part); die Quell-Pin-Landung ist
+  bereits platziert und nicht auf Ink-Nähe prüfbar.
+- [ ] **b-finding: `fit … anchor` wird ignoriert.** `fit` erbt die `stamp`-Flag-Grammatik inkl.
+  `anchor …`, aber für `fit` IST der Pin der Anker — `flags.anchor` wird beim Origin-Solve nicht
+  gelesen. Kein Fehler, nur wirkungslos; nicht dokumentiert (kein sinnvoller `fit`-Use). Bei Bedarf
+  später als E-Fehler ablehnen.

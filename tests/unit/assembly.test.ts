@@ -334,6 +334,231 @@ describe('material cast is clipped to drawn content (ADR-0086/0087)', () => {
   })
 })
 
+// Render with the `--explain` placement trace enabled (ADR-0087 amendment 2) so a test can read
+// exactly where each `fit` landed its pins and how far the target pin sits from the part's ink.
+const renderPlacements = (
+  src: string,
+  drawing: string,
+): { sprite: Sprite; engine: Engine; placements: NonNullable<Engine['placements']> } => {
+  const engine = new Engine(process.cwd())
+  engine.placements = []
+  const mod = engine.loadSource(src, `${process.cwd()}\\asm${n++}.drw`, 'asm.drw')
+  const entry = mod.definitions.get(drawing)
+  if (!entry) {
+    throw new Error(`no drawing ${drawing}`)
+  }
+  const sprite = engine.defToSprite(entry, { line: 1, column: 1 })
+  return { sprite, engine, placements: engine.placements }
+}
+
+describe('pin — HEAD.KEY seeds ALL the part pins (§5.8 fix, ADR-0087 amendment 2)', () => {
+  test('a later fit chains off a pin the manual `pin` never named', () => {
+    const src = [
+      'draw torso 12x20:',
+      '  fill #6a5030 rect(0:0, 11:19)',
+      '  pin shoulder 10:3',
+      '  pin hip 6:18',
+      'draw tag 4x4:',
+      '  fill #8a5a3a rect(0:0, 3:3)',
+      '  pin p 2:3',
+      'draw fig 30x30:',
+      '  stamp torso 4:2', // origin (4,2)
+      '  pin torso.shoulder 14:5', // names only `shoulder`; must ALSO seed torso.hip = (10,20)
+      '  fit tag.p torso.hip', // pre-fix: throws (torso.hip unregistered)
+    ].join('\n')
+    const { engine } = renderWith(src, 'fig')
+    // torso.hip seeded → the chained fit resolves and makes contact (no gap warning).
+    expect(engine.warnings.filter((w) => w.code === 'W010')).toHaveLength(0)
+  })
+
+  test('a bare hand-labelled anchor (unknown head) still registers just the one key', () => {
+    // `a` is not a part → single-key registration, so the knight's `pin a.hipL …` idiom keeps working.
+    const src = [
+      'draw bit 4x4:',
+      '  fill #8a5a3a rect(0:0, 3:3)',
+      '  pin p 0:0',
+      'draw fig 20x20:',
+      '  fill #6a5030 rect(2:2, 9:9)',
+      '  pin a.spot 3:3',
+      '  fit bit.p a.spot',
+    ].join('\n')
+    const { engine } = renderWith(src, 'fig')
+    expect(engine.warnings.filter((w) => w.code === 'W011')).toHaveLength(0)
+  })
+})
+
+describe('fit — placement correctness through transforms (ADR-0087 amendment 2)', () => {
+  const T = [
+    'draw torso 12x20:',
+    '  fill #6a5030 rect(0:0, 11:19)',
+    '  pin socket 6:10',
+    'draw arm 6x14:',
+    '  fill #8a5a3a rect(0:0, 5:13)',
+    '  pin shoulder 0:2', // LEFT edge of the arm
+    '  pin wrist 5:13', // RIGHT edge of the arm
+  ].join('\n')
+
+  test('a plain fit lands the pin exactly (coincident, on the ink)', () => {
+    const src = [
+      T,
+      'draw fig 30x30:',
+      '  stamp torso 4:2',
+      '  pin torso.socket 10:12',
+      '  fit arm.shoulder torso.socket',
+    ].join('\n')
+    const { placements } = renderPlacements(src, 'fig')
+    const p = placements.find((r) => r.target === 'arm.shoulder')
+    expect(p).toBeDefined()
+    expect(p?.landed).toEqual({ x: 10, y: 12 })
+    expect(p?.coincident).toBe(true)
+    expect(p?.pinToInk).toBe(0)
+    expect(p?.transformed).toBe(false)
+  })
+
+  test('fit … flipx keeps the (now-mirrored) pin exactly coincident — the pin rides the transform', () => {
+    const src = [
+      T,
+      'draw fig 30x30:',
+      '  stamp torso 4:2',
+      '  pin torso.socket 10:12',
+      '  fit arm.shoulder torso.socket flipx',
+    ].join('\n')
+    const { sprite, placements } = renderPlacements(src, 'fig')
+    const p = placements.find((r) => r.target === 'arm.shoulder')
+    // arm is 6 wide; flipx maps shoulder(0,2)→(5,2). origin=(10-5,12-2)=(5,10); painted pin=(10,12).
+    expect(p?.landed).toEqual({ x: 10, y: 12 })
+    expect(p?.coincident).toBe(true)
+    expect(p?.transformed).toBe(true)
+    // the arm pixel is actually there (the pin is on solid ink, not floating).
+    expect(alpha(sprite, 10, 12)).toBeGreaterThan(0)
+  })
+
+  test('a fitted part registers its OTHER pins through the SAME transform (left→right after flipx)', () => {
+    const src = [
+      T,
+      'draw cap 3x3:',
+      '  fill #d8a070 rect(0:0, 2:2)',
+      '  pin p 1:1',
+      'draw fig 34x34:',
+      '  stamp torso 4:2',
+      '  pin torso.socket 12:12',
+      '  fit arm.shoulder torso.socket flipx', // arm origin (7,10); wrist(5,13)→flip(0,13)→canvas(7,23)
+      '  fit cap.p arm.wrist', // chains off the transformed wrist pin
+    ].join('\n')
+    const { placements } = renderPlacements(src, 'fig')
+    const cap = placements.find((r) => r.target === 'cap.p')
+    // wrist rode the flip to canvas (7,23); cap.p(1,1) → origin (6,22); cap.p lands back on (7,23).
+    expect(cap?.landed).toEqual({ x: 7, y: 23 })
+    expect(cap?.coincident).toBe(true)
+  })
+})
+
+describe('fit — held-prop orientation is constant across views (HV6, ADR-0087 amendment 2)', () => {
+  // A sword authored blade-UP (top rows) / grip-DOWN (bottom rows), gripped by its grip pin.
+  const PROP = [
+    'draw sword 6x20:',
+    '  fill #d0d0d0 rect(2:0, 3:11)', // blade — the TOP half
+    '  fill #442200 rect(2:13, 3:18)', // grip — the BOTTOM half
+    '  pin grip 3:16',
+    'draw hand 6x6:',
+    '  fill #e0b080 rect(0:0, 5:5)',
+    '  pin grip 3:3',
+  ].join('\n')
+
+  // The row of the topmost blade pixel and the bottom grip pixel in column-of-the-sword — used to
+  // assert the blade stays ABOVE the grip (orientation up) regardless of the figure's per-view flip.
+  const bladeAboveGrip = (s: Sprite): boolean => {
+    let bladeTop = Number.POSITIVE_INFINITY
+    let gripBottom = -1
+    for (let y = 0; y < s.h; y++) {
+      for (let x = 0; x < s.w; x++) {
+        const [r, g, b, a] = px(s, x, y)
+        if (a === 0) {
+          continue
+        }
+        if (r > 190 && g > 190 && b > 190) {
+          bladeTop = Math.min(bladeTop, y) // light-grey blade
+        }
+        if (r > 40 && r < 90 && b < 40) {
+          gripBottom = Math.max(gripBottom, y) // dark-brown grip
+        }
+      }
+    }
+    return bladeTop < gripBottom
+  }
+
+  test('the prop keeps blade-up when fitted by its grip in a plain view', () => {
+    const src = [
+      PROP,
+      'draw view 30x30:',
+      '  fill #6a5030 rect(8:6, 21:26)', // body
+      '  pin body.hand 20:14',
+      '  fit hand.grip body.hand',
+      '  fit sword.grip hand.grip',
+    ].join('\n')
+    const s = render(src, 'view')
+    expect(bladeAboveGrip(s)).toBe(true)
+  })
+
+  test('a per-view figure flip does NOT invert the prop — blade stays up when the body is flipx', () => {
+    // Same fit, but the body/hand are mirrored for a side/back view. Fitting the sword by its grip
+    // (no sword flip) must keep the blade up — the HV6 regression was a per-view flip reversing it.
+    const src = [
+      PROP,
+      'draw view 30x30:',
+      '  fill #6a5030 rect(8:6, 21:26) ', // body
+      '  pin body.hand 10:14', // hand on the other side for the mirrored view
+      '  fit hand.grip body.hand flipx', // the HAND mirrors with the figure…
+      '  fit sword.grip hand.grip', // …but the sword is gripped as-authored: blade still UP
+    ].join('\n')
+    const s = render(src, 'view')
+    expect(bladeAboveGrip(s)).toBe(true)
+  })
+})
+
+describe('fit — placement self-check (W011 loose pin, ADR-0087 amendment 2)', () => {
+  test('a target pin far from the part ink warns W011 even though the pins coincide', () => {
+    const src = [
+      'draw torso 12x20:',
+      '  fill #6a5030 rect(0:0, 11:19)',
+      '  pin neck 6:0',
+      'draw badhead 12x18:',
+      '  fill #f0c090 rect(1:0, 10:9)', // ink only in the TOP half (y0..9)
+      '  pin chin 6:16', // 7px below the ink — a floating join
+      'draw fig 34x34:',
+      '  stamp torso 10:12',
+      '  pin torso.neck 16:12',
+      '  fit badhead.chin torso.neck',
+    ].join('\n')
+    const { engine, placements } = renderPlacements(src, 'fig')
+    const w = engine.warnings.find((d) => d.code === 'W011')
+    expect(w).toBeDefined()
+    expect(w?.severity).toBe('warning')
+    expect(w?.message).toContain('loose fit pin')
+    // the placement record still reports coincidence (the pins DO meet) but flags the ink gap.
+    const p = placements.find((r) => r.target === 'badhead.chin')
+    expect(p?.coincident).toBe(true)
+    expect(p?.pinToInk).toBeGreaterThan(2)
+  })
+
+  test('a pin on the part ink does NOT warn (no false positive)', () => {
+    const src = [
+      'draw torso 12x20:',
+      '  fill #6a5030 rect(0:0, 11:19)',
+      '  pin neck 6:0',
+      'draw head 12x12:',
+      '  fill #f0c090 rect(1:1, 10:11)',
+      '  pin chin 6:11', // on the bottom ink row
+      'draw fig 34x34:',
+      '  stamp torso 10:12',
+      '  pin torso.neck 16:12',
+      '  fit head.chin torso.neck',
+    ].join('\n')
+    const { engine } = renderPlacements(src, 'fig')
+    expect(engine.warnings.filter((d) => d.code === 'W011')).toHaveLength(0)
+  })
+})
+
 describe('pin / fit — contextual keyword discipline', () => {
   test('pin and fit stay bindable as ordinary names', () => {
     const src = [

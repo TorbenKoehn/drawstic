@@ -110,14 +110,16 @@ not by a hand-computed `stamp` coordinate, and a residual seam raises **`W010`**
     pin shoulder 11:3
   draw figure(c) 24x60:
     stamp torso(c) 6:(shoulderLine - 2)
-    pin torso.neck (6+6):(shoulderLine - 2)     # seed the root attach point (canvas space)
+    pin torso.neck (6+6):(shoulderLine - 2)     # seeds ALL torso pins in canvas space
     fit head.chin torso.neck shadow             # contact-guaranteed; `shadow` = auto contact pool
-    fit armL.shoulder torso.shoulder             # chains off torso's registered shoulder
+    fit armL.shoulder torso.shoulder             # chains off torso's seeded shoulder
   ```
 
-  The old hand-offset form (`stamp head 4:(shoulderLine - 15)` with a socket *comment*) still works
-  but reintroduces the off-by-one gap `fit` removes — prefer `fit`. **Plant standing figures with
-  the `shadow` flag**, not a hand `ellipse cool.alpha(30%)` — it pools under the part's footprint
+  `pin torso.neck …` on a real part now seeds **all** of torso's pins (neck, shoulder, hip…) from the
+  one anchor — the earlier "only the named key registers" trap (a `fit …torso.hip` throwing E001) is
+  gone. The old hand-offset form (`stamp head 4:(shoulderLine - 15)` with a socket *comment*) still
+  works but reintroduces the off-by-one gap `fit` removes — prefer `fit`. **Plant standing figures
+  with the `shadow` flag**, not a hand `ellipse cool.alpha(30%)` — it pools under the part's footprint
   bottom (the feet), not the fit pin, so a joint-to-joint fit (`leg.hip → torso.hip`) still drops
   the shadow under the feet, never at the hip.
 
@@ -129,10 +131,18 @@ not by a hand-computed `stamp` coordinate, and a residual seam raises **`W010`**
   gap below the next part — that is **W009** (`check --lint`); it was the knight's #1 gap cause.
 - **(d) Overlap the seams by 1–2px** from the start (archer/mage did this and never floated) rather
   than butting them exactly.
+- **(e) A pin must sit ON the part's own ink — contact ≠ correctness.** `fit` guarantees the pins
+  *coincide*, not that the part lands where intended: a `chin` pinned in the empty rows *below* the
+  head lands the head floating above the neck even though C007 is green (the 2026-07-10 wizard —
+  `critique` passed, the head hovered). A target pin >2px off the part's ink now raises **`W011`**
+  (loose pin). Put each seam pin on the part's real edge pixel (the head's bottom-centre ink, the
+  sleeve's cuff), and **read `render <file>#<draw> --explain`** — it prints, per `fit`, where the
+  pin landed, whether it coincides, and the pin-to-ink gap.
 
 **Per-joint crop before "done":** for every seam (neck, shoulder/hip, hand↔prop) render a tight
 `--crop` zoom — the full-body @4 is too small on a 56px figure to trust, and a colour-similar
 neighbour can hide a multi-pixel gap (villager's torso rip showed **only** under `--silhouette`).
+`W011` and `--explain` catch the *placement* class the crop's eyeball is meant to; use both.
 
 ## 5. Two views — side ≠ flip
 
@@ -141,8 +151,14 @@ pose). All 7 runs confirmed the split:
 
 - **Redraw** the parts that **lead the pose axis**: head (nose/visor/brim point forward), torso
   (front vs. back drape), the leading arm.
-- **Reuse** the **pose-invariant** parts: bow, quiver, staff, hammer, boot, leg. A held weapon may be
-  `flipy`ed (knight `stamp sword(c) 6:26 flipy`).
+- **Reuse** the **pose-invariant** parts: bow, quiver, staff, hammer, boot, leg.
+- **Held prop: grip it, don't hand-flip it (HV6).** Give the prop a `grip` pin, author it once in its
+  true orientation (blade up), and `fit sword.grip hand.grip` in every view — the grip stays in the
+  hand and the blade keeps its direction. A blanket `stamp sword … flipy` per view is the 2026-07-10
+  knight bug: it pointed the blade up in front, **down** in side, and reversed on the back (hilt in
+  the air). The figure's per-view flip is a *separate* `fit`; it must never touch the prop. Mirror the
+  prop deliberately only when a view truly needs it, with the prop's own `fit sword.grip hand.grip
+  flipx` (horizontal mirror, blade still up — the pin rides the flip and stays in the hand).
 - **Push the far limb back** with a **neutral-grey** `tint` (`tint #2b2b2b 40%`, R=G=B — the cheapest
   depth cue) + a small offset. A **chromatic** `tint cool 40%` is safe **only on already-cool
   material** (knight steel, mage boot); on warm/saturated material it rotates the hue (§6).

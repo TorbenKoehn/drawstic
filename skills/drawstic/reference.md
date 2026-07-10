@@ -401,22 +401,37 @@ quarter-turns, integer shifts/scales are lossless; non-invertible transforms are
 ## Anchored assembly — pin / fit (ADR-0087)
 
 ```drw
-pin <key> <pt>                              # attach point in this drawing's own space
-fit <partB>[.<pin>] <partA>.<pin> [shadow]  # land partB's pin on partA's placed pin (contact-guaranteed)
-fit <partB>.<pin> <x:y> [shadow]            # ground oracle: land the pin on a computed point
+pin <key> <pt>                                     # attach point in this drawing's own space
+fit <partB>[.<pin>] <partA>.<pin> [flags] [shadow] # land partB's pin on partA's placed pin (contact-guaranteed)
+fit <partB>.<pin> <x:y> [flags] [shadow]           # ground oracle: land the pin on a computed point
 ```
 
 - **`pin key pt`** — a bare key in a **part** (`pin shoulder 4:0`) exports on the rendered sprite;
   a dotted `part.name` in an **assembly** (`pin torso.shoulder 16:14`) seeds a canvas attach point.
+  When `part` names an already-drawn part, this seeds **all** its pins from the one anchor (so a
+  later `fit …torso.hip` chains without re-declaring); a bare hand-label (`a.spot`) seeds just one.
 - **`fit b.pin a.pin`** solves the translation so `b`'s pin lands exactly on `a`'s placed pin, then
   registers `b`'s pins in canvas space so the next `fit` chains (`fit hand.wrist arm.wrist`). Bare
   `fit b a` auto-matches a single shared pin name. Replaces hand-stamped socket offsets.
+- **Transform flags** — `fit` takes the same modifiers as `stamp` (`flipx`/`flipy`/`rotN`/`scaleN`/
+  `transform t`/`tint c p%`/`mask r`), about the footprint centre. **The pin rides the transform:**
+  the fit pin still lands exactly on target, and `b`'s other pins register through the same flip/rot
+  (a left-shoulder pin becomes the correctly-located right shoulder after `flipx`). Enables the
+  depth-tint far limb (`fit armFar.shoulder a.shoulder tint #2b2b2b 45%`) and mirrored side/back parts.
 - **Contact guarantee:** checked against the drawing's **final composite** (every later
   `stamp`/`fit` has painted) — deliberate back-to-front layering (e.g. fitting feet before the
   covering robe is stamped over them) never false-warns just because the covering part hadn't
   painted yet. No pixel contact by the end of the body ⇒ non-fatal **`W010`** gap warning (the
   seam `critique` C007 also measures) — never silent, and in the `diagnostics` of `render`, `build`,
   and `sheet` alike. `fit` reuses the `stamp` blit (same alpha/palette).
+- **Placement self-check (contact ≠ correctness):** a target pin >2px off the part's **own ink**
+  warns **`W011`** (loose pin) — the pins coincide but the join floats because the pin is in empty
+  part space (a chin below the head). `render <file>#<draw> --explain` prints a per-`fit` line
+  (landed coords · coincident? · pin-to-ink gap) so a misplacement is *visible*, not silently green.
+- **Held prop across views:** author the prop once in its true orientation with a `grip` pin, grip
+  it with `fit sword.grip hand.grip`; the per-view *figure* flip is a separate `fit` that never
+  touches the prop, so the blade keeps its direction front/side/back. Mirror the prop deliberately
+  with its own `fit … flipx`, never via a figure-wide flip.
 - **Ground oracle:** a computed-point source plants on terrain — `fit tree.base x:duneY(x/(w-1))`
   (needs a named target pin) → floating/sinking impossible.
 - **`shadow`** flag: auto contact-shadow ellipse anchored at the footprint bottom (the feet), not

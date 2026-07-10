@@ -180,10 +180,19 @@ draw sword 24x48:
   hand-computed `stamp` point: `pin shoulder 4:0` (a part's own-space attach point; exported) ·
   `fit armL.shoulder torso.shoulder` (land armL's pin exactly on torso's placed pin; registers
   armL's pins so the next `fit` chains; bare `fit armL torso` auto-matches a shared name). Seed the
-  root with a dotted `pin torso.shoulder 16:14`. No contact after fit ⇒ non-fatal **`W010`** gap
-  warning (the seam C007 also catches). **Ground oracle:** `fit tree.base x:duneY(x/(w-1))` plants a
-  part on a terrain fn (needs a named target pin) → no floating/sinking. `shadow` flag = auto
-  contact-shadow ellipse. `pin`/`fit` are keywords only in these slots.
+  root with a dotted `pin torso.shoulder 16:14` — when `torso` is a real part this seeds **all** its
+  pins, so a later `fit …torso.hip` chains without re-declaring. **`fit` takes the `stamp` flags**
+  (`flipx`/`flipy`/`rotN`/`transform`/`tint`/`mask`) and **the pin rides the transform** (a
+  left-shoulder pin becomes the correct right shoulder after `flipx`; the fit pin still lands exactly)
+  — so mirrored side/back parts and depth-tinted far limbs stay reliable. No contact after fit ⇒
+  non-fatal **`W010`** gap (the seam C007 catches). **Contact ≠ correctness:** a pin >2px off the
+  part's own ink ⇒ **`W011`** loose-pin (the join floats though the pins meet); `render … --explain`
+  reports every fit's landed coords, coincidence, and pin-to-ink gap — always eyeball it. **Held
+  prop:** author it once in true orientation with a `grip` pin, `fit sword.grip hand.grip`; the
+  per-view figure flip is a *separate* fit that never touches the prop, so the blade direction holds
+  across views. **Ground oracle:** `fit tree.base x:duneY(x/(w-1))` plants a part on a terrain fn
+  (needs a named target pin) → no floating/sinking. `shadow` flag = auto contact-shadow ellipse.
+  `pin`/`fit` are keywords only in these slots.
 - **Declarative light + material** (default shading path, ADR-0086) — one named light drives
   everything, so encodings can't drift: `light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%` (travel dir;
   source up-left ⇒ up-left edge lit) or `light torch = at 12:8 #ffb060 gain 1.4` (point source;
