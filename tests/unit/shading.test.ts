@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { color, relativeLuminance } from '../../src/color.js'
 import { Framebuffer } from '../../src/framebuffer.js'
-import { type Context, celRegion } from '../../src/raster.js'
+import { type Context, celRegion, fillRegion } from '../../src/raster.js'
 import {
   lightDirOf,
   lightPointFor,
@@ -162,12 +162,16 @@ describe('lowerMaterial: rendered tone structure', () => {
     expect(c.buffer.get(23, 23).a).toBe(0)
   })
 
-  test('cast shadow lands down-light, outside the region silhouette', () => {
+  test('cast shadow lands only on drawn content down-light, never on empty canvas', () => {
     const c = ctx(24, 24)
+    // an opaque wall just past the square's down-light (right) edge, drawn BEFORE the material.
+    fillRegion(c, rectRegion(20, 4, 23, 19), color(120, 120, 120))
     lowerMaterial(c, square, material(steelBase, 'metal'), sun)
-    // the region is 4..19; the cast band sticks out past the far (down-right) edge.
-    expect(c.buffer.get(21, 21).a).toBeGreaterThan(0)
-    // nothing sticks out on the light-facing side.
+    // the cast reaches the wall and darkens it, but not the clean wall beyond the cast's reach.
+    expect(lumAt(c, 20, 18)).toBeLessThan(lumAt(c, 23, 18))
+    // the down-light margin over EMPTY canvas stays transparent — no detached grey blob (§5.14).
+    expect(c.buffer.get(18, 21).a).toBe(0)
+    // nothing sticks out on the light-facing side either.
     expect(c.buffer.get(2, 2).a).toBe(0)
   })
 })

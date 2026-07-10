@@ -94,3 +94,9 @@ for both shapes removes the "these two look the same but are off by one" trap.
   (`ellipseRegion`), `src/eval.ts`, `src/ast.ts`, `src/parser.ts`, `skills/drawstic/scene-craft.md`
   §2 (ground oracle) and `character-craft.md` (attach idiom), and the product skill
   (`skills/drawstic/SKILL.md` + `reference.md`).
+
+**Amendment (2026-07-10, character-DX rerun).** The auto contact-shadow (decision 3) anchors at the
+fitted part's **footprint bottom (the feet)**, not the resolved fit pin. For a ground-oracle fit the
+two coincide (the base pin sits at the feet), but for a joint-to-joint fit (`leg.hip → torso.hip`)
+the fit pin is at the hip — the old pin-anchored pool dropped the shadow at the hip. Anchoring at the
+footprint bottom keeps the pool under the feet regardless of which pin the fit used (finding §5.6).

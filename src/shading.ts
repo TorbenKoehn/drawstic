@@ -266,13 +266,14 @@ export const planMaterial = (region: Region, mat: Material, lt: Light): ShadeOp[
 }
 
 /**
- * Paint a cast-shadow band: the region's silhouette offset by `offset`, minus the region itself, so
- * it lands only in the surrounding margin and never over its own region. The band *can* fall on a
- * neighbour region drawn earlier in the same `draw` — a deliberate, deterministic down-light cast
- * (draw ground/back-to-front). Assembled `fit`/`stamp` figures avoid this entirely: each part is a
- * separate draw rendered in isolation, so a part's cast is baked into its own margin and only ever
- * meets a neighbour via ordinary source-over at assembly (ADR-0086/0087; language-spec § Light &
- * material).
+ * Paint a cast-shadow band: the region's silhouette offset by `offset`, minus the region itself,
+ * **clipped to pixels the buffer already covers** (`alpha > 0`). A cast lands on a neighbour region
+ * drawn earlier in the same `draw` — a deliberate, deterministic down-light cast (draw
+ * ground/back-to-front) — but never on transparent canvas, so a large edge-near region (a cape, a
+ * robe) can no longer bake a detached grey blob into its own empty margin (character-DX §5.14). An
+ * assembled `fit`/`stamp` part renders in isolation with nothing behind it, so its cast paints
+ * nothing at model time; grounding for assembled figures comes from `fit … shadow` instead
+ * (ADR-0086/0087; language-spec § Light & material).
  */
 const castBand = (
   ctx: Context,
@@ -286,7 +287,14 @@ const castBand = (
     return
   }
   const shifted = regionTransform(region, m, inv)
-  fillRegion(ctx, regionSubtract(shifted, region), paint)
+  const band = regionSubtract(shifted, region)
+  const onContent: Region = {
+    type: 'region',
+    bbox: band.bbox,
+    has: (x, y) => band.has(x, y) && ctx.buffer.alphaAt(x, y) > 0,
+    test: (fx, fy) => band.test(fx, fy) && ctx.buffer.alphaAt(roundHalfUp(fx), roundHalfUp(fy)) > 0,
+  }
+  fillRegion(ctx, onContent, paint)
 }
 
 /** Execute a single planned op against the raster primitives. */

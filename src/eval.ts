@@ -467,6 +467,25 @@ type DrawState = {
     readonly matrix: readonly number[]
     readonly base: Framebuffer
   } | null
+  /**
+   * `fit` placements awaiting their W010 contact check (ADR-0087, hardened for the
+   * character-DX 2026-07-10 rerun): checking contact immediately against the buffer state
+   * *before* each `fit` false-fires on deliberate back-to-front layering (e.g. fitting feet
+   * before the covering robe is stamped over them) — the covering part hasn't painted yet, so
+   * the earlier part reads as gapped even though the final composite shows no seam. Every
+   * `fit` appends its placement here instead of checking immediately; `#renderDrawBody` walks
+   * the list once the whole body has painted and checks contact against the FINAL buffer, so a
+   * later part that touches/overlaps the seam clears it, while a placement nothing ever
+   * reaches still warns.
+   */
+  readonly pendingFits: {
+    readonly sprite: Sprite
+    readonly origin: { readonly x: number; readonly y: number }
+    readonly targetHead: string
+    readonly pinName: string
+    readonly cp: { readonly x: number; readonly y: number }
+    readonly span: TextSpan
+  }[]
 }
 
 /**
@@ -1870,6 +1889,7 @@ export class Engine {
       light: theme.light,
       pins: new Map(),
       mirror: null,
+      pendingFits: [],
     }
     const state: State = { module: mod, budget: this.budget, draw, functionDepth: 0 }
     // seed theme palette into the artifact (drawing-local pal overrides later)
@@ -1889,7 +1909,10 @@ export class Engine {
       }
       this.#execDrawStmt(s, env, state)
     }
-    // 5 — palette artifact fold (ADR-0050)
+    // 5 — resolve every deferred `fit` contact check (W010) against the FINAL composite, now
+    // that the whole body has painted — see `DrawState.pendingFits`.
+    this.#resolvePendingFits(draw, mod.displayPath)
+    // 6 — palette artifact fold (ADR-0050)
     const palette = this.#foldSpritePalette(draw)
     return {
       type: 'sprite',
@@ -2174,41 +2197,37 @@ export class Engine {
     // 4 — the identity-blit origin so the local pin maps to the canvas contact point.
     const origin = { x: quantInt(cp.x - localPin.x), y: quantInt(cp.y - localPin.y) }
 
-    // 5 — snapshot coverage before painting so the contact check ignores the shadow we add next.
-    const before = this.#coverageSnapshot(draw.context.buffer)
-
-    // 6 — auto contact-shadow (opt-in): an ellipse under the footprint, painted BEFORE the part so
-    // the part (e.g. feet) overdraws it. Centred on the resolved contact point — derived from the
-    // same solve, so it cannot drift from the actual contact pixel (ADR-0087).
+    // 5 — auto contact-shadow (opt-in): an ellipse under the part's footprint bottom (the feet/ground
+    // line), painted BEFORE the part so the feet overdraw it. Anchored at the footprint, not the fit
+    // pin, so a joint-to-joint fit (leg.hip → torso.hip) still pools the shadow under the feet rather
+    // than at the hip (ADR-0087; character-DX §5.6).
     if (stmt.shadow) {
-      this.#dropContactShadow(draw, sprite, cp)
+      this.#dropContactShadow(draw, sprite, origin)
     }
 
-    // 7 — stamp the part (identity blit; reuses the stamp path) and fold its palette.
+    // 6 — stamp the part (identity blit; reuses the stamp path) and fold its palette.
     stampSprite(draw.context, sprite, origin.x, origin.y)
     if (!draw.sprite.stamped.includes(sprite)) {
       draw.sprite.stamped.push(sprite)
     }
 
-    // 8 — register the fitted part's pins in canvas space (`head.name`) so later fits can chain.
+    // 7 — register the fitted part's pins in canvas space (`head.name`) so later fits can chain.
     for (const [name, p] of localPins) {
       draw.pins.set(`${stmt.target.head}.${name}`, { x: origin.x + p.x, y: origin.y + p.y })
     }
 
-    // 9 — contact guarantee: warn (never throw) if the placed part touches nothing already drawn.
-    if (!this.#hasContact(draw.context.buffer, before, sprite, origin)) {
-      this.warnings.push({
-        severity: 'warning',
-        code: 'W010',
-        message: `fit gap: '${stmt.target.head}' pin '${pinName}' lands at ${cp.x}:${cp.y} but the part touches no existing content`,
-        file: state.module.displayPath,
-        line: stmt.span.line,
-        column: stmt.span.column,
-        ...(stmt.span.endLine === undefined ? {} : { endLine: stmt.span.endLine }),
-        ...(stmt.span.endColumn === undefined ? {} : { endColumn: stmt.span.endColumn }),
-        hint: 'the pins coincide but the parts have no pixel overlap/adjacency there — move the pin onto solid pixels, overlap the seam by 1–2px, or add the missing part first',
-      })
-    }
+    // 8 — defer the contact guarantee: a same-statement-time check false-fires on deliberate
+    // back-to-front layering (e.g. fitting feet before the covering robe is stamped over them,
+    // where the robe hasn't painted yet). `#renderDrawBody` checks every pending fit against the
+    // FINAL composite once the whole body has painted (W010, non-fatal).
+    draw.pendingFits.push({
+      sprite,
+      origin,
+      targetHead: stmt.target.head,
+      pinName,
+      cp,
+      span: stmt.span,
+    })
   }
 
   /**
@@ -2296,14 +2315,16 @@ export class Engine {
 
   /**
    * Drop an auto contact-shadow ellipse (ADR-0087) under a fitted part's footprint: a soft cool
-   * pool centred on the contact point, its width from the part's covered footprint. Painted before
-   * the part so feet/base overdraw it. Uses the light in scope for its cool colour, else the
+   * pool centred on the footprint's bottom edge (the feet/ground line) in canvas space — NOT the fit
+   * pin, so a joint-to-joint fit (leg.hip → torso.hip) still grounds the shadow under the feet, not
+   * at the hip (character-DX §5.6). Its width comes from the part's covered footprint. Painted before
+   * the part so feet/base overdraw it; uses the light in scope for its cool colour, else the
    * canonical cool.
    */
   #dropContactShadow(
     draw: DrawState,
     sprite: Sprite,
-    cp: { readonly x: number; readonly y: number },
+    origin: { readonly x: number; readonly y: number },
   ): void {
     const box = this.#coveredBBox(sprite)
     if (!box) {
@@ -2312,26 +2333,40 @@ export class Engine {
     const footWidth = box.x1 - box.x0 + 1
     const rx = Math.max(1, roundHalfUp(footWidth * 0.45))
     const ry = Math.max(1, roundHalfUp(rx * 0.35))
+    const cx = origin.x + (box.x0 + box.x1) / 2
+    const cy = origin.y + box.y1
     fillRegion(
       draw.context,
-      ellipseRegion(quantInt(cp.x), quantInt(cp.y), rx, ry),
+      ellipseRegion(quantInt(cx), quantInt(cy), rx, ry),
       contactShadowColor(draw.light),
     )
   }
 
-  /** A per-pixel `alpha>0` snapshot of the buffer's current coverage (for the `fit` contact check). */
-  #coverageSnapshot(buffer: Framebuffer): Uint8Array {
-    const w = buffer.width
-    const h = buffer.height
-    const covered = new Uint8Array(w * h)
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        if (buffer.alphaAt(x, y) > 0) {
-          covered[y * w + x] = 1
-        }
+  /**
+   * Resolves every `fit` queued in `draw.pendingFits` (ADR-0087, hardened for the character-DX
+   * 2026-07-10 rerun) against the FINAL painted buffer — the whole `draw` body has now run, so a
+   * part fitted early that a later part overlaps/touches (deliberate back-to-front layering, e.g.
+   * feet fitted before the covering robe is stamped over them) reads as connected, while a
+   * placement nothing ever reaches still warns. Appends a non-fatal W010 {@link Diagnostic} to
+   * `this.warnings` per unresolved gap.
+   */
+  #resolvePendingFits(draw: DrawState, file: string): void {
+    for (const pending of draw.pendingFits) {
+      if (this.#hasContact(draw.context.buffer, pending.sprite, pending.origin)) {
+        continue
       }
+      this.warnings.push({
+        severity: 'warning',
+        code: 'W010',
+        message: `fit gap: '${pending.targetHead}' pin '${pending.pinName}' lands at ${pending.cp.x}:${pending.cp.y} but the part touches no other content in the final composite`,
+        file,
+        line: pending.span.line,
+        column: pending.span.column,
+        ...(pending.span.endLine === undefined ? {} : { endLine: pending.span.endLine }),
+        ...(pending.span.endColumn === undefined ? {} : { endColumn: pending.span.endColumn }),
+        hint: 'the pins coincide but the parts have no pixel overlap/adjacency there, even once every later part has painted — move the pin onto solid pixels, overlap the seam by 1–2px, or add the missing part first',
+      })
     }
-    return covered
   }
 
   /** The tight covered (`alpha>0`) bounding box of a sprite's own pixels, or `null` when empty. */
@@ -2356,21 +2391,32 @@ export class Engine {
   }
 
   /**
-   * Whether an identity-blitted part at `origin` makes pixel contact with content that existed
-   * before it (the `before` coverage snapshot): any of the part's covered pixels overlaps or is
-   * 8-adjacent to a pre-existing covered pixel. This is exactly the signature `critique`'s C007
-   * measures — a `fit` that fails it is a floating/seamed part.
+   * Whether an identity-blitted part at `origin` makes pixel contact with content OTHER than
+   * itself, read from `buffer` — the FINAL composite once the whole `draw` body has painted (see
+   * {@link resolvePendingFits}): any of the part's covered pixels is 8-adjacent to a covered pixel
+   * that isn't one of the part's own footprint pixels at `origin`. Self-exclusion by position (not
+   * by paint identity) is what makes this safe to run against the final buffer — without it, every
+   * multi-pixel sprite would trivially "contact" its own interior. This is exactly the signature
+   * `critique`'s C007 measures — a `fit` that fails it is a floating/seamed part.
    */
   #hasContact(
     buffer: Framebuffer,
-    before: Uint8Array,
     sprite: Sprite,
     origin: { readonly x: number; readonly y: number },
   ): boolean {
     const w = buffer.width
     const h = buffer.height
-    const preAt = (x: number, y: number): boolean =>
-      x >= 0 && y >= 0 && x < w && y < h && before[y * w + x] === 1
+    const isOwnPixel = (x: number, y: number): boolean => {
+      const sx = x - origin.x
+      const sy = y - origin.y
+      return (
+        sx >= 0 &&
+        sy >= 0 &&
+        sx < sprite.w &&
+        sy < sprite.h &&
+        (sprite.data[(sy * sprite.w + sx) * 4 + 3] ?? 0) > 0
+      )
+    }
     for (let sy = 0; sy < sprite.h; sy++) {
       for (let sx = 0; sx < sprite.w; sx++) {
         if ((sprite.data[(sy * sprite.w + sx) * 4 + 3] ?? 0) === 0) {
@@ -2380,7 +2426,12 @@ export class Engine {
         const cy = origin.y + sy
         for (let dy = -1; dy <= 1; dy++) {
           for (let dx = -1; dx <= 1; dx++) {
-            if (preAt(cx + dx, cy + dy)) {
+            const nx = cx + dx
+            const ny = cy + dy
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h || isOwnPixel(nx, ny)) {
+              continue
+            }
+            if (buffer.alphaAt(nx, ny) > 0) {
               return true
             }
           }

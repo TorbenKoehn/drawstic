@@ -391,23 +391,31 @@ export const litTone = (base: Color, light: Color, amt: number): Color => mix(ba
 const SHADOW_HUE_CAP = 20
 /** Fraction of `amt` that also desaturates the shadow (shadows read slightly greyer). */
 const SHADOW_DESAT = 0.3
+/**
+ * Floor a shadow's OkLCh lightness at this fraction of the base's — a shadow keeps ≥35 % of the
+ * base lightness, so a dark base (leather, a dark robe) darkens to a still-legible tone instead of
+ * clipping to pure `#000000` (character-DX §5.15 / HV1). Proportional, so it never brightens a
+ * shadow above its base and never disturbs a bright base whose plain darken already clears the floor.
+ */
+const MIN_SHADOW_L_FRAC = 0.35
 
 /**
  * Craft-correct shadow tone (ADR-0086 §5): lower OkLCh lightness by `darken`
- * (defaults to `amt`), nudge the hue toward `cool` by at most `SHADOW_HUE_CAP`
- * degrees along the shorter arc, and desaturate slightly. The hue **cap** is
- * the whole point — it keeps the shadow inside `base`'s hue family, so a warm
- * base darkens to a cooler brown instead of drifting through magenta, the
- * failure a bare `mix(base, cool, amt)` produces on warm materials. An
- * achromatic `cool` (chroma ~0) carries no hue direction, so only darken +
- * desaturate apply. Deterministic and pure.
+ * (defaults to `amt`) but never below {@link MIN_SHADOW_L_FRAC} of the base's L
+ * (so a dark base keeps visible detail instead of crushing to black), nudge the
+ * hue toward `cool` by at most `SHADOW_HUE_CAP` degrees along the shorter arc,
+ * and desaturate slightly. The hue **cap** is the whole point — it keeps the
+ * shadow inside `base`'s hue family, so a warm base darkens to a cooler brown
+ * instead of drifting through magenta, the failure a bare `mix(base, cool, amt)`
+ * produces on warm materials. An achromatic `cool` (chroma ~0) carries no hue
+ * direction, so only darken + desaturate apply. Deterministic and pure.
  */
 export const shadowTone = (base: Color, cool: Color, amt: number, darken = amt): Color => {
   const o = colorToOklch(base)
   const oc = colorToOklch(cool)
   const nudge = oc.c < 1e-7 ? 0 : clampMag(hueDelta(o.h, oc.h) * amt, SHADOW_HUE_CAP)
   return oklchToColor({
-    l: clamp01(o.l - darken),
+    l: clamp01(Math.max(o.l - darken, o.l * MIN_SHADOW_L_FRAC)),
     c: o.c * Math.max(0, 1 - amt * SHADOW_DESAT),
     h: (((o.h + nudge) % 360) + 360) % 360,
     alpha: o.alpha,

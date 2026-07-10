@@ -115,8 +115,9 @@ not by a hand-computed `stamp` coordinate, and a residual seam raises **`W010`**
 
   The old hand-offset form (`stamp head 4:(shoulderLine - 15)` with a socket *comment*) still works
   but reintroduces the off-by-one gap `fit` removes — prefer `fit`. **Plant standing figures with
-  the `shadow` flag**, not a hand `ellipse cool.alpha(30%)` — it centres on the actual contact
-  pixel, so it cannot drift.
+  the `shadow` flag**, not a hand `ellipse cool.alpha(30%)` — it pools under the part's footprint
+  bottom (the feet), not the fit pin, so a joint-to-joint fit (`leg.hip → torso.hip`) still drops
+  the shadow under the feet, never at the hip.
 
 - **(b) Cut parts along the overlap, not the anatomy.** Pauldron belongs to the *arm* (covers the
   torso shoulder when stamped), faulds/skirt to the *torso* (covers the leg tops) → a slightly wrong
@@ -212,7 +213,8 @@ shading instead.
 
 0. **Gate:** `critique --as character --strict --json` → `pass:true` (must-fix C007 catches a
    floating/seamed part under `--strict`), then **answer its seam-contact rubric** by looking.
-1. `check --lint --json` = `[]` (W002 catches an un-stamped part; **W009** the transparent end-row).
+1. `check --lint --json` = `[]` (W002 catches a part that's neither exported, stamped, nor
+   `fit`-attached; **W009** the transparent end-row).
 2. **Part fragment `--png@6–8`** — each part isolated with literal args (`#head(#a83a36)`); reuse the
    exact numbers in the `stamp` line, no surprises.
 3. **Composite `--png@4`** — the full figure; the light contract and proportions read here.

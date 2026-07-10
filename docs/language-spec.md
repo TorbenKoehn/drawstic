@@ -657,17 +657,22 @@ a bbox overlap is not pixel contact — a part **declares named attach points** 
   registers `partB`'s pins in canvas space, so the next `fit` chains off them
   (`fit hand.wrist arm.wrist`). When each side has one pin of the same name, the shorter
   `fit partB partA` **auto-matches** it. A named pin absent on one side is a positioned error.
-- **Contact guarantee.** After placing, `fit` checks that the part touches existing content (pixel
-  overlap or 8-adjacency). No contact ⇒ a non-fatal **`W010` gap warning** (the same seam the
-  `critique` **C007** check measures) — never a silent float. It surfaces in the `diagnostics` of
-  every render path: `render`, `build`, and `sheet` (JSON and human output).
+- **Contact guarantee.** Checked against the drawing's **final composite**, once the whole `draw`
+  body has painted — not at `fit`-statement time — so deliberate back-to-front layering (e.g.
+  fitting feet before the covering robe is stamped over them, closing the seam) never false-warns
+  just because the covering part hadn't painted yet at the moment of the `fit`. `fit` checks that
+  the part touches content *other than itself* (pixel overlap or 8-adjacency) by the end of the
+  body. No contact ⇒ a non-fatal **`W010` gap warning** (the same seam the `critique` **C007**
+  check measures) — never a silent float. It surfaces in the `diagnostics` of every render path:
+  `render`, `build`, and `sheet` (JSON and human output).
 - **Ground-placement oracle.** A `fit` whose source is a **computed point** plants a part on a
   terrain function: `fit tree.base x:duneY(x/(w-1))` (scene-craft §2's *"terrain is a function"*
   formalized) makes floating/sinking structurally impossible. A point source needs a named target
   pin.
-- **`shadow`** drops an auto contact-shadow ellipse under the footprint first (so feet overdraw
-  it), cool-tinted from the light in scope — the pool cannot drift from the contact pixel because
-  it is centred on the same solve.
+- **`shadow`** drops an auto contact-shadow ellipse under the part's footprint bottom (the feet)
+  first, so feet overdraw it — anchored at the footprint, **not** the fit pin, so a joint-to-joint
+  fit (`leg.hip → torso.hip`) still pools the shadow under the feet, never at the hip. Cool-tinted
+  from the light in scope.
 
 ```drw
 draw arm(c) 8x20:                       # a part exports its own attach points
@@ -1300,13 +1305,12 @@ draw sword 24x48:
   light onto the fixed sequence `fill → shadeRegion → lightRegion → rim → ambientOcclusion →
   cast shadow` — every point/direction/offset derived from the one light, zero-dose steps
   skipped. `MATERIAL` is a `material` value **or** an inline `COLOR [RESPONSE]`. The **cast is
-  region-scoped**: it paints the region's silhouette offset down-light, minus the region itself,
-  so it lands in the surrounding margin (never over its own region). Build parts as separate draws
-  and combine them with `fit`/`stamp` (§9) — each part renders in isolation, so a part's cast never
-  overpaints a neighbour at model time; the only cross-part interaction is ordinary source-over at
-  assembly (a part's baked shadow grounds the neighbour beneath it, in stamp order). Many `model`
-  calls in **one** draw body do let a later region's cast fall on an earlier-drawn neighbour (draw
-  ground/back-to-front, scene-craft §8) — a deliberate, deterministic effect, not a bug.
+  clipped to already-drawn content**: it paints the region's silhouette offset down-light, minus
+  the region, minus every transparent pixel — so within one draw body a later region's cast falls
+  on an earlier-drawn opaque neighbour (draw ground/back-to-front, scene-craft §8), but it **never
+  bakes onto empty canvas**. A part rendered in isolation therefore casts nothing at model time (no
+  detached grey blob); grounding for assembled figures comes from `fit … shadow` (§9), not a baked
+  material cast.
 - **`cel REGION MATERIAL N`** fills `REGION` with `N` crisp cel bands from `ramp(base, N)`
   (even, hue-consistent, warm→cool), banded by distance from the light — a hard-edged
   alternative to `model`'s smooth veils.
@@ -1680,7 +1684,7 @@ skipped rather than guessed at, so a lint pass never produces a false positive.
 | Code | Fires when | Fix |
 |------|------------|-----|
 | `W001` | a locally declared `pal` key is never used by `pixels:` or a paint expression | remove it or use it |
-| `W002` | a drawing is neither `export`ed nor `stamp`ed from another drawing | export it or stamp it |
+| `W002` | a drawing is neither `export`ed, `stamp`ed, nor a `fit` target from another drawing | export it, stamp it, or fit it |
 | `W003` | a `stamp`'s literal target at a literal point lands entirely outside the host canvas | move it on-canvas or drop it |
 | `W004` | a procedural (no `pixels:`) drawing exceeds **128 px on either axis** (a square ceiling, so the canonical 48/64/128-px icon detail redraws stay silent) | preview with `render --preview --fit` |
 | `W006` | a `dither` partner paint statically resolves to alpha 0 — `dither` is a raw set, not a blend (§12 Filters), so this punches a transparency hole | give the partner a visible alpha |

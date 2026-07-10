@@ -15,7 +15,7 @@ Runner prefix (`bunx` / `npx` / `pnpm dlx` / `yarn dlx`) omitted below.
 | `drawstic build <file> [--out <dir>] [--json]` | run every `export`, write artifacts (default: cwd). JSON: `{diagnostics, artifacts: [{path, bytes}]}`. |
 | `drawstic render <file>#<drawing>[(args)] …` | ad-hoc render of one drawing (see below). |
 | `drawstic sheet <file> [--all] [--cols N] [--png@N] [--out <path>] [--stdout] [--ascii] [--preview] [--json]` | family contact sheet: composes selected drawings size-normalized into one labeled comparison grid (see below). |
-| `drawstic critique <file> [--as icon\|scene\|character\|item] [--family a,b,c] [--strict] [--json]` | pixel-based, vision-free quality checks (`C0xx`) over every rendered non-parametric drawing, plus family checks across siblings. Category-agnostic (always run): C001 empty/near-empty, C003 optical centering, C004 value/contrast spread, C006 palette/complexity budget, C008 interior pinholes, C012 asymmetric bottom-padding. `--as` selects a category profile (thresholds, never inferred) and opts in the profile-gated checks — **C002** edge-clip (opaque content touching a canvas edge; `icon`/`item` only, not full-bleed scenes), **C007** floating-part/seam (8-connected components + chamfer distance; `character` only), **C005** stroke width (`icon`/`item`/`character`); without `--as` only the agnostic subset runs plus a `C000` info nudge. Family checks compare the exported siblings (or `--all`; `--family a,b,c` overrides), need ≥2 members: **C009** sibling-silhouette collapse (scale-/position-invariant 32×32 signatures, mass-normalized L1 < 0.12) and **C011** weight parity (a sibling >6× off the family median mass). All findings default to `warning` (exit 0, never blocking); `--strict` promotes only the *unambiguous* must-fix subset — **C001** empty, **C007** character seam, plus **C003** for `icon` — to `error` (exit 1), the CI regression gate. C002/C005/C006/C008/C009/C011/C012 stay advisory (silhouette-sharing recolors/shared-shells, gradient sprawl, and legit small gaps are correct art). Each finding carries `{measured, threshold, fix}`. JSON: `{diagnostics, critique: {pass, profile, strict, failedCodes, drawings:[{name,width,height,bbox,coveredPixelCount,opaquePixelCount,distinctColorCount,unknownColorCount,luminance,componentCount?,minStrokeWidth?,checks:[…]}], familyMetrics?:{members:[{name,coveredPixelCount,bbox,nearest:{name,distance}}],distanceMatrix,medianCoveredPixelCount}, rubric:{renders:[…],items:[{id,when,ask}],note}}}`. `pass:true` is necessary, not sufficient — run `rubric.renders` (silhouette-first) and answer every `rubric.items` prompt by looking. The metric bundle is a superset of `render --inspect`. |
+| `drawstic critique <file> [--as icon\|scene\|character\|item] [--family a,b,c] [--strict] [--json]` | pixel-based, vision-free quality checks (`C0xx`) over every rendered non-parametric drawing, plus family checks across siblings. Category-agnostic (always run): C001 empty/near-empty, C003 optical centering, C004 value/contrast spread, C006 palette/complexity budget, C008 interior pinholes, C012 asymmetric bottom-padding. `--as` selects a category profile (thresholds, never inferred) and opts in the profile-gated checks — **C002** edge-clip (opaque content touching a canvas edge; `icon`/`item` only, not full-bleed scenes), **C007** floating-part/seam (8-connected components + chamfer distance; `character` only), **C005** stroke width (`icon`/`item`/`character`); without `--as` only the agnostic subset runs plus a `C000` info nudge. Family checks compare the exported siblings (or `--all`; `--family a,b,c` overrides), need ≥2 members: **C009** sibling-silhouette collapse (scale-/position-invariant 32×32 signatures, mass-normalized L1 < 0.12) and **C011** weight parity (a sibling >6× off the family median mass). All findings default to `warning` (exit 0, never blocking); `--strict` promotes only the *unambiguous* must-fix subset — **C001** empty, **C007** character seam, plus **C003** for `icon` — to `error` (exit 1), the CI regression gate. C002/C005/C006/C008/C009/C011/C012 stay advisory (silhouette-sharing recolors/shared-shells, gradient sprawl, and legit small gaps are correct art). Each finding carries `{measured, threshold, fix}`. JSON: `{diagnostics, critique: {pass, profile, strict, failedCodes, drawings:[{name,width,height,bbox,coveredPixelCount,opaquePixelCount,distinctColorCount,unknownColorCount,luminance,componentCount?,minStrokeWidth?,checks:[…]}], familyMetrics?:{members:[{name,coveredPixelCount,bbox,nearest:{name,distance}}],distanceMatrix,medianCoveredPixelCount}, rubric:{renders:[…],items:[{id,when,ask}],note}}}`. **`pass`≠exit code:** `pass` is `false` on *any* fired finding (must-fix or advisory — one lone C009/C011/C012 warning flips it); the process exit code trips only on the `--strict` must-fix subset above, so exit 0 does not imply `pass:true`. Read `failedCodes`/per-drawing `checks[]` for what's actually outstanding. `pass:true` is necessary, not sufficient — run `rubric.renders` (silhouette-first) and answer every `rubric.items` prompt by looking. The metric bundle is a superset of `render --inspect`. |
 
 **Fragment arguments** (ADR-0067): a parametric drawing takes literal args directly in the
 `#<drawing>(...)` fragment — `render parts.drw#house(#c04040, 3)` — no throwaway wrapper draw
@@ -126,7 +126,7 @@ tile's top-left in **unscaled** sheet coordinates (× `--png@N` for output pixel
 | Code | Fires on |
 |---|---|
 | W001 | unused local `pal` key |
-| W002 | drawing never `export`ed or `stamp`ed |
+| W002 | drawing never `export`ed, `stamp`ed, nor a `fit` target |
 | W003 | stamp's literal target at a literal point lands fully off-canvas |
 | W004 | procedural (no `pixels:`) drawing over 128 px on either axis (icon detail sizes 48/64/128 stay silent) |
 | W006 | `dither` partner paint statically alpha-0 (transparency hole) |
@@ -411,13 +411,17 @@ fit <partB>.<pin> <x:y> [shadow]            # ground oracle: land the pin on a c
 - **`fit b.pin a.pin`** solves the translation so `b`'s pin lands exactly on `a`'s placed pin, then
   registers `b`'s pins in canvas space so the next `fit` chains (`fit hand.wrist arm.wrist`). Bare
   `fit b a` auto-matches a single shared pin name. Replaces hand-stamped socket offsets.
-- **Contact guarantee:** no pixel contact after placing ⇒ non-fatal **`W010`** gap warning (the
+- **Contact guarantee:** checked against the drawing's **final composite** (every later
+  `stamp`/`fit` has painted) — deliberate back-to-front layering (e.g. fitting feet before the
+  covering robe is stamped over them) never false-warns just because the covering part hadn't
+  painted yet. No pixel contact by the end of the body ⇒ non-fatal **`W010`** gap warning (the
   seam `critique` C007 also measures) — never silent, and in the `diagnostics` of `render`, `build`,
   and `sheet` alike. `fit` reuses the `stamp` blit (same alpha/palette).
 - **Ground oracle:** a computed-point source plants on terrain — `fit tree.base x:duneY(x/(w-1))`
   (needs a named target pin) → floating/sinking impossible.
-- **`shadow`** flag: auto contact-shadow ellipse under the footprint, drawn first (feet cover it),
-  cool from the light in scope.
+- **`shadow`** flag: auto contact-shadow ellipse anchored at the footprint bottom (the feet), not
+  the fit pin — a joint-to-joint fit still pools under the feet, never at the hip. Drawn first (feet
+  cover it), cool from the light in scope.
 
 `pin`/`fit` are contextual keywords (only in these statement shapes) — bindable as names elsewhere.
 
@@ -541,8 +545,9 @@ Ramps: `tones(base, …amounts)` and `mixes(a, b, count[, space])` return color 
 `pal: a, b, c = #ccc.tones(-12%, 0%, 12%)`.
 Shading (ADR-0086, call- or method-style): `base.litTone(light, amt)` mixes toward the light
 colour (warm highlight — not chalky `lighten`); `base.shadowTone(cool, amt[, darken])` darkens
-(by `darken`, default `amt`) + nudges hue toward `cool` capped ≤20° along the short arc (never
-cross-hue → **no magenta shadow on warm bases** — `shadowTone` bakes the trap-avoidance below) +
+(by `darken`, default `amt`, but never below 35% of the base lightness → a **dark base keeps
+visible detail, never crushes to `#000000`**) + nudges hue toward `cool` capped ≤20° along the
+short arc (never cross-hue → **no magenta shadow on warm bases** — `shadowTone` bakes both traps) +
 slight desaturate; `base.ramp(n)` → even n-step light→dark tone list (hue-stable, for
 `pixels:`/cel banding). Unlike other ops these three are **not reserved** — a recipe may still bind
 `ramp`/`litTone`/`shadowTone` (a local binding wins; `.ramp(n)` on a colour still hits the builtin).
@@ -702,9 +707,10 @@ draw sword 24x48:
 - **`model REGION MATERIAL [light L]`** lowers the material under the resolved light; `MATERIAL` is
   a `material` value **or** inline `COLOR [RESPONSE]`. Zero-dose steps are skipped (so `flat` emits
   no rim/cast). **No light in any tier = hard `E024`** — never a silent default. The **cast is
-  region-scoped** (silhouette offset down-light, minus the region), so build multi-part figures as
-  separate part draws + `fit`/`stamp`: each part renders alone, its cast never smears a neighbour;
-  assembly is source-over (a part's baked shadow grounds the part beneath it, in stamp order).
+  clipped to already-drawn content** (silhouette offset down-light, minus the region, minus every
+  transparent pixel): within one draw it lands on an earlier-drawn opaque neighbour but never bakes
+  onto empty canvas, so an isolated part casts nothing (no floating blob). Ground assembled figures
+  with `fit … shadow`, not a baked material cast.
 - **`cel REGION MATERIAL N`** fills with `N` crisp cel bands from `ramp(base, N)` (even,
   hue-consistent, warm→cool), banded by distance from the light — a hard-edged alternative to
   `model`'s smooth veils.

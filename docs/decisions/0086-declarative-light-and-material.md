@@ -114,3 +114,12 @@ floor; `model`/`cel` are sugar, not a closed box.
   Material), `docs/best-practices.md` (materials replace hand-dosed shading as the default),
   `skills/drawstic/scene-craft.md` §5 (referenced dosage table), and the product skill
   (`skills/drawstic/SKILL.md` + `reference.md`).
+
+**Amendment (2026-07-10, character-DX rerun).** Two lowering fixes from the character-DX eval:
+(1) `shadowTone` (and therefore `ramp`/`cel`/`model` shade tones) now **floors the darkened
+lightness at 35 % of the base L** — a dark base (leather, a dark robe) keeps visible detail instead
+of the fixed `darken` crushing it to `#000000` (finding §5.15 / HV1). (2) The material **cast band
+is clipped to already-drawn opaque content** (`castBand`, `src/shading.ts`): it falls on an
+earlier-drawn neighbour within one draw but never bakes onto transparent canvas, so a large
+edge-near region no longer paints a detached grey blob beside itself (finding §5.14). Assembled
+figures ground via `fit … shadow`, not a baked material cast.

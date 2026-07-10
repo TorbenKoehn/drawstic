@@ -131,6 +131,39 @@ describe('fit — gap reporting (contact guarantee, not silent)', () => {
     expect(w?.message).toContain('fit gap')
   })
 
+  test('back-to-front layering: a part fitted before its covering part is stamped over it does NOT warn (final-composite check)', () => {
+    // `arm` fits onto a bare canvas point with nothing painted nearby yet (a real gap at
+    // fit-STATEMENT time), then `torso` is stamped AFTERWARD and its footprint reaches past
+    // arm's own edge — touching it in the FINAL composite. This is the deliberate back-to-front
+    // layering the character-DX 2026-07-10 rerun found (feet fitted before the covering robe is
+    // stamped over them): the deferred W010 check reads the buffer once the whole body has
+    // painted, so this must NOT warn.
+    const layered = [
+      PARTS,
+      'draw fig 30x30:',
+      '  pin free.spot 20:10', // bare canvas point, unconnected to anything drawn so far
+      '  fit arm.shoulder free.spot', // arm lands at (20,8); nothing painted nearby yet
+      '  stamp torso 15:2', // painted AFTER: torso (x15..26,y2..21) reaches past arm's left edge (x20)
+    ].join('\n')
+    const { engine } = renderWith(layered, 'fig')
+    expect(engine.warnings).toHaveLength(0)
+  })
+
+  test('back-to-front layering: a part whose gap is never covered still warns W010', () => {
+    // Same shape as above, but `torso` stays far from `arm` — nothing ever touches it, so the
+    // gap is real by the end of the body and must still warn.
+    const stillGap = [
+      PARTS,
+      'draw fig 34x34:',
+      '  pin free.spot 30:30',
+      '  fit arm.shoulder free.spot', // arm lands at (30,28), far corner
+      '  stamp torso 4:2', // torso (x4..15,y2..21) never reaches the arm
+    ].join('\n')
+    const { engine } = renderWith(stillGap, 'fig')
+    expect(engine.warnings).toHaveLength(1)
+    expect(engine.warnings[0]?.code).toBe('W010')
+  })
+
   test('a bbox-overlapping gap is caught by critique C007', () => {
     // An L-shaped torso: its bbox spans the whole figure, but the top-right quadrant is empty.
     // A part fit into that quadrant overlaps the bbox yet stays pixels clear → the C007 seam.
@@ -201,37 +234,79 @@ describe('fit shadow — auto contact-shadow', () => {
     ]
     const withShadow = render([...base, '  fit post.base 15:22 shadow'].join('\n'), 'scene')
     const noShadow = render([...base, '  fit post.base 15:22'].join('\n'), 'scene')
-    // The foot lands at x15..16; the contact ellipse (rx≈5 about x15) pools out to
-    // x10 — a shadow-only pixel beside the narrow foot, over bare ground.
-    expect(px(withShadow, 10, 22)).not.toEqual(px(noShadow, 10, 22))
+    // The foot lands at x15..16; the pool anchors under the footprint bottom (the feet) and spreads
+    // out to ~x12 — a shadow-only pixel beside the narrow foot, over bare ground.
+    expect(px(withShadow, 12, 22)).not.toEqual(px(noShadow, 12, 22))
     // and it reads cooler (more blue) than the bare warm-green ground there.
-    expect(px(withShadow, 10, 22)[2]).toBeGreaterThan(px(noShadow, 10, 22)[2])
+    expect(px(withShadow, 12, 22)[2]).toBeGreaterThan(px(noShadow, 12, 22)[2])
+  })
+
+  test('shadow anchors under the feet (footprint bottom), not the fit pin', () => {
+    // a leg fitted joint-to-joint: its `hip` pin lands on the torso hip, far above the leg's foot.
+    // The contact pool must pool under the FOOT (footprint bottom), not up at the hip pin. The leg
+    // has a wide thigh and a narrow shin, so the foot-anchored pool peeks out beside the shin.
+    const src = [
+      'draw torso 8x12:',
+      '  fill #6a5030 rect(0:0, 7:11)',
+      '  pin hip 4:11',
+      'draw leg 8x16:',
+      '  fill #7a5a2a rect(0:0, 7:3)', // wide thigh
+      '  fill #7a5a2a rect(3:4, 4:15)', // narrow shin to the foot
+      '  pin hip 4:0',
+      '  pin foot 4:15',
+      'draw scene 24x40:',
+      '  fill #3a5a2a rect(0:30, 23:39)', // warm-green ground band, low in the canvas
+      '  stamp torso 8:6', // torso canvas y6..17
+      '  pin torso.hip 12:17',
+      '  fit leg.hip torso.hip shadow', // leg hangs down; foot lands at canvas (12, 32)
+    ].join('\n')
+    const s = render(src, 'scene')
+    // beside the narrow shin at foot level (over ground) the pool reads cooler (bluer) than the
+    // bare warm-green ground away from it — the pool is under the FEET, where the OLD hip-anchored
+    // behaviour dropped nothing (footB would equal groundB).
+    const [, , footB] = px(s, 9, 32)
+    const [, , groundB] = px(s, 3, 32)
+    expect(footB).toBeGreaterThan(groundB)
   })
 })
 
-// A `model`'s cast is region-scoped: the cast band is the region's silhouette offset down-light,
-// minus the region itself, so it lands in the part's OWN transparent margin. For assembled (`fit`)
-// multi-part sprites each part is a separate `draw` rendered in isolation, so a part's cast can
-// never overpaint a neighbour at model time — the only cross-part interaction is ordinary
-// source-over compositing at `stamp`/`fit` (a part's baked shadow grounding a neighbour, in stamp
-// order). This is deliberate, documented semantics (language-spec § Light & material), not a defect.
-describe('material cast is region-scoped & baked per part (ADR-0086/0087)', () => {
+// A `model`'s cast is clipped to already-drawn content: the band is the region's silhouette offset
+// down-light, minus the region, minus every transparent pixel. It falls on a neighbour region drawn
+// earlier in the same `draw` (a deliberate down-light cast) but never bakes onto empty canvas — a
+// part rendered in isolation therefore casts nothing at model time (no detached grey blob, §5.14).
+// Grounding for assembled figures comes from `fit … shadow`, not a baked material cast
+// (ADR-0086/0087; language-spec § Light & material).
+describe('material cast is clipped to drawn content (ADR-0086/0087)', () => {
   const PART = [
     'light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%',
-    'draw blockA 20x20:', // region smaller than the canvas, so the cast band has margin to land in
+    'draw blockA 20x20:', // region smaller than the canvas, so the cast band would have margin
     '  lit sun:',
     '    model rect(2:2, 11:11) #8a95a5 metal',
     '  pin corner 11:11',
   ].join('\n')
 
-  test("a part's model cast band stays inside its own sprite margin, outside its region", () => {
+  test("a part's model cast paints nothing on its own transparent margin (no floating blob)", () => {
     const a = render(PART, 'blockA')
     // region interior is opaque metal.
     expect(alpha(a, 6, 6)).toBe(255)
-    // the cast band sits at x=12 (region max x is 11) — OUTSIDE the region, in the part's own
-    // transparent margin, and semi-transparent (the cast alpha), never over a neighbour.
-    expect(alpha(a, 12, 6)).toBeGreaterThan(0)
-    expect(alpha(a, 12, 6)).toBeLessThan(255)
+    // the down-light margin just past the region (region max x/y is 11) stays fully transparent:
+    // the cast no longer bakes a detached grey blob onto empty canvas (character-DX §5.14).
+    expect(alpha(a, 12, 6)).toBe(0)
+    expect(alpha(a, 6, 12)).toBe(0)
+  })
+
+  test('a model cast DOES fall on an opaque neighbour drawn earlier in the same draw (down-light)', () => {
+    const src = [
+      'light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%',
+      'draw scene 24x24:',
+      '  fill #6a6a6a rect(16:2, 21:21)', // a wall down-light of the block, drawn FIRST (opaque)
+      '  lit sun:',
+      '    model rect(2:2, 15:15) #8a95a5 metal',
+    ].join('\n')
+    const a = render(src, 'scene')
+    // the block's cast band (offset down-right) lands on the wall and darkens its near column,
+    // while the wall beyond the cast's reach stays at its flat grey — cast on content, not on void.
+    expect(px(a, 16, 10)[0]).toBeLessThan(px(a, 21, 10)[0])
   })
 
   test('two model parts assembled via fit keep independent shading and render deterministically', () => {

@@ -66,7 +66,11 @@ hatch (§ Idioms). Steps in full:
    floating/seamed parts, flat value, edge-clip, sibling-silhouette collapse — each with
    `{measured, threshold, fix}`. Pass `--as` (thresholds are per-category; sibling checks C009/C011
    compare the exported family, `--family a,b,c` overrides). `--strict` → exit 1 on the must-fix
-   subset (C001 empty, C007 character seam, +C003 icon centering) — the CI gate. Then **do what
+   subset (C001 empty, C007 character seam, +C003 icon centering) — the CI gate. **`pass`≠exit
+   code**: `critique.pass` in the JSON goes `false` on *any* fired finding, must-fix or advisory
+   (a lone C009/C011/C012 warning flips it), while `--strict`'s exit code trips only on the
+   must-fix subset above — a clean `--strict` exit (0) can still carry `pass:false`; read the exit
+   code for CI, `failedCodes`/`checks[]` for what's actually outstanding. Then **do what
    `critique.rubric` says**: run its ordered `renders` (silhouette@6 → ascii → png@4 → sheet) and
    answer every `items[]` prompt by looking. `pass:true` is necessary, **not** sufficient — a clean
    automatic gate with an unanswered rubric is not done.
@@ -157,8 +161,9 @@ draw sword 24x48:
 - **Colors are values:** `#1a1a1a`, `#rrggbbaa`, `oklch(0.78, 0.12, 75)`, `rgb()`, `hsl()`;
   ops chain: `c.lighten(12%).alpha(80%)`; ramps: `#777.tones(-16%, 0%, 14%)`,
   `a.mixes(b, 4)`; shading (ADR-0086): `base.litTone(warm, 25%)` (warm highlight, not chalky
-  `lighten`), `base.shadowTone(cool, 30%)` (darken + hue-nudge capped ≤20° → no magenta shadow),
-  `base.ramp(3)` (n-step light→dark band list); `transparent`.
+  `lighten`), `base.shadowTone(cool, 30%)` (darken + hue-nudge capped ≤20° → no magenta shadow; floored at 35%
+  of base L → a dark base never crushes to `#000000`), `base.ramp(3)` (n-step light→dark band list);
+  `transparent`.
 - **Primitives** (**paint FIRST** — paint, geometry, then flags; `fill` = solid, `w2` = stroke width 2):
   `bg p` · `px p pt` · `line p a b` · `rect p a b [fill]` · `rrect p a b r [fill]` ·
   `circle p c r [fill]` · `ellipse p c rx:ry [fill]` · `arc p c r a0 a1` ·

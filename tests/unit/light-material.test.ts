@@ -57,12 +57,13 @@ const distinctColors = (s: Sprite, x0: number, y0: number, x1: number, y1: numbe
 describe('light + material bindings and the lit block', () => {
   test('one light drives shade + rim + cast coherently across a lit block', () => {
     // dir 1:0 → light travels right, so the source sits left: the left edge is lit (brighter),
-    // the right side recedes into shade, and the cast falls to the right of the region.
+    // the right side recedes into shade, and the cast falls right, onto a wall drawn there first.
     const s = render(
       [
         'light sun = dir 1:0 #ffe6b0 amb #2a3a5e 15%',
         'material steel = #8a95a5 metal',
-        'draw blade 20x16:',
+        'draw blade 22x16:',
+        '  fill #6a6a6a rect(15:3, 21:12)',
         '  body = rect(3:3, 14:12)',
         '  lit sun:',
         '    model body steel',
@@ -71,9 +72,9 @@ describe('light + material bindings and the lit block', () => {
     )
     // lit (left) side is brighter than the shaded (right) side — one light, coherent gradient
     expect(lum(s, 5, 7)).toBeGreaterThan(lum(s, 12, 7))
-    // a cast-shadow band lands just right of the region (down-light of dir 1:0), so a pixel
-    // outside the body's right edge is now painted
-    expect(px(s, 15, 7)[3]).toBeGreaterThan(0)
+    // the cast-shadow band lands on the wall just right of the body and darkens it, while the wall
+    // beyond the cast's reach stays clean — the cast lands on drawn content, never on empty canvas.
+    expect(lum(s, 15, 7)).toBeLessThan(lum(s, 20, 7))
   })
 
   test('a lit block scopes the light to its body only (set/restore)', () => {
