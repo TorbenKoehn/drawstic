@@ -46,11 +46,21 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
   (Floating-Part feuert/orbit-clean/verbunden-clean, Hairline C005 feuert/thick-clean/no-profile-silent,
   `resolveProfile`-Auswahl, Strict-Promotion inkl. C003-Profilabhängigkeit, CLI-Exit-Gate 0 vs 1) — 25
   critique-Tests grün, 669 gesamt. Reference.md `critique`-Eintrag um `--as`/`--strict` ergänzt.
-- [ ] **1c** Silhouetten-Signaturen (Alpha→32×32 box-resample, L1-Distanz); C009 (Geschwister-Kollaps,
-  Schwelle <~0.12) + C011 (Familien-Gewichts/Margin-Parität); Familie default via `selectSheetDrawings`
-  (`sheet.ts`); `--family a,b,c`; Vision-Rubrik-Block; Tests. Danach: Workflow in `skills/drawstic/SKILL.md`
-  verpflichtend machen (critique im „Definition of done"); alle `examples/` re-baselinen (Thresholds als
-  gemessener Boden test-asserted); `critique --strict` als CI-Regressions-Gate verankern.
+- [x] **1c** Silhouetten-Signaturen (Alpha→bbox-Crop→32×32 flächengewichtetes Box-Resample, aspekt-
+  erhaltend zentriert, `silhouetteSignature`) + masse-normalisierte L1 (`signatureDistance`,
+  Sørensen `Σ|a−b|/(Σa+Σb)` — nicht /1024, sonst verdünnt der leere Hintergrund die Formdifferenz);
+  C002 (Edge-Clip, profil-gegated icon/item), C009 (Geschwister-Kollaps <0.12, advisory) + C011
+  (Gewichts-Parität >6× Median, advisory) via `critiqueFamily`; Familie default `selectSheetDrawings`,
+  `--family a,b,c`-Override; Vision-Rubrik (`buildRubric`: geordnete Silhouette-first-Renders +
+  kategorie-Items `{id,when,ask}`) im Payload (`familyMetrics`+`rubric`). CLI `--family` geparst,
+  `runCritique` verdrahtet (family-Diags an Member-Span, `pass`/`failedCodes` inkl. Family). C006-
+  Ceilings pro Kategorie über gemessenem Boden (icon 320/item 192/character 96/scene 12000; agnostic
+  256), C012 auf Asymmetrie kalibriert. **Must-fix-Boden gemessen kollabiert auf C001+C007 (+C003
+  icon)** — alle anderen Codes advisory (Recolors/Shared-Shells/Plate-Icons teilen Silhouetten *by
+  design*, offene Bow-Frames/Buchstaben-Counter erzeugen legit 1–3px-Löcher). SKILL.md Workflow-
+  Schritt 6 „Critique — MANDATORY" + „Definition of done" + vier Kategorie-Checklisten; reference.md
+  critique-Zeile nachgezogen. CI-Gate `tests/unit/examples-critique.test.ts` (in-process `critique
+  --strict` über alle `examples/**/*.drw`, Exit 0). +20 critique-Tests (45 gesamt), 691 gesamt grün.
 
 ## Phase 2 — Deklaratives Licht + Material (Schattierung)
 
@@ -85,18 +95,27 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
 
 _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen anhängen.)_
 
-- [ ] **1a-followup** `critique examples/showcase/showcase.drw` feuert C004 (Flat-Value) + C012
-  (transparente Endzeile) auf prozeduralen Showcase-Draws. Prüfen, ob echte Craft-Mängel oder
-  Threshold-Rauschen; ggf. beim `examples/`-Re-Baseline in 1c adressieren (Thresholds als gemessener
-  Boden test-asserted).
-- [ ] **1b-followup C012-Strict** `critique examples/icons/*.drw --as icon --strict` exit=1, weil viele
-  prozedurale Icons C012 (transparente Endzeile) feuern und C012 in der Must-fix-Teilmenge liegt. Beim
-  `examples/`-Re-Baseline in 1c entscheiden: Draws trimmen, Canvas-Höhe anpassen, oder C012 aus dem
-  Strict-Must-fix nehmen — bevor `critique --strict` als CI-Gate über `examples/` verankert wird.
-- [ ] **1b-followup C006-Profile** `CritiqueProfile.colorCeiling` steht für alle Kategorien noch auf dem
-  agnostischen Default 64 (icon feuert C006 bereits auf `controller64`). In 1c pro Kategorie als
-  gemessenen Boden tightenen (Icons enger als Scenes), ohne neue Fehlalarme auf sauberen Beispielen.
-- [ ] **1b-followup C005-Untergrenze** `width=2·ridgeDistance` lässt C005 wegen `floor=round(2·size/32)`
-  erst ab ≥48px greifen (bei 32px ist der Floor 2 = Breite eines 1px-Strichs). Falls 1c 32px-Icons mit
-  Hairline-Dominanz fangen soll, `width=2·ridge−1` erwägen — dann Character/Item-Kalibrierung neu prüfen
-  (even/odd-Unterschätzung könnte legitime 3–4px-Striche fälschlich flaggen).
+- [x] **1a-followup** (1c) showcase C004/C012: Threshold-Rauschen, kein Craft-Mangel. C012 auf
+  Asymmetrie umgestellt (zentrierte Breathing-Room feuert nicht mehr); C004 bleibt advisory (flache
+  Icon-/Text-Flächen sind legitim, nicht Gate-relevant). showcase `critique --strict` grün.
+- [x] **1b-followup C012-Strict** (1c) gelöst: C012 aus dem Strict-Must-fix genommen (ADR-0085 §5
+  listet es nicht) **und** auf asymmetrische Boden-Padding kalibriert — beide zusammen, sodass Icons
+  weder falsch feuern noch das Gate blockieren. `critique --as icon --strict` grün auf allen Icons.
+- [x] **1b-followup C006-Profile** (1c) gelöst: per-Kategorie-Ceilings über gemessenem Korpus-Maximum
+  gesetzt (icon-max 238→320, item 121→192, character 49→96, scene 8017→12000, agnostic 27→256). Kein
+  sauberes Beispiel feuert neu C006; scene ≫ icon > item > character. C006 bleibt advisory.
+- [x] **1b-followup C005-Untergrenze** (1c) bewusst *nicht* verschärft: `width=2·ridge−1` würde bei
+  even/odd legitime 3–4px-Striche der Character/Item-Beispiele fälschlich flaggen (Kalibrierung aus 1b
+  hält). C005 bleibt ≥48px-wirksam + advisory; 32px-Hairline-Dominanz fängt stattdessen die Vision-
+  Rubrik (Silhouette-first-Render). Kein Regressionsrisiko am Gate, da C005 nicht must-fix.
+
+- [ ] **1c-followup C009-Plate-Blindheit** C009 vergleicht die *volle* Covered-Maske; bei Icons mit
+  opakem Plate ist die Silhouette = Plate, sodass alle Glyphen kollabieren (`chat~phone@0`). Heute
+  unkritisch (C009 advisory), aber wenn C009 je schärfer werden soll: Signatur auf den Nicht-Plate-
+  Vordergrund beschränken (z.B. dominante Randfarbe als Plate subtrahieren) oder C009 für `icon`
+  überspringen. Analog bei Recolor-Varianten (identische Silhouette by design) — nur die Rubrik/der
+  Agent kann „gewollt" von „Duplikat" trennen.
+- [ ] **1c-followup C011-Margin** C011 flaggt heute nur Gewicht (Covered-Count-Ratio > 6× Median);
+  die im Plan genannte „Margin"-Parität (einheitlicher Breathing-Room) ist als `bbox` im
+  `familyMetrics` sichtbar, aber nicht separat gegated. Falls Item-Sets uneinheitliche Margins als
+  Set-Inkohärenz melden sollen, eigenes Margin-Ratio ergänzen (advisory).

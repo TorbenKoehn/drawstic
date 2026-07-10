@@ -14,10 +14,20 @@
 // body) and C005 (stroke width — chamfer distance to the nearest uncovered
 // pixel). A `CritiqueProfile` (`--as icon|scene|character|item`) selects which
 // of these apply plus the category thresholds; `strict` promotes the must-fix
-// subset from `warning` to `error`. The silhouette-signature checks
-// (C002/C009/C011) arrive in 1c. Metric computation reuses `inspectSprite`
-// (src/inspect.ts), `spritePreviewStats` (src/preview.ts) and `relativeLuminance`
-// (src/color.ts): no metric is computed twice.
+// subset from `warning` to `error`.
+//
+// Phase 1c adds C002 (edge-clip — opaque content touching a canvas edge, a
+// margin bug for transparent-framed icon/item/character sprites; never for a
+// full-bleed scene) and the family checks that compare a group of siblings:
+// C009 (sibling-silhouette collapse — scale-/position-invariant 32x32
+// fractional-coverage signatures, normalized L1 distance under the collapse
+// threshold) and C011 (family weight parity — a sibling whose covered mass
+// deviates from the family median by more than the parity factor). 1c also
+// re-baselines the must-fix subset against the bundled corpus (`STRICT_MUST_FIX`)
+// and tightens per-category thresholds to their measured craft floor. Metric
+// computation reuses `inspectSprite` (src/inspect.ts), `spritePreviewStats`
+// (src/preview.ts) and `relativeLuminance` (src/color.ts): no metric is computed
+// twice.
 
 import { relativeLuminance } from './color.js'
 import type { Diagnostic, Severity, TextSpan } from './diagnostic.js'
@@ -25,24 +35,30 @@ import { inspectSprite } from './inspect.js'
 import { spritePreviewStats } from './preview.js'
 import type { Sprite } from './values.js'
 
-/** Stable `C0xx` diagnostic codes for the checks shipped in phase 1a. Public API — never renumber. */
+/** Stable `C0xx` diagnostic codes. Public API — never renumber. */
 export const CRITIQUE_CODE = {
   empty: 'C001',
+  edgeClip: 'C002',
   centering: 'C003',
   valueSpread: 'C004',
   strokeWidth: 'C005',
   paletteBudget: 'C006',
   floatingPart: 'C007',
   pinhole: 'C008',
+  siblingCollapse: 'C009',
+  familyParity: 'C011',
   trailingEdgeRow: 'C012',
 } as const
 
 /**
  * Category-agnostic default ceiling on distinct RGBA8 values (C006). Deliberately
- * generous — cel-shaded pixel art rarely exceeds ~24 colours, so 64 only trips
- * on gradient/AA sprawl. Category `--as` profiles tighten this in phase 1b.
+ * generous — cel-shaded pixel art rarely exceeds ~24 colours, so 256 only trips
+ * on runaway gradient/AA sprawl. Category `--as` profiles set their own ceiling
+ * from the measured corpus maximum (see {@link PROFILES}); C006 is advisory
+ * (`warning`, never a build-blocker), so the ceilings sit above every clean
+ * bundled example rather than at an aspirational floor.
  */
-const DEFAULT_COLOR_CEILING = 64
+const DEFAULT_COLOR_CEILING = 256
 
 /** Minimum linear-luminance p90−p10 spread before a covered region reads as flat-shaded (C004). */
 const MIN_VALUE_SPREAD = 0.15
@@ -77,21 +93,31 @@ export type CritiqueCategory = 'icon' | 'scene' | 'character' | 'item'
  * A category threshold table (ADR-0085 §4) — never inferred, only chosen via
  * `--as`. Every field is a per-category *applicability/threshold* switch, not a
  * scale constant: the one absolute figure (min stroke width) is derived per
- * sprite as `round(2·size/32)`. `checkStroke`/`checkFloatingPart` gate the two
- * pixel-geometry checks to the categories where they are craft floors — C007
- * (floating part) only for `character`, because a bbox-overlapping detached
+ * sprite as `round(2·size/32)`. `checkStroke`/`checkFloatingPart`/`checkEdgeClip`
+ * gate the pixel-geometry checks to the categories where they are craft floors:
+ * C007 (floating part) only for `character`, because a bbox-overlapping detached
  * component is a compositional feature for icons/scenes (a weather icon's sun +
  * cloud) and a pair for items (two boots), but a seam bug for an assembled
- * character; C005 (stroke width) everywhere a subject has real strokes.
+ * character; C005 (stroke width) everywhere a subject has real strokes; C002
+ * (edge-clip) for the transparent-framed categories (`icon`/`item`/`character`)
+ * that must keep a margin, never for a full-bleed `scene` whose sky/ground is
+ * meant to touch every edge. `colorCeiling` is set per category from the
+ * measured corpus maximum (icons carry gradient plates, scenes thousands of
+ * gradient tones), so C006 only trips on runaway sprawl, never on a clean
+ * bundled example. `strictCentering` promotes C003 to the must-fix subset only
+ * for `icon` — items include diagonal weapons (a dagger, a staff) whose bbox
+ * parity is legitimately off, so item centering stays an advisory warning.
  */
 export type CritiqueProfile = {
   readonly name: CritiqueCategory
-  /** C006 distinct-colour ceiling; today the agnostic default for every category (1c re-baselines and tightens it). */
+  /** C006 distinct-colour ceiling, set above this category's measured clean maximum (advisory sprawl backstop). */
   readonly colorCeiling: number
   /** C005 applies (stroke discipline is a craft floor for this category). */
   readonly checkStroke: boolean
   /** C007 applies (a bbox-overlapping detached component signals a seam, not composition). */
   readonly checkFloatingPart: boolean
+  /** C002 applies (this category keeps a transparent margin; a full-bleed scene does not). */
+  readonly checkEdgeClip: boolean
   /** Under `strict`, C003 (optical centering) joins the must-fix subset for this category. */
   readonly strictCentering: boolean
 }
@@ -99,30 +125,36 @@ export type CritiqueProfile = {
 const PROFILES: Record<CritiqueCategory, CritiqueProfile> = {
   icon: {
     name: 'icon',
-    colorCeiling: DEFAULT_COLOR_CEILING,
+    colorCeiling: 320,
     checkStroke: true,
     checkFloatingPart: false,
+    checkEdgeClip: true,
     strictCentering: true,
   },
   item: {
     name: 'item',
-    colorCeiling: DEFAULT_COLOR_CEILING,
+    colorCeiling: 192,
     checkStroke: true,
     checkFloatingPart: false,
-    strictCentering: true,
+    checkEdgeClip: true,
+    strictCentering: false,
   },
   character: {
     name: 'character',
-    colorCeiling: DEFAULT_COLOR_CEILING,
+    colorCeiling: 96,
     checkStroke: true,
     checkFloatingPart: true,
+    // A full-height figure legitimately reaches the top (hair) and bottom (feet)
+    // canvas rows, so edge contact is not a clip for characters.
+    checkEdgeClip: false,
     strictCentering: false,
   },
   scene: {
     name: 'scene',
-    colorCeiling: DEFAULT_COLOR_CEILING,
+    colorCeiling: 12000,
     checkStroke: false,
     checkFloatingPart: false,
+    checkEdgeClip: false,
     strictCentering: false,
   },
 }
@@ -324,13 +356,15 @@ const interiorHoles = (
   return { pinholeCount, largestInteriorHole }
 }
 
-/** Count of fully-transparent rows below the content (C012); `0` if content reaches the bottom edge. */
-const trailingTransparentRows = (metrics: CritiqueMetrics): number => {
+/** Fully-transparent rows above (`leading`) and below (`trailing`) the content (C012 support); both `0` for an empty sprite. */
+const verticalMargins = (
+  metrics: CritiqueMetrics,
+): { readonly leading: number; readonly trailing: number } => {
   if (!metrics.bbox) {
-    return 0
+    return { leading: 0, trailing: 0 }
   }
   const contentBottom = metrics.bbox.y + metrics.bbox.height - 1
-  return metrics.height - 1 - contentBottom
+  return { leading: metrics.bbox.y, trailing: metrics.height - 1 - contentBottom }
 }
 
 /**
@@ -393,6 +427,77 @@ const checkEmpty = (metrics: CritiqueMetrics): CritiqueCheck | null => {
     }
   }
   return null
+}
+
+/** Which canvas edges carry an opaque (alpha===255) pixel, and how many opaque edge pixels in total (C002 support). */
+const edgeClipScan = (
+  sprite: Sprite,
+): { readonly edges: readonly ('top' | 'bottom' | 'left' | 'right')[]; readonly count: number } => {
+  const w = sprite.w
+  const h = sprite.h
+  const isOpaque = (x: number, y: number): boolean =>
+    (sprite.data[(y * w + x) * 4 + 3] ?? 0) === 255
+  let top = 0
+  let bottom = 0
+  let left = 0
+  let right = 0
+  for (let x = 0; x < w; x++) {
+    if (isOpaque(x, 0)) {
+      top++
+    }
+    if (h > 1 && isOpaque(x, h - 1)) {
+      bottom++
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    if (isOpaque(0, y)) {
+      left++
+    }
+    if (w > 1 && isOpaque(w - 1, y)) {
+      right++
+    }
+  }
+  const edges: ('top' | 'bottom' | 'left' | 'right')[] = []
+  if (top > 0) {
+    edges.push('top')
+  }
+  if (bottom > 0) {
+    edges.push('bottom')
+  }
+  if (left > 0) {
+    edges.push('left')
+  }
+  if (right > 0) {
+    edges.push('right')
+  }
+  return { edges, count: top + bottom + left + right }
+}
+
+/**
+ * C002: edge-clip — opaque content touching a canvas edge on a transparent-framed
+ * sprite (icon/item/character), which means the subject has no margin and is
+ * likely truncated. Profile-gated (`checkEdgeClip`) — never runs for a full-bleed
+ * `scene` whose sky/ground is meant to bleed to every edge, nor category-agnostic.
+ */
+const checkEdgeClip = (sprite: Sprite): CritiqueCheck | null => {
+  const { edges, count } = edgeClipScan(sprite)
+  if (edges.length === 0) {
+    return null
+  }
+  return {
+    code: CRITIQUE_CODE.edgeClip,
+    severity: 'warning',
+    message: `edge-clip: opaque content touches the ${edges.join(', ')} canvas edge(s) — no transparent margin`,
+    measured: count,
+    threshold: 0,
+    fix: 'inset the subject so a transparent margin surrounds it (2–4px breathing room), or enlarge the canvas',
+    detail: {
+      top: edges.includes('top') ? 1 : 0,
+      bottom: edges.includes('bottom') ? 1 : 0,
+      left: edges.includes('left') ? 1 : 0,
+      right: edges.includes('right') ? 1 : 0,
+    },
+  }
 }
 
 /** C003: optical centering — flags a horizontal bbox parity break `|(x0+x1)−(W−1)| > tol`. */
@@ -483,17 +588,24 @@ const checkPinholes = (sprite: Sprite): CritiqueCheck | null => {
 
 /** C012: dynamic transparent trailing edge row — the rendered form of W009, for procedural draws. */
 const checkTrailingEdgeRow = (metrics: CritiqueMetrics): CritiqueCheck | null => {
-  const trailing = trailingTransparentRows(metrics)
-  if (trailing <= 0) {
+  const { leading, trailing } = verticalMargins(metrics)
+  // Only an *asymmetric* bottom gap is a defect: content pushed up with more
+  // padding below than above (a mis-placed footprint that seams a gap below
+  // stacked parts). Symmetric breathing room (trailing ≈ leading) is deliberate
+  // centering, never flagged. Tolerance scales with canvas height.
+  const tol = Math.max(1, Math.round(metrics.height * 0.06))
+  const excess = trailing - leading
+  if (excess <= tol) {
     return null
   }
   return {
     code: CRITIQUE_CODE.trailingEdgeRow,
     severity: 'warning',
-    message: `${trailing} fully-transparent row(s) below the content at the bottom edge`,
-    measured: trailing,
-    threshold: 0,
-    fix: 'trim the trailing transparent row(s) or shrink canvas height; a bottom-padded footprint seams a gap below stacked parts',
+    message: `bottom-heavy padding: ${trailing} transparent row(s) below the content vs ${leading} above (excess ${excess} > ${tol})`,
+    measured: excess,
+    threshold: tol,
+    fix: 'center the content vertically or trim the trailing transparent row(s); a bottom-padded footprint seams a gap below stacked parts',
+    detail: { leading, trailing },
   }
 }
 
@@ -833,15 +945,27 @@ const checkStrokeWidth = (metrics: CritiqueMetrics, stroke: StrokeScan): Critiqu
   }
 }
 
-/** The must-fix `C0xx` subset `--strict` promotes to `error` regardless of profile (ADR-0085 §5 + phase-1b task). */
-const STRICT_MUST_FIX: readonly string[] = [
-  CRITIQUE_CODE.empty,
-  CRITIQUE_CODE.floatingPart,
-  CRITIQUE_CODE.pinhole,
-  CRITIQUE_CODE.trailingEdgeRow,
-]
+/**
+ * The must-fix `C0xx` subset `--strict` promotes to `error` (exit 1) — the CI
+ * regression gate. Calibrated in phase 1c against the bundled corpus to the
+ * *unambiguous structural defects only*: C001 (empty) and C007 (character
+ * floating-part/seam). C003 (optical centering) joins per-profile
+ * (`strictCentering`, icon only). Every other `C0xx` is deliberately advisory
+ * (`warning`, exit 0) after measuring its false-positive rate on correct art:
+ * C002 (icons/items legitimately fill to an edge), C008 (open bow/crossbow
+ * frames, arrow bundles, glyph counters, organic overlaps all enclose legit
+ * 1–3px gaps), C009 (silhouette-sharing is a first-class pattern — faction
+ * recolors, size variants, and shared bottle/shield/plate scaffolds all collapse
+ * to one silhouette *by design*, and a colour-blind silhouette check cannot tell
+ * an intentional variant from a duplicate), C011 (item sets legitimately mix a
+ * ring and a greatsword), C012 (symmetric bottom breathing room), C005/C006
+ * (thin-detail and gradient sprawl are style choices). This narrows ADR-0085
+ * §5's original list (C001/C002/C007/C008/C009) to what the corpus proves is
+ * unambiguous — recorded there and in docs/impl-progress.md.
+ */
+const STRICT_MUST_FIX: readonly string[] = [CRITIQUE_CODE.empty, CRITIQUE_CODE.floatingPart]
 
-/** Under `strict`, promotes {@link STRICT_MUST_FIX} (plus C003 for icon/item) from `warning` to `error`. */
+/** Under `strict`, promotes {@link STRICT_MUST_FIX} (plus C003 for a `strictCentering` profile) from `warning` to `error`. */
 const promoteStrict = (
   checks: readonly CritiqueCheck[],
   profile: CritiqueProfile | null,
@@ -865,13 +989,14 @@ export type CritiqueOptions = {
 }
 
 /**
- * Runs the critique catalog against one rendered sprite and returns its
- * {@link CritiqueDrawing} report (metric bundle + fired checks). Pure and
+ * Runs the per-sprite critique catalog against one rendered sprite and returns
+ * its {@link CritiqueDrawing} report (metric bundle + fired checks). Pure and
  * vision-free — the same sprite + options always yield the same report. The
- * agnostic checks (C001/C003/C004/C006/C008/C012) always run; the pixel-geometry
- * checks C007 (floating part) and C005 (stroke width) run only when the
- * `profile` opts them in via `checkFloatingPart`/`checkStroke`. `strict`
- * promotes the must-fix subset to `error`.
+ * agnostic checks (C001/C003/C004/C006/C008/C012) always run; the profile-gated
+ * checks run only when opted in — C002 (edge-clip) via `checkEdgeClip`, C007
+ * (floating part) via `checkFloatingPart`, C005 (stroke width) via `checkStroke`.
+ * `strict` promotes the must-fix subset to `error`. The family checks
+ * (C009/C011) compare *siblings* and live in {@link critiqueFamily}.
  */
 export const critiqueSprite = (
   name: string,
@@ -888,6 +1013,9 @@ export const critiqueSprite = (
     }
   }
   push(checkEmpty(metrics))
+  if (profile?.checkEdgeClip) {
+    push(checkEdgeClip(sprite))
+  }
   push(checkCentering(metrics))
   push(checkValueSpread(metrics))
   push(checkPaletteBudget(metrics, profile?.colorCeiling))
@@ -933,3 +1061,390 @@ export const critiqueCheckDiagnostic = (
   ...(span.endColumn === undefined ? {} : { endColumn: span.endColumn }),
   hint: check.fix,
 })
+
+// ── family checks (phase 1c: C009 sibling collapse, C011 weight parity) ───────
+
+/** Side of the fixed silhouette-signature grid (32×32 = 1024 cells). Public shape — never change. */
+const SIGNATURE_GRID = 32
+
+/** Normalized-L1 silhouette distance under which two siblings read as the same shape (C009, >88 % identical). */
+const COLLAPSE_DISTANCE = 0.12
+
+/**
+ * How far a sibling's covered mass may deviate from the family median before
+ * C011 flags it (a member ≥ this factor heavier *or* lighter than the median).
+ * Set above the widest clean bundled set's spread — item sets legitimately mix a
+ * ring and a greatsword — so parity stays an advisory nudge, not a false alarm.
+ */
+const PARITY_FACTOR = 6
+
+/** The tight covered-content bounding box (or `null` for a fully transparent sprite). */
+type CoverageBBox = CritiqueMetrics['bbox']
+
+/**
+ * Area-weighted box downsample of the covered mask over the `bx,by,bw,bh`
+ * sub-rect into a `tw×th` fractional-coverage grid (each cell ∈ [0,1] = the
+ * covered-area share of its source region). Handles both down- and up-scaling by
+ * distributing every source pixel across the target cells it overlaps, weighted
+ * by overlap area — the honest "fractional coverage" a nearest-neighbour
+ * ({@link scaleBitmap}) resample cannot give.
+ */
+const resampleCoverage = (
+  covered: Uint8Array,
+  w: number,
+  bx: number,
+  by: number,
+  bw: number,
+  bh: number,
+  tw: number,
+  th: number,
+): Float64Array => {
+  const acc = new Float64Array(tw * th)
+  const wsum = new Float64Array(tw * th)
+  const sx = tw / bw
+  const sy = th / bh
+  for (let py = 0; py < bh; py++) {
+    const ty0 = py * sy
+    const ty1 = ty0 + sy
+    const gy0 = Math.floor(ty0)
+    const gy1 = Math.min(th - 1, Math.ceil(ty1) - 1)
+    for (let px = 0; px < bw; px++) {
+      const v = covered[(by + py) * w + (bx + px)] ?? 0
+      const tx0 = px * sx
+      const tx1 = tx0 + sx
+      const gx0 = Math.floor(tx0)
+      const gx1 = Math.min(tw - 1, Math.ceil(tx1) - 1)
+      for (let gy = gy0; gy <= gy1; gy++) {
+        const oy = Math.min(ty1, gy + 1) - Math.max(ty0, gy)
+        if (oy <= 0) {
+          continue
+        }
+        for (let gx = gx0; gx <= gx1; gx++) {
+          const ox = Math.min(tx1, gx + 1) - Math.max(tx0, gx)
+          if (ox <= 0) {
+            continue
+          }
+          const a = ox * oy
+          const idx = gy * tw + gx
+          acc[idx] = (acc[idx] ?? 0) + v * a
+          wsum[idx] = (wsum[idx] ?? 0) + a
+        }
+      }
+    }
+  }
+  const out = new Float64Array(tw * th)
+  for (let i = 0; i < out.length; i++) {
+    const ws = wsum[i] ?? 0
+    out[i] = ws > 0 ? (acc[i] ?? 0) / ws : 0
+  }
+  return out
+}
+
+/** A scale-/position-invariant silhouette signature: 1024 fractional-coverage cells in [0,1]. */
+export type SilhouetteSignature = Float64Array
+
+/**
+ * Scale- and position-invariant silhouette signature (ADR-0085 §3, C009 support):
+ * crop the covered mask to its content bbox, box-resample it uniformly (aspect
+ * preserved — a tall dagger and a wide sword stay distinct) to fit within the
+ * fixed {@link SIGNATURE_GRID}×`SIGNATURE_GRID` grid, and center it. `null` for a
+ * fully transparent sprite. Two renders of the same shape at different sizes or
+ * canvas positions yield near-identical signatures; different shapes diverge.
+ */
+export const silhouetteSignature = (
+  covered: Uint8Array,
+  w: number,
+  bbox: CoverageBBox,
+): SilhouetteSignature | null => {
+  if (!bbox) {
+    return null
+  }
+  const g = SIGNATURE_GRID
+  const scale = Math.min(g / bbox.width, g / bbox.height)
+  const tw = Math.max(1, Math.min(g, Math.round(bbox.width * scale)))
+  const th = Math.max(1, Math.min(g, Math.round(bbox.height * scale)))
+  const cells = resampleCoverage(covered, w, bbox.x, bbox.y, bbox.width, bbox.height, tw, th)
+  const sig = new Float64Array(g * g)
+  const offX = Math.floor((g - tw) / 2)
+  const offY = Math.floor((g - th) / 2)
+  for (let cy = 0; cy < th; cy++) {
+    for (let cx = 0; cx < tw; cx++) {
+      sig[(offY + cy) * g + (offX + cx)] = cells[cy * tw + cx] ?? 0
+    }
+  }
+  return sig
+}
+
+/**
+ * Mass-normalized L1 distance ∈ [0,1] between two silhouette signatures — the
+ * Sørensen form `Σ|a−b| / (Σa + Σb)`, so `0` = identical coverage and `1` =
+ * disjoint. Normalizing by the coverage *mass* (not the 1024 cell count) keeps
+ * the shared empty background from diluting the shape difference: a pair whose
+ * masses overlap ≥88 % scores ≤0.12. `1` when either signature is absent (an
+ * empty sprite) or both are empty.
+ */
+export const signatureDistance = (
+  a: SilhouetteSignature | null,
+  b: SilhouetteSignature | null,
+): number => {
+  if (!a || !b) {
+    return 1
+  }
+  let diff = 0
+  let mass = 0
+  for (let i = 0; i < a.length; i++) {
+    const av = a[i] ?? 0
+    const bv = b[i] ?? 0
+    diff += Math.abs(av - bv)
+    mass += av + bv
+  }
+  return mass > 0 ? round4(diff / mass) : 1
+}
+
+/** One sibling's family facts: covered mass, content bbox, and nearest-silhouette neighbour. */
+export type FamilyMember = {
+  readonly name: string
+  readonly coveredPixelCount: number
+  readonly bbox: CoverageBBox
+  readonly nearest: { readonly name: string; readonly distance: number } | null
+}
+
+/** The family-wide metric bundle carried in the CLI payload as `familyMetrics`. */
+export type FamilyMetrics = {
+  readonly members: readonly FamilyMember[]
+  /** Full pairwise normalized-L1 silhouette-signature distance matrix; row/col order matches `members`. */
+  readonly distanceMatrix: readonly (readonly number[])[]
+  readonly medianCoveredPixelCount: number
+}
+
+/** A family finding (C009/C011): a standard {@link CritiqueCheck} plus the sibling `draw` it anchors to. */
+export type FamilyCheck = CritiqueCheck & { readonly target: string }
+
+/** {@link critiqueFamily}'s result: the family metric bundle plus the C009/C011 findings. */
+export type FamilyReport = {
+  readonly metrics: FamilyMetrics
+  readonly checks: readonly FamilyCheck[]
+}
+
+/** Median of a numeric list (average of the two middles for an even count); `0` for empty. */
+const medianOf = (values: readonly number[]): number => {
+  if (values.length === 0) {
+    return 0
+  }
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  if (sorted.length % 2 === 1) {
+    return sorted[mid] ?? 0
+  }
+  return ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2
+}
+
+/**
+ * Compares a group of sibling drawings (≥2) and returns the family findings:
+ * C009 (sibling-silhouette collapse — a member whose nearest neighbour's
+ * scale-/position-invariant 32×32 silhouette signature sits within
+ * {@link COLLAPSE_DISTANCE}) and C011 (family weight parity — a member whose
+ * covered mass deviates from the family median by more than
+ * {@link PARITY_FACTOR}×). Returns `null` for fewer than two members (nothing to
+ * compare). `strict` promotes C009 (a must-fix code) to `error`; C011 stays an
+ * advisory `warning`.
+ */
+export const critiqueFamily = (
+  members: readonly { readonly name: string; readonly sprite: Sprite }[],
+  options: CritiqueOptions = {},
+): FamilyReport | null => {
+  if (members.length < 2) {
+    return null
+  }
+  const facts = members.map((m) => {
+    const { covered, luminances } = scanCoverage(m.sprite)
+    const metrics = computeCritiqueMetrics(m.sprite, luminances)
+    return {
+      name: m.name,
+      coveredPixelCount: metrics.coveredPixelCount,
+      bbox: metrics.bbox,
+      signature: silhouetteSignature(covered, m.sprite.w, metrics.bbox),
+    }
+  })
+  const n = facts.length
+  const flat = new Float64Array(n * n)
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const d = signatureDistance(facts[i]?.signature ?? null, facts[j]?.signature ?? null)
+      flat[i * n + j] = d
+      flat[j * n + i] = d
+    }
+  }
+  const distanceMatrix: number[][] = []
+  const familyMembers: FamilyMember[] = []
+  for (let i = 0; i < n; i++) {
+    const fi = facts[i]
+    const row: number[] = []
+    let nearest: { name: string; distance: number } | null = null
+    for (let j = 0; j < n; j++) {
+      const d = flat[i * n + j] ?? 0
+      row.push(d)
+      const fj = facts[j]
+      if (j !== i && fj && (nearest === null || d < nearest.distance)) {
+        nearest = { name: fj.name, distance: d }
+      }
+    }
+    distanceMatrix.push(row)
+    if (fi) {
+      familyMembers.push({
+        name: fi.name,
+        coveredPixelCount: fi.coveredPixelCount,
+        bbox: fi.bbox,
+        nearest,
+      })
+    }
+  }
+  const median = medianOf(facts.map((f) => f.coveredPixelCount))
+  const checks: FamilyCheck[] = []
+  for (const m of familyMembers) {
+    if (m.nearest && m.nearest.distance < COLLAPSE_DISTANCE) {
+      checks.push({
+        target: m.name,
+        code: CRITIQUE_CODE.siblingCollapse,
+        severity: 'warning',
+        message: `silhouette collapse: '${m.name}' reads like sibling '${m.nearest.name}' (silhouette distance ${m.nearest.distance} < ${COLLAPSE_DISTANCE})`,
+        measured: m.nearest.distance,
+        threshold: COLLAPSE_DISTANCE,
+        fix: `differentiate '${m.name}' vs '${m.nearest.name}' in silhouette (size, proportion, or profile), then re-check with sheet --png@4`,
+        detail: {},
+      })
+    }
+    if (median > 0 && m.coveredPixelCount > 0) {
+      const ratio =
+        m.coveredPixelCount >= median ? m.coveredPixelCount / median : median / m.coveredPixelCount
+      if (ratio > PARITY_FACTOR) {
+        checks.push({
+          target: m.name,
+          code: CRITIQUE_CODE.familyParity,
+          severity: 'warning',
+          message: `weight parity: '${m.name}' covers ${m.coveredPixelCount}px vs the family median ${median}px (${round4(ratio)}× off)`,
+          measured: round4(ratio),
+          threshold: PARITY_FACTOR,
+          fix: `rescale '${m.name}' toward the family's visual mass, or split it into its own set — a lone giant/tiny sibling breaks set coherence`,
+          detail: { coveredPixelCount: m.coveredPixelCount, medianCoveredPixelCount: median },
+        })
+      }
+    }
+  }
+  const finalChecks =
+    (options.strict ?? false)
+      ? checks.map((c) =>
+          STRICT_MUST_FIX.includes(c.code) ? { ...c, severity: 'error' as const } : c,
+        )
+      : checks
+  return {
+    metrics: { members: familyMembers, distanceMatrix, medianCoveredPixelCount: median },
+    checks: finalChecks,
+  }
+}
+
+// ── vision rubric (phase 1c, ADR-0085 §6) ─────────────────────────────────────
+
+/** One rubric prompt the agent must answer by *looking* — `pass:true` is necessary, not sufficient. */
+export type RubricItem = {
+  readonly id: string
+  readonly when: string
+  readonly ask: string
+}
+
+/** The vision rubric block: ordered silhouette-first render commands + category prompts. */
+export type VisionRubric = {
+  readonly renders: readonly string[]
+  readonly items: readonly RubricItem[]
+  readonly note: string
+}
+
+const RUBRIC_ITEMS: Record<CritiqueCategory, readonly RubricItem[]> = {
+  icon: [
+    {
+      id: 'misread',
+      when: 'at native @1',
+      ask: 'With colour stripped (silhouette), does each glyph read as its intended concept? Run the mis-reading test — cover the name and identify it.',
+    },
+    {
+      id: 'merge-trap',
+      when: 'glyph meets plate or a neighbour',
+      ask: 'Do any strokes merge into the plate or an adjacent glyph at @1? Add a 1px gap where they touch.',
+    },
+  ],
+  character: [
+    {
+      id: 'seam-contact',
+      when: 'assembled from parts',
+      ask: 'On the silhouette, do all limbs read as one connected mass with contact — no visible seam or gap at the joints?',
+    },
+  ],
+  item: [
+    {
+      id: 'pair-confusion',
+      when: '≥2 siblings',
+      ask: 'On the sheet, are the two most similar siblings distinct at a glance, or do their silhouettes read the same?',
+    },
+  ],
+  scene: [
+    {
+      id: 'hero-contrast',
+      when: 'has a focal subject',
+      ask: 'Does the hero silhouette cross a contrast edge, or is it lost against a same-value background?',
+    },
+    {
+      id: 'no-floating',
+      when: 'objects rest on ground',
+      ask: 'Is every object contact-grounded (shadow/AO), with nothing floating?',
+    },
+    {
+      id: 'one-light',
+      when: 'always',
+      ask: 'Does exactly one light direction drive every shadow and highlight?',
+    },
+  ],
+}
+
+const AGNOSTIC_RUBRIC_ITEMS: readonly RubricItem[] = [
+  {
+    id: 'silhouette',
+    when: 'always',
+    ask: 'Does the silhouette read as the intended subject with colour stripped?',
+  },
+  {
+    id: 'centering',
+    when: 'framed (transparent-margin) sprite',
+    ask: 'Is the subject optically centered (bbox parity) with even margins?',
+  },
+]
+
+/**
+ * Builds the vision rubric (ADR-0085 §6): an ordered, silhouette-first list of
+ * render commands over `sample` (a representative drawing) plus the family
+ * `sheet`, and the category-specific prompts the agent must answer by looking.
+ * Automatic `pass:true` is necessary, not sufficient — the rubric is the part
+ * that still needs eyes.
+ */
+export const buildRubric = (
+  profile: CritiqueProfile | null,
+  file: string,
+  sample: string | null,
+  hasFamily: boolean,
+): VisionRubric => {
+  const renders: string[] = []
+  if (sample) {
+    renders.push(
+      `render ${file}#${sample} --silhouette --png@6`,
+      `render ${file}#${sample} --ascii --fit 64x64`,
+      `render ${file}#${sample} --png@4`,
+    )
+  }
+  if (hasFamily) {
+    renders.push(`sheet ${file} --png@4`)
+  }
+  return {
+    renders,
+    items: profile ? RUBRIC_ITEMS[profile.name] : AGNOSTIC_RUBRIC_ITEMS,
+    note: 'critique pass:true is necessary, not sufficient — answer every rubric item by looking at the renders above before calling it done.',
+  }
+}

@@ -21,9 +21,12 @@ import type { DrawDefinition, FormatLine, Statement } from './ast.js'
 import { buildModule, validateExport } from './build.js'
 import { toHexColor } from './color.js'
 import {
+  buildRubric,
   type CritiqueDrawing,
   critiqueCheckDiagnostic,
+  critiqueFamily,
   critiqueSprite,
+  type FamilyMetrics,
   resolveProfile,
 } from './critique.js'
 import {
@@ -32,6 +35,7 @@ import {
   ERROR_CODE,
   error,
   formatDiagnostic,
+  type TextSpan,
 } from './diagnostic.js'
 import { defaultBudget, Engine, type ModuleRecord } from './eval.js'
 import { format, formatDiff } from './fmt.js'
@@ -50,7 +54,7 @@ import {
   spriteToAscii,
 } from './preview.js'
 import { scaleBitmap } from './raster.js'
-import { buildSheet, type SheetLayout } from './sheet.js'
+import { buildSheet, type SheetLayout, selectSheetDrawings } from './sheet.js'
 import type { Region, Sprite } from './values.js'
 
 // union of every subcommand's flags; each `run*` handler reads only the
@@ -85,6 +89,7 @@ type CliArguments = {
   readonly budgetSteps: number | null
   readonly as: string | null
   readonly strict: boolean
+  readonly family: readonly string[] | null
 }
 
 type Writable<T> = { -readonly [P in keyof T]: T[P] }
@@ -120,6 +125,7 @@ const parseArguments = (argv: string[]): CliArguments => {
     budgetSteps: null,
     as: null,
     strict: false,
+    family: null,
   }
 
   for (let i = 1; i < argv.length; i++) {
@@ -175,6 +181,12 @@ const parseArguments = (argv: string[]): CliArguments => {
       cli.as = argv[++i] ?? null
     } else if (a === '--strict') {
       cli.strict = true
+    } else if (a === '--family') {
+      const names = (argv[++i] ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+      cli.family = names.length > 0 ? names : null
     } else if (/^--png@\d+$/.test(a)) {
       cli.pngScale = Number.parseInt(a.slice(6), 10)
     } else if (!a.startsWith('--') && cli.target === null) {
@@ -1252,17 +1264,22 @@ const sheetJson = (
 // ── critique (ADR-0085) ──────────────────────────────────────────────────────
 
 /**
- * Runs `drawstic critique <file> [--as icon|scene|character|item] [--strict]`:
- * renders every non-parametric `draw` and runs the pixel-based, vision-free
- * `C0xx` catalog. The agnostic checks (C001/C003/C004/C006/C008/C012) always
- * run; `--as` opts a resolved {@link resolveProfile} profile into the
- * pixel-geometry checks C005 (stroke width) and C007 (floating part) and its
- * category thresholds — without it, an info advisory nudges the agent to set
- * one. Findings default to `warning` (exit 0 — never blocking); `--strict`
- * promotes the must-fix subset to `error` (exit 1), the CI regression gate. The
- * `--json` payload adds `critique: {pass, profile, strict, failedCodes,
- * drawings}`, each drawing exposing the full metric bundle (a superset of
- * `render --inspect`). A render failure surfaces as its ordinary `E0xx`
+ * Runs `drawstic critique <file> [--as icon|scene|character|item] [--family
+ * a,b,c] [--strict]`: renders every non-parametric `draw`, runs the per-sprite
+ * pixel-based, vision-free `C0xx` catalog, and — across a sibling *family* — the
+ * family checks C009 (sibling-silhouette collapse) and C011 (weight parity). The
+ * agnostic checks (C001/C003/C004/C006/C008/C012) always run; `--as` opts a
+ * resolved {@link resolveProfile} profile into the profile-gated checks C002
+ * (edge-clip), C005 (stroke width) and C007 (floating part) plus its category
+ * thresholds — without it, an info advisory nudges the agent to set one. The
+ * family defaults to the sheet selection ({@link selectSheetDrawings} — exported
+ * draws, or every draw with `--all`); `--family` overrides it. Family checks run
+ * only with ≥2 members. Findings default to `warning` (exit 0 — never blocking);
+ * `--strict` promotes the must-fix subset to `error` (exit 1), the CI regression
+ * gate. The `--json` payload adds `critique: {pass, profile, strict, failedCodes,
+ * drawings, familyMetrics?, rubric}` — each drawing exposing the full metric
+ * bundle (a superset of `render --inspect`), plus the vision rubric the agent
+ * must still answer by looking. A render failure surfaces as its ordinary `E0xx`
  * diagnostic, exactly as in `check`.
  */
 const runCritique = (cli: CliArguments): number => {
@@ -1270,9 +1287,13 @@ const runCritique = (cli: CliArguments): number => {
   const diags: Diagnostic[] = []
   const drawings: CritiqueDrawing[] = []
   const profile = resolveProfile(cli.as)
+  const rendered: { readonly name: string; readonly span: TextSpan; readonly sprite: Sprite }[] = []
+  let familyMetrics: FamilyMetrics | undefined
+  let displayPath = file
   try {
     const engine = createEngine(cli)
     const mod = engine.loadEntry(file)
+    displayPath = mod.displayPath
     for (const [, entry] of mod.definitions) {
       if (
         entry.kind !== 'draw' ||
@@ -1288,11 +1309,32 @@ const runCritique = (cli: CliArguments): number => {
           strict: cli.strict,
         })
         drawings.push(report)
+        rendered.push({ name: entry.definition.name, span: entry.definition.span, sprite })
         for (const check of report.checks) {
           diags.push(critiqueCheckDiagnostic(check, mod.displayPath, entry.definition.span))
         }
       } catch (e) {
         diags.push(toDiagnostic(e, file))
+      }
+    }
+    // Family checks (C009/C011): compare the selected siblings. `--family`
+    // overrides the default sheet selection; family checks need ≥2 members.
+    const byName = new Map(rendered.map((r) => [r.name, r]))
+    const familyNames = cli.family
+      ? cli.family
+      : selectSheetDrawings(mod, cli.all).map((e) => e.definition.name)
+    const members = familyNames
+      .map((name) => byName.get(name))
+      .filter((r): r is (typeof rendered)[number] => r !== undefined)
+      .map((r) => ({ name: r.name, sprite: r.sprite }))
+    const family = critiqueFamily(members, { profile, strict: cli.strict })
+    if (family) {
+      familyMetrics = family.metrics
+      for (const check of family.checks) {
+        const span = byName.get(check.target)?.span
+        if (span) {
+          diags.push(critiqueCheckDiagnostic(check, mod.displayPath, span))
+        }
       }
     }
   } catch (e) {
@@ -1304,16 +1346,28 @@ const runCritique = (cli: CliArguments): number => {
       severity: 'info',
       code: 'C000',
       message:
-        'no --as profile: ran the category-agnostic checks only (C005 stroke width and C007 floating-part need a profile)',
+        'no --as profile: ran the category-agnostic checks only (C002 edge-clip, C005 stroke width and C007 floating-part need a profile)',
       file,
       line: 1,
       column: 1,
       hint: 'pass --as icon|scene|character|item to enable the category checks and thresholds',
     })
   }
-  const failedCodes = [...new Set(drawings.flatMap((d) => d.checks.map((c) => c.code)))].sort()
+  const failedCodes = [
+    ...new Set(diags.filter((d) => d.severity !== 'info').map((d) => d.code)),
+  ].sort()
   const pass = !diags.some((d) => d.severity === 'warning' || d.severity === 'error')
-  const report = { pass, profile: profile?.name ?? null, strict: cli.strict, failedCodes, drawings }
+  const sample = familyMetrics?.members[0]?.name ?? rendered[0]?.name ?? null
+  const rubric = buildRubric(profile, displayPath, sample, familyMetrics !== undefined)
+  const report = {
+    pass,
+    profile: profile?.name ?? null,
+    strict: cli.strict,
+    failedCodes,
+    drawings,
+    ...(familyMetrics === undefined ? {} : { familyMetrics }),
+    rubric,
+  }
   return emitObject(diags, cli.json, { critique: report })
 }
 
@@ -1331,7 +1385,8 @@ usage:
                   [--mode pixel|smooth] [--json]
   drawstic sheet <file> [--all] [--cols N] [--png@N] [--out <path>]
                   [--stdout] [--ascii] [--preview] [--json]
-  drawstic critique <file> [--as icon|scene|character|item] [--strict] [--json]
+  drawstic critique <file> [--as icon|scene|character|item] [--family a,b,c]
+                  [--strict] [--json]
 options:
   --json     stable diagnostic records
   --budget N evaluation-step budget

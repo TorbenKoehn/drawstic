@@ -58,8 +58,9 @@ pass/fail:
 - **C009** sibling-silhouette collapse — alpha box-resampled onto a fixed 32×32 grid (scale-
   and position-invariant), normalized L1 distance between siblings; a pair under ~0.12 is
   flagged (catches e.g. a shortbow/longbow pair reading as the same shape at a glance).
-- **C011** family weight/margin parity · **C012** the rendered form of `W009` (dynamic
-  transparent trailing edge row, measured from pixels rather than the static `pixels:` grid).
+- **C011** family weight parity · **C012** the rendered form of `W009` — an *asymmetric* bottom
+  gap (trailing transparent rows exceeding the top margin beyond the centering tolerance), measured
+  from pixels rather than the static `pixels:` grid; symmetric breathing room is never flagged.
 - Every threshold is relative/scale-invariant; the one absolute figure — minimum stroke width
   — scales as `round(2·size/32)`.
 
@@ -71,9 +72,20 @@ category-agnostic subset only. `--family` overrides the default sibling selectio
 the render, never inferred.
 
 **5 — Severity and gating.** Every `C0xx` finding defaults to `warning` (exit 0 — `critique`
-never blocks a render or build by default). `--strict` promotes a fixed must-fix subset
-(C001/C002/C007/C008/C009) to `error` (exit 1), making `critique --strict` usable as a CI
-regression gate over `examples/`.
+never blocks a render or build by default). `--strict` promotes a fixed must-fix subset to
+`error` (exit 1), making `critique --strict` usable as a CI regression gate over `examples/`.
+Phase 1c **calibrated that subset against the full bundled corpus** to the *unambiguous
+structural defects only* — **C001** (empty), **C007** (character floating-part/seam), plus
+**C003** for the `icon` profile (icons must optically centre). The other codes are deliberately
+left advisory (`warning`, exit 0) because the corpus proves each has a legitimate form that a
+pixel check cannot distinguish from a bug: **C002** (icons/items intentionally fill to an edge),
+**C008** (open bow/crossbow frames, arrow bundles, glyph counters, organic overlaps all enclose
+1–3 px gaps), **C009** (faction recolors, size variants, and shared bottle/shield/plate scaffolds
+collapse to one silhouette *by design* — a colour-blind silhouette check cannot tell an intended
+variant from a duplicate), **C011** (item sets legitimately mix a ring and a greatsword), **C012**
+(symmetric bottom breathing room), **C005/C006** (thin detail and gradient sprawl are style
+choices). This narrows the originally-planned list (C001/C002/C007/C008/C009); the rationale and
+measured floor are recorded in `docs/impl-progress.md`.
 
 **6 — A vision rubric block, printed after the automatic gate.** `critique` additionally
 prints an ordered list of silhouette-first render commands plus a category-specific rubric

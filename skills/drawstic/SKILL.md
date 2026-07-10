@@ -52,8 +52,22 @@ Examples below use `bunx drawstic`. Inside the Drawstic repo itself: `bun run dr
      size-normalized contact grid — the tool for cross-drawing radius/stroke/grey-value/hue
      consistency; `--json` gives `{cols, rows, cell, cells:[{name, w, h, x, y}]}`, `--cols N` sets
      columns. Parametric draws are skipped; no renderable draw → `E022`.
-6. **Build** `bunx drawstic build file.drw --out dir --json` → writes every `export`
+6. **Critique — MANDATORY, never skip.** `bunx drawstic critique file.drw --as icon|scene|character|item --json`
+   runs pixel-based, vision-free quality checks (`C0xx`) `check` structurally can't — off-center,
+   floating/seamed parts, flat value, edge-clip, sibling-silhouette collapse — each with
+   `{measured, threshold, fix}`. Pass `--as` (thresholds are per-category; sibling checks C009/C011
+   compare the exported family, `--family a,b,c` overrides). `--strict` → exit 1 on the must-fix
+   subset (C001 empty, C007 character seam, +C003 icon centering) — the CI gate. Then **do what
+   `critique.rubric` says**: run its ordered `renders` (silhouette@6 → ascii → png@4 → sheet) and
+   answer every `items[]` prompt by looking. `pass:true` is necessary, **not** sufficient — a clean
+   automatic gate with an unanswered rubric is not done.
+7. **Build** `bunx drawstic build file.drw --out dir --json` → writes every `export`
    artifact, returns `{diagnostics, artifacts: [{path, bytes}]}`.
+
+**Definition of done:** `check` clean · `critique --as <cat>` `pass:true` (or every remaining
+`warning` consciously accepted) · the `critique` **rubric answered by looking** · `build` wrote the
+artifacts. Skipping `critique` or its rubric is not done — `check` verifies grammar only; every
+quality failure is otherwise silent.
 
 ## Recipe anatomy
 
@@ -193,9 +207,10 @@ sky → far layer → haze veil → midground → ground (shape gradient far-lig
 → subjects (contact-AO ellipse + directional shadow + light edge) → foreground frame → vignette.
 (4) each object: `fill → shade/light/AO/rim → then bright accents`.
 
-**Checklist before "done":** one light source, no floating objects, ground reads as a plane (not a
-wall), hero silhouette crosses a contrast edge, filter dosages sane (scene-craft.md § 5), and you
-**looked at the @4 image** — `check` verifies grammar only; every quality failure is silent.
+**Checklist before "done":** run **`critique --as scene`** (+ answer its hero-contrast/no-floating/
+one-light rubric), one light source, no floating objects, ground reads as a plane (not a wall), hero
+silhouette crosses a contrast edge, filter dosages sane (scene-craft.md § 5), and you **looked at the
+@4 image** — `check` verifies grammar only; every quality failure is silent.
 
 ## Icons — family workflow
 
@@ -212,11 +227,12 @@ silhouette glyphs**, optically centered, stamped on. Multi-size = **redraw, neve
 `WxH` header each; ≤~12px = one hand-pixeled `pixels:` grid); family palette = hue-only oklch or
 accent-derived shades, `grad` stops intra-hue.
 
-**Checklist before "done":** silhouette-first (run the mis-reading test; watch the merge-trap),
-optically centered (`--inspect` bbox: `x0+x1 = W−1`; `circle c r` covers `c−r…c+r−1`; notch/bump
-circle r ≤~20 % of the edge), and you ran **`sheet file.drw --png@4`** for cross-sibling consistency
-+ **`--png@1`** to confirm each icon reads at 100 %. SVG target → flat tiles only, counter-check
-`<rect>` count. `check` catches almost nothing here — icon quality is 100 % visual.
+**Checklist before "done":** run **`critique --as icon`** (must-fix C003 centering under `--strict`;
+answer its misread + merge-trap rubric), silhouette-first (run the mis-reading test; watch the
+merge-trap), optically centered (`--inspect` bbox: `x0+x1 = W−1`; `circle c r` covers `c−r…c+r−1`;
+notch/bump circle r ≤~20 % of the edge), and you ran **`sheet file.drw --png@4`** for cross-sibling
+consistency + **`--png@1`** to confirm each icon reads at 100 %. SVG target → flat tiles only,
+counter-check `<rect>` count. `check` catches almost nothing here — icon quality is 100 % visual.
 
 ## Characters — modular figure workflow
 
@@ -234,11 +250,12 @@ parametrically, never themes** (a theme palette does not cross a `stamp`; pass t
 colours, thin wrapper per variant). (6) **redraw pose-leading parts for the side, reuse
 pose-invariant ones** (side ≠ flip; far limb via neutral-grey `tint`).
 
-**Checklist before "done":** `--silhouette` black-out reads as the archetype and shows connected
-seams; per-joint `--crop` (bbox overlap ≠ pixel contact); native `@1` reads; no transparent grid
-end-row (**W009**); body adds socket offsets, never a shared `y`; warm materials shaded via `darken`
-(a raw cool `mix` → magenta); `sheet` across the variant wrappers. `check` verifies grammar only —
-every seam/silhouette failure is silent.
+**Checklist before "done":** run **`critique --as character`** (must-fix C007 catches a floating/
+seamed part under `--strict`; answer its seam-contact rubric), `--silhouette` black-out reads as the
+archetype and shows connected seams; per-joint `--crop` (bbox overlap ≠ pixel contact); native `@1`
+reads; body adds socket offsets, never a shared `y`; warm materials shaded via `darken` (a raw cool
+`mix` → magenta); `sheet` across the variant wrappers. `check` verifies grammar only — every
+seam/silhouette failure is silent.
 
 ## Items — equipment set workflow
 
@@ -258,7 +275,9 @@ band; magic/gold/gem accents stay tight. (5) **ship the family** — per-item `p
 `tileset` export with `tiled` + `atlasJson`; use a separate `atlas ... pad 1` only when the named
 atlas needs its own packed sheet.
 
-**Checklist before "done":** run **`sheet file.drw --png@4`** first, then native **`--png@1`** for
+**Checklist before "done":** run **`critique --as item`** (C009 flags a sibling whose silhouette
+reads like another's — differentiate or confirm it's a deliberate recolor/shared-shell variant;
+answer its pair-confusion rubric), **`sheet file.drw --png@4`** first, then native **`--png@1`** for
 every sibling, then **`--silhouette --png@4`** on the weakest pair. After `build`, open the `.tsj`
 and atlas `.json` and confirm `tilecount`, `columns`, stable frame names, and frame bounds. `check`
 verifies grammar only — pair confusion, weak silhouettes, and mushy materials are silent.

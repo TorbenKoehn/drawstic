@@ -4,11 +4,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { main } from '../../src/cli.js'
 import {
+  buildRubric,
   CRITIQUE_CODE,
   type CritiqueProfile,
   critiqueCheckDiagnostic,
+  critiqueFamily,
   critiqueSprite,
   resolveProfile,
+  signatureDistance,
+  silhouetteSignature,
 } from '../../src/critique.js'
 import { Engine } from '../../src/eval.js'
 import type { Sprite } from '../../src/values.js'
@@ -61,6 +65,8 @@ const DARK: Px = [32, 32, 32, 255]
 const LIGHT: Px = [224, 224, 224, 255]
 const character = resolveProfile('character') as CritiqueProfile
 const icon = resolveProfile('icon') as CritiqueProfile
+const item = resolveProfile('item') as CritiqueProfile
+const scene = resolveProfile('scene') as CritiqueProfile
 
 describe('C001 empty / near-empty', () => {
   test('a fully transparent sprite fires C001 with measured 0 and null metrics', () => {
@@ -161,21 +167,47 @@ describe('C008 interior pinholes', () => {
 })
 
 describe('C012 dynamic transparent trailing edge row', () => {
-  test('a fully transparent bottom row with content above fires C012', () => {
+  test('content pushed up with an asymmetric bottom gap fires C012', () => {
+    // content in rows 0-2 of an 8-tall canvas: leading 0, trailing 5, tol 1 -> excess 5
     const src = [
-      'draw pad 4x4:',
+      'draw pad 8x8:',
       '  pal k=#202020  w=#e0e0e0',
       '  pixels:',
-      '    kwkw',
-      '    wkwk',
-      '    kwkw',
-      '    ....',
+      '    kwkwkwkw',
+      '    wkwkwkwk',
+      '    kwkwkwkw',
+      '    ........',
+      '    ........',
+      '    ........',
+      '    ........',
+      '    ........',
       '',
     ].join('\n')
     const d = critique(src, 'pad')
-    expect(d.bbox).toEqual({ x: 0, y: 0, width: 4, height: 3 })
+    expect(d.bbox).toEqual({ x: 0, y: 0, width: 8, height: 3 })
     const c = byCode(d.checks, CRITIQUE_CODE.trailingEdgeRow)
-    expect(c).toMatchObject({ code: 'C012', measured: 1, threshold: 0 })
+    expect(c).toMatchObject({ code: 'C012', measured: 5, threshold: 1 })
+    expect(c?.detail).toEqual({ leading: 0, trailing: 5 })
+  })
+
+  test('symmetric breathing room (trailing ≈ leading) does not fire C012', () => {
+    // content centered vertically in rows 3-4 of an 8-tall canvas: leading 3, trailing 3
+    const src = [
+      'draw mid 8x8:',
+      '  pal w=#e0e0e0',
+      '  pixels:',
+      '    ........',
+      '    ........',
+      '    ........',
+      '    wwwwwwww',
+      '    wwwwwwww',
+      '    ........',
+      '    ........',
+      '    ........',
+      '',
+    ].join('\n')
+    const d = critique(src, 'mid')
+    expect(byCode(d.checks, CRITIQUE_CODE.trailingEdgeRow)).toBeUndefined()
   })
 })
 
@@ -358,12 +390,19 @@ describe('--strict severity promotion', () => {
     expect(byCode(d.checks, CRITIQUE_CODE.floatingPart)?.severity).toBe('error')
   })
 
-  test('strict promotes C003 only under an icon/item profile, not character', () => {
+  test('strict promotes C003 only under the icon profile (item centering stays advisory)', () => {
     const iconStrict = critiqueSprite('off', render(offCenter, 'off'), {
       profile: icon,
       strict: true,
     })
     expect(byCode(iconStrict.checks, CRITIQUE_CODE.centering)?.severity).toBe('error')
+    // items include diagonal weapons whose bbox parity is legitimately off, so
+    // item centering is a warning even under strict.
+    const itemStrict = critiqueSprite('off', render(offCenter, 'off'), {
+      profile: item,
+      strict: true,
+    })
+    expect(byCode(itemStrict.checks, CRITIQUE_CODE.centering)?.severity).toBe('warning')
     const charStrict = critiqueSprite('off', render(offCenter, 'off'), {
       profile: character,
       strict: true,
@@ -395,6 +434,296 @@ describe('critique CLI --strict exit gate', () => {
     try {
       expect(runQuiet(['critique', file, '--json'])).toBe(0)
       expect(runQuiet(['critique', file, '--strict', '--json'])).toBe(1)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+// ── phase 1c: C002 edge-clip, silhouette signatures, C009/C011 family, rubric ──
+
+/** Covered mask + tight bbox of a synthetic sprite, the inputs {@link silhouetteSignature} consumes. */
+const coverageOf = (s: Sprite): { covered: Uint8Array; bbox: ReturnType<typeof bboxOf> } => {
+  const covered = new Uint8Array(s.w * s.h)
+  for (let p = 0; p < covered.length; p++) {
+    covered[p] = (s.data[p * 4 + 3] ?? 0) > 0 ? 1 : 0
+  }
+  return { covered, bbox: bboxOf(s) }
+}
+const bboxOf = (s: Sprite): { x: number; y: number; width: number; height: number } | null => {
+  let x0 = s.w
+  let y0 = s.h
+  let x1 = -1
+  let y1 = -1
+  for (let y = 0; y < s.h; y++) {
+    for (let x = 0; x < s.w; x++) {
+      if ((s.data[(y * s.w + x) * 4 + 3] ?? 0) > 0) {
+        x0 = Math.min(x0, x)
+        x1 = Math.max(x1, x)
+        y0 = Math.min(y0, y)
+        y1 = Math.max(y1, y)
+      }
+    }
+  }
+  return x1 < 0 ? null : { x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 }
+}
+const sigOf = (s: Sprite) => {
+  const { covered, bbox } = coverageOf(s)
+  return silhouetteSignature(covered, s.w, bbox)
+}
+/** A lower-left right-triangle mask, scale-independent (relative coordinates). */
+const triangle =
+  (w: number, h: number) =>
+  (x: number, y: number): Px =>
+    x / w <= y / h ? LIGHT : null
+
+describe('C002 edge-clip (profile-gated to icon/item)', () => {
+  const clipped = synthSprite('clip', 16, 16, (x, y) =>
+    x <= 5 && y <= 5 ? (x % 2 === y % 2 ? DARK : LIGHT) : null,
+  )
+  test('opaque content touching the top-left edge fires C002 under an icon profile', () => {
+    const d = critiqueSprite('clip', clipped, { profile: icon })
+    const c = byCode(d.checks, CRITIQUE_CODE.edgeClip)
+    expect(c).toMatchObject({ code: 'C002', severity: 'warning', threshold: 0 })
+    expect(c?.detail).toEqual({ top: 1, bottom: 0, left: 1, right: 0 })
+  })
+
+  test('C002 is silent without a profile and under a scene profile (checkEdgeClip gated)', () => {
+    expect(byCode(critiqueSprite('clip', clipped).checks, CRITIQUE_CODE.edgeClip)).toBeUndefined()
+    expect(
+      byCode(critiqueSprite('clip', clipped, { profile: scene }).checks, CRITIQUE_CODE.edgeClip),
+    ).toBeUndefined()
+    // characters legitimately fill the full height, so their profile opts out too
+    expect(
+      byCode(
+        critiqueSprite('clip', clipped, { profile: character }).checks,
+        CRITIQUE_CODE.edgeClip,
+      ),
+    ).toBeUndefined()
+  })
+
+  test('an inset subject with a transparent margin does not fire C002', () => {
+    const inset = synthSprite('inset', 16, 16, (x, y) =>
+      x >= 4 && x <= 11 && y >= 4 && y <= 11 ? (x % 2 === y % 2 ? DARK : LIGHT) : null,
+    )
+    expect(
+      byCode(critiqueSprite('inset', inset, { profile: icon }).checks, CRITIQUE_CODE.edgeClip),
+    ).toBeUndefined()
+  })
+})
+
+describe('silhouette signatures (scale/position invariant, aspect preserving)', () => {
+  test('the same shape at two sizes yields near-identical signatures', () => {
+    const a = synthSprite('a', 16, 16, triangle(16, 16))
+    const b = synthSprite('b', 32, 32, triangle(32, 32))
+    expect(signatureDistance(sigOf(a), sigOf(b))).toBeLessThan(0.05)
+  })
+
+  test('the same shape shifted in a larger canvas is position-invariant (bbox-cropped)', () => {
+    const a = synthSprite('a', 12, 12, triangle(12, 12))
+    const shifted = synthSprite('b', 24, 24, (x, y) => {
+      const lx = x - 6
+      const ly = y - 3
+      return lx >= 0 && lx < 12 && ly >= 0 && ly < 12 ? triangle(12, 12)(lx, ly) : null
+    })
+    expect(signatureDistance(sigOf(a), sigOf(shifted))).toBeLessThan(0.02)
+  })
+
+  test('a tall bar and a wide bar are far apart (aspect is preserved, not normalized away)', () => {
+    const tall = synthSprite('t', 16, 16, (x) => (x >= 6 && x <= 9 ? LIGHT : null))
+    const wide = synthSprite('w', 16, 16, (_, y) => (y >= 6 && y <= 9 ? LIGHT : null))
+    expect(signatureDistance(sigOf(tall), sigOf(wide))).toBeGreaterThan(0.5)
+  })
+
+  test('an empty sprite has no signature and distance 1 to anything', () => {
+    const empty = synthSprite('e', 8, 8, () => null)
+    expect(sigOf(empty)).toBeNull()
+    const solid = synthSprite('s', 8, 8, () => LIGHT)
+    expect(signatureDistance(sigOf(empty), sigOf(solid))).toBe(1)
+  })
+})
+
+describe('C009 sibling-silhouette collapse (critiqueFamily)', () => {
+  const triA = (name: string, c: Px) =>
+    synthSprite(name, 16, 16, (x, y) => (triangle(16, 16)(x, y) ? c : null))
+
+  test('two identical silhouettes (a recolor pair) fire C009 for both, as an advisory warning', () => {
+    const fam = critiqueFamily([
+      { name: 'green', sprite: triA('green', DARK) },
+      { name: 'red', sprite: triA('red', LIGHT) },
+    ])
+    expect(fam).not.toBeNull()
+    const c9 = fam?.checks.filter((c) => c.code === CRITIQUE_CODE.siblingCollapse) ?? []
+    expect(c9.map((c) => c.target).sort()).toEqual(['green', 'red'])
+    expect(c9[0]).toMatchObject({ severity: 'warning', measured: 0, threshold: 0.12 })
+  })
+
+  test('C009 stays a warning even under --strict (silhouette-sharing is a first-class pattern)', () => {
+    const fam = critiqueFamily(
+      [
+        { name: 'green', sprite: triA('green', DARK) },
+        { name: 'red', sprite: triA('red', LIGHT) },
+      ],
+      { strict: true },
+    )
+    const c9 = fam?.checks.find((c) => c.code === CRITIQUE_CODE.siblingCollapse)
+    expect(c9?.severity).toBe('warning')
+  })
+
+  test('two clearly different silhouettes do not fire C009', () => {
+    const tri = triA('tri', LIGHT)
+    const block = synthSprite('block', 16, 16, () => LIGHT)
+    const fam = critiqueFamily([
+      { name: 'tri', sprite: tri },
+      { name: 'block', sprite: block },
+    ])
+    expect(fam?.checks.some((c) => c.code === CRITIQUE_CODE.siblingCollapse)).toBe(false)
+  })
+
+  test('fewer than two members returns null (nothing to compare)', () => {
+    expect(critiqueFamily([{ name: 'only', sprite: triA('only', LIGHT) }])).toBeNull()
+    expect(critiqueFamily([])).toBeNull()
+  })
+
+  test('familyMetrics exposes a symmetric distance matrix (zero diagonal), nearest, and median', () => {
+    const fam = critiqueFamily([
+      { name: 'a', sprite: synthSprite('a', 16, 16, () => LIGHT) },
+      {
+        name: 'b',
+        sprite: synthSprite('b', 16, 16, (x, y) =>
+          x >= 2 && x <= 13 && y >= 2 && y <= 13 ? LIGHT : null,
+        ),
+      },
+    ])
+    const m = fam?.metrics
+    expect(m?.distanceMatrix.length).toBe(2)
+    expect(m?.distanceMatrix[0]?.[0]).toBe(0)
+    expect(m?.distanceMatrix[1]?.[1]).toBe(0)
+    expect(m?.distanceMatrix[0]?.[1]).toBe(m?.distanceMatrix[1]?.[0])
+    expect(m?.members[0]?.nearest?.name).toBe('b')
+    expect(m?.medianCoveredPixelCount).toBe((256 + 144) / 2)
+  })
+})
+
+describe('C011 family weight parity', () => {
+  test('a member far lighter than the family median fires C011 with the ratio', () => {
+    const big1 = synthSprite('big1', 16, 16, () => LIGHT) // 256
+    const big2 = synthSprite('big2', 16, 16, (x, y) => (x >= 1 && y >= 1 ? LIGHT : null)) // 225
+    const tiny = synthSprite('tiny', 16, 16, (x, y) => (x < 3 && y < 3 ? LIGHT : null)) // 9
+    const fam = critiqueFamily([
+      { name: 'big1', sprite: big1 },
+      { name: 'big2', sprite: big2 },
+      { name: 'tiny', sprite: tiny },
+    ])
+    const c11 = fam?.checks.filter((c) => c.code === CRITIQUE_CODE.familyParity) ?? []
+    expect(c11.map((c) => c.target)).toEqual(['tiny'])
+    expect(c11[0]?.measured).toBeGreaterThan(6)
+  })
+
+  test('a balanced family fires no C011', () => {
+    const a = synthSprite('a', 16, 16, () => LIGHT)
+    const b = synthSprite('b', 16, 16, (x) => (x >= 1 ? LIGHT : null))
+    const c = synthSprite('c', 16, 16, (_, y) => (y >= 1 ? LIGHT : null))
+    const fam = critiqueFamily([
+      { name: 'a', sprite: a },
+      { name: 'b', sprite: b },
+      { name: 'c', sprite: c },
+    ])
+    expect(fam?.checks.some((ck) => ck.code === CRITIQUE_CODE.familyParity)).toBe(false)
+  })
+})
+
+describe('buildRubric (vision rubric block, ADR-0085 §6)', () => {
+  test('an icon profile yields silhouette-first renders + the family sheet + icon prompts', () => {
+    const r = buildRubric(icon, 'f.drw', 'home', true)
+    expect(r.renders).toEqual([
+      'render f.drw#home --silhouette --png@6',
+      'render f.drw#home --ascii --fit 64x64',
+      'render f.drw#home --png@4',
+      'sheet f.drw --png@4',
+    ])
+    expect(r.items.map((i) => i.id)).toEqual(['misread', 'merge-trap'])
+    expect(r.note).toContain('necessary, not sufficient')
+  })
+
+  test('no profile yields the agnostic rubric and no sheet render when there is no family', () => {
+    const r = buildRubric(null, 'f.drw', 'x', false)
+    expect(r.renders.some((cmd) => cmd.startsWith('sheet'))).toBe(false)
+    expect(r.items.map((i) => i.id)).toEqual(['silhouette', 'centering'])
+  })
+
+  test('a scene profile carries the hero-contrast / no-floating / one-light prompts', () => {
+    expect(buildRubric(scene, 'f.drw', 'bay', false).items.map((i) => i.id)).toEqual([
+      'hero-contrast',
+      'no-floating',
+      'one-light',
+    ])
+  })
+})
+
+describe('critique CLI family selection + rubric payload', () => {
+  const runCapture = (argv: readonly string[]): { code: number; json: unknown } => {
+    const original = process.stdout.write.bind(process.stdout)
+    let out = ''
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      out += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
+      return true
+    }) as typeof process.stdout.write
+    try {
+      const code = main([...argv])
+      return { code, json: JSON.parse(out) }
+    } finally {
+      process.stdout.write = original
+    }
+  }
+
+  const familySrc = [
+    'draw a 8x8:',
+    '  bg #c04040',
+    'draw b 8x8:',
+    '  bg #40c040',
+    'draw c 8x8:',
+    '  bg #4040c0',
+    'export a out/a:',
+    '  png @1',
+    'export b out/b:',
+    '  png @1',
+    '',
+  ].join('\n')
+
+  test('the default family is the exported draws; --family overrides it, and the rubric ships', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'drawstic-family-'))
+    const file = join(dir, 'set.drw')
+    writeFileSync(file, familySrc)
+    try {
+      const def = runCapture(['critique', file, '--as', 'item', '--json'])
+      const critique = (
+        def.json as {
+          critique: {
+            familyMetrics: { members: { name: string }[] }
+            rubric: { renders: string[] }
+          }
+        }
+      ).critique
+      expect(critique.familyMetrics.members.map((m) => m.name)).toEqual(['a', 'b'])
+      expect(critique.rubric.renders.some((c) => c.startsWith('sheet'))).toBe(true)
+
+      const all = runCapture(['critique', file, '--family', 'a,b,c', '--json'])
+      const fm = (all.json as { critique: { familyMetrics: { members: { name: string }[] } } })
+        .critique.familyMetrics
+      expect(fm.members.map((m) => m.name)).toEqual(['a', 'b', 'c'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('a collapsing family stays exit 0 under --strict (C009 is advisory, not a gate)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'drawstic-family-'))
+    const file = join(dir, 'set.drw')
+    writeFileSync(file, familySrc)
+    try {
+      // a/b/c are identical full-canvas silhouettes -> C009 collapse, but advisory
+      expect(runCapture(['critique', file, '--family', 'a,b,c', '--strict', '--json']).code).toBe(0)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
