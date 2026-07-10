@@ -509,7 +509,15 @@ draw butterfly 32x24:
 
 Ops (call- or method-style): `lighten darken saturate desaturate hue alpha mix grayscale`.
 Ramps: `tones(base, …amounts)` and `mixes(a, b, count[, space])` return color lists —
-`pal: a, b, c = #ccc.tones(-12%, 0%, 12%)`. Mixing/gradients interpolate in OkLCh by
+`pal: a, b, c = #ccc.tones(-12%, 0%, 12%)`.
+Shading (ADR-0086, call- or method-style): `base.litTone(light, amt)` mixes toward the light
+colour (warm highlight — not chalky `lighten`); `base.shadowTone(cool, amt[, darken])` darkens
+(by `darken`, default `amt`) + nudges hue toward `cool` capped ≤20° along the short arc (never
+cross-hue → **no magenta shadow on warm bases** — `shadowTone` bakes the trap-avoidance below) +
+slight desaturate; `base.ramp(n)` → even n-step light→dark tone list (hue-stable, for
+`pixels:`/cel banding). Unlike other ops these three are **not reserved** — a recipe may still bind
+`ramp`/`litTone`/`shadowTone` (a local binding wins; `.ramp(n)` on a colour still hits the builtin).
+Mixing/gradients interpolate in OkLCh by
 default (pass `rgb`/`hsl` to override); pipeline (oklch↔sRGB, gamut map, shorter-arc hue,
 8-bit round-half-up) is pinned — pixel-identical everywhere.
 

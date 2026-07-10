@@ -28,13 +28,16 @@ import {
   grayscale,
   hsl,
   lighten,
+  litTone,
   type MixSpace,
   mix,
   oklch,
   parseHexColor,
+  ramp,
   rgb,
   rotateHue,
   saturate,
+  shadowTone,
   TRANSPARENT,
   withAlpha,
 } from './color.js'
@@ -4976,6 +4979,33 @@ export class Engine {
         }
         arity(3)
         return mix(col(0), col(1), num(2))
+      }
+      // ADR-0086 §5 shading helpers. Intentionally NOT in BUILTIN_NAMES:
+      // unlike `tones`/`mixes` they stay shadowable, because `ramp` is a
+      // long-standing user binding name (ADR-0060/0079, many examples) and
+      // reserving it would break existing recipes. UFCS/call dispatch reaches
+      // them here via callBuiltinOrFn's builtin fallback regardless.
+      case 'litTone':
+        arity(3)
+        return litTone(col(0), col(1), num(2))
+      case 'shadowTone':
+        if (args.length === 4) {
+          return shadowTone(col(0), col(1), num(2), num(3))
+        }
+        arity(3)
+        return shadowTone(col(0), col(1), num(2))
+      case 'ramp': {
+        arity(2)
+        const count = num(1)
+        if (!Number.isInteger(count) || count < 1) {
+          throw error(
+            ERROR_CODE.typeError,
+            'ramp: count must be an integer >= 1',
+            ctx.file,
+            ctx.span,
+          )
+        }
+        return list(ramp(col(0), count))
       }
       case 'tones': {
         if (args.length < 2) {

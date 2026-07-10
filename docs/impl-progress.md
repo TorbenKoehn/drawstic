@@ -64,9 +64,18 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
 
 ## Phase 2 — Deklaratives Licht + Material (Schattierung)
 
-- [ ] **2a** Reine Color-Helfer in `src/color.ts`: `litTone` (mix Richtung warm), `shadowTone`
+- [x] **2a** Reine Color-Helfer in `src/color.ts`: `litTone` (mix Richtung warm), `shadowTone`
   (OkLCh-darken + gedeckelter Hue-Nudge ≤~20°, nie Cross-Hue), `ramp(base, n)`; Unit-Tests. Sofort per
   UFCS nutzbar.
+  → `src/color.ts`: `litTone`=`mix(base,light,amt)`; `shadowTone(base,cool,amt,darken=amt)` =
+  `darken(l)` + `clampMag(hueDelta(base,cool)*amt, SHADOW_HUE_CAP=20)`-Nudge (0 bei achromatischem
+  `cool`) + `SHADOW_DESAT=0.3`-Desaturate; `ramp(base,n)` = evener +1…0…−1-Spread über
+  `litTone`/`shadowTone` mit ADR-0086-Endpunkten (`#ffe6b0`/`#2a3a5e`, `RAMP_LIT_MAX=0.3`/
+  `RAMP_SHADOW_MAX=0.35`), `n<1`→`[]`, `n===1`→`[base]`; geteilter `hueDelta`-Helfer (mixHue refaktoriert).
+  Dispatch-Cases in `#builtinColor` (eval.ts) für call- + method-form. `tests/unit/color.test.ts`
+  +14 (Pins `#e8b784`/`#834b35`/`#c2856e`, Ramp `[#d9754b,#c04040,#320012]`; **Regression**: warme Basis
+  `shadowTone` dHue ≤20° vs. nacktes `mix` >40° Richtung Magenta). `tests/unit/eval.test.ts` +1
+  (UFCS im Recipe + User-`ramp`-Koexistenz). 703 Tests grün, tsc + biome clean.
 - [ ] **2b** `Light`/`Material` First-Class-Values in `src/values.ts`; neues internes `src/shading.ts`
   (Encoding-Vereinigung `lightPointFor`/`lightDirOf`/`shadowOffsetFor` + `lowerMaterial`); `celRegion`
   (gebandetes Distanz-Fill) in `src/raster.ts`; Unit-Tests auf Engine-Ebene.
@@ -119,3 +128,14 @@ _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen an
   die im Plan genannte „Margin"-Parität (einheitlicher Breathing-Room) ist als `bbox` im
   `familyMetrics` sichtbar, aber nicht separat gegated. Falls Item-Sets uneinheitliche Margins als
   Set-Inkohärenz melden sollen, eigenes Margin-Ratio ergänzen (advisory).
+
+- [x] **2a-finding `ramp` kollidiert mit User-Bindings** `ramp` ist ein weit verbreiteter
+  Recipe-Bezeichner (ADR-0060/0079; `examples/characters/{villager,skeleton,robot}.drw`,
+  `items/shields.drw`, `scenes-v3/volcano.drw`, `scenes/orbit.drw`, Tests). Als unshadowbares
+  `BUILTIN_NAMES`-Builtin registriert brach es 22 Tests („predefined, unshadowable name"). Lösung:
+  die drei ADR-0086-Helfer werden **nicht** in `BUILTIN_NAMES` aufgenommen — Dispatch läuft rein über
+  `callBuiltinOrFn`→`#callBuiltin`→`#builtinColor` (User-Fn/-Binding gewinnt, sonst Builtin). Damit
+  bleiben `ramp`/`litTone`/`shadowTone` bindbar und `base.ramp(n)` trifft trotzdem das Builtin.
+  Konsequenz für Phase 4: falls die Reservierung dieser Namen doch gewünscht ist, gehört das
+  begleitende Umbenennen der `ramp`-Bindings in allen Examples in den „Legacy kollabieren"-Schritt,
+  nicht in 2a. Inline-Kommentar an den `#builtinColor`-Cases hinterlegt.

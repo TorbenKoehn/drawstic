@@ -128,7 +128,9 @@ draw scene 32x24:
   group composite coords: `(x+1):(y+2)`. `w`/`h` = current canvas size.
 - **Colors are values:** `#1a1a1a`, `#rrggbbaa`, `oklch(0.78, 0.12, 75)`, `rgb()`, `hsl()`;
   ops chain: `c.lighten(12%).alpha(80%)`; ramps: `#777.tones(-16%, 0%, 14%)`,
-  `a.mixes(b, 4)`; `transparent`.
+  `a.mixes(b, 4)`; shading (ADR-0086): `base.litTone(warm, 25%)` (warm highlight, not chalky
+  `lighten`), `base.shadowTone(cool, 30%)` (darken + hue-nudge capped ≤20° → no magenta shadow),
+  `base.ramp(3)` (n-step light→dark band list); `transparent`.
 - **Primitives** (**paint FIRST** — paint, geometry, then flags; `fill` = solid, `w2` = stroke width 2):
   `bg p` · `px p pt` · `line p a b` · `rect p a b [fill]` · `rrect p a b r [fill]` ·
   `circle p c r [fill]` · `ellipse p c rx:ry [fill]` · `arc p c r a0 a1` ·

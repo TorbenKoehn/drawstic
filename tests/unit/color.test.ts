@@ -7,13 +7,16 @@ import {
   grayscale,
   hsl,
   lighten,
+  litTone,
   mix,
   oklch,
   oklchToColor,
   parseHexColor,
+  ramp,
   rgb,
   rotateHue,
   saturate,
+  shadowTone,
   TRANSPARENT,
   toHexColor,
   withAlpha,
@@ -288,5 +291,83 @@ describe('mix()', () => {
     expect(fromGray.h).toBeCloseTo(redHue, 0)
     expect(fromRed.h).toBeCloseTo(redHue, 0)
     expect(mix(gray, red, 0.3, 'oklch')).toEqual(mix(red, gray, 0.7, 'oklch'))
+  })
+})
+
+const skin = color(224, 168, 120) // #e0a878 — a warm base
+const warmLight = color(255, 230, 176) // #ffe6b0
+const cool = color(58, 111, 216) // #3a6fd8
+
+/** Absolute shorter-arc hue distance in degrees. */
+const hueDist = (a: number, b: number): number => Math.abs(((((b - a) % 360) + 540) % 360) - 180)
+
+describe('litTone()', () => {
+  test('is exactly mix() toward the light colour (OkLCh)', () => {
+    expect(litTone(skin, warmLight, 0.25)).toEqual(mix(skin, warmLight, 0.25))
+    expect(litTone(skin, warmLight, 0.6)).toEqual(mix(skin, warmLight, 0.6))
+    expect(toHexColor(litTone(skin, warmLight, 0.25))).toBe('#e8b784')
+  })
+
+  test('raises lightness (warm highlight, not a chalky lighten)', () => {
+    expect(colorToOklch(litTone(skin, warmLight, 0.25)).l).toBeGreaterThan(colorToOklch(skin).l)
+  })
+})
+
+describe('shadowTone()', () => {
+  test('darkens + capped cool nudge + slight desaturate — pinned', () => {
+    expect(toHexColor(shadowTone(skin, cool, 0.3))).toBe('#834b35')
+  })
+
+  test('WARM base does NOT drift into magenta: hue stays within the ~20° cap', () => {
+    const baseHue = colorToOklch(skin).h
+    const shadowHue = colorToOklch(shadowTone(skin, cool, 0.3)).h
+    // capped: the shadow stays in the base hue family
+    expect(hueDist(baseHue, shadowHue)).toBeLessThanOrEqual(20 + 1e-6)
+    // a bare cross-hue mix instead swings far past the cap, through magenta/rose
+    const bareHue = colorToOklch(mix(skin, cool, 0.3)).h
+    expect(hueDist(baseHue, bareHue)).toBeGreaterThan(40)
+  })
+
+  test('lowers lightness and desaturates', () => {
+    const s = colorToOklch(shadowTone(skin, cool, 0.3))
+    const b = colorToOklch(skin)
+    expect(s.l).toBeLessThan(b.l)
+    expect(s.c).toBeLessThan(b.c)
+  })
+
+  test('achromatic cool contributes no hue nudge (stays in base hue)', () => {
+    const grey = color(43, 43, 43) // #2b2b2b, chroma ~0
+    expect(colorToOklch(shadowTone(skin, grey, 0.3)).h).toBeCloseTo(colorToOklch(skin).h, 0)
+  })
+
+  test('optional darken overrides the L drop (defaults to amt)', () => {
+    const shallow = shadowTone(skin, cool, 0.3, 0.1)
+    const deep = shadowTone(skin, cool, 0.3)
+    expect(colorToOklch(shallow).l).toBeGreaterThan(colorToOklch(deep).l)
+    expect(toHexColor(shallow)).toBe('#c2856e')
+  })
+})
+
+describe('ramp()', () => {
+  const red = color(192, 64, 64) // #c04040
+
+  test('n-step light→dark spread with base at the centre — pinned', () => {
+    expect(ramp(red, 3).map(toHexColor)).toEqual(['#d9754b', '#c04040', '#320012'])
+  })
+
+  test('lightness decreases monotonically from lit to shadow', () => {
+    const ls = ramp(red, 4).map((c) => colorToOklch(c).l)
+    for (let i = 1; i < ls.length; i++) {
+      expect(ls[i] ?? 0).toBeLessThan(ls[i - 1] ?? 0)
+    }
+  })
+
+  test('the centre band of an odd ramp equals the base exactly', () => {
+    expect(ramp(red, 5)[2]).toEqual(red)
+  })
+
+  test('n === 1 yields just the base; n < 1 is empty', () => {
+    expect(ramp(red, 1)).toEqual([red])
+    expect(ramp(red, 0)).toEqual([])
   })
 })

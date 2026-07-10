@@ -954,6 +954,26 @@ draw d 4x2:
     expect(px(s, 2, 0)).toEqual([255, 255, 255, 255])
   })
 
+  test('litTone/shadowTone/ramp work via UFCS and coexist with a user `ramp` binding', () => {
+    // `ramp` stays a bindable user name (ADR-0060/0079) — the `.ramp(3)`
+    // method still reaches the ADR-0086 builtin, proving it is not reserved.
+    const s = render(
+      'draw d 4x1:\n  ramp = #808080.tones(-20%, 20%)\n  sh = #e0a878.shadowTone(#3a6fd8, 30%)\n  rr = #c04040.ramp(3)\n  lt = #c04040.litTone(#ffe6b0, 25%)\n  px ramp.0 0:0\n  px sh 1:0\n  px rr.2 2:0\n  px lt 3:0\n',
+      'd',
+    )
+    // user `ramp` list: darkened grey, opaque
+    expect(px(s, 0, 0)[3]).toBe(255)
+    expect(px(s, 0, 0)[0]).toBeLessThan(128)
+    expect(px(s, 0, 0)[0]).toBe(px(s, 0, 0)[1])
+    // shadowTone of a warm base — pinned, warm (not magenta)
+    expect(px(s, 1, 0)).toEqual([131, 75, 53, 255])
+    // darkest band of ramp(3) — pinned
+    expect(px(s, 2, 0)).toEqual([50, 0, 18, 255])
+    // litTone lightens toward the warm light
+    expect(px(s, 3, 0)[0]).toBeGreaterThan(192)
+    expect(px(s, 3, 0)[3]).toBe(255)
+  })
+
   test('block pal destructures color lists', () => {
     const s = render(
       'draw d 3x1:\n  pal:\n    a, b, c = #777.tones(-10%, 0%, 10%)\n  pixels:\n    abc\n',

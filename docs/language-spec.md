@@ -1001,6 +1001,15 @@ A colour is a **first-class value**. Produce one with:
 - a **colour-list helper**: `tones(base, ...amounts)` / `base.tones(...)` and
   `mixes(a, b, count[, space])` / `a.mixes(b, count[, space])` return ordinary lists of
   colours for explicit local ramps ([ADR-0060](decisions/0060-explicit-color-list-ramps.md));
+- a **shading helper** ([ADR-0086](decisions/0086-declarative-light-and-material.md)):
+  `litTone(base, light, amt)` mixes toward the light colour (warm highlight, not a chalky
+  `lighten`); `shadowTone(base, cool, amt[, darken])` darkens (by `darken`, default `amt`) and
+  nudges the hue toward `cool` by at most ~20° along the shorter arc (never cross-hue, so warm
+  bases do not drift through magenta), desaturating slightly; `ramp(base, n)` returns an even
+  n-step light→dark tone list for `pixels:`/cel banding — distinct from `tones` (arbitrary
+  amounts). Unlike the other builtins these three are **not reserved**: a recipe may still bind
+  `ramp`/`litTone`/`shadowTone` (a user binding takes precedence; `base.ramp(n)` on a colour
+  still reaches the builtin);
 - the keyword `transparent`;
 - a **palette entry by name** (below).
 

@@ -297,11 +297,12 @@ export const rotateHue = (c: Color, arg: number | Color): Color => {
 /** Set alpha from a unit fraction [0,1] (not the 0..255 byte range of Color.a). */
 export const withAlpha = (c: Color, a: number): Color => ({ ...c, a: clamp8(clamp01(a) * 255) })
 
+/** Signed shorter-arc hue difference h0→h1, in degrees, in (−180, 180]. */
+const hueDelta = (h0: number, h1: number): number => ((((h1 - h0) % 360) + 540) % 360) - 180
+
 /** Shorter-arc hue interpolation (ADR-0027 §2). */
-const mixHue = (h0: number, h1: number, t: number): number => {
-  const d = ((((h1 - h0) % 360) + 540) % 360) - 180
-  return (((h0 + d * t) % 360) + 360) % 360
-}
+const mixHue = (h0: number, h1: number, t: number): number =>
+  (((h0 + hueDelta(h0, h1) * t) % 360) + 360) % 360
 
 /** Color space used by mix(); default 'oklch'. */
 export type MixSpace = 'oklch' | 'rgb' | 'hsl'
@@ -370,4 +371,79 @@ const rgbToHslTuple = (
     h = 60 * ((r - g) / d + 4)
   }
   return { h: ((h % 360) + 360) % 360, s, l }
+}
+
+// ── declarative shading tones (ADR-0086 §5) ─────────────────────────────────
+
+/** Clamp a signed value to [−m, m]. */
+const clampMag = (v: number, m: number): number => Math.max(-m, Math.min(m, v))
+
+/**
+ * Warm highlight toward the light's colour: `mix(base, light, amt)` in OkLCh
+ * (ADR-0086 §5). This is the correct highlight move — reflexively reaching for
+ * `lighten()` (a pure L bump) reads chalky and cold, while mixing toward the
+ * actual light colour keeps highlights warm. A thin, named wrapper over `mix`
+ * so recipes read intent (`base.litTone(sun, 25%)`) rather than mechanism.
+ */
+export const litTone = (base: Color, light: Color, amt: number): Color => mix(base, light, amt)
+
+/** Max degrees a `shadowTone` hue is nudged toward `cool` — never a full cross-hue swing. */
+const SHADOW_HUE_CAP = 20
+/** Fraction of `amt` that also desaturates the shadow (shadows read slightly greyer). */
+const SHADOW_DESAT = 0.3
+
+/**
+ * Craft-correct shadow tone (ADR-0086 §5): lower OkLCh lightness by `darken`
+ * (defaults to `amt`), nudge the hue toward `cool` by at most `SHADOW_HUE_CAP`
+ * degrees along the shorter arc, and desaturate slightly. The hue **cap** is
+ * the whole point — it keeps the shadow inside `base`'s hue family, so a warm
+ * base darkens to a cooler brown instead of drifting through magenta, the
+ * failure a bare `mix(base, cool, amt)` produces on warm materials. An
+ * achromatic `cool` (chroma ~0) carries no hue direction, so only darken +
+ * desaturate apply. Deterministic and pure.
+ */
+export const shadowTone = (base: Color, cool: Color, amt: number, darken = amt): Color => {
+  const o = colorToOklch(base)
+  const oc = colorToOklch(cool)
+  const nudge = oc.c < 1e-7 ? 0 : clampMag(hueDelta(o.h, oc.h) * amt, SHADOW_HUE_CAP)
+  return oklchToColor({
+    l: clamp01(o.l - darken),
+    c: o.c * Math.max(0, 1 - amt * SHADOW_DESAT),
+    h: (((o.h + nudge) % 360) + 360) % 360,
+    alpha: o.alpha,
+  })
+}
+
+/** Endpoint colours for `ramp`'s default spread — ADR-0086's canonical sun warm + cool amb. */
+const RAMP_LIGHT: Color = color(255, 230, 176) // #ffe6b0
+const RAMP_COOL: Color = color(42, 58, 94) // #2a3a5e
+const RAMP_LIT_MAX = 0.3
+const RAMP_SHADOW_MAX = 0.35
+
+/**
+ * An `n`-step light→dark tone list for cel banding and `pixels:` ramps
+ * (ADR-0086 §5): index 0 is the warmest highlight, index n−1 the coolest
+ * shadow, `base` at the centre. Unlike `tones()` (explicit, arbitrary amounts),
+ * `ramp` is the even, material-consistent spread — highlights via `litTone`
+ * toward a warm light, shadows via `shadowTone` with the capped cool nudge, so
+ * the whole ramp stays in `base`'s hue family (no magenta drift). Endpoints are
+ * ADR-0086's canonical warm/cool. `n < 1` → empty; `n === 1` → `[base]`.
+ */
+export const ramp = (base: Color, n: number): Color[] => {
+  if (n < 1) {
+    return []
+  }
+  if (n === 1) {
+    return [base]
+  }
+  return Array.from({ length: n }, (_, i) => {
+    const p = 1 - (2 * i) / (n - 1) // +1 lightest … 0 base … −1 darkest
+    if (p > 0) {
+      return litTone(base, RAMP_LIGHT, p * RAMP_LIT_MAX)
+    }
+    if (p < 0) {
+      return shadowTone(base, RAMP_COOL, -p * RAMP_SHADOW_MAX)
+    }
+    return base
+  })
 }
