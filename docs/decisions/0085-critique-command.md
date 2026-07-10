@@ -111,3 +111,22 @@ agent to look. The product-skill workflow states this as the explicit "definitio
 - `tests/unit/critique.test.ts` fixtures pin each check's `measured` value against a
   known-bad sprite (floating part, pinhole, near-identical sibling pair, off-center icon,
   flat-value region), so thresholds are test-asserted, not just documented.
+
+## Known limitations (advisory by design)
+
+Closed as deliberate, calibrated advisory scope — not defects — per
+`docs/impl-progress.md`'s "1c-followup" notes; revisit only if a future corpus proves the
+false-positive risk of tightening them is gone:
+
+- **C009 plate-blindness.** The sibling-silhouette signature is built from the sprite's
+  *full* covered mask, so an icon with an opaque plate/background tile signs as the plate,
+  not the glyph on it — distinct glyphs on the same plate can read as "collapsed". C009 is
+  `warning`-only (never `--strict`-promoted), so this cannot become a false CI blocker; a
+  future fix would subtract the dominant background colour before signing, or skip C009 for
+  the `icon` profile. See the comment at `COLLAPSE_DISTANCE` in `src/critique.ts`.
+- **C011 gates weight only, not margin.** The originally-planned "margin parity" (uniform
+  breathing room across siblings) is not a separate gated check — only covered-mass parity
+  is. Each member's `bbox` is already in the `familyMetrics` payload, so margin consistency
+  is inspectable without a render; a dedicated advisory margin-ratio check can be added later
+  if item sets need it actively flagged. See the comment at `PARITY_FACTOR` in
+  `src/critique.ts`.

@@ -221,27 +221,28 @@ _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen an
   W010 in JSON-`diagnostics`. Doku: language-spec §9 (Contact guarantee: „surfaces in render/build/
   sheet"), reference.md (W010-Zeile).
 
-- [ ] **measure-phase2** craft-eval (eine Kategorie, Charaktere) gegen die dokumentierten Baselines
-  fahren (schwer, Multi-Agent, Review-Bedarf) — konsolidiert am Ende/Human-getriggert. Deckt die
-  Phase-2-Messung des Plans ab („misst, ob Licht+Material die Grade bewegt"); explizit NICHT im
+- [ ] **measure-phase2** (HUMAN-GATED) craft-eval (eine Kategorie, Charaktere) gegen die dokumentierten
+  Baselines fahren (schwer, Multi-Agent, Review-Bedarf) — konsolidiert am Ende/Human-getriggert. Deckt
+  die Phase-2-Messung des Plans ab („misst, ob Licht+Material die Grade bewegt"); explizit NICHT im
   autonomen Einzel-Einheit-Scope, weil ein Builder-Wave + Konsolidierung + Fix-Wave menschliches
-  Review braucht.
-- [ ] **measure-phase4** finaler `craft-eval`-Re-Run **pro Kategorie** (Blind-Rebuild mit dem
-  deklarativen Default-Pfad), Grades gegen die dokumentierten Baselines, Reports in `docs/` ablegen,
-  Zielkorridor Overall < ~1.4 (bes. Lighting-Achse 1.9 + Near-Neighbour-Item-Lücke). Die Code-/Doku-
-  Hälfte von Phase 4 ist erledigt (Checkbox 4); diese Messung ist der human/deferred-getriggerte Rest
-  (schwere Multi-Agent-Läufe, `craft-eval`-Skill), analog `measure-phase2`. **Voraussetzung/Kandidat**
-  vor dem Lauf: das `2c-collapse-finding` (inerte Pragma-Zeilen strippen + die sechs ehemaligen
-  `drawstic 1`-Szenen an der Veil-/Visual-Anchor-Semantik nachjustieren, falls pristine Beispiele
-  gewünscht).
-- [ ] **4-finding: kein Skill↔CLI-Konsistenz-Test** Task-Item 4 verlangte, die Lücke zu melden: es
-  existiert **kein** automatischer Test, der die in `SKILL.md`/`reference.md` dokumentierten CLI-Verben/
-  Flags (`critique`/`--as`/`--strict`/`--family`, `render --explain`/`--silhouette`, `pin`/`fit`,
-  `light`/`material`/`lit`/`model`/`cel`) gegen `src/cli.ts` prüft. Heute per Hand verifiziert (in
-  diesem Commit: HELP/Dispatch in `cli.ts` deckt exakt die dokumentierten Verben; alle neuen Skill-
-  Beispiele engine-smoke-getestet). Bewusst hier **nicht** neu angelegt (Scope Phase 4 = Doku/Skill-
-  Rewrite). Kandidat: ein knapper `tests/unit/skill-cli-sync.test.ts`, der die HELP-Verbliste und die
-  neuen contextual Keywords gegen die reference.md-Tabellen assertet.
+  Review braucht. **Nicht autonom anfassen — menschlich zu triggern.**
+- [ ] **measure-phase4** (HUMAN-GATED) finaler `craft-eval`-Re-Run **pro Kategorie** (Blind-Rebuild mit
+  dem deklarativen Default-Pfad), Grades gegen die dokumentierten Baselines, Reports in `docs/`
+  ablegen, Zielkorridor Overall < ~1.4 (bes. Lighting-Achse 1.9 + Near-Neighbour-Item-Lücke). Die
+  Code-/Doku-Hälfte von Phase 4 ist erledigt (Checkbox 4); diese Messung ist der human/deferred-
+  getriggerte Rest (schwere Multi-Agent-Läufe, `craft-eval`-Skill), analog `measure-phase2`.
+  **Voraussetzung/Kandidat** vor dem Lauf: das `2c-collapse-finding` (inerte Pragma-Zeilen strippen +
+  die sechs ehemaligen `drawstic 1`-Szenen an der Veil-/Visual-Anchor-Semantik nachjustieren, falls
+  pristine Beispiele gewünscht). **Nicht autonom anfassen — menschlich zu triggern.**
+- [x] **4-finding: kein Skill↔CLI-Konsistenz-Test** → **gelöst**: `tests/unit/skill-cli-sync.test.ts`
+  (20 Tests) prüft pro dokumentiertem Verb (`check`/`fmt`/`context`/`render`/`critique`/`sheet`/`build`)
+  und pro zentralem Flag (`--explain`/`--silhouette`/`--as`/`--strict`/`--family`/`--json`), dass es in
+  `src/cli.ts` verdrahtet ist (HELP-Block-Regex ODER `main()`-Dispatch-Case für Verben; Substring-Suche
+  für Flags — bewusst locker, keine 1:1-Prosa-Gleichheit, damit reine Doku-Politur nicht bricht) **und**
+  umgekehrt jeder tatsächlich dispatchte Verb irgendwo in `SKILL.md`/`reference.md` dokumentiert ist
+  (Drift-Schutz in beide Richtungen: ein entfernter/umbenannter Verb/Flag UND ein neuer, undokumentierter
+  Verb schlagen beide fehl). Garantiert: künftige Skill↔CLI-Drift wird ein failing Test, nicht mehr nur
+  Handverifikation.
 - [ ] **2d-finding: Auflösungsreihenfolge explicit>lit vs. Task-Wortlaut** Die Task-Notiz listete
   „`lit`-Block > explizites `light L`-Arg > Theme-Default". Umgesetzt ist **explizites `light L` >
   `lit L:`-Block > Theme-Default** — konsistent mit ADR-0086 (autoritativ: „value binding → lit block
@@ -309,16 +310,17 @@ _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen an
   hält). C005 bleibt ≥48px-wirksam + advisory; 32px-Hairline-Dominanz fängt stattdessen die Vision-
   Rubrik (Silhouette-first-Render). Kein Regressionsrisiko am Gate, da C005 nicht must-fix.
 
-- [ ] **1c-followup C009-Plate-Blindheit** C009 vergleicht die *volle* Covered-Maske; bei Icons mit
-  opakem Plate ist die Silhouette = Plate, sodass alle Glyphen kollabieren (`chat~phone@0`). Heute
-  unkritisch (C009 advisory), aber wenn C009 je schärfer werden soll: Signatur auf den Nicht-Plate-
-  Vordergrund beschränken (z.B. dominante Randfarbe als Plate subtrahieren) oder C009 für `icon`
-  überspringen. Analog bei Recolor-Varianten (identische Silhouette by design) — nur die Rubrik/der
-  Agent kann „gewollt" von „Duplikat" trennen.
-- [ ] **1c-followup C011-Margin** C011 flaggt heute nur Gewicht (Covered-Count-Ratio > 6× Median);
-  die im Plan genannte „Margin"-Parität (einheitlicher Breathing-Room) ist als `bbox` im
-  `familyMetrics` sichtbar, aber nicht separat gegated. Falls Item-Sets uneinheitliche Margins als
-  Set-Inkohärenz melden sollen, eigenes Margin-Ratio ergänzen (advisory).
+- [x] **1c-followup C009-Plate-Blindheit** → **gelöst = bewusst advisory**: Verhalten/Thresholds
+  bewusst NICHT geändert (Risiko von False Positives; C009 advisory war die kalibrierte 1c-Entscheidung).
+  Als dokumentierte bekannte Limitation geschlossen: Kommentar an `COLLAPSE_DISTANCE` in
+  `src/critique.ts` (C009 signiert die *volle* Covered-Maske → bei opakem Plate = Plate-Silhouette,
+  alle Glyphen kollabieren) + „Known limitations"-Abschnitt in `docs/decisions/0085-critique-command.md`.
+  C009 bleibt `warning`-only (nie `--strict`-promoted) → in der Praxis kein False-Positive-Blocker.
+- [x] **1c-followup C011-Margin** → **gelöst = bewusst advisory**: Verhalten/Thresholds bewusst NICHT
+  geändert (gleiche Begründung wie C009). Als dokumentierte bekannte Limitation geschlossen: Kommentar
+  an `PARITY_FACTOR` in `src/critique.ts` (C011 gated nur Gewicht via Covered-Count-Ratio; Margin ist
+  über `familyMetrics.bbox` sichtbar, aber nicht separat gegated) + „Known limitations"-Abschnitt in
+  `docs/decisions/0085-critique-command.md`.
 
 - [x] **2b-finding `celRegion` Bereichs-Normalisierung** Ein weit entfernter synthetischer
   Directional-Lichtpunkt (`center − dir·2·Diagonale`) komprimiert das rohe `forRegionDistance`-`t` der

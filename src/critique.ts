@@ -1071,12 +1071,36 @@ const SIGNATURE_GRID = 32
 const COLLAPSE_DISTANCE = 0.12
 
 /**
+ * **Known limitation (docs/impl-progress.md "1c-followup C009-Plate-Blindheit"), advisory
+ * by design, not fixed here.** {@link silhouetteSignature} is built from the sprite's *full*
+ * covered mask — for an icon with an opaque plate/background tile, the covered mask (and
+ * therefore the signature) IS the plate silhouette, so every glyph on that plate collapses
+ * to the same signature regardless of the glyph inside it (`chat` vs `phone` both read as
+ * "plate"). C009 stays `warning`-only (never `--strict`-promoted), so this is unreachable as
+ * a false blocker today; if C009 is ever tightened, subtract the dominant edge/background
+ * colour (the plate) from the covered mask before signing, or skip C009 for the `icon`
+ * profile outright.
+ */
+
+/**
  * How far a sibling's covered mass may deviate from the family median before
  * C011 flags it (a member ≥ this factor heavier *or* lighter than the median).
  * Set above the widest clean bundled set's spread — item sets legitimately mix a
  * ring and a greatsword — so parity stays an advisory nudge, not a false alarm.
  */
 const PARITY_FACTOR = 6
+
+/**
+ * **Known limitation (docs/impl-progress.md "1c-followup C011-Margin"), advisory by design,
+ * not fixed here.** C011 gates only *weight* (covered-pixel-count ratio vs. the family
+ * median, below) — it does not separately gate *margin* parity (uniform breathing room
+ * across siblings), which the original plan also named. Margin is not blind, though: each
+ * member's `bbox` is already surfaced in `FamilyMetrics.members[].bbox`, so an agent (or a
+ * future check) can derive a margin-consistency signal from the payload without a render. If
+ * item sets need margin inconsistency actively flagged, add a dedicated advisory margin-ratio
+ * check alongside this one — never fold it into the weight check, which measures mass, not
+ * framing.
+ */
 
 /** The tight covered-content bounding box (or `null` for a fully transparent sprite). */
 type CoverageBBox = CritiqueMetrics['bbox']
