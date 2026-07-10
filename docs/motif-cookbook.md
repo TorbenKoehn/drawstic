@@ -124,12 +124,13 @@ draw waterShimmer 64x24:
 ## Night lighting
 
 Moon as a radial-gradient halo + solid disc + darkened crater + a lit-rim `arc`, over a
-vertical night-sky `grad`. The lit hillside pairs `shadeRegion` and `lightRegion` aimed at the
-moon (`48:14`): `shadeRegion`'s `amount` is the veil **opacity** (deepest on the far, bottom-left
-corner) and it **composites over** the `fill` rather than repainting it, so an opaque shadow
-colour is fine; `lightRegion` then adds a cool moon glow, brightest on the hill nearest the moon.
-(This is the language-version-2 `shadeRegion`; a `drawstic 1` recipe would need `base` alpha
-instead — the single costliest bug of the evaluation, 7/7 graders.)
+vertical night-sky `grad`. The lit hillside below pairs `shadeRegion` and `lightRegion` **by hand**
+aimed at the moon (`48:14`) — shown here as the raw floor so you can see each dose. The declarative
+default for the same hillside is `light moon = at 48:14 moonRim gain 0.8` + `lit moon: model hill
+hillLit` (ADR-0086), which lowers to exactly this quartet from the one light; drop to the hand form
+below only to hand-tune a dose. `shadeRegion`'s `amount` is the veil **opacity** (deepest on the far,
+bottom-left corner) and it **composites over** the `fill` rather than repainting it, so an opaque
+shadow colour is fine; `lightRegion` then adds a cool moon glow, brightest on the hill nearest the moon.
 
 The halo gradient ends on `haloCol.alpha(0%)` (the rim hue at zero alpha), **not** `transparent`:
 `transparent` is black at alpha 0, so a radial fade through it lerps the RGB toward black and reads

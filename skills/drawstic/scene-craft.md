@@ -7,20 +7,25 @@ failure below is silent to `check`; a render is the only judge.**
 
 ## 1. Light contract — the first lines, always
 
+Declare ONE named **`light`** before the first `draw` (ADR-0086). It is the single source of truth
+every object reads, so shade, highlight, rim, and cast can never drift apart — this replaces the old
+hand-typed `sun`-point + `warm`/`cool` triple as the default.
+
 ```drw
-# light: sun top-left → shadows fall down-right
-sun  = 40:-30            # one off-canvas point; EVERY shade/light/rim/shadow reads it
-warm = #ffe6b0           # light colour
-cool = #2a3a5e           # shadow colour = complement of warm, never pure black
+light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%   # source up-left ⇒ up-left edge lit; amb = cool fill, never pure black
 ```
 
-- Bind ONE `sun`/`light` point first. Every `shadeRegion`/`lightRegion`/`rim`/shadow-offset and
-  every lit tone derives from it — this is the strongest lever for coherence across independent objects.
-- Lit tones: `base.mix(warm, 25%)`, **not** `base.lighten(…)` — pure lighten reads chalky and cold;
-  mixing toward the light colour keeps golden-hour warmth. Shadow tones: mix toward `cool`.
-- A secondary light (moon, aurora, lava, planetshine, bounce/planetshine ≤15%) gets its **own** named
-  point and a weaker, cooler veil.
-- Write the direction as a comment and check every object against it.
+- `dir DX:DY` is the light's *travel* direction (`dir 1:1` moves down-right ⇒ source up-left). A
+  point source (a lamp, a fire, the moon in-frame) is `light moon = at 48:14 #cfd6a8 gain 0.8`.
+- Per object, one `model REGION MATERIAL` under a `lit sun:` block lowers the whole
+  shade+light+rim+AO+cast pass from that one light (§4) — you never re-type the direction, so
+  coherence across independent objects is structural, not a review item.
+- A **secondary** light (moon, aurora, lava, planetshine ≤15%) is its **own** named `light`; scope it
+  with a nested `lit moon:` block over just the objects it touches, weaker and cooler.
+- For tones you place **by hand** (sky/water gradient stops, `pixels:` bands, a sub-~24px object where
+  `model` is too weak), bind `warm`/`cool` colour constants and derive with `litTone`/`shadowTone`,
+  never bare `lighten`: `base.litTone(warm, 25%)` (warm highlight, not chalky) and
+  `base.shadowTone(cool, 30%)` (darken + capped cool hue-nudge, never magenta).
 
 ## 2. Terrain is a function
 
@@ -60,17 +65,40 @@ axis-aligned light box leaves a visible vertical seam across the scene.
 11. Foreground framing element (darker, larger, low detail) for depth and scale.
 12. Atmosphere last: flakes/dust/spray, then a global vignette (`shadeRegion` whole frame ≤12%).
 
-## 4. Per-object shading order
+## 4. Per-object shading — `model` is the default
+
+For a solid object mass, one `model REGION MATERIAL` (or `cel REGION MATERIAL N` for a crisp banded
+look) is the whole shading pass — under the `lit sun:` light it lowers to exactly:
 
 ```
-fill (base gradient) → grain (break the flat) → shadeRegion (away from light)
-  → lightRegion (toward light, warm) → rim / secondary edge (clamped) → AO (seat edge)
-  → THEN bright accents (windows, speculars, glints, nav lights)
+fill → shadeRegion (away from light) → lightRegion (toward light) → rim (lit edge) → AO (seat) → cast
 ```
 
-Accents come **last** so they stay crisp instead of being dimmed by the shade pass.
+every point/direction/offset derived from `sun`, every dose from the material `RESPONSE`
+(`metal`/`skin`/`cloth`/`glass`/`glow`/`flat` — §5). `render …#scene --explain` prints that exact
+expansion, so you can predict the pixels before committing.
 
-## 5. Filter dosage (empirical — tune the first number for *how much*, the second only reshuffles)
+```drw
+lit sun:
+  rock = curvePoly(2:20, 8:12, 16:14, 22:20)   # the mass as a Region binding
+  model rock #6b5a48 cloth                        # base + shade/light/rim/AO/cast, all from sun
+```
+
+- **Bright accents (windows, speculars, glints, nav lights) still come last, by hand** — after the
+  `model` pass so the shade veil never dims them. Grain to break a flat fill (§3 step 8) likewise runs
+  by hand before the accents.
+- **The hand quartet is the floor / escape hatch**, not the first move: when a baked material dose
+  doesn't fit (an over-bright metal, a custom two-source rim, a sub-~24px object), copy the
+  `--explain` expansion and hand-tune the raw `shadeRegion`/`lightRegion`/`rim`/`ambientOcclusion`/cast
+  calls (§5 doses; reference.md § Light & material).
+
+## 5. Filter dosage (baked into the material responses; this table is for hand-tuning past them)
+
+The per-object `shadeRegion`/`lightRegion`/`rim`/AO/cast doses below are what each material `RESPONSE`
+bakes in (ADR-0086) — a plain `model REGION MAT` gives them to you for free. Reach for the raw numbers
+only when hand-tuning **past** a material via `--explain` (§4), or for the scene-level filters
+(`grain`/`speckle`/`ripple`, the global closing veil) that `model` does not cover. Tune the first
+number for *how much*, the second only reshuffles the noise.
 
 | Filter | Value | Note |
 |---|---|---|
@@ -86,8 +114,9 @@ Accents come **last** so they stay crisp instead of being dimmed by the shade pa
 | contact-AO ellipse | 25–35% alpha | §8 |
 | cast-shadow fill | ~25%, cool colour | §8 |
 
-Scene closing stack: `grain <ground>` → `lightRegion <all> <sun> <warm> 15–20%` →
-`shadeRegion <all> <sun> <cool> ≤12%`.
+Scene closing stack (whole-frame hand veils — not covered by `model`; use a hand source point +
+`warm`/`cool` constants from §1): `grain <ground>` → `lightRegion <all> <srcPt> <warm> 15–20%` →
+`shadeRegion <all> <srcPt> <cool> ≤12%`.
 
 ## 6. Soft glow (verified)
 
@@ -118,8 +147,11 @@ Below ~24px no pixel-mode ramp reads as soft — accept a crisp core, hand-pixel
 
 ## 8. Cast shadows & ground contact
 
-- **Contact first**: a flat `ellipse … fill` at the foot, shadow colour, 25–35% alpha, 1–2px below the
-  base. Every standing object needs one or it floats.
+- **Contact first**: plant the object with `fit part.base <groundPt> shadow` (ADR-0087) — the
+  `shadow` flag auto-drops a contact-shadow ellipse at the *actual* resolved contact pixel, cool from
+  the light in scope, so it can't drift. The hand form (a flat `ellipse … fill` at the foot, shadow
+  colour, 25–35% alpha, 1–2px below the base) is the fallback when there is no pin. Every standing
+  object needs one or it floats.
 - **Directional cast shadow** (lying on the ground):
   `region(sprite(…)).transform(rotate(θ).about(base)).shift(pos).intersect(ground)`, θ from the light
   (`rotate` turns clockwise: +90° sends up→right). `.intersect(ground)` clips it to the terrain — but
@@ -165,6 +197,9 @@ haze tint + low contrast; near = larger + darker + saturated + no tint.
 
 ## 12. Verification cadence
 
+- **Gate first:** `critique --as scene --json` → `pass:true`, then **answer its rubric** (the
+  hero-contrast / no-floating / one-light prompts it prints) by looking. `pass:true` is necessary,
+  not sufficient — a clean gate with an unanswered rubric is not done.
 - After each edit batch (3–8 edits): `check --json` = `[]`, then a full render **@4** and LOOK — a
   native `@1` is too small to judge.
 - New object / contact: `--crop @6–8` on the **contact zone** (object + shadow + ground).

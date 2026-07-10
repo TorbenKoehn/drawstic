@@ -20,10 +20,16 @@ Examples below use `bunx drawstic`. Inside the Drawstic repo itself: `bun run dr
 
 ## Workflow — author, verify, build
 
+**The one default path:** *declare intent* (a `light`, `material`s, parts with `pin`) → *assemble*
+(`model`/`cel` for shading, `fit` for placement) → *`critique --as <cat>`* until `pass:true` →
+*answer the vision rubric* it prints → *`build`*. The declarative constructs (§ Core syntax) let the
+engine own coordinate math, light coherence, and pixel contact; the raw primitives stay the escape
+hatch (§ Idioms). Steps in full:
+
 1. **Context** (only when the file has imports or themes):
    `bunx drawstic context file.drw` → one flat design brief: merged palette, style guide,
    importable drawings with ASCII previews, functions, export plans.
-2. **Write** the recipe (anatomy below).
+2. **Write** the recipe — declare intent, then assemble (anatomy below).
 3. **Check** `bunx drawstic check file.drw --json` → `[]` = OK. Otherwise fix each
    `{severity, code, message, file, line, col, hint?}` and re-check. Exit code ≠ 0 iff errors.
    Ragged pixel rows? `check file.drw --rows --json` reports per-row widths — no manual counting.
@@ -117,6 +123,25 @@ draw scene 32x24:
   stamp eye 10:5 flipx       # draw half, mirror it
   stamp pebble(#806858) 4:20
   stamp pebble(#a58a73) 18:21
+```
+
+Declarative object — **the default for any shaded or modular art** (ADR-0086/0087). Declare intent
+(one `light`, a `material`, parts with `pin`), then assemble with `model`/`cel`/`fit`; the engine owns
+the coordinate math, the light coherence, and the contact — you never hand-dose a shadow or
+hand-compute a seam:
+
+```drw
+light sun      = dir 1:1 #ffe6b0 amb #2a3a5e 15%   # ONE source of truth; source up-left ⇒ up-left edge lit
+material steel = #8a95a5 metal                      # base colour + response (dose profile, never the colour)
+
+draw sword 24x48:
+  blade  = rect(11:2, 13:30)     # each mass is a Region binding
+  guard  = rect(7:31, 17:34)
+  pommel = circle(12:46, 2)
+  lit sun:                       # scopes the light over the block
+    model blade steel            # fill→shade→light→rim→AO→cast, all from sun — can't drift
+    model guard #b08040 metal    # inline COLOR RESPONSE, no named material
+    cel   pommel steel 3         # crisp 3-band cel fill
 ```
 
 ## Core syntax
@@ -227,19 +252,22 @@ For a full scene (landscape, interior, space, underwater), a correct render is n
 this order; the detailed recipes, dosages, and 3D/shadow/water idioms are in
 [scene-craft.md](scene-craft.md) — load it before building any scene ≥~150px.
 
-**Mandatory order:** (1) **light contract** — bind ONE `sun`/`light` point + warm light + cool
-shadow colour as the first lines; derive *every* shade/light/rim/shadow and every lit tone from it
-(`base.mix(warm, …)`, never bare `lighten`). (2) **terrain is a function** — each ground line is a
-`fn` + `profile`; everything standing calls it for its y (no floating). (3) paint **back-to-front**:
-sky → far layer → haze veil → midground → ground (shape gradient far-light→near-dark, growing sizes)
-→ texture filters (depth-staggered) → **then** detail marks (≥2px, light/dark pair — grain eats 1px)
-→ subjects (contact-AO ellipse + directional shadow + light edge) → foreground frame → vignette.
-(4) each object: `fill → shade/light/AO/rim → then bright accents`.
+**Mandatory order:** (1) **light contract** — declare ONE `light sun = dir 1:1 …` before the first
+`draw` (ADR-0086); every object's shade/light/rim/cast is lowered from it by `model`/`cel`, so it
+can't drift. Hand-placed tones (gradient stops, `pixels:` bands) derive from the light colour via
+`litTone`/`shadowTone`, never bare `lighten`. (2) **terrain is a function** — each ground line is a
+`fn` + `profile`; everything standing `fit`s its base pin to it (no floating). (3) paint
+**back-to-front**: sky → far layer → haze veil → midground → ground (shape gradient far-light→near-dark,
+growing sizes) → texture filters (depth-staggered) → **then** detail marks (≥2px, light/dark pair —
+grain eats 1px) → subjects (`fit … shadow` for contact + directional shadow + light edge) → foreground
+frame → vignette. (4) each object mass: `model REGION MAT` under `lit sun:` (lowers
+fill→shade→light→rim→AO→cast from the one light) → **then bright accents by hand**; the raw
+`shadeRegion`/`rim` quartet is the floor for hand-tuning past a material (`--explain`).
 
-**Checklist before "done":** run **`critique --as scene`** (+ answer its hero-contrast/no-floating/
-one-light rubric), one light source, no floating objects, ground reads as a plane (not a wall), hero
-silhouette crosses a contrast edge, filter dosages sane (scene-craft.md § 5), and you **looked at the
-@4 image** — `check` verifies grammar only; every quality failure is silent.
+**Checklist before "done":** run **`critique --as scene`** `pass:true` (+ answer its hero-contrast/
+no-floating/one-light rubric), one declared light, no floating objects, ground reads as a plane (not a
+wall), hero silhouette crosses a contrast edge, material/veil dosages sane (scene-craft.md § 5), and
+you **looked at the @4 image** — `check` verifies grammar only; every quality failure is silent.
 
 ## Icons — family workflow
 

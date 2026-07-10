@@ -235,6 +235,9 @@ not stop at standalone PNGs if the deliverable is a set.
 
 `check` catches almost nothing here — item quality is visual. After each edit batch:
 
+0. **Gate:** `critique --as item --json` → `pass:true` (C009 flags a sibling reading like another —
+   differentiate, or confirm it's a deliberate recolor/shared-shell), then **answer its
+   pair-confusion rubric** by looking.
 1. `check --json` = `[]`; `fmt --check --json` clean.
 2. **`sheet file.drw --png@4`** — first judge for family drift, pair confusion, grey-value balance.
 3. **`render file.drw#name --png@1`** — the truth for every item. Inventory sprites must read at

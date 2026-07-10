@@ -233,10 +233,30 @@ with a small `K` is smooth by construction and the integer-lattice trap cannot o
 
 ## Light And Shadow
 
-Keep lighting explicit. Do not hide light direction, shadow strength, or material behavior in
-ambient state. Draw local shadows with simple geometry, or reach for the explicit lighting
-filters (`shadeRegion`, `rim`, `ambientOcclusion`, `shadow`/`castShadow`) — but their pixel
-effect is not obvious from the call alone, so verify by rendering, not by reading the recipe:
+Keep lighting explicit, and let the engine keep it coherent. The **default** shading path is
+declarative ([ADR-0086](decisions/0086-declarative-light-and-material.md)): declare ONE named
+`light`, pick a `material` (base colour + a response that sets the *physics*, never the colour), and
+shade each object mass with one `model`/`cel` command. That single call lowers, from the one light, to
+the whole fill → shade → light → rim → AO → cast sequence — so the shadow, the highlight, and the cast
+can never drift apart, and you never re-type the light direction per object:
+
+```drw
+light sun      = dir 1:1 #ffe6b0 amb #2a3a5e 15%   # one source of truth; source up-left ⇒ up-left edge lit
+material steel = #8a95a5 metal
+
+draw blade 16x40:
+  edge = rect(7:2, 9:34)
+  lit sun:
+    model edge steel                # base + shade/light/rim/AO/cast, all from sun
+```
+
+`render <file>#<draw> --explain` prints the exact primitive expansion of every `model`/`cel`, so you
+can predict the pixels — and, when a baked material dose genuinely doesn't fit, copy that expansion
+down to the raw primitives and hand-tune. Those raw lighting filters (`shadeRegion`, `lightRegion`,
+`rim`, `ambientOcclusion`, `shadow`/`castShadow`) are the **floor / escape hatch**, not the first
+move — reach for them for hand-tuning, for sub-~24px objects where `model` is too weak, or for
+whole-frame veils `model` does not cover. Their pixel effect is not obvious from the call alone, so
+verify by rendering, not by reading the recipe:
 
 - `shadeRegion r light base amount` blends `base` as a shadow **veil** over `r` — opacity
   `base.a × amount` at the far corner, fading to untouched at the light. **`amount` is the veil
@@ -273,7 +293,8 @@ draw object 32x16:
   circle #e9bd72 16:8 6 fill
 ```
 
-Good, using the filters — aim the shadow and the highlight at the same light:
+Good, dropping to the floor by hand (a whole-frame veil, or hand-tuning past a material) — aim the
+shadow and the highlight at the same light:
 
 ```drw
 mask duneShape = ellipse(16:10, 14:5)         # a reusable Region value

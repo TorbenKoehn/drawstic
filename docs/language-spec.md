@@ -1539,8 +1539,9 @@ recursion exist. The budget is configurable via the CLI with a sensible default.
 | `drawstic fmt <file> [--check] [--stdout] [--diff]` | canonical formatter (indentation, layout); idempotent; `--check` exits non-zero on unformatted input. |
 | `drawstic context <file>` | emit the resolved **design brief** for the file (§ below), including export plans. |
 | `drawstic build <file>` | run every `export` in the file, writing artifacts to disk. |
-| `drawstic render <file>#<drawing>[(args)] [--png@2] [--stdout] [--ascii] [--preview] [--fit WxH] [--crop x:y WxH] [--inspect] [--grid N] [--diff <png>]` | ad-hoc render of one drawing; can stream. A parametric drawing takes literal arguments in the fragment — `file#house(#c04040, 3)` (number, color, string, point, boolean only; [ADR-0067](decisions/0067-render-fragment-literal-arguments.md)). `--ascii` = luminance-ramp grayscale text; `--preview` = half-block ANSI colour; `--inspect --json` emits render facts. `--grid N`/`--diff <png>` are debug-only PNG aids, below. |
+| `drawstic render <file>#<drawing>[(args)] [--png@2] [--stdout] [--ascii] [--preview] [--silhouette] [--inspect] [--explain] [--fit WxH] [--crop x:y WxH] [--grid N] [--diff <png>]` | ad-hoc render of one drawing; can stream. A parametric drawing takes literal arguments in the fragment — `file#house(#c04040, 3)` (number, color, string, point, boolean only; [ADR-0067](decisions/0067-render-fragment-literal-arguments.md)). `--ascii` = luminance-ramp grayscale text; `--preview` = half-block ANSI colour; `--silhouette` = shape-only black-out ([ADR-0083](decisions/0083-render-silhouette.md)); `--inspect --json` emits render facts; `--explain --json` prints every `model`/`cel`'s lowered primitive expansion instead of an image ([ADR-0086](decisions/0086-declarative-light-and-material.md) §6). Output-kind precedence `--ascii` > `--preview` > `--inspect` > `--explain` > PNG. `--grid N`/`--diff <png>` are debug-only PNG aids, below. |
 | `drawstic sheet <file> [--all] [--cols N] [--png@N] [--out <path>] [--stdout] [--ascii] [--preview]` | family contact sheet ([ADR-0082](decisions/0082-sheet-contact-sheet-cli.md)): composes the selected drawings size-normalized into ONE labeled comparison grid for cross-drawing consistency QA (§ below). Default selection = the module's `export`ed drawings in export order; `--all` = every non-parametric drawing. Reuses the renderer; never part of `build`. |
+| `drawstic critique <file> [--as icon\|scene\|character\|item] [--family a,b,c] [--strict]` | pixel-based, vision-free quality checks (`C0xx`) over every rendered drawing, plus family checks across siblings ([ADR-0085](decisions/0085-critique-command.md); § below). `--as` selects a category threshold profile; `--strict` promotes the must-fix subset to `error` (exit 1) as a CI gate. Complements `check` (grammar) — catches the visual, silent bug class. |
 
 **`--grid N` / `--diff <png>` — debug-only PNG aids.** Neither ever reaches `build`
 exports, and both are inert whenever `--ascii`/`--preview`/`--inspect` also short-circuit
@@ -1630,6 +1631,32 @@ label) on a transparency checkerboard, framed with a 1px separator, captioned be
 - **`--json`** reports layout, not pixels: `{diagnostics, sheet: {cols, rows, cell: {width,
   height}, width, height, cells: [{name, w, h, x, y}], kind, output}}`, where `x`/`y` are the tile's
   top-left in **unscaled** sheet coordinates (multiply by `--png@N` for output pixels).
+
+### `critique` — pixel-based quality checks
+
+`critique` ([ADR-0085](decisions/0085-critique-command.md)) closes the gap `check` structurally
+cannot see: `check` validates grammar, but roughly five of every seven expensive category-evaluation
+bugs are **visual and silent** (off-centre glyph, floating/seamed part, near-identical sibling
+silhouettes, flat unshaded value, edge-clip, transparent trailing row). It renders every non-parametric
+drawing and runs a fixed catalog of vision-free assertions against the framebuffer — reusing the
+`render --inspect` metric bundle, `--silhouette` signatures, and the `sheet` sibling selection — each
+finding a structured diagnostic in a new **`C0xx`** namespace carrying `{measured, threshold, fix}`.
+
+- **Category-agnostic (always run):** `C001` empty/near-empty · `C003` optical centring (`x0+x1==W−1`)
+  · `C004` value/contrast spread · `C006` palette/complexity budget · `C008` interior pinholes ·
+  `C012` asymmetric bottom-padding.
+- **Profile-gated (`--as`):** `C002` edge-clip (`icon`/`item`) · `C005` stroke width (`icon`/`item`/
+  `character`) · `C007` floating-part/seam via 8-connected components + chamfer distance (`character`).
+- **Family (needs ≥2 exported siblings, or `--family a,b,c`):** `C009` sibling-silhouette collapse
+  (scale-/position-invariant 32×32 signatures) · `C011` weight parity.
+- **Severity/gating.** Every `C0xx` defaults to `warning` (exit 0 — never blocks). `--strict` promotes
+  only the unambiguous must-fix subset — `C001`, `C007`, plus `C003` for `icon` — to `error` (exit 1),
+  the CI regression gate over `examples/`; the rest stay advisory because the corpus proves each has a
+  legitimate form a pixel check cannot distinguish from a bug (recolor/shared-shell silhouettes, open
+  frames enclosing small gaps, symmetric breathing room).
+- **Vision rubric.** After the automatic gate, `critique` prints an ordered list of silhouette-first
+  render commands plus a category rubric. `pass:true` is **necessary, not sufficient** — the rubric is
+  the part that still requires looking, and the product skill states this as the definition of done.
 
 ### Lint warnings — `check --lint`
 

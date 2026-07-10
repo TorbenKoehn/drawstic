@@ -157,9 +157,29 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
 
 ## Phase 4 — Break schließen
 
-- [ ] **4** Product-Skill um neuen Default-Pfad neu schreiben (`SKILL.md` + `reference.md` + 4
+- [x] **4** Product-Skill um neuen Default-Pfad neu schreiben (`SKILL.md` + `reference.md` + 4
   craft-*.md); Legacy kollabieren; `docs/language-spec.md` §Assembly + Break-Notes; `docs/best-practices.md`;
   finaler `craft-eval`-Re-Run pro Kategorie, Reports in `docs/`. Zielkorridor Overall < ~1.4.
+  → **Doku-/Skill-Hälfte erledigt** (dieser Commit). Der eine verbindliche Workflow (Absicht
+  deklarieren → assemblieren → `critique --as X` bis `pass:true` → Vision-Rubrik → `build`) ist jetzt
+  der explizite Default: `SKILL.md` Workflow-Intro benennt den deklarativen Arc; neue kanonische
+  **Recipe-anatomy**-„Declarative object"-Passage (`light`/`material`/`model`/`cel`/`lit`, engine-
+  verifiziert via `render --explain`); § Scenes Mandatory-Order Schritt 1/4 + Checklist auf `light`/
+  `model`/`cel`/`fit` gezogen. **Legacy kollabiert** (nur noch Floor/Escape-Hatch, keine
+  Doppelanleitung): `scene-craft.md` §1 (Licht-Contract = `light sun = dir …` statt `sun`-Punkt +
+  `warm`/`cool`-Triple; Hand-Töne via `litTone`/`shadowTone`), §4 (`model`/`cel` als Default, Hand-
+  Quartett = `--explain`-Floor), §5 (Dosage-Tabelle als Material-Response-Default deklariert,
+  Referenz fürs Hand-Tuning), §12 (critique-Gate zuerst); `best-practices.md` § Light And Shadow
+  (deklarativer Default zuerst, Filter = Floor); `motif-cookbook.md` Night-Lighting (stale
+  `drawstic 1`/v2-Parenthese entfernt → deklarativer Pointer); `character-craft.md` §6-Fallback-fns
+  auf `litTone`/`shadowTone` vereinheitlicht. **critique-Gate** in allen vier Craft-Guide-Verifikations-
+  Kadenzen verankert (icon/character/item/scene). `docs/language-spec.md` §16: `critique`-Verb + C0xx-
+  Katalog-Subsection ergänzt, render-Zeile um `--silhouette`/`--explain` + Output-Precedence; §Assembly
+  (§9 `pin`/`fit`) + Break-Notes (§2 Pragma inert, §14 „One semantics") waren aus 2c/3a bereits
+  normativ vollständig. Alle neuen deklarativen Skill-Beispiele engine-smoke-getestet (`check` `[]` +
+  `render --explain`). `tsc --noEmit` + `biome check .` clean, 749 Tests grün (unverändert — reine
+  Doku). **`craft-eval`-Re-Run bewusst NICHT gefahren** (schwere Multi-Agent-Messung, human/deferred —
+  s. `measure-phase2` + `measure-phase3`); die Zielkorridor-Messung < ~1.4 läuft separat.
 
 ## Emergente Punkte
 
@@ -204,6 +224,22 @@ _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen an
   Phase-2-Messung des Plans ab („misst, ob Licht+Material die Grade bewegt"); explizit NICHT im
   autonomen Einzel-Einheit-Scope, weil ein Builder-Wave + Konsolidierung + Fix-Wave menschliches
   Review braucht.
+- [ ] **measure-phase4** finaler `craft-eval`-Re-Run **pro Kategorie** (Blind-Rebuild mit dem
+  deklarativen Default-Pfad), Grades gegen die dokumentierten Baselines, Reports in `docs/` ablegen,
+  Zielkorridor Overall < ~1.4 (bes. Lighting-Achse 1.9 + Near-Neighbour-Item-Lücke). Die Code-/Doku-
+  Hälfte von Phase 4 ist erledigt (Checkbox 4); diese Messung ist der human/deferred-getriggerte Rest
+  (schwere Multi-Agent-Läufe, `craft-eval`-Skill), analog `measure-phase2`. **Voraussetzung/Kandidat**
+  vor dem Lauf: das `2c-collapse-finding` (inerte Pragma-Zeilen strippen + die sechs ehemaligen
+  `drawstic 1`-Szenen an der Veil-/Visual-Anchor-Semantik nachjustieren, falls pristine Beispiele
+  gewünscht).
+- [ ] **4-finding: kein Skill↔CLI-Konsistenz-Test** Task-Item 4 verlangte, die Lücke zu melden: es
+  existiert **kein** automatischer Test, der die in `SKILL.md`/`reference.md` dokumentierten CLI-Verben/
+  Flags (`critique`/`--as`/`--strict`/`--family`, `render --explain`/`--silhouette`, `pin`/`fit`,
+  `light`/`material`/`lit`/`model`/`cel`) gegen `src/cli.ts` prüft. Heute per Hand verifiziert (in
+  diesem Commit: HELP/Dispatch in `cli.ts` deckt exakt die dokumentierten Verben; alle neuen Skill-
+  Beispiele engine-smoke-getestet). Bewusst hier **nicht** neu angelegt (Scope Phase 4 = Doku/Skill-
+  Rewrite). Kandidat: ein knapper `tests/unit/skill-cli-sync.test.ts`, der die HELP-Verbliste und die
+  neuen contextual Keywords gegen die reference.md-Tabellen assertet.
 - [ ] **2d-finding: Auflösungsreihenfolge explicit>lit vs. Task-Wortlaut** Die Task-Notiz listete
   „`lit`-Block > explizites `light L`-Arg > Theme-Default". Umgesetzt ist **explizites `light L` >
   `lit L:`-Block > Theme-Default** — konsistent mit ADR-0086 (autoritativ: „value binding → lit block

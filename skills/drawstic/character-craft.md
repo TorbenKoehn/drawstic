@@ -175,10 +175,13 @@ one warm/cool contract, every part derives its tones:
 ```drw
 warm = #ffe8bf                       # light colour
 cool = #2c3550                       # cool shadow complement, never pure black
-fn lit(c)  = c.mix(warm, 22%)        # toward light — MIX, not bare lighten
-fn shd(c)  = c.darken(10%).mix(cool, 20%)
-fn deep(c) = c.darken(20%).mix(cool, 34%)
+fn lit(c)  = c.litTone(warm, 22%)    # toward light — litTone (= warm mix), not bare lighten
+fn shd(c)  = c.shadowTone(cool, 20%) # darken + capped cool nudge — bakes the magenta-cap below
+fn deep(c) = c.shadowTone(cool, 34%, 20%)
 ```
+
+(`litTone`/`shadowTone` are the ADR-0086 helpers; the equivalent hand form is `c.mix(warm, 22%)` and
+`c.darken(10%).mix(cool, 20%)`. Prefer the helpers — `shadowTone` bakes the hue cap for free.)
 
 **Shade warm materials with `darken()`, never a raw cool `mix`** — `skin.mix(cool, 20%)` runs the
 short OkLCh arc through magenta → a pink "shadow" (hit by archer, villager, smith; robot on emissive
@@ -207,6 +210,8 @@ shading instead.
 
 `check` catches almost nothing here — quality is ~100 % visual. After each edit batch:
 
+0. **Gate:** `critique --as character --strict --json` → `pass:true` (must-fix C007 catches a
+   floating/seamed part under `--strict`), then **answer its seam-contact rubric** by looking.
 1. `check --lint --json` = `[]` (W002 catches an un-stamped part; **W009** the transparent end-row).
 2. **Part fragment `--png@6–8`** — each part isolated with literal args (`#head(#a83a36)`); reuse the
    exact numbers in the `stamp` line, no surprises.

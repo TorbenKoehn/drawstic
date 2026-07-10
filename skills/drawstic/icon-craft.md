@@ -161,6 +161,8 @@ SKILL.md § Gotchas. **Counter-check `<rect>` count ≪ pixel count after `build
 
 `check` catches almost nothing on icons — quality is 100 % visual. After each edit batch:
 
+0. **Gate:** `critique --as icon --strict --json` → `pass:true` (must-fix C003 centering under
+   `--strict`), then **answer the rubric** it prints (misread test + merge trap) by looking.
 1. `check --json` = `[]` (+ `--rows` for `pixels:` grids, `--lint` to catch W002 orphan draws).
 2. **`sheet file.drw --png@4`** — the family contact sheet: every `export`ed draw size-normalized
    and labeled in one grid. This is the cross-sibling consistency judge (radius / stroke /
