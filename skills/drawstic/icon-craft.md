@@ -102,6 +102,8 @@ An even canvas puts the visual centre on a **half-pixel**. Verified on 32px:
 
 - `circle c r fill` covers **`c−r … c+r−1`** (2r px), visual centre **`c−0.5`**. `circle 16:16 10`
   → bbox `{x:6, w:20}` = cols 6..25, centre 15.5. Put circle centres on `16`, not on a guessed 15.
+  **`ellipse c rx:ry` follows the identical rule per axis** (`c−rx … c+rx−1` × `c−ry … c+ry−1`) — a
+  circle is just the `rx==ry` ellipse, so the same centring math applies to both (one convention, no off-by-one trap).
 - A glyph is centred when its bbox satisfies **`x0 + x1 = W−1`** (=31 on 32px) — equal left/right
   margin. Confirm with `--inspect` `alphaCoverageBBox`; don't eyeball it.
 - A `stamp … shadow 0:1` shifts visual mass ~0.3px down → set an already-centred glyph 1px

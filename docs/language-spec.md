@@ -406,8 +406,8 @@ N via 4-erosion), a function of the coverage set alone — never of how the regi
 | `line`  | `line <paint> <a> <b>` | explicit Bresenham segment from `a` to `b` |
 | `rect`  | `rect <paint> <a> <b> [fill]` | rectangle (corners `a`,`b`) |
 | `rrect` | `rrect <paint> <a> <b> <r> [fill]` | rounded rectangle, corner radius `r` |
-| `circle`| `circle <paint> <center> <r> [fill]` | circle region — covers an even `2r` pixel diameter for `r > 0`; `r=0` is one pixel |
-| `ellipse`| `ellipse <paint> <center> <rx>:<ry> [fill]` | midpoint ellipse |
+| `circle`| `circle <paint> <center> <r> [fill]` | circle region — covers an even `2r` pixel diameter for `r > 0` (`c−r … c+r−1` per axis, disc centred at the pixel-corner `c−0.5`); `r=0` is one pixel |
+| `ellipse`| `ellipse <paint> <center> <rx>:<ry> [fill]` | ellipse region — `circle` with independent `rx`/`ry`: the **same** even-diameter, corner-centred convention (`c−rx … c+rx−1` × `c−ry … c+ry−1`); a circle is exactly the `rx==ry` ellipse, a zero axis is a 1px line ([ADR-0087](decisions/0087-anchored-assembly.md), supersedes the old odd `2r+1` rule) |
 | `arc`   | `arc <paint> <center> <r> <a0> <a1>` | circular arc, degrees (0°=+x, clockwise) |
 | `quad`  | `quad <paint> <p0> <c1> <p2>` | quadratic Bézier |
 | `bezier`| `bezier <paint> <p0> <c1> <c2> <p3>` | cubic Bézier |
@@ -1496,9 +1496,11 @@ This is **engineered**, not assumed:
 - **Pinned colour pipeline & compositing.** Exact oklch↔sRGB, fixed gamut mapping, shorter-arc
   hue, 8-bit round-half-up commit, and integer source-over alpha
   ([ADR-0025](decisions/0025-alpha-compositing-model.md)).
-- **Pinned rasterization.** 4-connected `flood`, inclusive line endpoints, `circle` diameter
-  `2r` for `r > 0`, silent out-of-bounds clipping, and NN stamp rotation (centre-pivot inverse
-  mapping) ([ADR-0028](decisions/0028-rasterization-semantics.md),
+- **Pinned rasterization.** 4-connected `flood`, inclusive line endpoints, even-diameter
+  `circle`/`ellipse` (`2r` per axis for `r > 0`, one corner-centred convention for both —
+  [ADR-0056](decisions/0056-even-diameter-circle-rasterization.md),
+  [ADR-0087](decisions/0087-anchored-assembly.md)), silent out-of-bounds clipping, and NN stamp
+  rotation (centre-pivot inverse mapping) ([ADR-0028](decisions/0028-rasterization-semantics.md),
   [ADR-0043](decisions/0043-arbitrary-angle-stamp-rotation.md)).
 - **No ambient inputs.** No wall-clock, no locale; fixed, mode-scoped coordinate
   quantization — integers in pixel mode, the 1/16 subpixel grid in smooth mode (§5,

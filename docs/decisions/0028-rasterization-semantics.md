@@ -36,8 +36,10 @@ robust without per-call bounds guards.
 **3 — `circle`/`ellipse` centering is integer and symmetric.** The original rule pinned
 `circle <c> <r>` to an odd `2r+1` footprint centered on the integer pixel `c`; this circle
 parity rule is superseded by [ADR-0056](0056-even-diameter-circle-rasterization.md), which
-uses an even `2r` footprint for `r > 0`. `ellipse` keeps its existing integer-radius
-semantics.
+uses an even `2r` footprint for `r > 0`. `ellipse` originally kept the odd integer-radius rule,
+but that carve-out is superseded by [ADR-0087](0087-anchored-assembly.md): `ellipse` now shares
+`circle`'s even-diameter, corner-centred convention (`c−rx … c+rx−1` × `c−ry … c+ry−1`), so a
+circle is exactly the `rx==ry` ellipse — one centering convention for both shapes.
 
 **4 — `line` endpoints are inclusive; Bresenham is the reference.** A `line` draws **both**
 its start (the cursor) and end pixel — endpoints inclusive. **Bresenham** is the reference

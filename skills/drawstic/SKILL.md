@@ -258,7 +258,7 @@ accent-derived shades, `grad` stops intra-hue.
 
 **Checklist before "done":** run **`critique --as icon`** (must-fix C003 centering under `--strict`;
 answer its misread + merge-trap rubric), silhouette-first (run the mis-reading test; watch the
-merge-trap), optically centered (`--inspect` bbox: `x0+x1 = W−1`; `circle c r` covers `c−r…c+r−1`;
+merge-trap), optically centered (`--inspect` bbox: `x0+x1 = W−1`; `circle c r` **and** `ellipse c rx:ry` share one even-diameter rule — cover `c−r…c+r−1` per axis, centre `c−0.5`;
 notch/bump circle r ≤~20 % of the edge), and you ran **`sheet file.drw --png@4`** for cross-sibling
 consistency + **`--png@1`** to confirm each icon reads at 100 %. SVG target → flat tiles only,
 counter-check `<rect>` count. `check` catches almost nothing here — icon quality is 100 % visual.

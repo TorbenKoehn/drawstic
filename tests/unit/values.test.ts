@@ -9,7 +9,6 @@ import {
   circleSpans,
   compose,
   ellipseRegion,
-  ellipseSpans,
   emptyRegion,
   IDENTITY,
   invertMatrix,
@@ -207,12 +206,15 @@ describe('regions: primitives', () => {
     expect(r.test(8, 3.3)).toBe(false)
   })
 
-  test('ellipseSpans degenerate axes and the general algorithm', () => {
-    expect(ellipseSpans(0, 3)).toEqual([0, 0, 0, 0])
-    expect(ellipseSpans(4, 0)).toEqual([4])
-    const spans = ellipseSpans(6, 4)
-    expect(spans.length).toBe(5)
-    expect(spans[0]).toBeGreaterThan(0)
+  test('ellipseRegion covers an even-diameter footprint per axis (ADR-0087)', () => {
+    // Even 2·ri footprint on each axis: cx-rxi..cx+rxi-1 × cy-ryi..cy+ryi-1.
+    const e = ellipseRegion(8, 8, 4, 3)
+    expect(e.bbox).toEqual({ x0: 4, y0: 5, x1: 11, y1: 10 })
+    expect(e.has(8, 8)).toBe(true)
+    expect(e.has(4, 8)).toBe(true) // left edge of the x footprint
+    expect(e.has(12, 8)).toBe(false) // one past the right edge (even: cx+rxi-1)
+    expect(e.has(4, 5)).toBe(false) // clipped corner
+    expect(e.test(8, 8)).toBe(true)
   })
 
   test('ellipseRegion has/test, including the degenerate-axis test() branch', () => {
@@ -221,7 +223,27 @@ describe('regions: primitives', () => {
     expect(e.has(5, 8)).toBe(false)
     expect(e.test(5, 5)).toBe(true)
     const degenerate = ellipseRegion(5, 5, 0, 2)
+    // A zero axis collapses to the single integer column cx (1px vertical line).
+    expect(degenerate.bbox).toEqual({ x0: 5, y0: 3, x1: 5, y1: 6 })
+    expect(degenerate.has(5, 4)).toBe(true)
+    expect(degenerate.has(6, 4)).toBe(false)
     expect(degenerate.test(5, 5)).toBe(false)
+  })
+
+  test('a circle is exactly the rx===ry ellipse (unified centering, ADR-0087)', () => {
+    // The ADR guarantee: ellipse(c, r, r) is pixel-identical to circle(c, r).
+    for (const r of [0, 1, 2, 3, 5, 8]) {
+      const cx = 12
+      const cy = 12
+      const circ = circleRegion(cx, cy, r)
+      const ell = ellipseRegion(cx, cy, r, r)
+      expect(ell.bbox).toEqual(circ.bbox)
+      for (let y = 0; y < 24; y++) {
+        for (let x = 0; x < 24; x++) {
+          expect(ell.has(x, y)).toBe(circ.has(x, y))
+        }
+      }
+    }
   })
 
   test('rectRegion accepts corners in either order', () => {

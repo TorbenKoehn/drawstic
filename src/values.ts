@@ -470,7 +470,8 @@ export const circleSpans = (r: number): number[] => {
  * axis — `2·ri` pixels wide/tall — with the disc centred at the pixel-corner
  * `(cx-0.5, cy-0.5)` so the declared radius yields a balanced pixel-perfect
  * diameter; `r = 0` is a single pixel (ADR-0056, supersedes the odd-footprint rule
- * of ADR-0028 §3).
+ * of ADR-0028 §3). {@link ellipseRegion} shares this convention (ADR-0087), so a
+ * circle is exactly the `rx === ry` ellipse — one centering rule for both shapes.
  */
 export const circleRegion = (cx: number, cy: number, r: number): Region => {
   const ri = Math.max(0, roundHalfUp(r))
@@ -504,88 +505,58 @@ export const circleRegion = (cx: number, cy: number, r: number): Region => {
   }
 }
 
-/** Midpoint-ellipse span table per |dy| (integer two-region algorithm). */
-export const ellipseSpans = (rx: number, ry: number): number[] => {
-  const spans = new Array<number>(ry + 1).fill(-1)
-  if (rx === 0 || ry === 0) {
-    for (let i = 0; i <= ry; i++) {
-      spans[i] = rx === 0 ? 0 : rx
-    }
-    if (ry === 0) {
-      spans[0] = rx
-    }
-    return spans
-  }
-  const rx2 = rx * rx
-  const ry2 = ry * ry
-  let x = 0
-  let y = ry
-  let d1 = ry2 - rx2 * ry + 0.25 * rx2
-  let dx = 2 * ry2 * x
-  let dy = 2 * rx2 * y
-  while (dx < dy) {
-    if ((spans[y] ?? -1) < x) {
-      spans[y] = x
-    }
-    if (d1 < 0) {
-      x++
-      dx += 2 * ry2
-      d1 += dx + ry2
-    } else {
-      x++
-      y--
-      dx += 2 * ry2
-      dy -= 2 * rx2
-      d1 += dx - dy + ry2
-    }
-  }
-  let d2 = ry2 * ((x + 0.5) * (x + 0.5)) + rx2 * ((y - 1) * (y - 1)) - rx2 * ry2
-  while (y >= 0) {
-    if ((spans[y] ?? -1) < x) {
-      spans[y] = x
-    }
-    if (d2 > 0) {
-      y--
-      dy -= 2 * rx2
-      d2 += rx2 - dy
-    } else {
-      y--
-      x++
-      dx += 2 * ry2
-      dy -= 2 * rx2
-      d2 += dx - dy + rx2
-    }
-  }
-  return spans
-}
-
 /**
- * Odd `(2·rx+1) × (2·ry+1)` footprint centred on the integer pixel `(cx, cy)` —
- * unlike {@link circleRegion}, `ellipse` keeps the original integer-radius
- * centering rule (ADR-0028 §3).
+ * Even-diameter ellipse — `circle` with independent `rx`/`ry` (ADR-0087). Mirrors
+ * {@link circleRegion}'s convention exactly: each axis spans a `2·ri` pixel
+ * footprint (`cx-rxi..cx+rxi-1` × `cy-ryi..cy+ryi-1`, `ri = round(r)`) with the disc
+ * centred at the pixel-corner `(cx-0.5, cy-0.5)`, so `ellipseRegion(cx, cy, r, r)`
+ * is pixel-identical to `circleRegion(cx, cy, r)`. A zero axis collapses to the
+ * single integer column/row `cx`/`cy` (the `r=0` dot generalized per axis); both
+ * zero is one pixel. Supersedes the odd integer-pixel-centred rule of ADR-0028 §3
+ * the same way ADR-0056 did for `circle`. The membership test is cross-multiplied
+ * to integers (`dx²·ryi² + dy²·rxi² ≤ (rxi·ryi)²`) so it is exact and reduces to
+ * `circleRegion`'s `dx² + dy² ≤ ri²` when `rxi === ryi`.
  */
 export const ellipseRegion = (cx: number, cy: number, rx: number, ry: number): Region => {
   const rxi = Math.max(0, roundHalfUp(rx))
   const ryi = Math.max(0, roundHalfUp(ry))
-  const spans = ellipseSpans(rxi, ryi)
+  const x0 = rxi === 0 ? cx : cx - rxi
+  const x1 = rxi === 0 ? cx : cx + rxi - 1
+  const y0 = ryi === 0 ? cy : cy - ryi
+  const y1 = ryi === 0 ? cy : cy + ryi - 1
+  const pcx = cx - 0.5
+  const pcy = cy - 0.5
+  const inBox = (x: number, y: number): boolean => x >= x0 && x <= x1 && y >= y0 && y <= y1
+  // Continuous coverage (smooth mode): the same corner-centred ellipse, cross-
+  // multiplied to sidestep a divide-by-zero on a degenerate axis; matches
+  // circleRegion.test when rx === ry.
+  const test = (fx: number, fy: number): boolean => {
+    if (rx === 0 || ry === 0) {
+      return false
+    }
+    const dx = (fx - pcx) * ry
+    const dy = (fy - pcy) * rx
+    return dx * dx + dy * dy <= rx * rx * ry * ry
+  }
+  // A degenerate axis is already a 1px line/dot, so its bbox is its coverage.
+  if (rxi === 0 || ryi === 0) {
+    return { type: 'region', bbox: { x0, y0, x1, y1 }, has: inBox, test }
+  }
+  const rx2 = rxi * rxi
+  const ry2 = ryi * ryi
+  const limit = rx2 * ry2
   return {
     type: 'region',
-    bbox: { x0: cx - rxi, y0: cy - ryi, x1: cx + rxi, y1: cy + ryi },
+    bbox: { x0, y0, x1, y1 },
     has: (x, y) => {
-      const dy = Math.abs(y - cy)
-      if (dy > ryi) {
+      if (!inBox(x, y)) {
         return false
       }
-      return Math.abs(x - cx) <= (spans[dy] ?? -1)
+      const dx = x - pcx
+      const dy = y - pcy
+      return dx * dx * ry2 + dy * dy * rx2 <= limit
     },
-    test: (fx, fy) => {
-      if (rx === 0 || ry === 0) {
-        return false
-      }
-      const dx = (fx - cx) / rx
-      const dy = (fy - cy) / ry
-      return dx * dx + dy * dy <= 1
-    },
+    test,
   }
 }
 

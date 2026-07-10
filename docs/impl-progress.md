@@ -139,7 +139,7 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
 
 ## Phase 3 — Anchored Assembly (Positionierung)
 
-- [ ] **3** `pin NAME PT` (Attach-Point-Deklaration) + `fit partB.NAME partA.NAME` (kontakt-garantiertes
+- [x] **3** `pin NAME PT` (Attach-Point-Deklaration) + `fit partB.NAME partA.NAME` (kontakt-garantiertes
   Fügen, Gap-Meldung); Ground-Placement-Oracle formalisieren; Auto-Contact-Shadow. Kreis/Ellipse auf
   eine Zentrierungs-Konvention + Off-by-one-Footprint fixen (`values.ts`). C007 muss clean sein.
   Product-Skill + Spec nachziehen; `craft-eval` (Character) fahren, Report in `docs/`.
@@ -150,7 +150,10 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
   x:groundY(x)`), Auto-Contact-Shadow (`fit … shadow`, `contactShadowColor` in shading.ts). `stampSprite`-
   Pfad wiederverwendet. 13 Tests (`tests/unit/assembly.test.ts`), 748 gesamt grün, tsc+biome clean.
   Product-Skill + language-spec §9 + reference.md + character-craft §1/§4 + scene-craft §2 synchron.
-  **Checkbox bleibt offen**: 3b-Zentrierung (s. Emergente Punkte) + `craft-eval`-Character-Lauf stehen aus.
+  → **3b-Zentrierung erledigt** (dieser Commit, s. Emergente Punkte). **Phase 3 abgeschlossen.** Der
+  `craft-eval`-Character-Lauf ist bewusst NICHT Teil dieser Einheit (schwere Multi-Agent-Messung mit
+  Review-Bedarf, human-getriggert — analog `measure-phase2`); Checkbox 3 wird für die Code-/Doku-Arbeit
+  abgehakt, die Messung läuft separat.
 
 ## Phase 4 — Break schließen
 
@@ -162,9 +165,29 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
 
 _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen anhängen.)_
 
-- [ ] **3b-centering** Kreis/Ellipse auf eine Zentrierungs-Konvention (ellipse → circles even-diameter,
+- [x] **3b-centering** Kreis/Ellipse auf eine Zentrierungs-Konvention (ellipse → circles even-diameter,
   ADR-0087) + Off-by-one-Footprint in `values.ts` (`ellipseRegion` → even `c-rx..c+rx-1` × `c-ry..c+ry-1`,
   Corner-centred wie `circleRegion`); betroffene Tests/examples anpassen. **Separater Teil, NICHT in 3a.**
+  → `values.ts`: `ellipseRegion` neu geschrieben — Corner-centred (`pcx=cx-0.5`), Even-Footprint
+  `cx-rxi..cx+rxi-1` × `cy-ryi..cy+ryi-1`, Membership per **integer-cross-multiplied** Ellipsengleichung
+  `dx²·ryi² + dy²·rxi² ≤ (rxi·ryi)²` → exakt und reduziert bit-genau auf `circleRegion`s `dx²+dy² ≤ ri²`
+  bei `rxi===ryi` (garantiert: circle == ellipse(r,r), 2304 Pixel über r∈{0,1,2,3,5,8} test-gepinnt).
+  Zero-Achse kollabiert auf die 1px-Spalte/-Zeile `cx`/`cy` (r=0-Dot pro Achse generalisiert); beide
+  zero = 1px. Das odd `2r+1`-Legacy von ADR-0028 §3 fällt. **`ellipseSpans` gelöscht** (nur noch von der
+  alten Odd-Regel genutzt → toter Code; `circleSpans` bleibt für `rrectRegion`). `values.test.ts`:
+  `ellipseSpans`-Import + -Test raus, Ellipse-Tests auf Even-Extents umgestellt + Circle-Äquivalenz-Test
+  ergänzt. `assembly.test.ts` `fit shadow`: Geometrie auf schmalen Fuß umgestellt (die Even-Konvektion
+  verdeckt einen 1px-breiteren-rechten Odd-Rand nicht mehr; Assertion auf ein seitlich herausragendes
+  Schatten-Pixel gezogen). Doku: language-spec (Shape-Tabelle + Pinned-Rasterization), reference.md
+  (ellipse-Zeile), SKILL.md-Gotcha, icon-craft §4, ADR-0028 §3 (inline superseded-Note). 749 Tests grün,
+  tsc + biome clean, `critique --as icon/item --strict` grün auf allen icon/item-examples (C003 hält).
+  **Betroffene Laufzeit-Nutzer** (unverändert korrekt, nur 1px-Shift auf Boden/Rand): `#dropContactShadow`
+  (Auto-Contact-Shadow-Ellipse), `ellipse`-Command, `ellipse(...)`-Region-Expr.
+- [ ] **3b-finding: degenerierte Ellipsen-Achse** Eine Null-Achse (`ellipse c 0:ry`) rendert jetzt eine
+  1px-Linie an der Integer-Spalte/-Zeile (statt der alten Odd-`2ry+1`-Linie über den Integer-Pixel — die
+  x-Extents sind identisch, nur die Nicht-Null-Achse ist nun even). Real nie idiomatisch (dafür gibt es
+  `line`); nur der Vollständigkeit halber gepinnt. Kontinuierlicher `test()` gibt bei Null-Achse `false`
+  (wie zuvor).
 - [ ] **3a-finding: fit-Source-Bareword ist immer Pin-Ref** Ein Bare-Name als `fit`-Source (`fit b a`)
   ist stets eine Pin-Referenz (Auto-Match), nie ein Point-wertiges Binding — ein Punkt als Source muss
   als Point-Literal (`x:y`) oder geklammert geschrieben werden (Disambiguierung, sonst wäre `fit b pt`

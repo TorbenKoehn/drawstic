@@ -192,18 +192,20 @@ describe('fit — ground-placement oracle (fit onto a terrain function)', () => 
 describe('fit shadow — auto contact-shadow', () => {
   test('shadow drops a cool pool under the footprint (opt-in)', () => {
     const base = [
-      'draw post 8x12:',
-      '  fill #7a5a2a rect(0:0, 7:11)',
-      '  pin base 4:11',
+      'draw post 12x12:',
+      '  fill #7a5a2a rect(0:0, 11:9)', // wide body
+      '  fill #7a5a2a rect(5:10, 6:11)', // narrow foot
+      '  pin base 5:11',
       'draw scene 30x30:',
       '  fill #3a5a2a rect(0:20, 29:29)',
     ]
     const withShadow = render([...base, '  fit post.base 15:22 shadow'].join('\n'), 'scene')
     const noShadow = render([...base, '  fit post.base 15:22'].join('\n'), 'scene')
-    // post spans x11..18; the ellipse (rx≈4 about x15) reaches x19 — a shadow-only pixel.
-    expect(px(withShadow, 19, 22)).not.toEqual(px(noShadow, 19, 22))
+    // The foot lands at x15..16; the contact ellipse (rx≈5 about x15) pools out to
+    // x10 — a shadow-only pixel beside the narrow foot, over bare ground.
+    expect(px(withShadow, 10, 22)).not.toEqual(px(noShadow, 10, 22))
     // and it reads cooler (more blue) than the bare warm-green ground there.
-    expect(px(withShadow, 19, 22)[2]).toBeGreaterThan(px(noShadow, 19, 22)[2])
+    expect(px(withShadow, 10, 22)[2]).toBeGreaterThan(px(noShadow, 10, 22)[2])
   })
 })
 

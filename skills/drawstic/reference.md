@@ -256,7 +256,7 @@ on every stroking command **except `poly`** (see its row).
 | `rect` | `rect <paint> <a> <b> [fill]` — corners a, b |
 | `rrect` | `rrect <paint> <a> <b> <r> [fill]` |
 | `circle` | `circle <paint> <c> <r> [fill]` — even 2r diameter: covers pixels `c−r … c+r−1` per axis, visual centre `c−0.5` (r>0); `r=0` = one pixel |
-| `ellipse` | `ellipse <paint> <c> <rx>:<ry> [fill]` |
+| `ellipse` | `ellipse <paint> <c> <rx>:<ry> [fill]` — even 2rx×2ry footprint, same convention as `circle`: covers `c−rx … c+rx−1` × `c−ry … c+ry−1`, visual centre `c−0.5`; a circle is exactly the `rx==ry` ellipse; a zero axis = a 1px line |
 | `arc` | `arc <paint> <c> <r> <a0> <a1>` — degrees, 0°=+x, clockwise |
 | `quad` | `quad <paint> <p0> <c1> <p2>` |
 | `bezier` | `bezier <paint> <p0> <c1> <c2> <p3>` |
