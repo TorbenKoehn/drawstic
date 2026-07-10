@@ -2,7 +2,7 @@
 // (ADR-0044), regions (ADR-0036/0039), and rendered sprites.
 
 import type { Color } from './color.js'
-import { dcosDeg, dsinDeg, roundHalfUp } from './dmath.js'
+import { dcosDeg, dhypot, dsinDeg, roundHalfUp } from './dmath.js'
 
 /**
  * A 2D point. `rel` marks a point built with the `rel` keyword inside a `path` pen block — an
@@ -98,6 +98,44 @@ export type Sprite = {
   desc: string | undefined
 }
 
+/**
+ * A first-class light source (ADR-0086). `dir` is the unit vector of the light's *travel*
+ * direction: `dir 1:1` means light moving down-right, so its source sits up-left and the lit
+ * edge is the up-left one. When `pos` is set the light is a point source at that canvas
+ * coordinate and `dir` is derived per region (source → region) rather than used verbatim —
+ * see {@link Light} consumers in `shading.ts`. `color` is the (warm) light colour, `gain`
+ * scales every derived shading dose (intensity, default 1), and `amb` is the optional
+ * fill/ambient light — a cool colour plus a 0..1 amount that lifts shadows so they never go
+ * pure black. Constructed via {@link light}; `dir` is always normalized.
+ */
+export type Light = {
+  type: 'light'
+  dir: { readonly x: number; readonly y: number }
+  pos: { readonly x: number; readonly y: number } | null
+  color: Color
+  gain: number
+  amb: { readonly color: Color; readonly amount: number } | null
+}
+
+/** Material response families (ADR-0086); each selects a baked dose profile in `shading.ts`. */
+export type MaterialResponse = 'flat' | 'metal' | 'skin' | 'cloth' | 'glass' | 'glow'
+
+/**
+ * A first-class material (ADR-0086): a base colour plus a `response` that selects a baked
+ * shading dose profile — never the colour, which stays the author's choice. The optional
+ * `shade`/`hi`/`rim`/`ao` fields override individual doses of that profile when present.
+ * Constructed via {@link material}.
+ */
+export type Material = {
+  type: 'material'
+  base: Color
+  response: MaterialResponse
+  shade?: number
+  hi?: number
+  rim?: number
+  ao?: number
+}
+
 export type Value =
   | number
   | boolean
@@ -110,6 +148,8 @@ export type Value =
   | Region
   | Path
   | Sprite
+  | Light
+  | Material
 
 export const point = (x: number, y: number, rel = false): Point => ({ type: 'point', x, y, rel })
 export const list = (items: Value[]): List => ({ type: 'list', items })
@@ -119,6 +159,50 @@ export const path = (
   viewBox?: { readonly width: number; readonly height: number },
   region?: Region,
 ): Path => ({ type: 'path', contours, commands, viewBox, region })
+
+/** Normalize a 2D vector to unit length; a zero vector falls back to straight-down `(0, 1)`. */
+export const unitVec = (x: number, y: number): { x: number; y: number } => {
+  const len = dhypot(x, y)
+  return len < 1e-9 ? { x: 0, y: 1 } : { x: x / len, y: y / len }
+}
+
+/**
+ * Construct a {@link Light} (pure, deterministic). `dir` — the light's travel direction — is
+ * always normalized; a point light (`pos` set) keeps a nominal `dir` (default straight-down)
+ * that `shading.ts` overrides per region. `gain` defaults to 1, `amb` to none.
+ */
+export const light = (spec: {
+  dir?: { x: number; y: number }
+  pos?: { x: number; y: number } | null
+  color: Color
+  gain?: number
+  amb?: { color: Color; amount: number } | null
+}): Light => ({
+  type: 'light',
+  dir: unitVec(spec.dir?.x ?? 0, spec.dir?.y ?? 1),
+  pos: spec.pos ?? null,
+  color: spec.color,
+  gain: spec.gain ?? 1,
+  amb: spec.amb ?? null,
+})
+
+/**
+ * Construct a {@link Material} (pure, deterministic). `response` defaults to `flat`. Dose
+ * overrides are attached only when defined (satisfies `exactOptionalPropertyTypes`).
+ */
+export const material = (
+  base: Color,
+  response: MaterialResponse = 'flat',
+  overrides: { shade?: number; hi?: number; rim?: number; ao?: number } = {},
+): Material => ({
+  type: 'material',
+  base,
+  response,
+  ...(overrides.shade !== undefined ? { shade: overrides.shade } : {}),
+  ...(overrides.hi !== undefined ? { hi: overrides.hi } : {}),
+  ...(overrides.rim !== undefined ? { rim: overrides.rim } : {}),
+  ...(overrides.ao !== undefined ? { ao: overrides.ao } : {}),
+})
 
 export const isObj = (v: Value): v is Exclude<Value, number | boolean | string> =>
   typeof v === 'object' && v !== null

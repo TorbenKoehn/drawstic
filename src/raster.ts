@@ -1329,6 +1329,51 @@ export const ambientOcclusion = (
 }
 
 /**
+ * Banded distance fill for a crisp cel-shaded look (ADR-0086): quantize each pixel's distance from
+ * `light` (the same {@link forRegionDistance} spine as `shadeRegion`) into `colors.length` discrete
+ * bands — `colors[0]` nearest the light (highlight), the last colour farthest (deepest shadow) —
+ * and write each band with a raw `set`, so bands stay hard-edged with **no alpha stacking** (unlike
+ * the continuous `shadeRegion` veil). Distance is re-normalized over the region's own near..far
+ * span (a first pass finds it) so all N bands appear evenly even when the light sits far off the
+ * region — a synthetic directional source compresses raw `t` into a sub-range otherwise. Pair with
+ * `ramp(base, n)` for an even, hue-consistent band list. A single colour fills the whole region;
+ * an empty list no-ops.
+ */
+export const celRegion = (
+  ctx: Context,
+  region: Region,
+  light: { readonly x: number; readonly y: number },
+  colors: readonly Color[],
+): void => {
+  const n = colors.length
+  if (n === 0) {
+    return
+  }
+  let tMin = Number.POSITIVE_INFINITY
+  let tMax = Number.NEGATIVE_INFINITY
+  forRegionDistance(ctx, region, light, (_x, _y, t) => {
+    if (t < tMin) {
+      tMin = t
+    }
+    if (t > tMax) {
+      tMax = t
+    }
+  })
+  if (!Number.isFinite(tMin)) {
+    return
+  }
+  const span = tMax - tMin
+  forRegionDistance(ctx, region, light, (x, y, t) => {
+    const u = span < 1e-9 ? 0 : (t - tMin) / span
+    const idx = Math.min(n - 1, Math.floor(u * n))
+    const c = colors[idx]
+    if (c) {
+      ctx.buffer.set(x, y, c)
+    }
+  })
+}
+
+/**
  * A user-defined font (ADR-0042): character → drawing/inline-glyph map, with layout constants
  * and an optional fallback face.
  */

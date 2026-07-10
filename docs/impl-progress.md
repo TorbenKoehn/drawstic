@@ -76,9 +76,27 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
   +14 (Pins `#e8b784`/`#834b35`/`#c2856e`, Ramp `[#d9754b,#c04040,#320012]`; **Regression**: warme Basis
   `shadowTone` dHue ≤20° vs. nacktes `mix` >40° Richtung Magenta). `tests/unit/eval.test.ts` +1
   (UFCS im Recipe + User-`ramp`-Koexistenz). 703 Tests grün, tsc + biome clean.
-- [ ] **2b** `Light`/`Material` First-Class-Values in `src/values.ts`; neues internes `src/shading.ts`
+- [x] **2b** `Light`/`Material` First-Class-Values in `src/values.ts`; neues internes `src/shading.ts`
   (Encoding-Vereinigung `lightPointFor`/`lightDirOf`/`shadowOffsetFor` + `lowerMaterial`); `celRegion`
   (gebandetes Distanz-Fill) in `src/raster.ts`; Unit-Tests auf Engine-Ebene.
+  → `src/values.ts`: `Light`/`Material`/`MaterialResponse`-Typen in die `Value`-Union, `light`/
+  `material`/`unitVec`-Factories (rein, `dir` immer normalisiert, `pos`→nominale Down-`dir`;
+  `material`-Overrides nur wenn definiert wg. `exactOptionalPropertyTypes`). `typeName` deckt beide
+  über den generischen `v.type`-Zweig ab (keine Sonderfälle). `src/shading.ts` (neu): `Vec2`,
+  `regionCenter`/`regionDiagonal`, Encoding-Trio (`lightPointFor` = `pos` bzw. synthetische Up-Source
+  `center − dir·2·Diagonale`; `lightDirOf` = verbatim `dir` bzw. `normalize(center − pos)`;
+  `shadowOffsetFor` = `round(dir·len)`), gebackene `DOSE`-Profile pro Response (scene-craft §5 →
+  flat/metal/skin/cloth/glass/glow), `planMaterial` (rein, liefert inspizierbare `ShadeOp[]`-Trace für
+  `--explain` in 2c; Nulldosis-Schritte entfallen) + `lowerMaterial` (führt die Trace über die
+  BESTEHENDEN Primitive fill→shadeRegion→lightRegion→rim→ambientOcclusion→cast aus). Töne via
+  `litTone`/`shadowTone` (2a); `×gain`, Rim-Breite/Cast-Reach aus `bbox`; `glow` = self-illuminated
+  nur die eigene Region. `castBand` region-scoped (verschobenes Silhouetten-Band minus Region) über
+  `regionTransform`+`regionSubtract`+`fillRegion`. `src/raster.ts`: `celRegion` als Geschwister von
+  `shadeRegion`, `forRegionDistance`-Spine wiederverwendet, crisp via `set` (kein Alpha-Stacking).
+  `tests/unit/shading.test.ts` (17 Tests): Factory-Normalisierung, Encoding-Kohärenz (ein Light →
+  konsistenter shade-Punkt/rim-Dir/cast-Offset), per-Response-Sequenz + gerenderte Ton-Struktur
+  (metal lit-warm→dark-cool, glow self-core + Nachbarn unberührt, cast down-light), celRegion N-Bänder.
+  720 Tests gesamt grün, `tsc --noEmit` + `biome check .` clean. **Kein** Parser/Eval/CLI berührt (2c).
 - [ ] **2c** Parser/Eval: `light NAME = dir…|at…`-Binding und `material NAME = COLOR RESPONSE`-Binding
   (Inline-Args, keine Konstruktoren), `lit L:`-Block, `model`/`cel`-Dispatch; `render --explain`
   (Primitive-Expansion). **v1/v2-Branching komplett entfernen** — eine Semantik, kein Gate; Pragma
@@ -129,6 +147,21 @@ _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen an
   `familyMetrics` sichtbar, aber nicht separat gegated. Falls Item-Sets uneinheitliche Margins als
   Set-Inkohärenz melden sollen, eigenes Margin-Ratio ergänzen (advisory).
 
+- [x] **2b-finding `celRegion` Bereichs-Normalisierung** Ein weit entfernter synthetischer
+  Directional-Lichtpunkt (`center − dir·2·Diagonale`) komprimiert das rohe `forRegionDistance`-`t` der
+  Region auf ein Teilintervall (z.B. `[0.6, 1.0]`), sodass eine naive `floor(t·N)`-Bänderung die vorderen
+  Bänder verschluckt (nur 2 statt 3 Bänder erscheinen). Gelöst per Zwei-Pass in `celRegion`: erst
+  Region-eigene `[tMin, tMax]`-Spanne bestimmen, dann `(t−tMin)/span` remappen → alle N Bänder erscheinen
+  gleichmäßig, unabhängig von der Lichtdistanz. Kontinuierliche Veils (`shadeRegion`/`lightRegion`) bleiben
+  bewusst un-remappt (weiches Directional-Gefälle ist dort gewollt). Konsequenz für 2c: `cel REGION MAT N`
+  kann direkt `lightPointFor(region, light)` durchreichen; `celRegion` normalisiert selbst.
+- [ ] **2b-finding `lowerMaterial`-Cast-Reihenfolge** Der Cast-Schritt ist region-scoped (verschobenes
+  Silhouetten-Band minus Region) und wird laut ADR-0086 als letzter Schritt der Sequenz gemalt. Da das
+  Band per Konstruktion außerhalb der eigenen Region liegt, ist die Reihenfolge relativ zur eigenen
+  Region unkritisch — aber es malt **über** Nachbar-Regionen, die vorher im selben `draw` gezeichnet
+  wurden (das Band steckt down-light heraus). Für einzelne `model`-Objekte korrekt; bei dicht
+  gepackten Multi-Part-Sprites in 2c/3 prüfen, ob Cast besser vor den Geschwistern (Ground-first,
+  scene-craft §8) statt am Ende der Objekt-Sequenz läuft. Heute unkritisch (interne Maschinerie).
 - [x] **2a-finding `ramp` kollidiert mit User-Bindings** `ramp` ist ein weit verbreiteter
   Recipe-Bezeichner (ADR-0060/0079; `examples/characters/{villager,skeleton,robot}.drw`,
   `items/shields.drw`, `scenes-v3/volcano.drw`, `scenes/orbit.drw`, Tests). Als unshadowbares
