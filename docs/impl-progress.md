@@ -7,10 +7,14 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
 
 ## Phase 0 — ADRs
 
-- [ ] **0** ADRs anlegen (Format aus bestehenden `docs/decisions/*` übernehmen, höchste Nummer +1):
+- [x] **0** ADRs anlegen (Format aus bestehenden `docs/decisions/*` übernehmen, höchste Nummer +1):
   ADR für `critique`-Command; ADR für Licht+Material-Modell; ADR für Anchored Assembly (`pin`/`fit`);
   ADR für In-place-v1-Break (Kollaps der `drawstic 1`/`drawstic 2`-Doppelsemantik auf eine Semantik).
   Index in `AGENTS.md` §5 / `docs/` aktuell halten wo nötig.
+  → `docs/decisions/0085-critique-command.md` (0085), `0086-declarative-light-and-material.md`
+  (0086), `0087-anchored-assembly.md` (0087), `0088-in-place-v1-break.md` (0088). README.md index
+  + affected older ADRs' status lines (0028–0030, 0056, 0063, 0068–0070, 0072) updated to point
+  forward. `AGENTS.md` §5's packaging pointer (0084) is unaffected — left as-is.
 
 ## Phase 1 — `critique`-Loop (SHIP FIRST)
 

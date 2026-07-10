@@ -1,9 +1,11 @@
 # 68. `shadeRegion` veil-opacity signature (language version 2)
 
-- Status: Accepted
+- Status: Accepted (made unconditional — no longer version-gated, `shadeRegionLegacy` removed —
+  by [ADR-0088](0088-in-place-v1-break.md); this signature is now the sole `shadeRegion`
+  semantics)
 - Date: 2026-07-08
 - Deciders: t.koehn, Claude
-- Refines: [ADR-0063](0063-explicit-local-lighting-helpers.md); gated by [ADR-0029](0029-language-version-pragma.md)
+- Refines: [ADR-0063](0063-explicit-local-lighting-helpers.md); gated by [ADR-0029](0029-language-version-pragma.md) (gate removed by [ADR-0088](0088-in-place-v1-break.md))
 
 ## Context
 

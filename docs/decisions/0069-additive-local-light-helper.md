@@ -1,6 +1,7 @@
 # 69. `lightRegion` additive local light helper
 
-- Status: Accepted
+- Status: Accepted (point/direction/offset encoding unified under one `Light` value by
+  [ADR-0086](0086-declarative-light-and-material.md))
 - Date: 2026-07-08
 - Deciders: t.koehn, Claude
 - Refines: [ADR-0063](0063-explicit-local-lighting-helpers.md); pairs with [ADR-0068](0068-shaderegion-veil-opacity-signature.md)

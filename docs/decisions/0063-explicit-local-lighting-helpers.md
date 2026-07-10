@@ -1,6 +1,6 @@
 # 63. Explicit local lighting helpers
 
-- Status: Accepted (`shadeRegion` signature refined by [ADR-0068](0068-shaderegion-veil-opacity-signature.md); additive `lightRegion` added by [ADR-0069](0069-additive-local-light-helper.md))
+- Status: Accepted (`shadeRegion` signature refined by [ADR-0068](0068-shaderegion-veil-opacity-signature.md); additive `lightRegion` added by [ADR-0069](0069-additive-local-light-helper.md); point/direction/offset encoding unified under one `Light` value, with `model`/`cel` sugar over these helpers, by [ADR-0086](0086-declarative-light-and-material.md))
 
 ## Context
 

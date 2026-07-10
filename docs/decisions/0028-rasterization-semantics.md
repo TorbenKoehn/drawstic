@@ -1,6 +1,6 @@
 # 28. Rasterization semantics: flood connectivity, clipping, centering, endpoints
 
-- Status: Accepted (primitive-outline definition refined by [ADR-0039](0039-region-algebra-constructors-combinators-eliminators.md): outlines are the extensional 4-inner-boundary of the filled region; circle parity superseded by [ADR-0056](0056-even-diameter-circle-rasterization.md))
+- Status: Accepted (primitive-outline definition refined by [ADR-0039](0039-region-algebra-constructors-combinators-eliminators.md): outlines are the extensional 4-inner-boundary of the filled region; circle parity superseded by [ADR-0056](0056-even-diameter-circle-rasterization.md); ellipse parity superseded by [ADR-0087](0087-anchored-assembly.md))
 - Date: 2026-06-17
 - Deciders: t.koehn, Claude
 

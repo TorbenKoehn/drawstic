@@ -33,9 +33,9 @@ add an ADR here and reflect it in [AGENTS.md](../../AGENTS.md) and the affected 
 | [0025](0025-alpha-compositing-model.md) | Alpha compositing (straight-alpha RGBA8 source-over) | Accepted (supersedes 1-bit part of 0009) |
 | [0026](0026-seeded-randomness-and-noise.md) | Seeded randomness & value noise (`rand`/`noise`) | Accepted |
 | [0027](0027-deterministic-numeric-and-colour-pipeline.md) | Deterministic numeric & colour pipeline (bundled math; pinned conversion) | Accepted (refines 0007) |
-| [0028](0028-rasterization-semantics.md) | Rasterization semantics (flood/clip/centering/endpoints) | Accepted (outline refined by 0039) |
-| [0029](0029-language-version-pragma.md) | Language version pragma `drawstic <N>` | Accepted (refines 0007) |
-| [0030](0030-structured-diagnostics-contract.md) | Structured diagnostics contract (`--json`) | Accepted (refines 0008) |
+| [0028](0028-rasterization-semantics.md) | Rasterization semantics (flood/clip/centering/endpoints) | Accepted (outline refined by 0039; circle parity superseded by 0056; ellipse parity superseded by 0087) |
+| [0029](0029-language-version-pragma.md) | Language version pragma `drawstic <N>` | Accepted (refines 0007; version-gating superseded by 0088 — pragma parsed but inert) |
+| [0030](0030-structured-diagnostics-contract.md) | Structured diagnostics contract (`--json`) | Accepted (refines 0008; `C###` family added by 0085) |
 | [0031](0031-agent-loop-cli-preview-and-fmt.md) | Agent-loop CLI: `render --ascii/--preview` + `drawstic fmt` | Accepted |
 | [0032](0032-lexical-robustness.md) | Lexical robustness (indentation, line continuation, grid rules) | Accepted (pixel-key charset pinned by 0049) |
 | [0033](0033-evaluation-and-scope-model.md) | Evaluation & scope model; paint-vs-expression name resolution | Accepted (resolves open Q8/Q9; point 5 superseded by 0046; scope/mutability refined by 0081) |
@@ -61,23 +61,23 @@ add an ADR here and reflect it in [AGENTS.md](../../AGENTS.md) and the affected 
 | [0053](0053-v1-engine-pinned-implementation-constants.md) | v1 engine: pinned implementation constants (Bayer dither, 4×4 smooth coverage, corner-anchored integer scale, flattening steps, bundled-math kernels, fmt scope) | Accepted (refines 0027, 0028, 0040, 0043) |
 | [0054](0054-std-fonts-are-recipe-modules.md) | Standard fonts are Recipe modules | Accepted (refines 0022, 0035, 0042) |
 | [0055](0055-indexed-png-auto-palette-completion.md) | Indexed PNG auto-completes the palette from rendered colours | Accepted (refines 0002, 0046, 0050) |
-| [0056](0056-even-diameter-circle-rasterization.md) | Even-diameter circle rasterization | Accepted (supersedes 0028 point 3 for `circle`) |
+| [0056](0056-even-diameter-circle-rasterization.md) | Even-diameter circle rasterization | Accepted (supersedes 0028 point 3 for `circle`; `ellipse` unified to it by 0087) |
 | [0057](0057-ranges-are-list-expressions.md) | Ranges are list expressions | Accepted |
 | [0058](0058-point-arithmetic.md) | Point arithmetic | Accepted (refined by 0059) |
 | [0059](0059-relative-point-expressions.md) | Relative point expressions | Superseded by 0061 |
 | [0060](0060-explicit-color-list-ramps.md) | Explicit color-list ramps | Accepted |
 | [0061](0061-first-class-paths-and-local-pen-cursors.md) | First-class paths and local pen cursors | Accepted (supersedes 0011, 0020, 0038, 0059; refines 0039, 0044) |
 | [0062](0062-scoped-shadow-and-texture-filters.md) | Scoped shadows and deterministic texture filters | Accepted (refined by 0070, 0071) |
-| [0063](0063-explicit-local-lighting-helpers.md) | Explicit local lighting helpers | Accepted (refined by 0068, 0069) |
-| [0064](0064-stamp-anchors.md) | Stamp anchors | Accepted (offset-anchor semantics refined by 0072) |
+| [0063](0063-explicit-local-lighting-helpers.md) | Explicit local lighting helpers | Accepted (refined by 0068, 0069; encoding unified under `Light`/`model` by 0086) |
+| [0064](0064-stamp-anchors.md) | Stamp anchors | Accepted (offset-anchor semantics refined by 0072, made unconditional by 0088) |
 | [0065](0065-npm-and-github-publishing.md) | NPM & GitHub publishing: no-barrel subpath exports, scriptless per-file dist build, tag-driven release | Accepted (refines 0035, 0054) |
 | [0066](0066-paint-first-painting-commands.md) | Paint-first painting commands | Accepted (refines 0036 §6, 0039, 0052) |
 | [0067](0067-render-fragment-literal-arguments.md) | `render` fragment literal arguments (`<file>#<drawing>(args)`) | Accepted (refines 0024, 0030, 0031) |
-| [0068](0068-shaderegion-veil-opacity-signature.md) | `shadeRegion` veil-opacity signature (language version 2) | Accepted (refines 0063, gated by 0029) |
-| [0069](0069-additive-local-light-helper.md) | `lightRegion` additive local light helper | Accepted (refines 0063, pairs with 0068) |
-| [0070](0070-unified-shadow-argument-shape.md) | Unified shadow argument shape; v2 mask-respecting frame shadow | Accepted (refines 0062, mask change gated by 0029) |
+| [0068](0068-shaderegion-veil-opacity-signature.md) | `shadeRegion` veil-opacity signature (language version 2) | Accepted (refines 0063; unconditional — gate removed — by 0088) |
+| [0069](0069-additive-local-light-helper.md) | `lightRegion` additive local light helper | Accepted (refines 0063, pairs with 0068; encoding unified under `Light` by 0086) |
+| [0070](0070-unified-shadow-argument-shape.md) | Unified shadow argument shape; v2 mask-respecting frame shadow | Accepted (refines 0062; mask behaviour unconditional and `shadow dx dy` alias removed by 0088) |
 | [0071](0071-region-scoped-texture-filters.md) | Region-scoped texture filters (`grain [r] …`) | Accepted (refines 0062; scalar order refined by 0080) |
-| [0072](0072-visual-stamp-anchors.md) | Visual stamp anchors (language version 2) | Accepted (refines 0064, gated by 0029) |
+| [0072](0072-visual-stamp-anchors.md) | Visual stamp anchors (language version 2) | Accepted (refines 0064; unconditional — gate removed, legacy path removed — by 0088) |
 | [0073](0073-palette-namespace-for-pixel-cells.md) | Palette namespace for pixel cells; `pal` may shadow `w`/`h`; unreserve `by` | Accepted (refines 0046, 0049, 0061; extended to theme `pal` by 0081) |
 | [0074](0074-curve-through-points-spline.md) | `curve` — open centripetal Catmull-Rom spline through points | Accepted (pairs with 0075) |
 | [0075](0075-curvepoly-closed-curve-region.md) | `curvePoly` — closed through-points curve, fillable organic-mass region | Accepted (pairs with 0074) |
@@ -90,3 +90,7 @@ add an ADR here and reflect it in [AGENTS.md](../../AGENTS.md) and the affected 
 | [0082](0082-sheet-contact-sheet-cli.md) | `drawstic sheet` — family contact-sheet CLI (size-normalized labeled grid, deterministic layout) | Accepted |
 | [0083](0083-render-silhouette.md) | `render --silhouette` — solid black-silhouette shape test (framebuffer post-pass, composes with all output kinds) | Accepted |
 | [0084](0084-minimal-npm-package-contents.md) | Minimal npm package contents: compiled code, product skill, README, and license only | Accepted (refines 0065) |
+| [0085](0085-critique-command.md) | `critique` — pixel-based, vision-free quality assertions (`C0xx`) | Accepted (refines 0030, 0031) |
+| [0086](0086-declarative-light-and-material.md) | Declarative light + material (`light`/`material`/`lit`/`model`/`cel`) | Accepted (refines 0063, 0068, 0069, 0070) |
+| [0087](0087-anchored-assembly.md) | Anchored assembly (`pin`/`fit`); ellipse unified to circle's centering | Accepted (supersedes 0028 point 3 for `ellipse`; refines 0024, 0064, 0072) |
+| [0088](0088-in-place-v1-break.md) | In-place v1 break: collapse `drawstic 1`/`drawstic 2` double semantics | Accepted (supersedes 0029 point 3; refines 0068, 0069, 0070, 0072) |
