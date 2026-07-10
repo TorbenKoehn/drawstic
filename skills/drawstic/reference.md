@@ -15,6 +15,7 @@ Runner prefix (`bunx` / `npx` / `pnpm dlx` / `yarn dlx`) omitted below.
 | `drawstic build <file> [--out <dir>] [--json]` | run every `export`, write artifacts (default: cwd). JSON: `{diagnostics, artifacts: [{path, bytes}]}`. |
 | `drawstic render <file>#<drawing>[(args)] …` | ad-hoc render of one drawing (see below). |
 | `drawstic sheet <file> [--all] [--cols N] [--png@N] [--out <path>] [--stdout] [--ascii] [--preview] [--json]` | family contact sheet: composes selected drawings size-normalized into one labeled comparison grid (see below). |
+| `drawstic critique <file> [--json]` | pixel-based, vision-free quality checks (`C0xx`) over every rendered non-parametric drawing — C001 empty/near-empty, C003 optical centering, C004 value/contrast spread, C006 palette/complexity budget, C008 interior pinholes, C012 transparent trailing edge row. All findings are `warning` (exit 0, never blocking); each carries `{measured, threshold, fix}`. JSON: `{diagnostics, critique: {pass, failedCodes, drawings:[{name,width,height,bbox,coveredPixelCount,opaquePixelCount,distinctColorCount,unknownColorCount,luminance,checks:[…]}]}}` — the metric bundle is a superset of `render --inspect`, readable even at zero findings. |
 
 **Fragment arguments** (ADR-0067): a parametric drawing takes literal args directly in the
 `#<drawing>(...)` fragment — `render parts.drw#house(#c04040, 3)` — no throwaway wrapper draw

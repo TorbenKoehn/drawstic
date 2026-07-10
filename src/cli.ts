@@ -20,6 +20,7 @@ import { resolve } from 'node:path'
 import type { DrawDefinition, FormatLine, Statement } from './ast.js'
 import { buildModule, validateExport } from './build.js'
 import { toHexColor } from './color.js'
+import { type CritiqueDrawing, critiqueCheckDiagnostic, critiqueSprite } from './critique.js'
 import {
   type Diagnostic,
   DrawsticError,
@@ -1235,6 +1236,53 @@ const sheetJson = (
   },
 })
 
+// ── critique (ADR-0085) ──────────────────────────────────────────────────────
+
+/**
+ * Runs `drawstic critique <file>`: renders every non-parametric `draw` and runs
+ * the pixel-based, vision-free `C0xx` check catalog (phase 1a — ADR-0085 §3:
+ * C001/C003/C004/C006/C008/C012). Every finding is a `warning` (exit 0 — never
+ * blocking) carrying `{measured, threshold, fix}`; the `--json` payload adds
+ * `critique: {pass, failedCodes, drawings}`, where each drawing exposes the full
+ * metric bundle (a superset of `render --inspect`) so an agent reads facts even
+ * at zero findings. A render failure surfaces as its ordinary `E0xx` diagnostic,
+ * exactly as in `check`.
+ */
+const runCritique = (cli: CliArguments): number => {
+  const file = cli.target ?? ''
+  const diags: Diagnostic[] = []
+  const drawings: CritiqueDrawing[] = []
+  try {
+    const engine = createEngine(cli)
+    const mod = engine.loadEntry(file)
+    for (const [, entry] of mod.definitions) {
+      if (
+        entry.kind !== 'draw' ||
+        entry.module !== mod ||
+        (entry.definition.params?.length ?? 0) > 0
+      ) {
+        continue
+      }
+      try {
+        const sprite = engine.renderDraw(entry, [], entry.definition.span)
+        const report = critiqueSprite(entry.definition.name, sprite)
+        drawings.push(report)
+        for (const check of report.checks) {
+          diags.push(critiqueCheckDiagnostic(check, mod.displayPath, entry.definition.span))
+        }
+      } catch (e) {
+        diags.push(toDiagnostic(e, file))
+      }
+    }
+  } catch (e) {
+    diags.push(toDiagnostic(e, file))
+    return emit(diags, cli.json)
+  }
+  const failedCodes = [...new Set(drawings.flatMap((d) => d.checks.map((c) => c.code)))].sort()
+  const report = { pass: diags.length === 0, failedCodes, drawings }
+  return emitObject(diags, cli.json, { critique: report })
+}
+
 // ── entry ───────────────────────────────────────────────────────────────────
 
 const HELP = `drawstic — deterministic drawing engine
@@ -1249,6 +1297,7 @@ usage:
                   [--mode pixel|smooth] [--json]
   drawstic sheet <file> [--all] [--cols N] [--png@N] [--out <path>]
                   [--stdout] [--ascii] [--preview] [--json]
+  drawstic critique <file> [--json]
 options:
   --json     stable diagnostic records
   --budget N evaluation-step budget
@@ -1275,6 +1324,8 @@ export const main = (argv: string[]): number => {
       return runRender(cli)
     case 'sheet':
       return runSheet(cli)
+    case 'critique':
+      return runCritique(cli)
     default:
       process.stdout.write(HELP)
       return cli.command === 'help' ? 0 : 1

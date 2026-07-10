@@ -18,11 +18,16 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
 
 ## Phase 1 — `critique`-Loop (SHIP FIRST)
 
-- [ ] **1a** `src/critique.ts` scaffold auf `inspectSprite`; billige Checks C001 (leer), C003 (optische
+- [x] **1a** `src/critique.ts` scaffold auf `inspectSprite`; billige Checks C001 (leer), C003 (optische
   Zentrierung `x0+x1==W−1`), C004 (Value/Kontrast-Spread), C006 (Palette/Komplexität), C008-pinholes,
   C012 (dynamische transparente Edge-Row); CLI-Verb `critique <file> [--json]` in `src/cli.ts`;
   Metrik-Bundle + `C0xx`-Diagnosecodes; `tests/unit/critique.test.ts` mit Fixtures. Reuse
   `inspect.ts`/`preview.ts`/`framebuffer`/`color.ts`.
+  → `src/critique.ts` (`CRITIQUE_CODE`, `computeCritiqueMetrics`, `critiqueSprite`,
+  `critiqueCheckDiagnostic`), `runCritique` + Dispatch/HELP in `src/cli.ts` (emitObject-Kontrakt
+  `{diagnostics, critique:{pass, failedCodes, drawings}}`), 12 Tests grün. Verb-Eintrag in
+  `skills/drawstic/reference.md`. Alle Checks default `warning`/Exit 0. Smoke: `critique
+  examples/showcase/showcase.drw` meldet C004+C012 (nicht blockierend), Rest der `examples/` `pass:true`.
 - [ ] **1b** C007 (Floating-Part/Seam via 8-connected Components + Chamfer-Distanztransform, Signatur
   bbox-Overlap+Gap≥1) und C005 (Strichbreite via Distanztransform); `--strict` (Exit-Gate);
   `CritiqueProfile` + `--as icon|scene|character|item`; Tests.
@@ -64,3 +69,8 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
 ## Emergente Punkte
 
 _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen anhängen.)_
+
+- [ ] **1a-followup** `critique examples/showcase/showcase.drw` feuert C004 (Flat-Value) + C012
+  (transparente Endzeile) auf prozeduralen Showcase-Draws. Prüfen, ob echte Craft-Mängel oder
+  Threshold-Rauschen; ggf. beim `examples/`-Re-Baseline in 1c adressieren (Thresholds als gemessener
+  Boden test-asserted).
