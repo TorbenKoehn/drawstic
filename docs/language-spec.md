@@ -1240,9 +1240,13 @@ draw sword 24x48:
   `flat`. `glow` is self-illuminated (fill + inner light only — no shade/rim/cast). The response
   word is a keyword **only** in this trailing slot.
 - **`lit L: body`** is a lexical block that scopes light `L` over its body only (set/restored like
-  `mask …:`, no global state). A `model`/`cel` with **no** light in scope **and** no explicit
-  `light L` argument is a hard error (`E024`) — a light is always named and always visible, never
-  a silent default.
+  `mask …:`, no global state).
+- **Resolution order** for a `model`/`cel` command, most-local first: an explicit `light L`
+  argument → the enclosing `lit L:` block → the applied theme's **default** light (`§ Themes`,
+  ADR-0086 tier 3). No light in **any** tier is a hard error (`E024`) — a light is always named and
+  always visible, never a silent default. The theme default is how a front/side view pair or a
+  colour variant shares **one** light without re-authoring it per view — the structural fix for the
+  "light mirrored per view" bug.
 - **`model REGION MATERIAL [light L]`** lowers `MATERIAL` under the scoped (or explicit `light L`)
   light onto the fixed sequence `fill → shadeRegion → lightRegion → rim → ambientOcclusion →
   cast shadow` — every point/direction/offset derived from the one light, zero-dose steps
@@ -1262,8 +1266,8 @@ draw sword 24x48:
 ### Themes — a dual artifact
 
 A theme carries a **machine part** (palette, shared base drawings, the **canvas-size
-default**, **render mode**, **text-font default**) **and an LLM part**: a natural-language
-**style guide**. The style guide is what makes many drawings *look like a set*. See
+default**, **render mode**, **text-font default**, and a **default light**) **and an LLM part**: a
+natural-language **style guide**. The style guide is what makes many drawings *look like a set*. See
 [ADR-0003](decisions/0003-themes-as-style-guides.md).
 
 ```drw
@@ -1276,6 +1280,7 @@ theme dusk:
   size 16x16                 # default canvas for size-less draws (§6); a local size wins
   mode pixel                 # crisp, no AA — the set's look (export may override)
   font small                 # default text face (§8); a per-text `font` flag wins
+  light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%   # default light for every view/variant (§ Light & material)
   style """
     2px solid black outline on all silhouettes.
     Light from top-left; shadows use 'r', 1px dithered.
@@ -1283,8 +1288,13 @@ theme dusk:
   """
 ```
 
-A theme body holds only these forms — `pal:` / `grad NAME = …`, `size` / `mode` / `font`,
-`style`, `with`, and `filter` / `draw` definitions. A **free binding** written directly in the
+A theme body holds only these forms — `pal:` / `grad NAME = …`, `size` / `mode` / `font` /
+`light`, `style`, `with`, and `filter` / `draw` definitions. A theme's `light NAME = …`
+([ADR-0086](decisions/0086-declarative-light-and-material.md)) folds like `size`/`mode`/`font`
+(later wins) and becomes the drawing's **outermost** light — so every `model`/`cel` in every
+drawing applying the theme shares one source unless a nearer `lit L:` block or `light L` argument
+overrides it (`§ Light & material`, resolution order). The bound name is decorative; the value is
+the default. A **free binding** written directly in the
 body (a plain `accent = #d8a53a`, outside `pal:`) has nowhere to fold and is a positioned
 **E004** at its declaration: put colours under `pal:` and other constants at **module scope**,
 above the theme ([ADR-0081](decisions/0081-loop-persistent-rebinding-and-theme-scope-edges.md)).

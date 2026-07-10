@@ -55,7 +55,7 @@ import {
 } from './preview.js'
 import { scaleBitmap } from './raster.js'
 import { buildSheet, type SheetLayout, selectSheetDrawings } from './sheet.js'
-import type { Region, Sprite } from './values.js'
+import type { Light, Region, Sprite } from './values.js'
 
 // union of every subcommand's flags; each `run*` handler reads only the
 // ones it recognizes and ignores the rest.
@@ -476,6 +476,7 @@ type Brief = {
     readonly size: string | null
     readonly mode: string | null
     readonly font: string | null
+    readonly light: string | null
   }
   readonly drawings: readonly {
     readonly name: string
@@ -510,6 +511,19 @@ type Brief = {
     }[]
   }[]
   readonly functions: readonly { readonly name: string; readonly signature: string }[]
+}
+
+/**
+ * Render a theme's default light (ADR-0086) back into its authoring form for the `context`
+ * brief — `dir DX:DY` (unit direction, 2-dp) or `at X:Y`, the colour hex, and `amb`/`gain`
+ * only when they carry non-default information — so the shared light is inspectable.
+ */
+const formatThemeLight = (l: Light): string => {
+  const r2 = (n: number): string => String(Math.round(n * 100) / 100)
+  const head = l.pos ? `at ${l.pos.x}:${l.pos.y}` : `dir ${r2(l.dir.x)}:${r2(l.dir.y)}`
+  const amb = l.amb ? ` amb ${toHexColor(l.amb.color)} ${Math.round(l.amb.amount * 100)}%` : ''
+  const gain = l.gain === 1 ? '' : ` gain ${l.gain}`
+  return `${head} ${toHexColor(l.color)}${amb}${gain}`
 }
 
 /**
@@ -605,6 +619,7 @@ const buildBrief = (engine: Engine, mod: ModuleRecord): Brief => {
       size: theme?.size ? `${theme.size.width}x${theme.size.height}` : null,
       mode: theme?.mode ?? null,
       font: theme?.font ?? null,
+      light: theme?.light ? formatThemeLight(theme.light) : null,
     },
     drawings,
     exports,
@@ -727,6 +742,13 @@ const runContext = (cli: CliArguments): number => {
         lines.push(`  [${s.source}] ${s.text.trim()}`)
       }
       lines.push('')
+    }
+    if (brief.theme.light) {
+      lines.push(
+        '## lighting',
+        `  light ${brief.theme.light}  (theme default, shared by all views)`,
+        '',
+      )
     }
     if (brief.drawings.length > 0) {
       lines.push('## drawings')

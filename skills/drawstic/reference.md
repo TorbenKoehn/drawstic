@@ -11,7 +11,7 @@ Runner prefix (`bunx` / `npx` / `pnpm dlx` / `yarn dlx`) omitted below.
 |---|---|
 | `drawstic check <file> [--lint] [--rows] [--json]` | parse + semantic validation. `--lint` adds authoring warnings; `--rows` adds per-`pixels:`-block row-width metadata (find ragged rows). |
 | `drawstic fmt <file> [--check] [--stdout] [--diff] [--json]` | canonical formatter. Default rewrites in place; `--check` fails (no write) if unformatted; `--stdout` prints instead; `--diff` adds first-changed-line metadata to `--check --json`. |
-| `drawstic context <file> [--json]` | resolved design brief: merged theme palette (key→hex+source), merged style guide, available drawings (name, WxH, ASCII preview), functions (signatures), export plans, per-drawing facts (size source, palette keys, draw-local `themes` (its `use` names) + effective `themePalette`, fitted-preview hints). Read before editing files with imports/themes. |
+| `drawstic context <file> [--json]` | resolved design brief: merged theme palette (key→hex+source), merged style guide, theme default light (`theme.light`, ADR-0086), available drawings (name, WxH, ASCII preview), functions (signatures), export plans, per-drawing facts (size source, palette keys, draw-local `themes` (its `use` names) + effective `themePalette`, fitted-preview hints). Read before editing files with imports/themes. |
 | `drawstic build <file> [--out <dir>] [--json]` | run every `export`, write artifacts (default: cwd). JSON: `{diagnostics, artifacts: [{path, bytes}]}`. |
 | `drawstic render <file>#<drawing>[(args)] …` | ad-hoc render of one drawing (see below). |
 | `drawstic sheet <file> [--all] [--cols N] [--png@N] [--out <path>] [--stdout] [--ascii] [--preview] [--json]` | family contact sheet: composes selected drawings size-normalized into one labeled comparison grid (see below). |
@@ -672,10 +672,13 @@ draw sword 24x48:
   colour, which stays yours. Bare colour ⇒ `flat`. `glow` is self-illuminated (fill + inner light
   only, no shade/rim/cast). The response word is a keyword **only** in this slot.
 - **`lit L: body`** scopes light `L` over its body (like `mask …:`). `L` must evaluate to a light.
-- **`model REGION MATERIAL [light L]`** lowers the material under the scoped (or explicit `light L`)
-  light; `MATERIAL` is a `material` value **or** inline `COLOR [RESPONSE]`. Zero-dose steps are
-  skipped (so `flat` emits no rim/cast). **No light in scope and no `light L` = hard `E024`** — a
-  light is always named and visible, never a silent default.
+- **Resolution order** (most-local first): explicit `light L` arg → enclosing `lit L:` block →
+  applied **theme default** (`light` in a `theme` body, § Themes). None in any tier = hard `E024`.
+  The theme default is the cross-view fix: front + side + recolor variants applying one theme share
+  **one** light, so shading is never mirrored per view.
+- **`model REGION MATERIAL [light L]`** lowers the material under the resolved light; `MATERIAL` is
+  a `material` value **or** inline `COLOR [RESPONSE]`. Zero-dose steps are skipped (so `flat` emits
+  no rim/cast). **No light in any tier = hard `E024`** — never a silent default.
 - **`cel REGION MATERIAL N`** fills with `N` crisp cel bands from `ramp(base, N)` (even,
   hue-consistent, warm→cool), banded by distance from the light — a hard-edged alternative to
   `model`'s smooth veils.
@@ -695,11 +698,14 @@ theme dusk:
   size 16x16                # default canvas for size-less draws
   mode pixel                # pixel (crisp) | smooth (AA); export line may override
   font small                # default text face
+  light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%   # default light — shared by every view/variant
   style """…"""             # natural-language style guide — read it via `context`
 ```
 
-A theme body holds **only** `pal:` / `grad NAME = …` / `size` / `mode` / `font` / `style` / `with` /
-`filter` / `draw` (ADR-0081). A free binding there (`accent = #d8a53a`) is `E004` **at the
+A theme body holds **only** `pal:` / `grad NAME = …` / `size` / `mode` / `font` / `light` / `style` /
+`with` / `filter` / `draw` (ADR-0081/0086). A theme `light NAME = …` folds like `size`/`mode`/`font`
+(later wins) → the drawing's outermost light (§ Light & material resolution order); the bound name is
+decorative. Surfaced by `context` (`## lighting`). A free binding there (`accent = #d8a53a`) is `E004` **at the
 declaration** (hint: put colours under `pal:`, move other constants to module scope) — a theme
 carries no non-colour design tokens (radius/margin/alpha), so keep those at module scope above the
 theme. Apply: `use themes dusk` at file level, or as the leading line(s) of one `draw` body.

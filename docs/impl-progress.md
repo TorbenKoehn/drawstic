@@ -114,8 +114,28 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
   Namen — grün). 13 neue Tests (`tests/unit/light-material.test.ts` 12 + cli `--explain` 1), 733
   gesamt grün, tsc + biome clean. **KOLLAPS jetzt ebenfalls erledigt** (siehe „2c-collapse") → 2c
   mit diesem Commit vollständig.
-- [ ] **2d** Theme-Licht (`FoldedTheme.light`, fold/merge/fingerprint) für Cross-View-Kohärenz;
-  Two-View-Character-Test (teilt Theme-Licht). Danach `craft-eval` (Kategorie) fahren, Report in `docs/`.
+- [x] **2d** Theme-Licht (`FoldedTheme.light`, fold/merge/fingerprint) für Cross-View-Kohärenz;
+  Two-View-Character-Test (teilt Theme-Licht).
+  → `eval.ts`: `FoldedTheme.light: Light | null` (+ `emptyTheme`); `#foldLight` faltet ein
+  `light NAME = …` im Theme-Body (Palette-sichtbar, wie `#foldBinding`) via `#evalLightValue`;
+  `#foldThemeItem`-Case `lightBinding`; `mergeThemes` `light: b.light ?? a.light` (later-wins);
+  `themeFingerprint` um `lightFingerprint` erweitert (dir/pos/color/gain/amb → kein Stale-Cache);
+  `#renderDrawBody` initialisiert `draw.light = theme.light` statt `null` → das per `use` angewandte
+  Theme etabliert das **äußerste** Licht der Zeichnung, das durch die file-scope-Anwendung auch jede
+  gestampte Part-`draw` erreicht. **Auflösungsreihenfolge** (dokumentiert, numerisch bewiesen via
+  `--explain`): explizites `light L`-Arg > `lit L:`-Block > Theme-Default; fehlt alles → hartes E024.
+  `#requireLight`-Doku auf die 3 Tiers gezogen. Der Theme-Licht-Name ist dekorativ (nicht als Binding
+  im Draw sichtbar — `light themeName` wirft E001; für explizite Referenz an Modul-Scope binden).
+  `cli.ts`: `Brief.theme.light` (formatiert via `formatThemeLight`), `context`-Textblock `## lighting`
+  (nur wenn gesetzt → keine Beispiel-Regression), JSON-Parität mit `size/mode/font`. `tests/unit/
+  theme-light.test.ts` (8 Tests): Two-View lit-Kante world-left in BEIDEN Views (nicht pro View
+  gespiegelt), E024 ohne Theme-Licht, die 3-Tier-Auflösung einzeln, Determinismus (2× byte-identisch),
+  Fingerprint-Sensitivität (nur Licht-Farbe geändert → andere Pixel), `with`-Fold later-wins. 735
+  Tests grün (727+8), tsc + biome clean. Doku: language-spec §Light&Material (Auflösungsreihenfolge)
+  + §Themes (`light` in der Theme-Body-Liste), reference.md (§Light&Material, §Themes, context-Zeile),
+  SKILL.md (§Characters, §Declarative light, §Gotchas), character-craft.md §1/§3/§6 (Theme-Licht als
+  struktureller Fix ersetzt die reine Prosa-Warnung). ADR-0086 nannte fold/merge/fingerprint bereits
+  → keine ADR-Änderung nötig. **craft-eval bewusst NICHT gefahren** (schwere Multi-Agent-Messung, s.u.).
 
 ## Phase 3 — Anchored Assembly (Positionierung)
 
@@ -133,6 +153,26 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
 ## Emergente Punkte
 
 _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen anhängen.)_
+
+- [ ] **measure-phase2** craft-eval (eine Kategorie, Charaktere) gegen die dokumentierten Baselines
+  fahren (schwer, Multi-Agent, Review-Bedarf) — konsolidiert am Ende/Human-getriggert. Deckt die
+  Phase-2-Messung des Plans ab („misst, ob Licht+Material die Grade bewegt"); explizit NICHT im
+  autonomen Einzel-Einheit-Scope, weil ein Builder-Wave + Konsolidierung + Fix-Wave menschliches
+  Review braucht.
+- [ ] **2d-finding: Auflösungsreihenfolge explicit>lit vs. Task-Wortlaut** Die Task-Notiz listete
+  „`lit`-Block > explizites `light L`-Arg > Theme-Default". Umgesetzt ist **explizites `light L` >
+  `lit L:`-Block > Theme-Default** — konsistent mit ADR-0086 (autoritativ: „value binding → lit block
+  → theme default") und dem bereits ausgelieferten 2c-`#requireLight` (`explicit ?? draw.light`, hier
+  unverändert gelassen; das Theme-Default seedet nur `draw.light`). Die essenzielle Anforderung (Theme
+  = äußerster Fallback) ist erfüllt; nur die Ordnung der oberen zwei Tiers folgt ADR statt Task-Prosa.
+  Numerisch gepinnt in `theme-light.test.ts`. Falls doch lit>explicit gewünscht: `#requireLight` auf
+  `draw.lit ?? explicit ?? draw.themeLight` umbauen (bräuchte getrennte lit-/theme-Felder in DrawState).
+- [ ] **2d-finding: `material` im Theme-Body still verworfen** Ein `material NAME = …` in einem
+  Theme-Body fällt heute in `#foldThemeItem`s `default`-Zweig (stumm ignoriert), analog zur Alt-Lage
+  vor ADR-0081 für freie Bindings. Kein Regressionsrisiko (niemand schreibt das; 2c hat es nie
+  gefaltet), aber ein latenter Footgun. Theme-Materials sind nicht Teil von ADR-0086 (Materials leben
+  in Modul-/Draw-Scope). Falls je gebraucht: entweder falten oder mit positioniertem E004 ablehnen —
+  bewusst hier deferred (Scope 2d = nur Theme-Licht).
 
 - [x] **2c-collapse** (die zweite Hälfte von 2c) — ADR-0088 umgesetzt: alle vier
   `pragma ?? LANGUAGE_VERSION >= 2`-Zweige aus `eval.ts` entfernt (E009-Versionscheck in `loadSource`,

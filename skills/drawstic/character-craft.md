@@ -17,7 +17,8 @@ first-run builds hit it) — §4 makes it structurally impossible.
 
 The order that wins on the first attempt — do not reorder:
 
-1. **Light contract** — `warm`/`cool` + `fn lit/shd/deep`, the first lines (§6).
+1. **Light contract** — ONE `light` in a `theme`, `use`d so every view/variant shares it (the
+   structural cross-view fix); `warm`/`cool` + `fn lit/shd/deep` is the ≤64px colour-system fallback (§6).
 2. **Material ramps + faction colour set** — metal/skin/cloth/bone as module bindings; **only the
    1–2 varying colours become draw params**, everything else fixed (§7).
 3. **Proportions-constant head** — `headTop/shoulderLine/hipLine/kneeLine/footLine` as module
@@ -54,9 +55,11 @@ Confirm centering with `--inspect` `alphaCoverageBBox`.
 
 ## 3. Faction recolor — parametric parts, never themes
 
-A theme palette **does not cross a `stamp` boundary** (SKILL.md § Gotchas) — a stamped part resolves
-its `pal` in its own scope, so a host theme-swap never reaches it. **All 7 first-run builds converged
-on the parametric path**; it is also the best-scoring axis (recolor Ø 1,4). Pass the 1–2 variant
+A theme *palette* **does not cross a `stamp` boundary** (SKILL.md § Gotchas) — a stamped part resolves
+its `pal` in its own scope, so a host theme-swap never reaches it. (A theme *light* is different: the
+file-level `use` applies the theme to *each* draw as it renders — the composer AND every stamped part
+— so the shared default light does reach the parts. Use a theme for the light, parametric params for
+the recolor.) **All 7 first-run builds converged on the parametric path** for colour; it is also the best-scoring axis (recolor Ø 1,4). Pass the 1–2 variant
 colours as a draw param, derive the rest, and make a **thin non-parametric wrapper per variant** — the
 only export price:
 
@@ -133,7 +136,27 @@ pose). All 7 runs confirmed the split:
 ## 6. Material ramps & light (baked in the colour system)
 
 One named contract, every part derives its tones — light consistency becomes structural, not
-disciplinary. **Do not mirror the light per view** (side-facing-right ⇒ back lit, chest shaded).
+disciplinary. **The per-view-mirror bug** (side-facing-right ⇒ back lit, chest shaded) is the #1
+lighting failure, and it is now closed **structurally**, not by willpower: put ONE `light` in a
+`theme`, `use` it, and it becomes the outermost light of *every* drawing that applies the theme
+(ADR-0086 tier 3). Front, side, and every recolor variant then read the **same** world-space source
+— the lit edge cannot land on a different side per view, because there is only one light to mirror.
+
+```drw
+theme figTheme:
+  light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%   # ONE source; source up-left ⇒ up-left edge lit
+
+use figTheme                          # every draw below shares `sun` as its outermost light
+
+draw torsoFront(c) 14x18: …           # `model body c metal` — no lit block; inherits `sun`
+draw torsoSide(c)  14x18: …           # a DIFFERENT pose, same `sun`; lit edge stays world-left
+```
+
+A `lit L:` block or a trailing `light L` on one `model`/`cel` still overrides it locally (resolution
+order: explicit `light L` > `lit L:` > theme default). Confirm cross-view coherence numerically: the
+lit third of the silhouette is the same world side in both `--inspect`ed views. At **≤64px**, where
+`model`/`shadeRegion`/`rim` are too weak, keep the same discipline in the colour system instead —
+one warm/cool contract, every part derives its tones:
 
 ```drw
 warm = #ffe8bf                       # light colour

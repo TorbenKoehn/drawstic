@@ -151,9 +151,11 @@ draw scene 32x24:
   `flat|metal|skin|cloth|glass|glow`; bare colour ⇒ `flat`; `glow` = self-lit). Then `lit sun:`
   scopes the light over its body, and per object `model REGION MAT [light L]` lowers to
   fill→shade→light→rim→AO→cast (all from the one light) · `cel REGION MAT N` = crisp N-band fill.
-  `MAT` = a `material` value **or** inline `COLOR [RESPONSE]`. No light in scope **and** no
-  `light L` = hard `E024` (never a silent default). `render … --explain` prints the exact primitive
-  expansion. `dir/at/amb/gain` + the response words are keywords **only** in their slot.
+  `MAT` = a `material` value **or** inline `COLOR [RESPONSE]`. Resolution order: explicit `light L`
+  → `lit L:` block → **theme default** (a `light` in a `theme` body → shared by every view/variant,
+  the cross-view fix). None in any tier = hard `E024` (never a silent default). `render … --explain`
+  prints the exact primitive expansion. `dir/at/amb/gain` + the response words are keywords **only**
+  in their slot.
 - **Control flow:** `for i 0..8:` (half-open; `..=` inclusive) · `repeat n:` · `if c:`/`else:` ·
   `match x:` · expression `if c then a else b` · `fn f(a, b) = expr`.
 - **Scatter** `scatter p n seed region:` → body n times, `p` = a seeded point drawn uniformly from
@@ -258,8 +260,11 @@ For a modular game figure (parts stamped into a body, front + side, faction reco
 **parts first, the body last** — full recipes, ramps, seam + two-view rules in
 [character-craft.md](character-craft.md), load it before building any figure.
 
-**Mandatory order:** (1) **light contract** in the colour system (`warm`/`cool` + `fn lit/shd/deep`;
-`base.mix(warm, …)`, never bare lighten) — not per-view mirrored, no `shadeRegion`/`rim` at ≤64px.
+**Mandatory order:** (1) **light contract** — put ONE `light` in a `theme` and `use` it, so every
+view + recolor variant shares that outermost source and the lit edge lands on the **same world
+side** in front AND side (the structural fix for "light mirrored per view" — ADR-0086; a shared
+`warm`/`cool` + `fn lit/shd/deep` colour system is the ≤64px fallback where `shadeRegion`/`rim` are
+too weak). Side is a different pose, **not** a mirror; the theme light stays put across both.
 (2) **proportions constants** (`headTop/shoulderLine/hipLine/kneeLine/footLine` at module scope; ~4
 heads for 48–64px). (3) **parametric parts** (`draw part(c)`), each with a **socket comment** (its
 seam row in its own space). (4) full body **back-to-front via `stamp`**, contact-shadow
@@ -327,10 +332,11 @@ verifies grammar only — pair confusion, weak silhouettes, and mushy materials 
 - Scope: `draw`/`path`/`fn`/`theme`/`tileset`/`atlas`/`export` are **module-scope only** (E004
   inside a `draw` body); `mask`/`grad`/`pal`/`filter`/bindings may also be drawing-local.
   Full table: reference.md § Definition scope.
-- A `theme` body holds **only** `pal:`/`grad NAME=…`/`size`/`mode`/`font`/`style`/`with`/`filter`/
-  `draw`. A free binding there (`accent = #d8a53a`) is `E004` **at the declaration** — put colours
-  under `pal:`, other constants (radius/margin/alpha) at module scope above the theme (a theme
-  carries no non-colour tokens).
+- A `theme` body holds **only** `pal:`/`grad NAME=…`/`size`/`mode`/`font`/`light`/`style`/`with`/
+  `filter`/`draw`. A theme `light NAME=…` (ADR-0086) is the shared **default light** for every view/
+  variant — folds like `size`/`mode`/`font` (later wins), overridable by a nearer `lit L:`/`light L`.
+  A free binding there (`accent = #d8a53a`) is `E004` **at the declaration** — put colours under
+  `pal:`, other constants (radius/margin/alpha) at module scope above the theme.
 - Theme/host palettes **don't cross a `stamp` boundary** — a stamped `draw` resolves its own `pal`
   keys in its own scope (missing key = static `E007`, not a theme fall-through). Recolour a stamped
   variant **parametrically** (`draw part(c)` + `pal a=c`, or derived `c.darken(…)`) or **post-hoc**

@@ -347,6 +347,11 @@ export type ModuleRecord = {
  * directives (ADR-0005 fold semantics, ADR-0003). Later sources win on
  * key collisions (see {@link mergeThemes}); style text and filters/draws
  * are unioned.
+ *
+ * `light` is the theme's default light (ADR-0086 tier 3): folded like
+ * `size`/`mode`/`font` (later wins), it becomes the drawing's outermost
+ * `DrawState.light` so every view/variant applying the theme shares one
+ * light source — structurally closing the "light mirrored per view" bug.
  */
 export type FoldedTheme = {
   readonly palette: {
@@ -367,6 +372,7 @@ export type FoldedTheme = {
   size: { readonly width: number; readonly height: number } | null
   mode: RenderMode | null
   font: string | null
+  light: Light | null
 }
 
 const emptyTheme = (): FoldedTheme => ({
@@ -377,6 +383,7 @@ const emptyTheme = (): FoldedTheme => ({
   size: null,
   mode: null,
   font: null,
+  light: null,
   style: [],
 })
 
@@ -1307,6 +1314,25 @@ export class Engine {
     acc.gradients.set(item.names[0] ?? '', v)
   }
 
+  /**
+   * Fold a theme-body `light NAME = …` default (ADR-0086) into `acc.light` — later wins,
+   * like `size`/`mode`/`font`. The binding evaluates with the folded palette visible, so a
+   * theme light may reference its own `pal` colours; the bound name is decorative (the value
+   * is the theme's single default light, resolved as tier 3 in {@link #requireLight}).
+   */
+  #foldLight(
+    item: Extract<Statement, { readonly kind: 'lightBinding' }>,
+    mod: ModuleRecord,
+    acc: FoldedTheme,
+    state: State,
+  ): void {
+    const env = new Environment(mod.env)
+    for (const p of acc.palette) {
+      env.declare(p.key, p.color, true, true)
+    }
+    acc.light = this.#evalLightValue(item, env, state)
+  }
+
   #foldThemeItem(
     item: Statement,
     def: ThemeDefinition,
@@ -1334,6 +1360,9 @@ export class Engine {
         return acc
       case 'fontDirective':
         acc.font = item.name
+        return acc
+      case 'lightBinding':
+        this.#foldLight(item, mod, acc, state)
         return acc
       case 'binding':
         this.#foldBinding(item, mod, acc, state)
@@ -1807,7 +1836,10 @@ export class Engine {
       fontName: theme.font ?? mod.fontDefault,
       title: undefined,
       description: undefined,
-      light: null,
+      // The applied theme's default light (ADR-0086 tier 3) is the drawing's outermost
+      // light, so every view/variant using the theme shares one source; a `lit L:` block
+      // overrides it for its body, an explicit `light L` argument for a single command.
+      light: theme.light,
       mirror: null,
     }
     const state: State = { module: mod, budget: this.budget, draw, functionDepth: 0 }
@@ -2873,9 +2905,11 @@ export class Engine {
   }
 
   /**
-   * Resolve the light for a `model`/`cel` command: an explicit `light L` argument wins, else the
-   * enclosing `lit L:` block's {@link DrawState.light}. No light in either is a hard E024 (ADR-0086
-   * §2) — never a silent default, so a light is always named and always visible.
+   * Resolve the light for a `model`/`cel` command in three tiers (ADR-0086), most-local first:
+   * an explicit `light L` argument, else the enclosing `lit L:` block, else the applied theme's
+   * default (both of the latter live in {@link DrawState.light}, which a `lit` block sets/restores
+   * over `draw.light`'s theme-default seed). No light in any tier is a hard E024 — never a silent
+   * default, so a light is always named and always visible.
    */
   #requireLight(
     explicit: Light | null,
@@ -6321,7 +6355,19 @@ const themeFingerprint = (t: FoldedTheme): string => {
     .join(';')
   const style = t.style.map((s) => s.text).join('')
   const size = t.size ? `${t.size.width}x${t.size.height}` : ''
-  return `${pal}|${t.mode ?? ''}|${t.font ?? ''}|${size}|G:${grads}|F:${filters}|D:${draws}|S:${style}`
+  return `${pal}|${t.mode ?? ''}|${t.font ?? ''}|${size}|G:${grads}|F:${filters}|D:${draws}|S:${style}|L:${t.light ? lightFingerprint(t.light) : ''}`
+}
+
+/**
+ * A deterministic digest of a light's every rendering-relevant field (direction, position,
+ * colour, gain, ambient) — folded into {@link themeFingerprint} so two themes that differ only
+ * in their default light digest differently and never share a stale sprite from the cache.
+ */
+const lightFingerprint = (l: Light): string => {
+  const c = (col: Color): string => `${col.r},${col.g},${col.b},${col.a}`
+  const pos = l.pos ? `${l.pos.x}:${l.pos.y}` : '~'
+  const amb = l.amb ? `${c(l.amb.color)}@${l.amb.amount}` : '~'
+  return `${l.dir.x},${l.dir.y}|${pos}|${c(l.color)}|${l.gain}|${amb}`
 }
 
 /**
@@ -6383,8 +6429,8 @@ export const extractSubSprite = (
  * `b` is the later `with`/`use` source). Palette entries and style lines
  * are merged by key/text with `b` overriding on collision; gradients/
  * filters/draws are unioned as maps (`b` wins on same-key collision via
- * `Map` spread order); scalar fields (`size`/`mode`/`font`) take `b`'s
- * value only if it's set, otherwise fall back to `a`'s.
+ * `Map` spread order); scalar fields (`size`/`mode`/`font`/`light`) take
+ * `b`'s value only if it's set, otherwise fall back to `a`'s.
  */
 const mergeThemes = (a: FoldedTheme, b: FoldedTheme): FoldedTheme => {
   const pal = a.palette.slice()
@@ -6410,6 +6456,7 @@ const mergeThemes = (a: FoldedTheme, b: FoldedTheme): FoldedTheme => {
     size: b.size ?? a.size,
     mode: b.mode ?? a.mode,
     font: b.font ?? a.font,
+    light: b.light ?? a.light,
     style,
   }
 }
