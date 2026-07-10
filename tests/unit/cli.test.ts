@@ -710,14 +710,7 @@ describe('render', () => {
       expect(body.render.kind).toBe('explain')
       expect(body.render.explain).toHaveLength(1)
       expect(body.render.explain[0]?.command).toBe('model')
-      expect(body.render.explain[0]?.steps.map((s) => s.op)).toEqual([
-        'fill',
-        'shade',
-        'light',
-        'rim',
-        'ao',
-        'cast',
-      ])
+      expect(body.render.explain[0]?.steps.map((s) => s.op)).toEqual(['form', 'rim', 'ao', 'cast'])
     })
   })
 

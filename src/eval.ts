@@ -68,7 +68,6 @@ import {
   type Context,
   catmullRomLoopPoints,
   catmullRomPoints,
-  celRegion,
   drawText,
   type FontResolved,
   fillRegion,
@@ -96,7 +95,13 @@ import {
   strokeRegion,
   type UserFontResolved,
 } from './raster.js'
-import { contactShadowColor, lightPointFor, lowerMaterial, type ShadeOp } from './shading.js'
+import {
+  contactShadowColor,
+  lightPointFor,
+  lowerCel,
+  lowerMaterial,
+  type ShadeOp,
+} from './shading.js'
 import { STD_GLOBAL_FONTS, STD_MODULES } from './std.js'
 import {
   aboutPoint,
@@ -798,6 +803,15 @@ export type ExplainStep = {
   readonly dir?: { readonly x: number; readonly y: number }
   readonly width?: number
   readonly offset?: { readonly dx: number; readonly dy: number }
+  /** `form` op (ADR-0089): highlight/shadow tint targets, out-of-plane light `z`, and the doses. */
+  readonly warm?: string
+  readonly cool?: string
+  readonly elevation?: number
+  readonly shade?: number
+  readonly hi?: number
+  readonly ambient?: number
+  readonly puff?: number
+  readonly bands?: number
 }
 
 /** One recorded `model`/`cel` command expansion (ADR-0086 §6). */
@@ -819,6 +833,20 @@ const explainShadeOp = (op: ShadeOp): ExplainStep => {
   switch (op.kind) {
     case 'fill':
       return { op: 'fill', color: toHexColor(op.color) }
+    case 'form':
+      return {
+        op: 'form',
+        color: toHexColor(op.spec.base),
+        warm: toHexColor(op.spec.warm),
+        cool: toHexColor(op.spec.cool),
+        dir: roundVec({ x: op.spec.light.x, y: op.spec.light.y }),
+        elevation: round3(op.spec.light.z),
+        shade: round3(op.spec.shade),
+        hi: round3(op.spec.hi),
+        ambient: round3(op.spec.ambient),
+        puff: round3(op.spec.puff),
+        ...(op.spec.bands !== null ? { bands: op.spec.bands } : {}),
+      }
     case 'shade':
       return {
         op: 'shade',
@@ -3730,8 +3758,9 @@ export class Engine {
         return
       }
       case 'cel': {
-        // `cel REGION MATERIAL N [light L]` (ADR-0086): a crisp N-band cel fill — `ramp(base, n)`
-        // tones (warm→cool, hue-consistent) banded by distance from the same light `model` uses.
+        // `cel REGION MATERIAL N [light L]` (ADR-0089): the same form-based body as `model`, but
+        // quantized into N crisp bands that follow the surface normal — the opt-in cel stylization
+        // (smooth `model` is the default). One `form` op with `bands = N`, driven by the same light.
         const region = args.region()
         const mat = args.material()
         const n = quantInt(args.num())
@@ -3742,15 +3771,13 @@ export class Engine {
         }
         args.done()
         const lt = this.#requireLight(explicit, draw, stmt, state)
-        const point = lightPointFor(region, lt)
-        const bands = ramp(mat.base, n)
-        celRegion(ctx, region, point, bands)
+        const ops = lowerCel(ctx, region, mat, lt, n)
         if (this.explain) {
           this.explain.push({
             command: 'cel',
             region: commandArgName(stmt.args[0]),
-            light: roundVec(point),
-            steps: bands.map((c) => ({ op: 'band', color: toHexColor(c) })),
+            light: roundVec(lightPointFor(region, lt)),
+            steps: ops.map(explainShadeOp),
           })
         }
         return

@@ -7,11 +7,13 @@ order + checklist; this is the detail. Every rule comes from a shipped, check-cl
 silhouette legibility, a genuine side view, and archetype/sex reading are 100 % visual and silent to
 `check`; the render, the `--silhouette` black-out, and a per-joint `--crop` are the only judges.**
 
-Characters are **not scenes and not icons.** Keep from scene-craft: **one** light contract baked into
-the colour system + the contact-shadow ellipse. Keep from icon-craft: small-raster discipline (no
-`shadeRegion`/`rim` at ≤64px — too weak). Add what is character-specific: parts, **seams**, two
-views, faction recolor. The dominant bug class here is the **floating limb / 2–3px seam gap** (5 of 7
-first-run builds hit it) — §4 makes it structurally impossible.
+Characters are **not scenes and not icons.** Keep from scene-craft: **one** light contract, now
+carried by a `theme` `light` + `model`/`cel` (ADR-0089 form shading works at chibi scale — see §6)
+and the contact-shadow ellipse. Keep from icon-craft: small-raster discipline — the *raw*
+`shadeRegion`/`rim` distance veils are still too weak/thin at ≤64px, but **`model` (form-based) is
+not**; reach for `model`/`cel`, not the low-level primitives. Add what is character-specific: parts,
+**seams**, two views, faction recolor. The dominant bug class here is the **floating limb / 2–3px
+seam gap** (5 of 7 first-run builds hit it) — §4 makes it structurally impossible.
 
 ## 1. The fixed build order
 
@@ -169,9 +171,17 @@ draw torsoSide(c)  14x18: …           # a DIFFERENT pose, same `sun`; lit edge
 
 A `lit L:` block or a trailing `light L` on one `model`/`cel` still overrides it locally (resolution
 order: explicit `light L` > `lit L:` > theme default). Confirm cross-view coherence numerically: the
-lit third of the silhouette is the same world side in both `--inspect`ed views. At **≤64px**, where
-`model`/`shadeRegion`/`rim` are too weak, keep the same discipline in the colour system instead —
-one warm/cool contract, every part derives its tones:
+lit third of the silhouette is the same world side in both `--inspect`ed views.
+
+**Shade volumes with `model` — it is the default now, even at ≤64px** (ADR-0089): the body shade
+follows the reconstructed surface normal, so a torso/limb reads as a rounded form with a **smooth,
+form-following terminator** (not the old flat linear ramp), and a dark base never crushes to black.
+`cel REGION MAT N` renders that *same* body as `N` crisp bands — the **opt-in** RO cel look; pick
+`N` 3–4 for a chibi. Smooth is the default; reach for `cel` only when you want visible hard bands.
+
+The hand warm/cool `fn` ramp below stays a valid **lightweight alternative** — for flat/painterly
+parts, `pixels:`-grid parts that derive `pal` keys, or when you want full manual control of every
+tone — one warm/cool contract, every part derives its tones:
 
 ```drw
 warm = #ffe8bf                       # light colour

@@ -3,7 +3,6 @@
 // and contextual-keyword-discipline checks. The sword recipe from the plan is the shared fixture.
 
 import { describe, expect, test } from 'bun:test'
-import { ramp, toHexColor } from '../../src/color.js'
 import { DrawsticError } from '../../src/diagnostic.js'
 import { Engine, type ExplainRecord } from '../../src/eval.js'
 import type { Sprite } from '../../src/values.js'
@@ -108,9 +107,12 @@ describe('light + material bindings and the lit block', () => {
       ].join('\n'),
       'x',
     )
-    const shade = trace[0]?.steps.find((o) => o.op === 'shade')
-    // a point light's shade point is its position verbatim (lightPointFor)
-    expect(shade?.point).toEqual({ x: 4, y: 4 })
+    // a point light's resolved light point is its position verbatim (lightPointFor)
+    expect(trace[0]?.light).toEqual({ x: 4, y: 4 })
+    // and the form body's toward-light vector points back at that corner source (up-left ⇒ negative)
+    const form = trace[0]?.steps.find((o) => o.op === 'form')
+    expect(form?.dir?.x).toBeLessThan(0)
+    expect(form?.dir?.y).toBeLessThan(0)
   })
 })
 
@@ -127,8 +129,9 @@ describe('model / cel command verbs', () => {
       ].join('\n')
     const flat = renderWithExplain(src('#8a95a5'), 'x')[0]
     const metal = renderWithExplain(src('steel'), 'x')[0]
-    expect(flat?.steps.map((o) => o.op)).toEqual(['fill', 'shade', 'light', 'ao'])
-    expect(metal?.steps.map((o) => o.op)).toEqual(['fill', 'shade', 'light', 'rim', 'ao', 'cast'])
+    // ADR-0089: the form body replaces the shade+light distance veils; edges (rim/ao/cast) unchanged.
+    expect(flat?.steps.map((o) => o.op)).toEqual(['form', 'ao'])
+    expect(metal?.steps.map((o) => o.op)).toEqual(['form', 'rim', 'ao', 'cast'])
   })
 
   test('an inline `COLOR RESPONSE` material is honoured (metal sequence on a fresh colour)', () => {
@@ -142,11 +145,11 @@ describe('model / cel command verbs', () => {
       ].join('\n'),
       'x',
     )[0]
-    expect(rec?.steps.map((o) => o.op)).toEqual(['fill', 'shade', 'light', 'rim', 'ao', 'cast'])
-    expect(rec?.steps[0]?.color).toBe('#b08040')
+    expect(rec?.steps.map((o) => o.op)).toEqual(['form', 'rim', 'ao', 'cast'])
+    expect(rec?.steps[0]?.color).toBe('#b08040') // the form body carries the material base colour
   })
 
-  test('cel paints exactly N distinct bands from the material base ramp', () => {
+  test('cel paints exactly N form-following bands (ADR-0089: the model body, quantized)', () => {
     const s = render(
       [
         'light sun = dir 1:1 #ffe6b0',
@@ -158,19 +161,11 @@ describe('model / cel command verbs', () => {
       ].join('\n'),
       'x',
     )
+    // exactly N=3 crisp band colours, and they wrap the form: the up-light corner is brighter than
+    // the down-light corner (bands quantize the same normal-based intensity field `model` shades).
     const colors = distinctColors(s, 2, 2, 13, 13)
     expect(colors.size).toBe(3)
-    // the three colours are exactly `ramp(base, 3)`
-    const expected = new Set(
-      ramp({ type: 'color', r: 138, g: 149, b: 165, a: 255 }, 3).map(toHexColor),
-    )
-    const got = new Set(
-      [...colors].map((c) => {
-        const [r, g, b] = c.split(',').map(Number)
-        return toHexColor({ type: 'color', r: r ?? 0, g: g ?? 0, b: b ?? 0, a: 255 })
-      }),
-    )
-    expect(got).toEqual(expected)
+    expect(lum(s, 3, 3)).toBeGreaterThan(lum(s, 12, 12))
   })
 
   test('an explicit `light L` argument works without any lit block', () => {
@@ -248,10 +243,11 @@ describe('explain trace (render --explain guardrail)', () => {
       'model:grip',
       'cel:pommel',
     ])
-    // grip is a bare colour → flat (no rim/cast); the cel records its 3 bands
-    expect(trace[2]?.steps.map((o) => o.op)).toEqual(['fill', 'shade', 'light', 'ao'])
-    expect(trace[3]?.steps).toHaveLength(3)
-    expect(trace[3]?.steps.every((o) => o.op === 'band')).toBe(true)
+    // grip is a bare colour → flat: the form body then AO (no rim/cast)
+    expect(trace[2]?.steps.map((o) => o.op)).toEqual(['form', 'ao'])
+    // cel lowers to a single form body carrying its band count (ADR-0089)
+    expect(trace[3]?.steps.map((o) => o.op)).toEqual(['form'])
+    expect(trace[3]?.steps[0]?.bands).toBe(3)
   })
 })
 

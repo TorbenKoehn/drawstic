@@ -181,6 +181,38 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
   Doku). **`craft-eval`-Re-Run bewusst NICHT gefahren** (schwere Multi-Agent-Messung, human/deferred —
   s. `measure-phase2` + `measure-phase3`); die Zielkorridor-Messung < ~1.4 läuft separat.
 
+## Character Fix-Wave
+
+_(Fix-Wave zur Character-DX-Evaluation `docs/character-dx-evaluation-2026-07-10.md`; die Einheiten
+adressieren die human-visuellen Befunde HV1–HV6 + Gesichter, oben (§9) nach Human-Grades gewichtet.)_
+
+- [x] **a — Form-/Normalen-Shading als `model`-Default (HV1, alle 4)** ([ADR-0089](decisions/0089-form-based-shading.md)).
+  Der harte, lineare Distanz-von-einem-Punkt-Veil (`shadeRegion`+`lightRegion` über die Bbox) ist als
+  `model`-Body durch **form-/normalenbasiertes Shading** ersetzt: exakte innere Distanz-zur-Boundary
+  (Felzenszwalb-EDT, `innerDistance2`/`edt1d` in `raster.ts`, deterministisch, großer finiter Sentinel
+  statt `Infinity`) → Höhenfeld `H=sqrt(D/Dmax)` (Kuppel) → Per-Pixel-Normale `n=normalize(−∂H/∂x·puff,
+  −∂H/∂y·puff, 1)` → Lambert `clamp(n·light)` + Ambient-Boden → Ton `warm→base→cool` via
+  `formTone`/`litTone`/`shadowTone` (35 %-L-Boden ⇒ dunkle Basis nie `#000000`). **Smooth ist Default**
+  (Pixel-Mode Bayer-gedithert für weichen Terminator), **`cel N` = dasselbe Intensitätsfeld als N saubere
+  Bänder** (Opt-in, `lowerCel`) — Bänder folgen der Form statt gerader Iso-Distanz-Linien. Lowering:
+  `planMaterial` → `form`-Op + rim/ao/cast (glow unverändert); `formSpecOf`/`lightVec3` in `shading.ts`;
+  `render --explain` serialisiert die `form`-Op (Tönungsziele, Licht-`z`, Dosen, Bänder). Probe-Render
+  (`--png@8` Kugel/Zylinder/Torso): Highlight sitzt auf der lichtzugewandten Wölbung, weicher Terminator,
+  Zylinder liest als Zylinder; `cel 4` zeigt gekrümmte Bänder. `tsc`+`biome` clean, 792 Tests grün
+  (shading/model/cel/light-material/cli-explain auf die neue Semantik konvertiert + neue Form-Tests).
+  Alt-Primitive `shadeRegion`/`lightRegion`/`celRegion` bleiben als Floor/Escape-Hatch.
+- [ ] **b — `pin`/`fit` Platzierungs-*Korrektheit*, nicht nur Kontakt (HV2, schlechteste Grades)**: Slot/
+  Anchor-System härten + Placement-Check (erwarteter Slot vs. tatsächlich, z. B. Kopf-auf-Hals) jenseits
+  von C007-Konnektivität, damit ein schwebender Kopf nicht grün passiert.
+- [ ] **c — Held-Prop: Grip-Pin in der Hand + Orientierungs-Konstanz über Views (HV6)**: ein Per-View-Flip
+  darf die Prop-Orientierung nicht invertieren; Front/Side/Back zeigen denselben Griff.
+- [ ] **d — Back-View Part-Selektion + Prop-z-Order-Idiom (HV4, §5.17)**: Rear-View wählt rear-Parts und
+  invertiert die Prop-z-Order (Prop nach dem Torso bei Back), keine Arme auf dem Rücken.
+- [ ] **e — Outline-Mechanismus (HV5, alle 4)**: dunkle RO-Silhouetten-Outline sauber bei 64×128.
+- [ ] **f — Chibi-Gesicht/Klein-Detail bei 64×128 (HV3, schlechteste Note)**: engine-gestützter
+  Gesichts-Pfad/validiertes Face-Primitive, damit ein Gesicht mehr als 2 Punkte ist.
+- [ ] **g — Re-Render aller vier Charaktere + Human-Vision-Pass** gegen die neue Schattierung/Placement.
+
 ## Emergente Punkte
 
 _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen anhängen.)_

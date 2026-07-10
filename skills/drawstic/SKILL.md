@@ -144,9 +144,9 @@ draw sword 24x48:
   guard  = rect(7:31, 17:34)
   pommel = circle(12:46, 2)
   lit sun:                       # scopes the light over the block
-    model blade steel            # fill→shade→light→rim→AO→cast, all from sun — can't drift
+    model blade steel            # smooth form shade→rim→AO→cast, all from sun — can't drift
     model guard #b08040 metal    # inline COLOR RESPONSE, no named material
-    cel   pommel steel 3         # crisp 3-band cel fill
+    cel   pommel steel 3         # opt-in: same form body as 3 crisp bands
 ```
 
 ## Core syntax
@@ -189,8 +189,10 @@ draw sword 24x48:
   source up-left ⇒ up-left edge lit) or `light torch = at 12:8 #ffb060 gain 1.4` (point source;
   `gain` = intensity, `amb COOL AMT` = fill light). `material steel = #8a95a5 metal` (response ∈
   `flat|metal|skin|cloth|glass|glow`; bare colour ⇒ `flat`; `glow` = self-lit). Then `lit sun:`
-  scopes the light over its body, and per object `model REGION MAT [light L]` lowers to
-  fill→shade→light→rim→AO→cast (all from the one light) · `cel REGION MAT N` = crisp N-band fill.
+  scopes the light over its body, and per object `model REGION MAT [light L]` lowers to a **smooth
+  form (normal-based) shade** → rim → AO → cast (all from the one light — follows the surface, soft
+  terminator, the default) · `cel REGION MAT N` = the **same form body as N crisp bands** (opt-in
+  hard cel look).
   `MAT` = a `material` value **or** inline `COLOR [RESPONSE]`. Resolution order: explicit `light L`
   → `lit L:` block → **theme default** (a `light` in a `theme` body → shared by every view/variant,
   the cross-view fix). None in any tier = hard `E024` (never a silent default). `render … --explain`
@@ -222,10 +224,11 @@ draw sword 24x48:
   For a **procedural** horizon from a function (noise dune/ridge) use `profile p 0..w ridgeY fill`
   instead of a per-column loop — the `fn` gets normalized x∈[0,1], so `noise(seed, nx*4, 0)` is smooth
   by construction (the integer-lattice trap can't happen); `profile(0..w, ridgeY)` is a Region.
-- **Explicit light — declare it once**: bind a `light` and let `model`/`cel` lower it, so shade,
-  rim, and cast can't drift apart. `light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%` then `lit sun:` and
-  `model blade steel` / `cel pommel steel 3` per object — one call replaces the hand-dosed
-  shade+light+rim+AO+cast quartet, and `--explain` shows the exact expansion so you can predict it.
+- **Explicit light — declare it once**: bind a `light` and let `model`/`cel` lower it, so the body
+  shade, rim, and cast can't drift apart. `light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%` then `lit
+  sun:` and `model blade steel` (smooth **form-following** shade, the default) / `cel pommel steel 3`
+  (same body as crisp bands, the opt-in cel look) per object — one call replaces the hand-dosed
+  shade+rim+AO+cast quartet, and `--explain` shows the exact expansion so you can predict it.
   `material` picks the *physics* (`metal`/`skin`/…), never the colour. The raw primitives stay the
   **floor / escape hatch** for hand-tuning: `shadeRegion r light base amount` (shadow veil, `amount`
   = opacity, deepest away from `light`; opaque `base` composites, not repaints), `lightRegion` (its

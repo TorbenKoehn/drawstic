@@ -1209,6 +1209,28 @@ const formatExplain = (drawing: string, records: readonly ExplainRecord[]): stri
       if (s.offset) {
         parts.push(`offset ${s.offset.dx}:${s.offset.dy}`)
       }
+      // form-body fields (ADR-0089): the tint targets, light elevation, doses, and cel band count.
+      if (s.warm !== undefined) {
+        parts.push(`warm ${s.warm}`)
+      }
+      if (s.cool !== undefined) {
+        parts.push(`cool ${s.cool}`)
+      }
+      if (s.elevation !== undefined) {
+        parts.push(`z${s.elevation}`)
+      }
+      if (s.shade !== undefined) {
+        parts.push(`shade ${s.shade}`)
+      }
+      if (s.hi !== undefined) {
+        parts.push(`hi ${s.hi}`)
+      }
+      if (s.ambient !== undefined) {
+        parts.push(`amb ${s.ambient}`)
+      }
+      if (s.bands !== undefined) {
+        parts.push(`bands ${s.bands}`)
+      }
       lines.push(`  ${s.op}${parts.length > 0 ? ` ${parts.join(' ')}` : ''}`)
     }
   }

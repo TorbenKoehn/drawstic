@@ -683,10 +683,10 @@ material steel = #8a95a5 metal                      # base colour + response
 
 draw sword 24x48:
   lit sun:                 # scopes `sun` over the block body only (set/restore, no global state)
-    model blade steel      # fill → shade → light → rim → AO → cast, all from `sun`
+    model blade steel      # smooth form shade → rim → AO → cast, all from `sun`
     model guard #b08040 metal   # inline COLOR RESPONSE — no named material needed
     model grip  #3a2a1e     # bare colour ⇒ response `flat`
-    cel  pommel steel 3     # crisp 3-band cel fill (ramp(base,3), banded by distance from `sun`)
+    cel  pommel steel 3     # opt-in: the same form body as 3 crisp bands
 ```
 
 - **`light NAME = dir DX:DY COLOR [amb COOL AMT] [gain N]`** (directional) / **`light NAME = at X:Y
@@ -704,16 +704,22 @@ draw sword 24x48:
   applied **theme default** (`light` in a `theme` body, § Themes). None in any tier = hard `E024`.
   The theme default is the cross-view fix: front + side + recolor variants applying one theme share
   **one** light, so shading is never mirrored per view.
-- **`model REGION MATERIAL [light L]`** lowers the material under the resolved light; `MATERIAL` is
-  a `material` value **or** inline `COLOR [RESPONSE]`. Zero-dose steps are skipped (so `flat` emits
-  no rim/cast). **No light in any tier = hard `E024`** — never a silent default. The **cast is
-  clipped to already-drawn content** (silhouette offset down-light, minus the region, minus every
-  transparent pixel): within one draw it lands on an earlier-drawn opaque neighbour but never bakes
-  onto empty canvas, so an isolated part casts nothing (no floating blob). Ground assembled figures
-  with `fit … shadow`, not a baked material cast.
-- **`cel REGION MATERIAL N`** fills with `N` crisp cel bands from `ramp(base, N)` (even,
-  hue-consistent, warm→cool), banded by distance from the light — a hard-edged alternative to
-  `model`'s smooth veils.
+- **`model REGION MATERIAL [light L]`** lowers the material under the resolved light onto a **form
+  (normal-based) body shade → rim → AO → cast** (ADR-0089); `MATERIAL` is a `material` value **or**
+  inline `COLOR [RESPONSE]`. Zero-dose edge steps are skipped (so `flat` emits no rim/cast). **No
+  light in any tier = hard `E024`** — never a silent default. The **body follows the surface**: an
+  inner distance-to-boundary field is inflated to a dome, a per-pixel normal is dotted against the
+  light, and the intensity is tone-mapped `warm → base → cool` — **smooth and form-following by
+  default**, soft terminator (ordered-dithered in pixel mode), works at chibi scale; a dark base
+  never crushes to `#000000` (keeps ≥35 % lightness). The **cast is clipped to already-drawn content**
+  (silhouette offset down-light, minus the region, minus every transparent pixel): within one draw it
+  lands on an earlier-drawn opaque neighbour but never bakes onto empty canvas, so an isolated part
+  casts nothing (no floating blob). Ground assembled figures with `fit … shadow`, not a baked
+  material cast.
+- **`cel REGION MATERIAL N`** renders the **same form body as `N` crisp bands** that follow the
+  surface normal (the intensity field quantized, band-centre tone-mapped) — the **opt-in** hard
+  cel-shaded look (`model` is the smooth default). Bands wrap the form, not straight iso-distance
+  lines. `--explain` shows one `form` step carrying the band count.
 - **`render <file>#<draw> --explain`** prints the exact primitive expansion of every `model`/`cel`
   (CLI § above) — predict the pixels, or copy the sequence to hand-tune with the raw primitives.
 - `light`/`material` bindings live at **module scope or drawing-local** (like `grad`/`mask`).

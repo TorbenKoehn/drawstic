@@ -1,22 +1,25 @@
-// Declarative light + material lowering (ADR-0086). Internal machinery only — no parser/eval
-// bindings yet (that is phase 2c). This module is the *encoding unification*: the single `Light`
-// value is converted, per region, into whatever shape each raster shading primitive needs — a
-// point (`shadeRegion`/`lightRegion`), a direction (`rim`), or a `dx:dy` offset (cast shadow) —
-// so a shade veil, a rim, and a cast shadow driven by one light stay coherent *structurally*,
-// not by author discipline. `lowerMaterial` expands a `Material` under a `Light` onto the fixed,
-// craft-correct primitive sequence (fill → shadeRegion → lightRegion → rim → ambientOcclusion →
-// cast), reading the baked per-response dose profiles distilled from scene-craft §5. The plan it
-// returns is inspectable so phase 2c can print it for `render --explain`.
+// Declarative light + material lowering (ADR-0086, ADR-0089). This module is the *encoding
+// unification*: the single `Light` value is converted, per region, into whatever shape each raster
+// shading primitive needs — a point (`shadeRegion`/`lightRegion`), a direction (`rim`/form normals),
+// or a `dx:dy` offset (cast shadow) — so a body shade, a rim, and a cast shadow driven by one light
+// stay coherent *structurally*, not by author discipline. `lowerMaterial` expands a `Material` under
+// a `Light` onto the craft-correct sequence: the **form (normal-based) body shade** (ADR-0089, the
+// smooth default that follows surface curvature) → rim → ambientOcclusion → cast, reading the baked
+// per-response dose profiles distilled from scene-craft §5. `lowerCel` renders the same body as
+// crisp N-band cel. The plan each returns is inspectable so eval can print it for `render --explain`.
 
 import { type Color, color, desaturate, litTone, shadowTone, withAlpha } from './color.js'
 import { dhypot, roundHalfUp } from './dmath.js'
 import {
   ambientOcclusion,
   type Context,
+  type FormSpec,
   fillRegion,
+  formShade,
   lightRegion,
   rimRegion,
   shadeRegion,
+  type Vec3,
 } from './raster.js'
 import {
   invertMatrix,
@@ -141,8 +144,7 @@ const DOSE: Record<MaterialResponse, Dose> = {
   glow: { shade: 0, hi: 0.45, rim: 0, ao: 0, cast: 0, self: true },
 }
 
-/** Tone depths for the veils/edges the doses paint (fixed; the dose controls *how much* reaches). */
-const SHADE_TONE_DEPTH = 0.55
+/** Tone depths for the edges/glow the doses paint (fixed; the dose controls *how much* reaches). */
 const HI_TONE_LIFT = 0.6
 const RIM_TONE_LIFT = 0.7
 const RIM_DESAT = 0.25
@@ -153,6 +155,23 @@ const RIM_WIDTH_FRAC = 0.03
 const RIM_WIDTH_MAX = 4
 /** Cast reach as a fraction of the region's shorter side. */
 const CAST_LEN_FRAC = 0.2
+
+// ── form-shading parameters (ADR-0089) ───────────────────────────────────────
+/**
+ * The light's out-of-plane elevation `z` for form shading — how much the source sits *in front of*
+ * the surface vs. off to the side. Lower ⇒ more grazing ⇒ more of the form falls into shadow; this
+ * value keeps a directional light reading as a top/side key with a broad lit face and a soft
+ * terminator, not a flat frontal wash.
+ */
+const LIGHT_ELEVATION = 0.55
+/**
+ * Surface-curvature gain for the reconstructed normal (`puff` in {@link FormSpec}). Higher ⇒ the
+ * height field's slopes count more ⇒ rounder, more pronounced form; tuned so a filled blob reads as
+ * a firm dome without the terminator collapsing to a hard edge.
+ */
+const FORM_PUFF = 2.6
+/** Shadow floor when a light carries no `amb` — shadows keep this lit fraction, never pure black. */
+const DEFAULT_AMBIENT = 0.2
 
 /** Effective dose for a field: material override when present, else the response default; ×gain. */
 const doseOf = (base: number, override: number | undefined, gain: number): number =>
@@ -183,6 +202,7 @@ const castLenFor = (region: Region): number => {
  */
 export type ShadeOp =
   | { readonly kind: 'fill'; readonly color: Color }
+  | { readonly kind: 'form'; readonly spec: FormSpec }
   | { readonly kind: 'shade'; readonly point: Vec2; readonly color: Color; readonly amount: number }
   | { readonly kind: 'light'; readonly point: Vec2; readonly color: Color; readonly amount: number }
   | { readonly kind: 'rim'; readonly dir: Vec2; readonly color: Color; readonly width: number }
@@ -194,21 +214,66 @@ export type ShadeOp =
     }
 
 /**
+ * The unit *toward-light* 3D vector form shading dots each surface normal against (ADR-0089): the
+ * light's in-plane travel direction *negated* (so it points back at the source, the lit side) plus a
+ * fixed out-of-plane {@link LIGHT_ELEVATION} `z`. A point light's in-plane direction is derived
+ * per-region (source → centre) exactly as `rim` does, so form, rim, and cast still read one source.
+ */
+export const lightVec3 = (lt: Light, region: Region): Vec3 => {
+  const travel = lightDirOf(lt, region)
+  const x = -travel.x
+  const y = -travel.y
+  const z = LIGHT_ELEVATION
+  const len = Math.sqrt(x * x + y * y + z * z)
+  return { x: x / len, y: y / len, z: z / len }
+}
+
+/**
+ * Resolve a {@link FormSpec} for `mat` under `lt` on `region` (ADR-0089): the shared plan for both
+ * the smooth `model` body (`bands = null`) and the crisp `cel` body (`bands = N`). `shade`/`hi` are
+ * the response's baked doses (material-overridable, ×gain) reused as the max shadow / highlight mix
+ * amounts; `warm`/`cool` and the `ambient` floor come from the light — so `cel` is exactly `model`'s
+ * body quantized, never a divergent second look.
+ */
+export const formSpecOf = (
+  region: Region,
+  mat: Material,
+  lt: Light,
+  bands: number | null,
+): FormSpec => {
+  const gain = lt.gain
+  const dose = DOSE[mat.response]
+  return {
+    base: mat.base,
+    warm: lt.color,
+    cool: lt.amb?.color ?? DEFAULT_COOL,
+    light: lightVec3(lt, region),
+    shade: clamp01(doseOf(dose.shade, mat.shade, gain)),
+    hi: clamp01(doseOf(dose.hi, mat.hi, gain)),
+    puff: FORM_PUFF,
+    ambient: clamp01(lt.amb ? lt.amb.amount : DEFAULT_AMBIENT),
+    bands,
+  }
+}
+
+/**
  * Plan the primitive sequence for `mat` under `lt` on `region` — pure and deterministic, no
- * drawing. Steps whose effective dose is zero are omitted. Tones come from the ADR-0086 colour
- * helpers: highlights via `litTone` toward the light colour (warm, never chalky `lighten`),
- * shadows/AO via `shadowTone` with its capped cool nudge (no magenta drift). A `glow` (self)
- * response yields only a fill and a self-light centred on the region — it never darkens, rims, or
- * casts, and (because this only ever touches `region`) never lights a neighbour.
+ * drawing (ADR-0089). The body is a single **form (normal-based) shade** — the smooth, surface-
+ * curvature-following default that replaced the old form-ignoring `shade`/`light` distance veils —
+ * followed by the unchanged `rim` → `ao` → `cast` edge steps (each skipped at zero dose). Edge tones
+ * come from the ADR-0086 colour helpers: `litTone` toward the light colour for the warm rim,
+ * `shadowTone` with its capped cool nudge (no magenta drift) for AO/cast. A `glow` (self) response
+ * yields only a fill and a self-light centred on the region — it never darkens, rims, or casts, and
+ * (because this only ever touches `region`) never lights a neighbour.
  */
 export const planMaterial = (region: Region, mat: Material, lt: Light): ShadeOp[] => {
   const gain = lt.gain
   const warm = lt.color
   const cool = lt.amb?.color ?? DEFAULT_COOL
   const dose = DOSE[mat.response]
-  const ops: ShadeOp[] = [{ kind: 'fill', color: mat.base }]
 
   if (dose.self) {
+    const ops: ShadeOp[] = [{ kind: 'fill', color: mat.base }]
     const hi = doseOf(dose.hi, mat.hi, gain)
     if (hi > 0) {
       // self-illuminated: brightest at the region's own centre, dimming outward (a glowing core).
@@ -222,22 +287,8 @@ export const planMaterial = (region: Region, mat: Material, lt: Light): ShadeOp[
     return ops
   }
 
-  const point = lightPointFor(region, lt)
-  // ambient fill lifts shadows (never pure black), so it shallows the shade veil a touch.
-  const ambLift = lt.amb ? 1 - clamp01(lt.amb.amount) * 0.4 : 1
-  const shade = clamp01(doseOf(dose.shade, mat.shade, gain) * ambLift)
-  if (shade > 0) {
-    ops.push({
-      kind: 'shade',
-      point,
-      color: shadowTone(mat.base, cool, SHADE_TONE_DEPTH),
-      amount: shade,
-    })
-  }
-  const hi = doseOf(dose.hi, mat.hi, gain)
-  if (hi > 0) {
-    ops.push({ kind: 'light', point, color: litTone(mat.base, warm, HI_TONE_LIFT), amount: hi })
-  }
+  // the body: form-based smooth shading (bands = null), following the surface normal, not a ramp.
+  const ops: ShadeOp[] = [{ kind: 'form', spec: formSpecOf(region, mat, lt, null) }]
   const rim = doseOf(dose.rim, mat.rim, gain)
   if (rim > 0) {
     ops.push({
@@ -303,6 +354,9 @@ const executeOp = (ctx: Context, region: Region, op: ShadeOp): void => {
     case 'fill':
       fillRegion(ctx, region, op.color)
       return
+    case 'form':
+      formShade(ctx, region, op.spec)
+      return
     case 'shade':
       shadeRegion(ctx, region, op.point, op.color, op.amount)
       return
@@ -337,4 +391,24 @@ export const lowerMaterial = (
     executeOp(ctx, region, op)
   }
   return ops
+}
+
+/**
+ * Lower `mat` under `lt` onto `region` as a crisp **`N`-band cel** (ADR-0089): the very same
+ * form-based body as {@link lowerMaterial}, quantized into `N` clean bands that follow the surface
+ * normal (`floor(N) ≥ 1`), instead of `model`'s smooth terminator. Cel is therefore the opt-in
+ * stylization and smooth is the default — and because both share {@link formSpecOf}, the bands land
+ * exactly where the smooth shade would, never a divergent second look. Returns the single-`form`
+ * plan for `render --explain`. No rim/AO/cast: cel is the banded body only.
+ */
+export const lowerCel = (
+  ctx: Context,
+  region: Region,
+  mat: Material,
+  lt: Light,
+  n: number,
+): ShadeOp[] => {
+  const op: ShadeOp = { kind: 'form', spec: formSpecOf(region, mat, lt, Math.max(1, n)) }
+  executeOp(ctx, region, op)
+  return [op]
 }

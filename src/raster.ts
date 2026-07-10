@@ -2,7 +2,7 @@
 // pinned primitives, region eliminators, gradients (ordered-dithered in
 // pixel mode), stamps (inverse-mapped NN), filters, text.
 
-import { type Color, mix, TRANSPARENT } from './color.js'
+import { type Color, litTone, mix, shadowTone, TRANSPARENT } from './color.js'
 import { dcosDeg, dhypot, dsinDeg, roundHalfUp } from './dmath.js'
 import { type BitmapFont, missingGlyph } from './fonts.js'
 import type { Framebuffer } from './framebuffer.js'
@@ -1344,6 +1344,215 @@ export const celRegion = (
       ctx.buffer.set(x, y, c)
     }
   })
+}
+
+// ── form (normal-based) shading (ADR-0089) ───────────────────────────────────
+
+/** A 3D unit vector; `z` is the out-of-plane axis, positive toward the viewer/light. */
+export type Vec3 = { readonly x: number; readonly y: number; readonly z: number }
+
+/**
+ * Fully-resolved parameters for {@link formShade} (ADR-0089), built from a `Material` + `Light` by
+ * `shading.ts`. `base` is the material colour; `warm`/`cool` the highlight/shadow tint targets;
+ * `light` the unit *toward-light* vector (in-plane direction + `z` elevation); `shade`/`hi` the max
+ * shadow / highlight doses; `puff` the surface-curvature gain (higher ⇒ rounder, more form);
+ * `ambient` the shadow floor in `[0,1]` (the lit fraction the darkest pixel keeps, so shadows never
+ * crush to black); `bands` is `null` for the smooth default or `N` for a crisp `N`-band cel
+ * quantization of the *same* intensity field.
+ */
+export type FormSpec = {
+  readonly base: Color
+  readonly warm: Color
+  readonly cool: Color
+  readonly light: Vec3
+  readonly shade: number
+  readonly hi: number
+  readonly puff: number
+  readonly ambient: number
+  readonly bands: number | null
+}
+
+/** Intensity at which the tone equals `base`; brighter lifts toward `warm`, darker toward `cool`. */
+const FORM_MID = 0.5
+/** Pixel-mode ordered-dither amplitude on the smooth intensity, softening 8-bit terminator banding. */
+const FORM_DITHER = 0.06
+
+/**
+ * Map a Lambert intensity `lit ∈ [0,1]` to a surface tone (ADR-0089): at {@link FORM_MID} it is
+ * `base`; above, a warm highlight via {@link litTone} toward `spec.warm` scaled by `spec.hi`; below,
+ * a cool shadow via {@link shadowTone} toward `spec.cool` scaled by `spec.shade` (whose lightness
+ * floor keeps a dark base legible, never `#000000`). Continuous, so the terminator is a soft
+ * gradient rather than the hard linear step the old distance-ramp produced.
+ */
+const formTone = (spec: FormSpec, lit: number): Color => {
+  if (lit >= FORM_MID) {
+    return litTone(spec.base, spec.warm, ((lit - FORM_MID) / (1 - FORM_MID)) * spec.hi)
+  }
+  return shadowTone(spec.base, spec.cool, ((FORM_MID - lit) / FORM_MID) * spec.shade)
+}
+
+/**
+ * Felzenszwalb–Huttenlocher exact 1-D squared-distance transform: fills `d[q]` with
+ * `min over p of (q − p)² + f[p]`. Deterministic — only `+ − * /` and comparisons (ADR-0027) — with
+ * a large finite sentinel (never `Infinity`, which would produce `NaN` for two adjacent object
+ * cells). `v`/`z` are caller-provided scratch (parabola sites / lower-envelope breakpoints).
+ */
+const edt1d = (
+  f: Float64Array,
+  d: Float64Array,
+  v: Int32Array,
+  z: Float64Array,
+  n: number,
+): void => {
+  let k = 0
+  v[0] = 0
+  z[0] = Number.NEGATIVE_INFINITY
+  z[1] = Number.POSITIVE_INFINITY
+  for (let q = 1; q < n; q++) {
+    const fq = f[q] ?? 0
+    let vk = v[k] ?? 0
+    let s = (fq + q * q - ((f[vk] ?? 0) + vk * vk)) / (2 * q - 2 * vk)
+    while (k > 0 && s <= (z[k] ?? 0)) {
+      k--
+      vk = v[k] ?? 0
+      s = (fq + q * q - ((f[vk] ?? 0) + vk * vk)) / (2 * q - 2 * vk)
+    }
+    k++
+    v[k] = q
+    z[k] = s
+    z[k + 1] = Number.POSITIVE_INFINITY
+  }
+  k = 0
+  for (let q = 0; q < n; q++) {
+    while ((z[k + 1] ?? 0) < q) {
+      k++
+    }
+    const vk = v[k] ?? 0
+    d[q] = (q - vk) * (q - vk) + (f[vk] ?? 0)
+  }
+}
+
+/**
+ * Squared **inner** Euclidean distance-to-boundary field over the padded grid `[bx,by]+w×h`: seed
+ * every out-of-region cell to 0 and every in-region cell to a large finite value, then run the
+ * separable {@link edt1d} down columns and across rows. Result[i] is the squared distance from cell
+ * `i` to the nearest non-region cell — the exact SDF interior the form normals are read from. The
+ * one-cell pad ring is out-of-region, so an edge-flush region still sees a boundary (and every
+ * row/column has a seed, so no NaN).
+ */
+const innerDistance2 = (
+  region: Region,
+  bx: number,
+  by: number,
+  w: number,
+  h: number,
+): Float64Array => {
+  const INF = 1e20
+  const grid = new Float64Array(w * h)
+  for (let gy = 0; gy < h; gy++) {
+    for (let gx = 0; gx < w; gx++) {
+      grid[gy * w + gx] = region.has(bx + gx, by + gy) ? INF : 0
+    }
+  }
+  const maxd = Math.max(w, h)
+  const f = new Float64Array(maxd)
+  const d = new Float64Array(maxd)
+  const v = new Int32Array(maxd)
+  const z = new Float64Array(maxd + 1)
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) {
+      f[y] = grid[y * w + x] ?? 0
+    }
+    edt1d(f, d, v, z, h)
+    for (let y = 0; y < h; y++) {
+      grid[y * w + x] = d[y] ?? 0
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      f[x] = grid[y * w + x] ?? 0
+    }
+    edt1d(f, d, v, z, w)
+    for (let x = 0; x < w; x++) {
+      grid[y * w + x] = d[x] ?? 0
+    }
+  }
+  return grid
+}
+
+/**
+ * **Form (normal-based) shading** — the ADR-0089 default that replaces the old form-ignoring
+ * distance-from-a-point veil in `model`. From the region's own geometry it derives an inner-distance
+ * SDF ({@link innerDistance2}), inflates it to a spherical height field `H = sqrt(D / Dmax)` (steep
+ * at the rim, flat over the spine), reads a per-pixel surface normal
+ * `n = normalize(−∂H/∂x·puff, −∂H/∂y·puff, 1)`, and shades each pixel by the Lambert term
+ * `clamp(n · light, 0..1)` lifted by the `ambient` floor. The intensity is mapped to a tone by
+ * {@link formTone}: brightest where the normal faces the light, softly terminating into a cool
+ * shadow on the far side — so the shading **follows the form** instead of stepping linearly across
+ * the bbox. `bands === null` renders the smooth default (ordered-dithered in pixel mode so the
+ * terminator reads clean at 8-bit); `bands === N` snaps the identical field into `N` crisp cel bands.
+ * Only in-region pixels are written (through {@link putPixel}, so mask + budget are honoured);
+ * deterministic throughout (dmath-only arithmetic, no RNG).
+ */
+export const formShade = (ctx: Context, region: Region, spec: FormSpec): void => {
+  const b = regionBounds(ctx, region)
+  if (!b) {
+    return
+  }
+  const bx = b.x0 - 1
+  const by = b.y0 - 1
+  const w = b.x1 - b.x0 + 3
+  const h = b.y1 - b.y0 + 3
+  const dist2 = innerDistance2(region, bx, by, w, h)
+  let maxD2 = 1
+  for (let i = 0; i < dist2.length; i++) {
+    const v = dist2[i] ?? 0
+    if (v > maxD2) {
+      maxD2 = v
+    }
+  }
+  const dmax = Math.sqrt(maxD2)
+  const height = new Float64Array(w * h)
+  for (let i = 0; i < dist2.length; i++) {
+    const d2 = dist2[i] ?? 0
+    height[i] = d2 > 0 ? Math.sqrt(Math.sqrt(d2) / dmax) : 0
+  }
+  const bbox: BBox = region.bbox ?? b
+  const L = spec.light
+  const amb = clamp01(spec.ambient)
+  const bands = spec.bands
+  for (let y = b.y0; y <= b.y1; y++) {
+    for (let x = b.x0; x <= b.x1; x++) {
+      const gx = x - bx
+      const gy = y - by
+      if ((dist2[gy * w + gx] ?? 0) <= 0) {
+        continue // out of region (SDF 0)
+      }
+      const hL = height[gy * w + (gx - 1)] ?? 0
+      const hR = height[gy * w + (gx + 1)] ?? 0
+      const hU = height[(gy - 1) * w + gx] ?? 0
+      const hD = height[(gy + 1) * w + gx] ?? 0
+      const nx = -(hR - hL) * 0.5 * spec.puff
+      const ny = -(hD - hU) * 0.5 * spec.puff
+      const nlen = Math.sqrt(nx * nx + ny * ny + 1)
+      const raw = (nx * L.x + ny * L.y + L.z) / nlen
+      let lit = amb + (1 - amb) * clamp01(raw)
+      let tone: Color
+      if (bands !== null && bands >= 1) {
+        // snap the shared intensity field to a band centre, then tone-map that centre (crisp, no dither)
+        const u = amb >= 1 ? 0 : clamp01((lit - amb) / (1 - amb))
+        const band = Math.min(bands - 1, Math.floor(u * bands))
+        tone = formTone(spec, amb + (1 - amb) * ((band + 0.5) / bands))
+      } else {
+        if (ctx.mode === 'pixel') {
+          const th = ((BAYER4[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16 - 0.5
+          lit = clamp01(lit + th * FORM_DITHER)
+        }
+        tone = formTone(spec, lit)
+      }
+      putPixel(ctx, x, y, tone, bbox)
+    }
+  }
 }
 
 /**
