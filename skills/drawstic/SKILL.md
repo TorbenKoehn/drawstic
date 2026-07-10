@@ -351,15 +351,15 @@ verifies grammar only — pair confusion, weak silhouettes, and mushy materials 
   `grain`/`speckle`/`ripple`/`dither` take an **optional leading region** to scope them
   (`grain sand 0.3 11 p`); without one they hit every opaque pixel (still respecting a `mask …:`
   block). All shadow forms share one `[region] dx:dy paint` shape (`shadow 1:1 p`,
-  `shadow r 1:1 p`, `castShadow r 1:1 p`, `stamp … shadow 1:1 p`); the whole-frame `shadow`
-  respects a `mask …:` block in language version 2 (`drawstic 1` ignores it). A `stamp … shadow` on
+  `shadow r 1:1 p`, `castShadow r 1:1 p`, `stamp … shadow 1:1 p` — always a `dx:dy` point, never
+  two bare numbers); the whole-frame `shadow` respects a `mask …:` block. A `stamp … shadow` on
   a **composite** sprite clumps the whole silhouette into a dark blob — use an `ellipse … fill` ground
   shadow for standing objects.
 - `radial(c, transparent)` muddies a glow; end on `c.alpha(0%)`. Cross-hue OkLCh blends can drift
   through muddy/magenta colours; use intra-hue ramps or explicit `rgb`/`hsl` stops. Full colour traps:
   reference.md § Color and § Gradients & filters.
-- Stamp anchors are visual in language version 2: offset anchors name a spot on the post-transform
-  footprint. Version-history details: reference.md § Determinism & budget.
+- Stamp anchors are visual: offset anchors name a spot on the post-transform footprint. A leading
+  `drawstic <N>` pragma is parsed but inert (one engine semantics); omit it. Details: reference.md.
 - `quad`/`bezier`/`arc` below ~12px rasterize blocky — use `pixels:` instead. `noise(seed, x, 0)`
   at integer `x` is high-frequency spikes — sample fractional steps (`x * 0.05`) for smoothness, or
   use `profile` for a silhouette (its `fn` gets normalized x, so the trap can't occur).

@@ -90,7 +90,6 @@ import {
   type RenderMode,
   rimRegion,
   shadeRegion,
-  shadeRegionLegacy,
   stampSprite,
   strokeLine,
   strokePath,
@@ -148,12 +147,6 @@ import {
   typeName,
   type Value,
 } from './values.js'
-
-/**
- * Highest recipe `lang` pragma this engine accepts (ADR-0029); recipes
- * pinning a newer version fail fast with E009 rather than mis-evaluating.
- */
-export const LANGUAGE_VERSION = 2
 
 /**
  * The optional leading region of a scoped texture filter (`grain [r] …`, ADR-0071) or a shadow
@@ -924,8 +917,10 @@ export class Engine {
   }
 
   /**
-   * Parse `source`, check its `lang` pragma (E009 if unsupported), then
-   * collect definitions and execute top-level statements. The module is
+   * Parse `source`, then collect definitions and execute top-level
+   * statements. The leading `drawstic N` pragma is parsed but inert
+   * (ADR-0088): there is exactly one engine semantics, so no `N` is
+   * accepted-or-rejected and nothing branches on it. The module is
    * registered in the cache only *after* its body finishes running, so a
    * re-import that reaches back into a module still executing its top level
    * is caught as an import cycle by the `#loading` stack (spec §2, E008)
@@ -934,14 +929,6 @@ export class Engine {
    */
   loadSource(source: string, abs: string, display: string): ModuleRecord {
     const ast = parse(source, display)
-    if (ast.pragma !== undefined && ast.pragma > LANGUAGE_VERSION) {
-      throw error(
-        ERROR_CODE.versionPragma,
-        `recipe pins language version ${ast.pragma}, engine supports ${LANGUAGE_VERSION}`,
-        display,
-        { line: 1, column: 1 },
-      )
-    }
     const rec: ModuleRecord = {
       file: abs,
       displayPath: display,
@@ -3167,9 +3154,9 @@ export class Engine {
       }
       case 'shadow': {
         // Unified `[region] dx:dy paint` shape (ADR-0070). The first argument disambiguates the
-        // three forms by value type: a region → local region shadow (ADR-0062); a dx:dy point →
-        // the canonical whole-frame drop shadow; a bare number → the deprecated two-number frame
-        // alias, kept for error-robustness in every version.
+        // two forms by value type: a region → local region shadow (ADR-0062); a dx:dy point →
+        // the canonical whole-frame drop shadow. The whole-frame shadow always honours an
+        // enclosing `mask …:` block (ADR-0070 / ADR-0088).
         const first = args.value()
         if (typeof first === 'object' && first !== null && first.type === 'region') {
           const offset = args.pair()
@@ -3180,9 +3167,6 @@ export class Engine {
           fillRegion(ctx, regionTransform(first, translation(dx, dy), translation(-dx, -dy)), paint)
           return
         }
-        // language version 2 makes the whole-frame shadow honour an enclosing `mask …:` block
-        // (ADR-0070); `drawstic 1` keeps the whole-buffer rebuild.
-        const respectMask = (state.module.ast.pragma ?? LANGUAGE_VERSION) >= 2
         if (typeof first === 'object' && first !== null && first.type === 'point') {
           if (first.rel) {
             throw error(
@@ -3194,23 +3178,15 @@ export class Engine {
           }
           const paint = args.color()
           args.done()
-          filterShadow(ctx, quantInt(first.x), quantInt(first.y), paint, respectMask)
+          filterShadow(ctx, quantInt(first.x), quantInt(first.y), paint)
           return
         }
-        if (typeof first !== 'number') {
-          throw error(
-            ERROR_CODE.typeError,
-            `shadow needs a dx:dy offset or region, got ${typeName(first)}`,
-            state.module.displayPath,
-            stmt.span,
-          )
-        }
-        const dx = first
-        const dy = args.num()
-        const paint = args.color()
-        args.done()
-        filterShadow(ctx, quantInt(dx), quantInt(dy), paint, respectMask)
-        return
+        throw error(
+          ERROR_CODE.typeError,
+          `shadow needs a dx:dy offset or region, got ${typeName(first)}`,
+          state.module.displayPath,
+          stmt.span,
+        )
       }
       case 'castShadow': {
         const region = args.region()
@@ -3272,13 +3248,8 @@ export class Engine {
         const base = args.color()
         const amount = args.num()
         args.done()
-        // ADR-0068: language version 2 makes `amount` the veil opacity; `drawstic 1`
-        // recipes keep the v1 "base alpha = opacity, amount = distance-darkening" split.
-        if ((state.module.ast.pragma ?? LANGUAGE_VERSION) >= 2) {
-          shadeRegion(ctx, region, light, base, amount)
-        } else {
-          shadeRegionLegacy(ctx, region, light, base, amount)
-        }
+        // ADR-0068: `amount` is the veil opacity — an opaque `base` no longer repaints the region.
+        shadeRegion(ctx, region, light, base, amount)
         return
       }
       case 'lightRegion': {
@@ -3567,57 +3538,6 @@ export class Engine {
   }
 
   /**
-   * The sprite-local point (in unscaled source pixels) that `anchor`
-   * names (ADR-0064) — e.g. `center` is the sprite's midpoint, `topLeft`
-   * is the origin and needs no lookup (handled separately by callers).
-   */
-  #stampAnchorPoint(
-    sprite: Sprite,
-    anchor: StampAnchor,
-  ): { readonly x: number; readonly y: number } {
-    const cx = (sprite.w - 1) / 2
-    const cy = (sprite.h - 1) / 2
-    switch (anchor) {
-      case 'top':
-        return { x: cx, y: 0 }
-      case 'topRight':
-        return { x: sprite.w - 1, y: 0 }
-      case 'left':
-        return { x: 0, y: cy }
-      case 'center':
-        return { x: cx, y: cy }
-      case 'right':
-        return { x: sprite.w - 1, y: cy }
-      case 'bottomLeft':
-        return { x: 0, y: sprite.h - 1 }
-      case 'bottom':
-        return { x: cx, y: sprite.h - 1 }
-      case 'bottomRight':
-        return { x: sprite.w - 1, y: sprite.h - 1 }
-      default:
-        return { x: 0, y: 0 }
-    }
-  }
-
-  /**
-   * Legacy (`drawstic 1`, ADR-0064) anchor resolution: the source-local
-   * anchor point pushed *through* the stamp transform, so flip/rotate/scale
-   * carry the named point with the pixels. `undefined` when it maps to
-   * infinity (projective/singular).
-   */
-  #throughTransformAnchorPoint(
-    sprite: Sprite,
-    anchor: StampAnchor,
-    matrix: readonly number[] | undefined,
-  ): { readonly x: number; readonly y: number } | undefined {
-    const local = this.#stampAnchorPoint(sprite, anchor)
-    if (!matrix) {
-      return local
-    }
-    return applyMatrix(matrix, local.x, local.y) ?? undefined
-  }
-
-  /**
    * The offset-anchor position on the *transformed* footprint's axis-aligned
    * bounding box (visual semantics, ADR-0072) — e.g. `bottom` is the visible
    * bottom-centre after flip/rotate/scale. The bbox is forward-mapped from the
@@ -3677,25 +3597,20 @@ export class Engine {
   /**
    * The top-left stamp origin such that `anchor` lands on `point`. `topLeft`
    * (and the implicit default) always places the untransformed origin at
-   * `point` (ADR-0072 §2). For the eight offset anchors: language version 2
-   * resolves them against the *transformed* footprint bbox (visual — ADR-0072);
-   * `drawstic 1` maps the source-local anchor point *through* the transform
-   * (legacy — ADR-0064). Both fall back to raw origin placement if the anchor
-   * maps outside the transform's domain.
+   * `point` (ADR-0072 §2). The eight offset anchors resolve against the
+   * *transformed* footprint bbox (visual — ADR-0072), falling back to raw
+   * origin placement if the anchor maps outside the transform's domain.
    */
   #anchoredStampOrigin(
     sprite: Sprite,
     point: { readonly x: number; readonly y: number },
     matrix: readonly number[] | undefined,
     anchor: StampAnchor,
-    visual: boolean,
   ): { readonly x: number; readonly y: number } {
     if (anchor === 'topLeft') {
       return { x: quantInt(point.x), y: quantInt(point.y) }
     }
-    const mapped = visual
-      ? this.#visualAnchorPoint(sprite, anchor, matrix)
-      : this.#throughTransformAnchorPoint(sprite, anchor, matrix)
+    const mapped = this.#visualAnchorPoint(sprite, anchor, matrix)
     if (!mapped) {
       return { x: quantInt(point.x), y: quantInt(point.y) }
     }
@@ -3720,9 +3635,8 @@ export class Engine {
     const matrix = this.#buildStampMatrix(sprite, flags)
     // A stamp `mask` region is in canvas coordinates like every mask; inside a `mirror` the
     // reflecting buffer flips the sprite pixels and the mask travels with them (ADR-0078 §5).
-    // v2 = visual anchors (transformed footprint bbox); v1 = through-transform (ADR-0072)
-    const visualAnchors = (state.module.ast.pragma ?? LANGUAGE_VERSION) >= 2
-    const origin = this.#anchoredStampOrigin(sprite, point, matrix, flags.anchor, visualAnchors)
+    // Offset anchors resolve against the transformed footprint bbox (visual — ADR-0072).
+    const origin = this.#anchoredStampOrigin(sprite, point, matrix, flags.anchor)
     if (flags.shadow) {
       const shadowOk = stampSprite(
         draw.context,

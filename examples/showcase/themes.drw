@@ -15,4 +15,4 @@ theme dusk:
   style "Cozy dusk mood; long soft shadows in 'r'."
 
 filter softShadow:
-  shadow 1 1 #10101080
+  shadow 1:1 #10101080

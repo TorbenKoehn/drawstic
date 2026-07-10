@@ -999,21 +999,13 @@ export const filterTint = (ctx: Context, paint: Color, amount: number): void => 
  * Offset-silhouette drop shadow: render the alpha silhouette shifted by (dx, dy) in paint
  * underneath, then composite the original content back over it.
  *
- * When `respectMask` is set (language version 2, ADR-0070) an enclosing `mask …:` block confines
- * the effect — only mask-visible pixels are rewritten (the shadow is cast from the whole buffer
- * but lands only inside the mask; masked-off pixels keep their content), consistent with the
- * texture filters and region shadow forms. Under `drawstic 1` (`respectMask` false) it rebuilds
- * the whole buffer, ignoring the mask — the pinned v1 behaviour.
+ * An enclosing `mask …:` block confines the effect (ADR-0070) — only mask-visible pixels are
+ * rewritten (the shadow is cast from the whole buffer but lands only inside the mask; masked-off
+ * pixels keep their content), consistent with the texture filters and the region shadow forms.
  */
-export const filterShadow = (
-  ctx: Context,
-  dx: number,
-  dy: number,
-  paint: Color,
-  respectMask = false,
-): void => {
+export const filterShadow = (ctx: Context, dx: number, dy: number, paint: Color): void => {
   const buffer = ctx.buffer
-  const mask = respectMask ? ctx.mask : null
+  const mask = ctx.mask
   const original = buffer.clone()
   // clear only the pixels we may write (in-mask, or all when unmasked); masked-off pixels retain
   // their content so the shadow stays confined to the mask
@@ -1232,7 +1224,7 @@ const forRegionDistance = (
 }
 
 /**
- * v2 directional distance shading (ADR-0068): blend `base` as a shadow veil over `region` with
+ * Directional distance shading (ADR-0068): blend `base` as a shadow veil over `region` with
  * opacity `base.a × amount × t`, where `t` is the pixel's normalized distance from `light`. Nearest
  * to `light` is untouched; the far corner reaches `base.a × amount`. Here `amount` is the veil
  * opacity — an opaque `base` no longer repaints the region, it just makes the veil reach full black.
@@ -1251,26 +1243,7 @@ export const shadeRegion = (
 }
 
 /**
- * v1 directional distance shading (ADR-0063), retained for `drawstic 1` recipes: mix `base` toward
- * black within `region` at constant `base.a` veil opacity, the black-mix fraction scaled by distance
- * from `light` and `amount`. Superseded by {@link shadeRegion} from language version 2 (ADR-0068),
- * where `base` alpha no longer doubles as veil opacity.
- */
-export const shadeRegionLegacy = (
-  ctx: Context,
-  region: Region,
-  light: { readonly x: number; readonly y: number },
-  base: Color,
-  amount: number,
-): void => {
-  const dark = { type: 'color' as const, r: 0, g: 0, b: 0, a: base.a }
-  forRegionDistance(ctx, region, light, (x, y, t) => {
-    ctx.buffer.blendColor(x, y, mix(base, dark, clamp01(t * amount)))
-  })
-}
-
-/**
- * v2 additive counterpart to {@link shadeRegion} (ADR-0069): blend `paint` as a light veil over
+ * Additive counterpart to {@link shadeRegion} (ADR-0069): blend `paint` as a light veil over
  * `region` with opacity `paint.a × amount × (1 − t)`, where `t` is the pixel's normalized distance
  * from `light`. Nearest to `light` is brightest (up to `paint.a × amount`); the far corner is
  * untouched. Mirror-symmetric to `shadeRegion` — that darkens by `t`, this brightens by `1 − t`.

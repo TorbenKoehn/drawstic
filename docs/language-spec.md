@@ -118,20 +118,16 @@ use themes dusk                        # apply a theme to this file (§12)
 - **External images** enter as definitions — `import logo = ../brand/logo.png` — binding a
   **PNG file** (exact, lossless decode; explicit extension) as an ordinary drawing under the
   same sandbox rules; an optional trailing `sha256 <hex>` pins the file's content
-  (mismatch = positioned error). JPEG is rejected in v1: its decoding is not bit-exact
+  (mismatch = positioned error). JPEG is rejected on import: its decoding is not bit-exact
   across platforms ([ADR-0045](decisions/0045-import-external-images-as-drawings.md)).
 
-**Language version.** An optional first line `drawstic <N>` pins the module's semantics
-version (rounding, colour pipeline, bundled math — §14). Absent, the file uses the engine's
-current version; pinning guarantees a recipe renders identically across engine upgrades, and
-pinning a version newer than the engine is a positioned error. The engine currently supports up
-to **version 2**, which differs from version 1 in four ways: the `shadeRegion` signature (§12,
-[ADR-0068](decisions/0068-shaderegion-veil-opacity-signature.md)), the addition of
-`lightRegion`, the whole-frame `shadow` filter now honouring an enclosing `mask …:` block
-(§12, [ADR-0070](decisions/0070-unified-shadow-argument-shape.md)), and *visual* stamp anchors
-(§9, [ADR-0072](decisions/0072-visual-stamp-anchors.md)); pin `drawstic 1` to keep the old
-`shadeRegion` behaviour, the mask-ignoring frame shadow, and through-transform anchors. See
-[ADR-0029](decisions/0029-language-version-pragma.md).
+**Language version.** An optional first line `drawstic <N>` is still accepted for backward
+compatibility but is **inert** — it is parsed and otherwise ignored. The language has exactly
+one semantics (there is nothing to select), so any `N` is legal and changes nothing; a value
+newer than the engine is no longer an error. The directive is kept only so existing files that
+open with it keep parsing; new recipes should omit it
+([ADR-0088](decisions/0088-in-place-v1-break.md), superseding
+[ADR-0029](decisions/0029-language-version-pragma.md)).
 
 ---
 
@@ -471,8 +467,8 @@ Rasterization is integer and anti-aliasing-free in pixel mode (§14).
 
 **Text & std fonts** ([ADR-0022](decisions/0022-text-and-bitmap-fonts.md),
 [ADR-0054](decisions/0054-std-fonts-are-recipe-modules.md)). Glyphs are deterministic
-Recipe font definitions shipped under `std/fonts/` — v1 globally registers the monospace ASCII
-faces `small` (5×7, the default) and `micro` (3×5) — both covering the full printable-ASCII set
+Recipe font definitions shipped under `std/fonts/` — Drawstic globally registers the monospace
+ASCII faces `small` (5×7, the default) and `micro` (3×5) — both covering the full printable-ASCII set
 (micro↔small parity) — so text is deterministic on every platform, in both render modes. `from std/fonts/small small` is optional. Fixed 1px tracking; a newline in the string starts the next line
 (line height = glyph height + 1); unknown characters render a visible missing-glyph box,
 never a silent gap. `font <name>` is also a **scoped directive** (draw / module / theme —
@@ -577,16 +573,16 @@ and the other named anchors place a footprint-relative anchor point at `pt`
 Drawstic round-half-up subtracts the anchor from `pt`. `shadow dx:dy paint` paints the
 transformed source silhouette at the offset before the original stamp.
 
-**In language version 2 the eight offset anchors are *visual*: they name a position on the
-axis-aligned bounding box of the stamp *after* flip/rotate/scale** — the box you actually see.
+**The eight offset anchors are *visual*: they name a position on the axis-aligned bounding box
+of the stamp *after* flip/rotate/scale** — the box you actually see.
 `anchor bottom` is the visible bottom-center; `anchor bottomLeft` + `flipx` lands the visible
-**bottom-left** at `pt` (not bottom-right — the flip no longer moves the label); `anchor bottom`
+**bottom-left** at `pt` (the flip does not move the label); `anchor bottom`
 + `rot90` lands the visible bottom-center of the rotated footprint. An **untransformed** stamp's
 box is `[0,w−1]×[0,h−1]`, so anchors are unchanged when no transform is present. `topLeft` (and
 the default no-`anchor` placement) is the exception: it always places the sprite's untransformed
-**origin** at `pt` in every version — it is the placement origin, not a footprint label.
+**origin** at `pt` — it is the placement origin, not a footprint label.
 
-Because the anchor now tracks the *visible* edge, a mirror-reflection is seamed by naming the
+Because the anchor tracks the *visible* edge, a mirror-reflection is seamed by naming the
 seam edge on both copies:
 
 ```drw
@@ -594,11 +590,8 @@ stamp boat 40:30 anchor bottom                                # hull sits above 
 stamp boat 40:30 anchor top flipy tint #305070 40%            # reflection: its top edge meets the same pt
 ```
 
-Under a `drawstic 1` pin the eight anchors keep the **legacy through-transform** meaning: the
-named point is a *source-local* label pushed through the transform, so `anchor bottomLeft` +
-`flipx` lands **bottom-right** at `pt`, and the reflection idiom reuses `anchor bottom flipy`
-(the point maps to top-center once flipped). Placing by a **computed point** — point arithmetic
-on `pt` (§8) or a transform pivot `.about(pt)` — is plain geometry and is version-independent.
+Placing by a **computed point** — point arithmetic on `pt` (§8) or a transform pivot
+`.about(pt)` — is plain geometry and behaves identically.
 
 Transforms are **first-class values**
 ([ADR-0044](decisions/0044-first-class-transforms.md)) — a 4×4 homogeneous matrix covering
@@ -1141,9 +1134,7 @@ alone (`check` cannot catch a wrong filter argument; it stays semantically silen
   corner reaches `base.a × amount`. **`amount` is the veil opacity**, and it is a source-over
   blend, not a repaint — an **opaque `base` no longer erases detail** underneath, it just lets
   the far side reach the full `base` colour. `base`'s own alpha still multiplies (so `.alpha(…)`
-  softens the veil further). This is the **language-version-2 signature** ([ADR-0068](decisions/0068-shaderegion-veil-opacity-signature.md));
-  under `drawstic 1` the v1 rule applies instead (`base` alpha = a constant veil opacity over the
-  whole region, `amount` = distance-darkening toward black — an opaque `base` repaints `r`).
+  softens the veil further) ([ADR-0068](decisions/0068-shaderegion-veil-opacity-signature.md)).
 - **`lightRegion r light paint amount`** is the additive mirror of `shadeRegion` ([ADR-0069](decisions/0069-additive-local-light-helper.md)):
   it blends `paint` as a light **veil** with opacity **`paint.a × amount × (1 − t)`** — **brightest
   nearest `light`** (up to `paint.a × amount`), fading to untouched at the far corner. `shadeRegion`
@@ -1166,8 +1157,8 @@ alone (`check` cannot catch a wrong filter argument; it stays semantically silen
   `shadow dx:dy p` (§9), the whole-frame filter `shadow dx:dy p`, the local region form
   `shadow r dx:dy p`, and `castShadow r dx:dy p` — one `dx:dy paint` tail everywhere, a region
   leading when present. The offset is always an `dx:dy` **point**; the older whole-frame
-  spelling `shadow dx dy p` (two bare numbers) stays accepted as a **deprecated alias** for
-  error-robustness but is no longer the documented form.
+  two-bare-number spelling `shadow dx dy p` was removed
+  ([ADR-0088](decisions/0088-in-place-v1-break.md)) — use `dx:dy` everywhere.
 - **`grain`/`speckle`/`ripple`/`dither` take an optional leading region**
   ([ADR-0071](decisions/0071-region-scoped-texture-filters.md)): `grain [r] amount seed p`,
   `speckle [r] density seed p`, `ripple [r] strength seed p`, `dither [r] a b t` — region-first
@@ -1177,16 +1168,14 @@ alone (`check` cannot catch a wrong filter argument; it stays semantically silen
   of the current framebuffer**, unchanged, and still respects an enclosing `mask …:` block. The
   leading argument is a region iff it evaluates to one, which never collides with the first real
   argument (a number for grain/speckle/ripple, a paint for dither).
-- **The whole-frame `shadow dx:dy p` respects an enclosing `mask …:` block in language
-  version 2** ([ADR-0070](decisions/0070-unified-shadow-argument-shape.md)): it writes only
+- **The whole-frame `shadow dx:dy p` respects an enclosing `mask …:` block**
+  ([ADR-0070](decisions/0070-unified-shadow-argument-shape.md)): it writes only
   mask-visible pixels (the silhouette is cast from the whole buffer but lands only inside the
   mask; masked-off pixels keep their content), matching the texture filters and the region
-  shadow forms — so **every** filter under a `mask` block now confines the same way. Under a
-  `drawstic 1` pin the frame `shadow` keeps the v1 behaviour: it rebuilds the whole buffer and
-  **ignores the mask entirely**.
+  shadow forms — so **every** filter under a `mask` block confines the same way.
 - **Confining a filter to part of a scene** therefore has a simple path: give the filter a
   leading region (grain/speckle/ripple/dither), or wrap the call in a `mask …:` block — which
-  now works for the frame `shadow` too (v2), not only the texture filters. The
+  works for the frame `shadow` too, not only the texture filters. The
   component-`draw` + `stamp` detour is no longer required for any of them. `castShadow r dx:dy p`
   and the region-form `shadow r dx:dy p` take an explicit region and need no confinement idiom
   at all.
@@ -1211,7 +1200,7 @@ The built-in filter set is intentionally extensible — new filters are added as
 filters and local lighting helpers are explicit, deterministic framebuffer operations
 ([ADR-0062](decisions/0062-scoped-shadow-and-texture-filters.md),
 [ADR-0063](decisions/0063-explicit-local-lighting-helpers.md)); the shadow surfaces share one
-argument shape and the frame `shadow` respects a `mask` block in version 2
+argument shape and the frame `shadow` respects a `mask` block
 ([ADR-0070](decisions/0070-unified-shadow-argument-shape.md)), and the texture filters take an
 optional leading region ([ADR-0071](decisions/0071-region-scoped-texture-filters.md)).
 
@@ -1432,9 +1421,9 @@ Drawstic guarantees **visual (pixel) determinism**, not byte determinism. See
 [ADR-0007](decisions/0007-visual-not-byte-determinism.md) and the pipeline ADRs below.
 
 - **Guaranteed (pixel mode):** the same Recipe yields a **pixel-identical framebuffer** across
-  platforms, **within a pinned language version** (§2, [ADR-0029](decisions/0029-language-version-pragma.md)).
-- **Smooth mode** (AA, vector flattening) is deterministic and reproducible *given a fixed
-  version*, but is more float-sensitive; the strong cross-platform guarantee is stated for
+  platforms ([ADR-0007](decisions/0007-visual-not-byte-determinism.md)).
+- **Smooth mode** (AA, vector flattening) is deterministic and reproducible, but is more
+  float-sensitive; the strong cross-platform guarantee is stated for
   pixel mode ([ADR-0027](decisions/0027-deterministic-numeric-and-colour-pipeline.md)).
 - **Not guaranteed:** byte-identical PNG/JPEG files (compression may vary by encoder).
 - **Golden tests compare pixels**, not file bytes.
@@ -1462,17 +1451,14 @@ This is **engineered**, not assumed:
   + canvas → identical points on every platform ([ADR-0077](decisions/0077-scatter-block.md)).
   `mirror` (§11.2) re-executes its body with reflected pixel writes, so a seeded pass mirrors
   exactly ([ADR-0078](decisions/0078-mirror-block.md)).
-- **Version pinning.** A `drawstic <N>` pragma freezes all of the above so upgrades never
-  silently change output ([ADR-0029](decisions/0029-language-version-pragma.md)). The engine
-  supports up to **version 2**; it is identical to version 1 except that `shadeRegion`'s `amount`
-  became the veil opacity (§12, [ADR-0068](decisions/0068-shaderegion-veil-opacity-signature.md)),
-  `lightRegion` was added, the whole-frame `shadow` filter honours an enclosing `mask …:`
-  block (§12, [ADR-0070](decisions/0070-unified-shadow-argument-shape.md)), and the eight offset
-  stamp anchors are *visual* (resolved against the transformed footprint bbox, §9,
-  [ADR-0072](decisions/0072-visual-stamp-anchors.md)). Pin `drawstic 1` to keep the v1
-  `shadeRegion`, the mask-ignoring frame shadow, and through-transform anchors. (The unified
-  `dx:dy` shadow offset and the optional region on the texture filters are additive — available
-  in every version.)
+- **One semantics.** There is a single, frozen engine semantics — the pipeline above is fixed,
+  so nothing selects a variant. The `drawstic <N>` pragma is parsed but inert (§2,
+  [ADR-0088](decisions/0088-in-place-v1-break.md)): `shadeRegion`'s `amount` is always the veil
+  opacity (§12, [ADR-0068](decisions/0068-shaderegion-veil-opacity-signature.md)), the whole-frame
+  `shadow` filter always honours an enclosing `mask …:` block (§12,
+  [ADR-0070](decisions/0070-unified-shadow-argument-shape.md)), and the eight offset stamp anchors
+  are always *visual* (resolved against the transformed footprint bbox, §9,
+  [ADR-0072](decisions/0072-visual-stamp-anchors.md)).
 
 ---
 
@@ -1599,7 +1585,6 @@ skipped rather than guessed at, so a lint pass never produces a false positive.
 | `W002` | a drawing is neither `export`ed nor `stamp`ed from another drawing | export it or stamp it |
 | `W003` | a `stamp`'s literal target at a literal point lands entirely outside the host canvas | move it on-canvas or drop it |
 | `W004` | a procedural (no `pixels:`) drawing exceeds **128 px on either axis** (a square ceiling, so the canonical 48/64/128-px icon detail redraws stay silent) | preview with `render --preview --fit` |
-| `W005` | **(language version 1 only)** a `drawstic 1` `shadeRegion`'s `base` paint statically resolves to fully opaque — under v1 it composites over the *entire* region (§12 Filters), erasing detail already painted inside it. Retired for v2/unpinned recipes, where an opaque `base` is the intuitive, correct call ([ADR-0068](decisions/0068-shaderegion-veil-opacity-signature.md)) | give `base` alpha, call `shadeRegion` before painting detail, or drop the `drawstic 1` pin |
 | `W006` | a `dither` partner paint statically resolves to alpha 0 — `dither` is a raw set, not a blend (§12 Filters), so this punches a transparency hole | give the partner a visible alpha |
 | `W007` | a `stamp` is fully covered by a later, provably opaque `stamp`/`rect …fill`/`bg` in the same drawing | reorder the stamps, or delete the dead one |
 | `W008` | a `text` command's **literal** string contains character(s) that have no glyph in the resolved font (font resolution: per-`text` `font` flag > theme/draw/module directive > `small`), so they render silently as the unknown-glyph box | add the glyphs to the font, pick a font that has them, or drop them |
@@ -1833,7 +1818,6 @@ filter-cmd     = "outline" paint [ expr ]           (* built-in filter set (§12
                | "replace" paint paint              (* extensible — new filters   *)
                | "tint"    paint expr               (* follow the same shape      *)
                | "shadow"  point paint              (* whole-frame drop shadow: dx:dy (ADR-0070) *)
-               | "shadow"  expr expr paint          (* deprecated two-number alias (ADR-0070) *)
                | "shadow"  region point paint       (* local region shadow (ADR-0062) *)
                | "castShadow" region point paint
                | "grain" [ region ] expr expr paint (* optional leading region scope (ADR-0071) *)

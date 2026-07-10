@@ -32,7 +32,6 @@ import {
   rimRegion,
   scaleBitmap,
   shadeRegion,
-  shadeRegionLegacy,
   stampSprite,
   strokeLine,
   strokePath,
@@ -515,32 +514,22 @@ describe('filters', () => {
     expect(px(c, 0, 0)).toEqual([0, 0, 0, 255]) // original restored even where shadow clipped
   })
 
-  test('filterShadow honours the mask only when respectMask is set (ADR-0070 v2 gating)', () => {
-    // a 6x1 buffer: opaque red at x=1; a mask covering only x=3..4
-    const build = (): Context => {
-      const c = ctx(6, 1)
-      c.buffer.set(1, 0, red)
-      c.mask = rectRegion(3, 0, 4, 0)
-      return c
-    }
-    // respectMask=false (drawstic 1): whole-buffer rebuild, mask ignored — shadow lands at x=3
-    const v1 = build()
-    filterShadow(v1, 2, 0, blue)
-    expect(px(v1, 1, 0)).toEqual([255, 0, 0, 255]) // original content survives
-    expect(px(v1, 3, 0)).toEqual([0, 0, 255, 255]) // shadow at x=1+2, outside the mask — still painted
-
-    // respectMask=true (v2): shadow only writes inside the mask; masked-off pixels keep content
-    const v2 = build()
-    filterShadow(v2, 2, 0, blue, true)
-    expect(px(v2, 1, 0)).toEqual([255, 0, 0, 255]) // masked-off original untouched
-    expect(px(v2, 3, 0)).toEqual([0, 0, 255, 255]) // shadow lands in the mask
+  test('filterShadow always confines to an enclosing mask (ADR-0070/0088 — single semantics)', () => {
+    // a 6x1 buffer: opaque red at x=1; a mask covering only x=3..4. The shadow is cast from the
+    // whole buffer but lands only inside the mask, and masked-off pixels keep their content.
+    const c = ctx(6, 1)
+    c.buffer.set(1, 0, red)
+    c.mask = rectRegion(3, 0, 4, 0)
+    filterShadow(c, 2, 0, blue)
+    expect(px(c, 1, 0)).toEqual([255, 0, 0, 255]) // masked-off original untouched
+    expect(px(c, 3, 0)).toEqual([0, 0, 255, 255]) // shadow at x=1+2 lands inside the mask
   })
 
-  test('filterShadow respectMask leaves masked-off content when the shadow would land outside', () => {
+  test('filterShadow leaves masked-off content when the shadow would land outside', () => {
     const c = ctx(6, 1)
     c.buffer.set(0, 0, red) // shadow would land at x=2, outside the mask
     c.mask = rectRegion(4, 0, 5, 0)
-    filterShadow(c, 2, 0, blue, true)
+    filterShadow(c, 2, 0, blue)
     expect(px(c, 0, 0)).toEqual([255, 0, 0, 255]) // masked-off original preserved
     expect(px(c, 2, 0)).toEqual([0, 0, 0, 0]) // shadow suppressed — destination outside the mask
   })
@@ -664,16 +653,7 @@ describe('shadeRegion / rimRegion / ambientOcclusion', () => {
     expect(px(c3, 1, 1)).toEqual([0, 0, 0, 0]) // outside the region (bbox corner, not in disc)
   })
 
-  test('shadeRegionLegacy (v1 / drawstic 1) repaints with base and mixes toward black', () => {
-    const strip = rectRegion(0, 0, 7, 0)
-    const c = ctx(8, 1)
-    fillRegion(c, strip, white)
-    shadeRegionLegacy(c, strip, { x: 0, y: 0 }, red, 1)
-    expect(px(c, 0, 0)).toEqual([255, 0, 0, 255]) // opaque base repaints the near side (the v1 trap)
-    expect(px(c, 7, 0)).toEqual([0, 0, 0, 255]) // far corner mixes fully to black
-  })
-
-  test('lightRegion (v2) brightens by proximity to the light — mirror of shadeRegion', () => {
+  test('lightRegion brightens by proximity to the light — mirror of shadeRegion', () => {
     const strip = rectRegion(0, 0, 7, 0)
     const c = ctx(8, 1)
     fillRegion(c, strip, black)

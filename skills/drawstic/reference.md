@@ -129,7 +129,6 @@ tile's top-left in **unscaled** sheet coordinates (× `--png@N` for output pixel
 | W002 | drawing never `export`ed or `stamp`ed |
 | W003 | stamp's literal target at a literal point lands fully off-canvas |
 | W004 | procedural (no `pixels:`) drawing over 128 px on either axis (icon detail sizes 48/64/128 stay silent) |
-| W005 | (`drawstic 1` only) opaque `shadeRegion` base repaints the region |
 | W006 | `dither` partner paint statically alpha-0 (transparency hole) |
 | W007 | stamp fully covered by a later, provably opaque stamp/fill |
 | W008 | `text` literal has char(s) with no glyph in the resolved font (renders as the unknown-glyph box) — static cases only |
@@ -142,7 +141,7 @@ Full detail: `docs/language-spec.md` § Lint warnings.
 A `.drw` file is a module; every top-level definition is public.
 
 ```drw
-drawstic 1                       # optional first line: pin language version
+drawstic 1                       # optional legacy first line: parsed but inert (omit it)
 from creatures gem, slime        # ./creatures.drw; type inferred
 from gems gem as ruby            # alias on collision
 from ../shared/parts eye         # parent dir ok; never escapes project root
@@ -370,12 +369,12 @@ toward p by 0..1. On a **composite** sprite (roof + posts + basin) that offset s
 gaps and reads as a heavy dark clump, not a cast shadow — for a standing object drop a separate
 `ellipse … fill` ground shadow instead.
 
-**Anchors are *visual* (v2): the eight offset anchors name a spot on the bounding box you
+**Anchors are *visual*: the eight offset anchors name a spot on the bounding box you
 actually see, after flip/rotate/scale.** `anchor bottom` = the visible bottom-center; `anchor
-bottomLeft` + `flipx` lands the visible **bottom-left** at `pt` (the flip no longer moves the
+bottomLeft` + `flipx` lands the visible **bottom-left** at `pt` (the flip does not move the
 label); `anchor bottom` + `rot90` lands the rotated footprint's visible bottom-center.
 Untransformed stamps are unaffected. `topLeft` (and the default no-`anchor`) is special: it puts
-the sprite's untransformed **origin** at `pt` in every version. Reflect a sprite by naming the
+the sprite's untransformed **origin** at `pt`. Reflect a sprite by naming the
 seam edge on both copies:
 
 ```drw
@@ -383,10 +382,7 @@ stamp boat 40:30 anchor bottom                         # hull above the waterlin
 stamp boat 40:30 anchor top flipy tint #305070 40%     # reflection: top edge meets the same pt
 ```
 
-Under a `drawstic 1` pin the eight anchors are **legacy through-transform** (source-local point
-pushed through the transform): `anchor bottomLeft` + `flipx` lands **bottom-right**, and the
-reflection idiom reuses `anchor bottom flipy`. Placing by a computed point (point arithmetic on
-`pt`, or `.about(pt)`) is version-independent.
+Placing by a computed point (point arithmetic on `pt`, or `.about(pt)`) is plain geometry.
 
 Constructors: `shift(pt)` · `rotate(deg)` (clockwise on the y-down screen — `+90°` sends
 up→right; mirror the sign for a symmetric pair) · `scale(n)` uniform / **`scale(sx, sy)`
@@ -449,7 +445,7 @@ hypot dist sin cos tan atan2 pow exp log lerp len`; constants `pi tau`.
 **`sin`/`cos`/`tan`/`atan2` work in radians** (`sin(pi/2) == 1`; use `x * pi / 180` to convert) —
 **unlike `arc`, whose `a0`/`a1` are degrees.**
 `rand(seed[, i])` → [0,1), `noise(seed, x, y)` → [0,1) (2D value noise) — always with
-explicit seeds (a `seed <N>` directive is accepted but reserved; no effect in v1).
+explicit seeds (a `seed <N>` directive is accepted but reserved; no effect).
 No I/O, clock, or ambient randomness.
 `xs.cycle(i)` (ADR-0079): auto-wrapping list index, sugar for `xs[i mod len(xs)]` — negative
 `i` wraps positively (Euclidean/floored mod, same direction as `mod`/`//`); empty list is E015.
@@ -593,12 +589,10 @@ optional leading region scope (ADR-0071):
 
 **Compositing semantics (silent — `check` never flags a wrong effect here):**
 
-- `shadeRegion r light base amount` (language version 2) — blends `base` as a shadow **veil**
+- `shadeRegion r light base amount` — blends `base` as a shadow **veil**
   over `r` with opacity **`base.a × amount × t`** (`t` = normalized distance from `light`):
   untouched at `light`, up to `base.a × amount` at the far corner. **`amount` is the veil
-  opacity** and it composites over detail, so an opaque `base` no longer repaints `r`. (Under a
-  `drawstic 1` pin the old trap applies: `base` alpha = a constant veil opacity, `amount` =
-  distance-darkening toward black, and an opaque `base` repaints `r` solid, erasing prior detail.)
+  opacity** and it composites over detail, so an opaque `base` does not repaint `r`.
 - `lightRegion r light paint amount` — additive mirror of `shadeRegion`: a light **veil** with
   opacity **`paint.a × amount × (1 − t)`**, **brightest nearest `light`**, fading to untouched at
   the far corner. Reach for it for warm/cool local light instead of a masked gradient. It washes the
@@ -631,11 +625,11 @@ optional leading region scope (ADR-0071):
   full alpha. **For `speckle` the first number is the density of scattered (near-)opaque dots, not a
   wash**: ~0.03–0.06 with an `alpha(50–60%)` paint reads as material texture, 0.14 as harsh static.
   `ripple` above ~0.25 on a smooth surface reads as water, not texture.
-- The whole-frame `shadow dx:dy p` hits every opaque pixel too. In **language version 2** it
-  respects an enclosing `mask …:` block (writes only in-mask pixels), like the texture filters;
-  under a `drawstic 1` pin it ignores the mask and rebuilds the whole buffer.
+- The whole-frame `shadow dx:dy p` hits every opaque pixel too, and respects an enclosing
+  `mask …:` block (writes only in-mask pixels), like the texture filters. The offset is always a
+  `dx:dy` point — the old two-bare-number `shadow dx dy p` spelling was removed.
 - **Confine a filter** by giving it a leading region (grain/speckle/ripple/dither) or by
-  wrapping the call in a `mask …:` block — which now also confines the frame `shadow` (v2). The
+  wrapping the call in a `mask …:` block — which also confines the frame `shadow`. The
   component-`draw` + `stamp` detour is no longer needed. `castShadow`/region-form `shadow` take
   an explicit region and need no confinement idiom.
 
@@ -781,14 +775,12 @@ pixel count.
 
 ## Determinism & budget
 
-Pixel mode guarantees pixel-identical output across platforms within a language version
-(`drawstic <N>` pragma pins semantics; unpinned = latest). The engine supports up to **version
-2**, identical to v1 except: `shadeRegion`'s `amount` is now the veil opacity and `lightRegion`
-was added (§ Gradients & filters); the whole-frame `shadow` respects an enclosing `mask …:`
-block; and the eight offset stamp anchors are visual (§ Transforms & stamp). Pin `drawstic 1`
-for the old `shadeRegion`, the mask-ignoring frame shadow, and through-transform anchors — the
-unified `dx:dy` shadow shape and the texture filters' optional leading region are additive and
-apply in every version. Byte-identical files are NOT guaranteed —
+Pixel mode guarantees pixel-identical output across platforms. There is **one** engine
+semantics: `shadeRegion`'s `amount` is the veil opacity (with `lightRegion` its additive
+mirror, § Gradients & filters), the whole-frame `shadow` respects an enclosing `mask …:` block,
+and the eight offset stamp anchors are visual (§ Transforms & stamp). The `drawstic <N>` pragma
+is parsed but inert — kept only so old files still open; omit it in new recipes. Byte-identical
+files are NOT guaranteed —
 compare pixels, not bytes. Bundled deterministic math (never host `Math.*`), pinned color pipeline
 and rasterization, integer source-over alpha (straight RGBA8; pixel mode adds alpha only
 from explicit alpha colors, never edge AA). Every render runs under a step/pixel budget —

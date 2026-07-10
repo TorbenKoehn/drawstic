@@ -13,7 +13,7 @@ import type {
   Statement,
 } from './ast.js'
 import type { Diagnostic, TextSpan } from './diagnostic.js'
-import { type Engine, LANGUAGE_VERSION, type ModuleRecord } from './eval.js'
+import type { Engine, ModuleRecord } from './eval.js'
 import type { FontResolved } from './raster.js'
 
 /** Builds a `warning`-severity {@link Diagnostic}. */
@@ -63,7 +63,6 @@ export const lintModule = (engine: Engine, mod: ModuleRecord): Diagnostic[] => {
     lintUnusedPaletteKeys(entry.definition, mod, diagnostics)
     lintLargeProcedural(entry.definition, mod, diagnostics)
     lintClippedStamps(engine, mod, entry.definition, diagnostics)
-    lintOpaqueShadeRegionBase(engine, mod, entry.definition, diagnostics)
     lintDitherTransparentPartner(engine, mod, entry.definition, diagnostics)
     lintCoveredStamps(engine, mod, entry.definition, diagnostics)
     lintUnknownGlyphs(engine, mod, entry.definition, diagnostics, fontCache)
@@ -236,7 +235,7 @@ const lintClippedStamps = (
 /**
  * Best-effort constant evaluation of `expr` against `mod`'s own module-scope
  * bindings only — never a drawing's local `pal` keys, `stamp`/draw
- * parameters, or loop variables. Used by `W005`/`W006`/`W007` to prove a
+ * parameters, or loop variables. Used by `W006`/`W007` to prove a
  * paint's colour without re-implementing the interpreter's scoping rules.
  * Returns `undefined` for anything unresolvable this way (a draw-local
  * name, a parametric draw's own parameter, a render error, …); callers
@@ -270,48 +269,6 @@ const staticPaintAlpha = (engine: Engine, mod: ModuleRecord, expr: Expression): 
     return (value as { readonly a: number }).a
   }
   return null
-}
-
-/**
- * Lint `W005` (language version 1 only): under v1 semantics `shadeRegion r
- * light base amount` (spec §12 Filters) composites `base` over the ENTIRE
- * region regardless of `amount` — a fully opaque `base` therefore repaints `r`
- * solid and erases any detail already painted inside it, no matter when it was
- * drawn. Fires only when `base` statically resolves (module scope only) to an
- * opaque colour; a draw-local or parametric base is unresolvable and silently
- * skipped. From language version 2 (ADR-0068) `amount` is the veil opacity and
- * an opaque `base` is the intuitive, correct call, so the warning is retired
- * for `drawstic 2`+ / unpinned recipes.
- */
-const lintOpaqueShadeRegionBase = (
-  engine: Engine,
-  mod: ModuleRecord,
-  def: DrawDefinition,
-  diagnostics: Diagnostic[],
-): void => {
-  if ((mod.ast.pragma ?? LANGUAGE_VERSION) >= 2) {
-    return
-  }
-  walkStatements(def.body, (stmt) => {
-    if (stmt.kind !== 'call' || stmt.callee !== 'shadeRegion') {
-      return
-    }
-    const baseArg = stmt.args[2]
-    if (baseArg?.kind !== 'expression') {
-      return
-    }
-    if (staticPaintAlpha(engine, mod, baseArg.expression) === 255) {
-      diagnostics.push(
-        warning(
-          'W005',
-          "shadeRegion's opaque base repaints the whole region",
-          mod.displayPath,
-          stmt.span,
-          'give it alpha or call it before details',
-        ),
-      )
-    }
-  })
 }
 
 /**

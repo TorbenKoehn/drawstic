@@ -108,7 +108,7 @@ writeFileSync('icon.png', encodePngRgba(sprite.data, sprite.w, sprite.h))
 
 | Import | Module | Highlights |
 |--------|--------|------------|
-| `drawstic` / `drawstic/engine` | evaluator | `Engine`, `defaultBudget`, `LANGUAGE_VERSION` |
+| `drawstic` / `drawstic/engine` | evaluator | `Engine`, `defaultBudget` |
 | `drawstic/parser` | parser | `parse` |
 | `drawstic/lexer` | lexer | `lex` |
 | `drawstic/ast` | AST | `Module`, `Statement`, `Expression`, node types |

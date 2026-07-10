@@ -301,66 +301,6 @@ describe('lintModule', () => {
     })
   })
 
-  test('W005: flags shadeRegion called with a fully opaque literal base paint (v1)', () => {
-    const { engine, mod } = load(
-      'drawstic 1\ndraw scene 20x20:\n  mask r = circle(10:10, 8)\n  shadeRegion r 0:0 #223344 0.5\n\nexport scene test/scene:\n  png\n',
-    )
-    const diags = lintModule(engine, mod)
-    expect(diags).toHaveLength(1)
-    expect(diags[0]).toMatchObject({
-      severity: 'warning',
-      code: 'W005',
-      message: "shadeRegion's opaque base repaints the whole region",
-      hint: 'give it alpha or call it before details',
-    })
-  })
-
-  test('W005: flags a v1 shadeRegion base resolved through a module-scope colour binding (the arctic igloo case)', () => {
-    const { engine, mod } = load(
-      'drawstic 1\nblockShade = #b4c6dc\n\ndraw igloo 20x20:\n  mask dome = circle(10:10, 8)\n  shadeRegion dome 0:0 blockShade 0.45\n\nexport igloo test/igloo:\n  png\n',
-    )
-    const diags = lintModule(engine, mod)
-    expect(diags).toHaveLength(1)
-    expect(diags[0]).toMatchObject({
-      severity: 'warning',
-      code: 'W005',
-      message: "shadeRegion's opaque base repaints the whole region",
-    })
-  })
-
-  test('W005 (v1) is avoided by giving base explicit alpha', () => {
-    const { engine, mod } = load(
-      'drawstic 1\ndraw scene 20x20:\n  mask r = circle(10:10, 8)\n  shadeRegion r 0:0 #22334480 0.5\n\nexport scene test/scene:\n  png\n',
-    )
-    expect(lintModule(engine, mod)).toEqual([])
-  })
-
-  test('W005 is retired under language version 2 — opaque base is the intuitive v2 call (ADR-0068)', () => {
-    const { engine, mod } = load(
-      'draw scene 20x20:\n  mask r = circle(10:10, 8)\n  shadeRegion r 0:0 #223344 0.5\n\nexport scene test/scene:\n  png\n',
-    )
-    expect(lintModule(engine, mod)).toEqual([])
-  })
-
-  test('W005 (v1) is not guessed for a shadeRegion base that only resolves at call time (a draw parameter)', () => {
-    const { engine, mod } = load(
-      [
-        'drawstic 1',
-        'draw dome(c) 12x12:',
-        '  mask d = circle(6:6, 5)',
-        '  shadeRegion d 0:0 c 0.5',
-        '',
-        'draw scene 12x12:',
-        '  stamp dome(#223344) 0:0',
-        '',
-        'export scene test/scene:',
-        '  png',
-        '',
-      ].join('\n'),
-    )
-    expect(lintModule(engine, mod)).toEqual([])
-  })
-
   test('W006: flags dither called with a fully transparent partner paint', () => {
     const { engine, mod } = load(
       'draw scene 10x10:\n  bg #ffffff\n  dither #ff0000 transparent 0.5\n\nexport scene test/scene:\n  png\n',

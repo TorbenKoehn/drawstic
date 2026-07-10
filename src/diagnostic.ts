@@ -95,7 +95,8 @@ export const ERROR_CODE = {
   typeError: 'E006',
   paletteCollision: 'E007',
   importError: 'E008',
-  versionPragma: 'E009',
+  // E009 retired (ADR-0088): the `drawstic N` pragma is inert, so no version boundary can be
+  // violated. Slot reserved — never renumber or reuse.
   budget: 'E010',
   arity: 'E011',
   badFlag: 'E012',

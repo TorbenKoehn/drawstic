@@ -428,8 +428,8 @@ describe('evaluator', () => {
     expect(px(s, 7, 3)).toEqual([255, 0, 0, 255])
   })
 
-  // ADR-0072: v2 named anchors resolve against the *transformed* footprint bbox
-  // (visual); drawstic 1 keeps the legacy through-transform mapping.
+  // ADR-0072/0088: named offset anchors resolve against the *transformed* footprint
+  // bbox (visual) — the sole semantics; the `drawstic N` pragma is inert.
   const part43 = 'draw part 4x3:\n  bg #000000\n\n'
   const solidBBox = (s: Sprite): { x0: number; y0: number; x1: number; y1: number } => {
     let x0 = s.w
@@ -449,7 +449,7 @@ describe('evaluator', () => {
     return { x0, y0, x1, y1 }
   }
 
-  test('v2 visual anchor: bottomLeft + flipx lands visually bottom-left', () => {
+  test('visual anchor: bottomLeft + flipx lands visually bottom-left', () => {
     // pt 8:8, solid 4x3 → the visible bottom-left corner sits AT pt, footprint to the right
     const s = render(`${part43}draw d 16x16:\n  stamp part 8:8 anchor bottomLeft flipx\n`, 'd')
     expect(solidBBox(s)).toEqual({ x0: 8, y0: 6, x1: 11, y1: 8 })
@@ -458,49 +458,48 @@ describe('evaluator', () => {
     expect(px(s, 5, 8)[3]).toBe(0) // nothing to the left of pt
   })
 
-  test('drawstic 1 legacy anchor: bottomLeft + flipx lands bottom-right (through-transform)', () => {
-    const s = render(
-      `drawstic 1\n${part43}draw d 16x16:\n  stamp part 8:8 anchor bottomLeft flipx\n`,
-      'd',
-    )
-    // mirrored corner lands at pt → footprint sits to the LEFT (bottom-right at pt)
-    expect(solidBBox(s)).toEqual({ x0: 5, y0: 6, x1: 8, y1: 8 })
-    expect(px(s, 5, 8)[3]).toBe(255)
-    expect(px(s, 10, 8)[3]).toBe(0)
+  test('an inert `drawstic 1` pragma still gets visual anchors (ADR-0088)', () => {
+    // the pragma is parsed but does nothing: bottomLeft + flipx lands visually bottom-left,
+    // identical to the unpinned render — the legacy through-transform mapping is gone
+    const src = `draw d 16x16:\n  stamp part 8:8 anchor bottomLeft flipx\n`
+    const pinned = render(`drawstic 1\n${part43}${src}`, 'd')
+    const unpinned = render(`${part43}${src}`, 'd')
+    expect(solidBBox(pinned)).toEqual({ x0: 8, y0: 6, x1: 11, y1: 8 })
+    expect(solidBBox(pinned)).toEqual(solidBBox(unpinned))
   })
 
-  test('unflipped anchor bottomLeft is identical in v1 and v2', () => {
+  test('unflipped anchor bottomLeft is identical with or without an inert pragma', () => {
     const src = `draw d 16x16:\n  stamp part 8:8 anchor bottomLeft\n`
-    const v2 = render(`${part43}${src}`, 'd')
-    const v1 = render(`drawstic 1\n${part43}${src}`, 'd')
-    expect(solidBBox(v2)).toEqual({ x0: 8, y0: 6, x1: 11, y1: 8 })
-    expect(solidBBox(v1)).toEqual(solidBBox(v2))
+    const unpinned = render(`${part43}${src}`, 'd')
+    const pinned = render(`drawstic 1\n${part43}${src}`, 'd')
+    expect(solidBBox(unpinned)).toEqual({ x0: 8, y0: 6, x1: 11, y1: 8 })
+    expect(solidBBox(pinned)).toEqual(solidBBox(unpinned))
   })
 
-  test('v2 visual anchor: rot90 anchor bottom = visible bottom-centre', () => {
+  test('visual anchor: rot90 anchor bottom = visible bottom-centre (pragma inert)', () => {
     // solid 4x2 rotated 90° → 2×4 footprint; its bottom edge sits at pt.y, centred on pt.x
     const part42 = 'draw part 4x2:\n  bg #000000\n\n'
-    const v2 = render(`${part42}draw d 20x20:\n  stamp part 10:10 anchor bottom rot90\n`, 'd')
-    const bb = solidBBox(v2)
+    const unpinned = render(`${part42}draw d 20x20:\n  stamp part 10:10 anchor bottom rot90\n`, 'd')
+    const bb = solidBBox(unpinned)
     expect(bb.y1).toBe(10) // visible bottom row at pt.y
     expect(bb.x1 - bb.x0).toBe(1) // 2px wide (rotated)
     expect(bb.y1 - bb.y0).toBe(3) // 4px tall (rotated)
     expect(bb.x0).toBe(10) // centred on pt.x=10 (2-wide → [10,11])
-    // v1 through-transform maps the source bottom-centre to a side edge → different placement
-    const v1 = render(
+    // an inert `drawstic 1` pragma renders identically — no through-transform anchors remain
+    const pinned = render(
       `drawstic 1\n${part42}draw d 20x20:\n  stamp part 10:10 anchor bottom rot90\n`,
       'd',
     )
-    expect(solidBBox(v1).y1).toBe(12)
+    expect(solidBBox(pinned)).toEqual(bb)
   })
 
-  test('numeric/symmetric anchor center + scale2 is identical in v1 and v2', () => {
+  test('numeric/symmetric anchor center + scale2 is pragma-independent', () => {
     const src = `draw d 20x20:\n  stamp part 10:10 anchor center scale2\n`
     const dot = 'draw part 3x3:\n  bg #000000\n\n'
-    const v2 = render(`${dot}${src}`, 'd')
-    const v1 = render(`drawstic 1\n${dot}${src}`, 'd')
-    expect(solidBBox(v2)).toEqual({ x0: 8, y0: 8, x1: 13, y1: 13 })
-    expect(solidBBox(v1)).toEqual(solidBBox(v2))
+    const unpinned = render(`${dot}${src}`, 'd')
+    const pinned = render(`drawstic 1\n${dot}${src}`, 'd')
+    expect(solidBBox(unpinned)).toEqual({ x0: 8, y0: 8, x1: 13, y1: 13 })
+    expect(solidBBox(pinned)).toEqual(solidBBox(unpinned))
   })
 
   test('parametric drawings instantiate per args', () => {
@@ -745,30 +744,31 @@ draw d 2x2:
     expect(px(lit, 1, 1)[3]).toBe(255)
   })
 
-  test('unified frame shadow shape: dx:dy point form and deprecated two-number alias (ADR-0070)', () => {
+  test('unified frame shadow shape: dx:dy point form; two-number alias is rejected (ADR-0088)', () => {
     // canonical dx:dy point form: whole-frame drop shadow
     const pointForm = render('draw d 4x4:\n  px #000000 1:1\n  shadow 1:1 #0000ff\n', 'd')
     expect(px(pointForm, 1, 1)).toEqual([0, 0, 0, 255]) // original silhouette
     expect(px(pointForm, 2, 2)).toEqual([0, 0, 255, 255]) // shadow at the (1,1) offset
 
-    // deprecated two-number alias stays accepted (error-robustness) and renders identically
-    const twoNumber = render('draw d 4x4:\n  px #000000 1:1\n  shadow 1 1 #0000ff\n', 'd')
-    expect(px(twoNumber, 1, 1)).toEqual([0, 0, 0, 255])
-    expect(px(twoNumber, 2, 2)).toEqual([0, 0, 255, 255])
+    // the deprecated two-bare-number spelling is gone: the first arg must be a dx:dy point or region
+    expect(() => render('draw d 4x4:\n  px #000000 1:1\n  shadow 1 1 #0000ff\n', 'd')).toThrow(
+      /dx:dy offset or region/,
+    )
   })
 
-  test('v2 frame shadow honours an enclosing mask block; drawstic 1 ignores it (ADR-0070)', () => {
+  test('frame shadow always honours an enclosing mask block; the pragma is inert (ADR-0070/0088)', () => {
     // red at 0:0, a mask over x=3..4; the shadow of the red pixel would land at x=2 (outside the mask)
     const src = (pragma: string): string =>
       `${pragma}draw d 6x1:\n  px #ff0000 0:0\n  mask rect(3:0, 4:0):\n    shadow 2:0 #0000ff\n`
 
-    const v2 = render(src(''), 'd')
-    expect(px(v2, 0, 0)).toEqual([255, 0, 0, 255]) // masked-off original preserved
-    expect(px(v2, 2, 0)).toEqual([0, 0, 0, 0]) // shadow clipped to the mask — suppressed outside it
+    const unpinned = render(src(''), 'd')
+    expect(px(unpinned, 0, 0)).toEqual([255, 0, 0, 255]) // masked-off original preserved
+    expect(px(unpinned, 2, 0)).toEqual([0, 0, 0, 0]) // shadow clipped to the mask — suppressed outside it
 
-    const v1 = render(src('drawstic 1\n'), 'd')
-    expect(px(v1, 0, 0)).toEqual([255, 0, 0, 255])
-    expect(px(v1, 2, 0)).toEqual([0, 0, 255, 255]) // v1 ignores the mask: whole-buffer shadow
+    // an inert `drawstic 1` pragma renders identically — the mask-ignoring whole-buffer path is gone
+    const pinned = render(src('drawstic 1\n'), 'd')
+    expect(px(pinned, 0, 0)).toEqual([255, 0, 0, 255])
+    expect(px(pinned, 2, 0)).toEqual([0, 0, 0, 0])
   })
 
   test('region-scoped texture filters confine to the region; whole-frame form unchanged (ADR-0071)', () => {
@@ -801,22 +801,22 @@ draw d 2x2:
     expect(px(whole, 3, 0)).toEqual([0, 0, 0, 255])
   })
 
-  test('shadeRegion semantics switch on the drawstic version pragma; lightRegion brightens (ADR-0068/0069)', () => {
-    // v2 (unpinned): amount is the veil opacity; an opaque base does NOT repaint the near side
-    const v2 = render(
+  test('shadeRegion is a veil regardless of pragma; lightRegion brightens (ADR-0068/0069/0088)', () => {
+    // amount is the veil opacity; an opaque base does NOT repaint the near side
+    const veil = render(
       'draw d 8x1:\n  r = rect(0:0, 7:0)\n  fill #ffffff r\n  shadeRegion r 0:0 #ff0000 1\n',
       'd',
     )
-    expect(px(v2, 0, 0)).toEqual([255, 255, 255, 255]) // near the light: untouched
-    expect(px(v2, 7, 0)).toEqual([255, 0, 0, 255]) // far corner: full red veil
+    expect(px(veil, 0, 0)).toEqual([255, 255, 255, 255]) // near the light: untouched
+    expect(px(veil, 7, 0)).toEqual([255, 0, 0, 255]) // far corner: full red veil
 
-    // v1 (drawstic 1): opaque base repaints the whole region, mixing toward black by distance
-    const v1 = render(
+    // an inert `drawstic 1` pragma renders identically — the v1 black-mix trap is gone
+    const pinned = render(
       'drawstic 1\ndraw d 8x1:\n  r = rect(0:0, 7:0)\n  fill #ffffff r\n  shadeRegion r 0:0 #ff0000 1\n',
       'd',
     )
-    expect(px(v1, 0, 0)).toEqual([255, 0, 0, 255]) // near the light: repainted red (the v1 trap)
-    expect(px(v1, 7, 0)).toEqual([0, 0, 0, 255]) // far corner: mixed to black
+    expect(px(pinned, 0, 0)).toEqual([255, 255, 255, 255]) // near the light: untouched (not repainted)
+    expect(px(pinned, 7, 0)).toEqual([255, 0, 0, 255]) // far corner: full red veil
 
     // lightRegion: additive brightening, strongest nearest the light point
     const lit = render(

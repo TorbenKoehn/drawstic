@@ -241,8 +241,7 @@ effect is not obvious from the call alone, so verify by rendering, not by readin
 - `shadeRegion r light base amount` blends `base` as a shadow **veil** over `r` — opacity
   `base.a × amount` at the far corner, fading to untouched at the light. **`amount` is the veil
   opacity**, and it composites over detail rather than repainting it, so an opaque `base` is
-  fine. (Under a `drawstic 1` pin the old rule holds: `base` alpha = opacity, and an opaque
-  `base` repaints the whole region.)
+  fine.
 - `lightRegion r light paint amount` is the additive mirror — a light veil, **brightest nearest
   `light`**, opacity `paint.a × amount`. Reach for it instead of faking warm light with a masked
   gradient. It washes the *whole* region with a distance falloff (not an edge), so keep `amount` low
@@ -258,9 +257,9 @@ effect is not obvious from the call alone, so verify by rendering, not by readin
 - `ambientOcclusion r p amount` is a 1px inner-edge stroke, not a soft occlusion gradient.
 - All four shadow surfaces share one `[region] dx:dy paint` shape: the whole-frame
   `shadow 1:1 p`, the local `shadow r 1:1 p` / `castShadow r 1:1 p`, and the stamp flag
-  `stamp part pt shadow 1:1 p`. The whole-frame `shadow` respects an enclosing `mask …:` block
-  in language version 2 (a `drawstic 1` pin makes it rebuild the whole buffer, ignoring the
-  mask). A `stamp … shadow` on a **composite** sprite (roof + posts + basin) offsets the whole
+  `stamp part pt shadow 1:1 p` — the offset is always a `dx:dy` point (no two-bare-number form).
+  The whole-frame `shadow` respects an enclosing `mask …:` block. A `stamp … shadow` on a
+  **composite** sprite (roof + posts + basin) offsets the whole
   silhouette into a dark clump, not a cast shadow — for a standing object draw a separate
   `ellipse … fill` ground shadow instead.
 

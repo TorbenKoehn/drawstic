@@ -97,7 +97,7 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
   konsistenter shade-Punkt/rim-Dir/cast-Offset), per-Response-Sequenz + gerenderte Ton-Struktur
   (metal lit-warm→dark-cool, glow self-core + Nachbarn unberührt, cast down-light), celRegion N-Bänder.
   720 Tests gesamt grün, `tsc --noEmit` + `biome check .` clean. **Kein** Parser/Eval/CLI berührt (2c).
-- [ ] **2c** Parser/Eval: `light NAME = dir…|at…`-Binding und `material NAME = COLOR RESPONSE`-Binding
+- [x] **2c** Parser/Eval: `light NAME = dir…|at…`-Binding und `material NAME = COLOR RESPONSE`-Binding
   (Inline-Args, keine Konstruktoren), `lit L:`-Block, `model`/`cel`-Dispatch; `render --explain`
   (Primitive-Expansion). **v1/v2-Branching komplett entfernen** — eine Semantik, kein Gate; Pragma
   `drawstic N` → No-op. e2e-Tests (render→decode→assert: ein Licht treibt shade+rim+shadow kohärent).
@@ -112,8 +112,8 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
   `render --explain` (Output-Kind, `--json`-konform, `formatExplain`). `cel` nutzt `ramp(base,N)` +
   `lightPointFor` (2b-finding). Keyword-Disziplin verifiziert (examples nutzen `lit`/`dir`/`glow` als
   Namen — grün). 13 neue Tests (`tests/unit/light-material.test.ts` 12 + cli `--explain` 1), 733
-  gesamt grün, tsc + biome clean. **KOLLAPS OFFEN** → siehe „2c-collapse" unter Emergente Punkte;
-  darum bleibt die Checkbox offen.
+  gesamt grün, tsc + biome clean. **KOLLAPS jetzt ebenfalls erledigt** (siehe „2c-collapse") → 2c
+  mit diesem Commit vollständig.
 - [ ] **2d** Theme-Licht (`FoldedTheme.light`, fold/merge/fingerprint) für Cross-View-Kohärenz;
   Two-View-Character-Test (teilt Theme-Licht). Danach `craft-eval` (Kategorie) fahren, Report in `docs/`.
 
@@ -134,22 +134,39 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
 
 _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen anhängen.)_
 
-- [ ] **2c-collapse** (die zweite Hälfte von 2c, separater Teil): v1/v2-Branching komplett entfernen
-  (eval/raster/lint), `shadeRegionLegacy` weg, **W005** weg, stamp-anchor/whole-frame-shadow-Legacy
-  weg, Pragma `drawstic N` → inert/No-op (bleibt Sprachversion 1), betroffene v1/v2-Tests auf **eine**
-  Semantik anpassen. Verankerungspunkte für den Kollaps (heute noch aktiv, aus 2c-Syntax gesichtet):
-  `eval.ts` liest `state.module.ast.pragma ?? LANGUAGE_VERSION` an mind. 4 Stellen (shadeRegion-Split
-  ~Z.3020, whole-frame-shadow-mask ~Z.2930, stamp visualAnchors ~Z.3418) — alle auf v2-Zweig fixieren;
-  `raster.ts` `shadeRegionLegacy` entfernen (nur der eval-v1-Zweig referenziert es); `lint.ts` W005
-  (v1-only) entfernen; `docs/language-spec.md` §1 „version 2"-Notes + W005-Tabellenzeile + reference.md
-  „Determinism & budget"/`drawstic 1`-Hinweise bereinigen. Gehört laut Plan in Phase 2c, war aber
-  bewusst vom additiven Syntax-Teil getrennt (Scope-Grenze dieser Einheit).
+- [x] **2c-collapse** (die zweite Hälfte von 2c) — ADR-0088 umgesetzt: alle vier
+  `pragma ?? LANGUAGE_VERSION >= 2`-Zweige aus `eval.ts` entfernt (E009-Versionscheck in `loadSource`,
+  whole-frame-shadow-`respectMask`, `shadeRegion`-Split, stamp-`visualAnchors`); `LANGUAGE_VERSION`
+  ganz gelöscht (auch aus README-API-Liste). `eval.ts` `#throughTransformAnchorPoint` +
+  `#stampAnchorPoint` (nur vom Legacy-Pfad genutzt) entfernt → nur `#visualAnchorPoint` bleibt.
+  `shadow`-Case: Zwei-Zahlen-Alias (`shadow dx dy p`) entfällt → nur `dx:dy`/Region; whole-frame-Shadow
+  respektiert immer die Maske. `raster.ts` `shadeRegionLegacy` gelöscht, `filterShadow`-`respectMask`-
+  Param weg (Maske immer respektiert). `lint.ts` **W005** (`lintOpaqueShadeRegionBase`) samt Aufruf +
+  `LANGUAGE_VERSION`-Import raus. `diagnostic.ts`: **E009**-Slot als retired kommentiert (nie
+  renummerieren/wiederverwenden; W005-Slot analog frei). Pragma `drawstic N` bleibt syntaktisch legal,
+  ist aber inert (jedes N ok, kein Fehler mehr) — verifiziert per `check` auf `drawstic 9` (Exit 0).
+  Examples: `shadow 1 1` → `shadow 1:1` in `scenes/arctic.drw` + `showcase/themes.drw` (die zwei einzigen
+  Zwei-Zahlen-Shadows, hätten sonst geworfen); die inerten `drawstic 1`/`drawstic 2`-Zeilen **bewusst
+  belassen** (ADR-0088: Direktive nur gehalten, damit Altdateien nicht zwangs-gestrippt werden). Tests
+  auf eine Semantik konvertiert: Anchor-/Shadow-/shadeRegion-v1/v2-Tests beweisen jetzt „Pragma inert"
+  (pinned == unpinned); W005- + shadeRegionLegacy-Tests entfernt; `filterShadow`-Mask-Tests auf die
+  Single-Semantik umgeschrieben. 727 Tests grün (733−6), tsc + biome clean. Doku: language-spec §2/§9/
+  §12/§14 + W005-Zeile + Grammar-Alias, reference.md, SKILL.md, best-practices.md bereinigt.
 - [ ] **2c-finding `lit`-Block nur Bare-Name** Der `lit L:`-Block akzeptiert bewusst nur einen
   Bare-Name (`lit sun:`), keinen komplexen Ausdruck (anders als `mask expr:`), um die kontextuelle
   Dispatch-Ambiguität mit `lit = …`/`fill lit`/`fn lit` (bestehende Recipe-Nutzung von `lit`) sauber
   zu halten. Falls je `lit theme.light:` o.Ä. gebraucht wird: erst an einen Namen binden. Analog nimmt
   die `light L`-Override an `model`/`cel` einen Bare-Name-`light`-Marker (kein globaler KW_ARG), damit
   `light` nirgends global reserviert wird.
+- [ ] **2c-collapse-finding: Example-Pixel-Shift der ehemaligen `drawstic 1`-Szenen** Die sechs
+  `scenes/{volcano,reef,orbit,market,island,arctic}.drw` pinnten `drawstic 1` und rendern jetzt unter
+  der einzigen (Ex-v2-)Semantik: opake `shadeRegion`-Basen sind Veils statt Repaints, Flip-/Rot-Anchors
+  sind visuell, whole-frame-`shadow` respektiert die Maske. Alle bleiben grün unter `critique --strict`
+  (Gate = C001/C007/C008), aber die Bilder haben sich sichtbar verschoben (nicht vision-verifiziert).
+  Falls ein späterer `craft-eval`/Phase-4-Lauf pristine Beispiele will: inerte Pragma-Zeilen strippen
+  **und** die sechs Szenen an der neuen Veil-/Visual-Anchor-Semantik nachjustieren (Shading-Dosen,
+  Hausplatzierung in `market`). Bewusst hier deferred — vom Gate nicht gefordert, ADR-0088 hält die
+  Pragma-Zeilen ohnehin als inerte Altlast.
 
 - [x] **1a-followup** (1c) showcase C004/C012: Threshold-Rauschen, kein Craft-Mangel. C012 auf
   Asymmetrie umgestellt (zentrierte Breathing-Room feuert nicht mehr); C004 bleibt advisory (flache
