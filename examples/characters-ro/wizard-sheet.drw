@@ -1,0 +1,18 @@
+# Finished presentation sheet: the three wizard views composed on one panel.
+# Character + its critique live in wizard.drw; this file only composes the deliverable.
+from wizard wizardFront, wizardSide, wizardBack
+
+grad panelBg = linear(90, #2c2340, #17111f)
+
+draw wizardSheet 208x150:
+  bg panelBg
+  rrect #3a3054 2:2 205:147 6
+  stamp wizardFront 4:8
+  stamp wizardSide 72:8
+  stamp wizardBack 140:8
+  text #d8c8ff 22:140 "FRONT"
+  text #d8c8ff 94:140 "SIDE"
+  text #d8c8ff 158:140 "BACK"
+
+export wizardSheet wizard-sheet:
+  png @1 @4

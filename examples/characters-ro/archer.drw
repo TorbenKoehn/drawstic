@@ -1,0 +1,325 @@
+# Ragnarok-Online-style chibi Archer/Hunter — front, side, back on one sheet.
+
+# --- proportions (shared across all three views) ---
+headTop      = 6
+neckY        = 36
+shoulderY    = 38
+hipY         = 76
+kneeY        = 100
+footLine     = 123
+cx           = 32   # figure centerline, front/back canvases
+
+# --- colours (semantic bindings) ---
+skin        = #e8b489
+capBrown    = #7a4f2a
+feather     = #f2e8d5
+tunic       = #3f7a3e
+leather     = #6d4527
+leatherLo   = #925c2c
+leatherHi   = #402616
+pants       = #55453a
+metal       = #8494ac
+wood        = #8a5a2e
+string      = #e8dfc8
+ink         = #1c130d
+white       = #f6f1e8   # eye sclera / catchlight
+irisCol     = #5a3a1e   # warm-brown iris
+brow        = #4a2f18
+mouth       = #6e4028
+warm        = #ffe6c2   # sun highlight (matches theme light)
+cool        = #2b3350   # cool shadow (matches theme ambient)
+
+# discrete form ramp — widens each flat-cel mass to a readable value range
+# without the gradient sprawl of model/cel rim+AO (keeps the palette tight)
+fn hi(c) = c.litTone(warm, 32%)
+fn lo(c) = c.shadowTone(cool, 40%)
+
+material skinMat   = skin flat
+material capMat    = capBrown flat
+material tunicMat  = tunic flat
+material leatherMat = leather flat
+material pantsMat  = pants flat
+material woodMat   = wood flat
+material metalMat  = metal metal
+
+theme archerTheme:
+  light sun = dir 1:1 #ffe6c2 amb #2b3350 18%
+  style """
+    RO chibi archer/hunter, ~3.8 head-heights tall.
+    One warm light from the upper-left, shared by every view.
+    1px warm-black silhouette outline (single whole-figure pass). Smooth model-shaded leather+cloth.
+  """
+
+use archerTheme
+
+# ============================= HEAD (front) =============================
+draw headFront 28x34:
+  skull = ellipse(14:17, 9:10)
+  jaw   = poly(6:22, 22:22, 17:32, 11:32)
+  face  = skull.union(jaw)
+  cel face skinMat 3
+  capDome = ellipse(14:11, 11:9).intersect(rect(0:0, 27:14))
+  capBrim = rrect(1:13, 26:17, 2)
+  capRegion = capDome.union(capBrim)
+  cel capRegion capMat 3
+  fill feather poly(21:11, 24:6, 25:0, 22:4)   # solid plume (a thin curve leaves a 1px gap under the outline)
+  px feather.lighten(12%) 23:3
+  # chibi five-mark face (white+iris+pupil+catchlight, brows, nose tick, mouth)
+  fill white ellipse(10:23, 3:2)
+  fill white ellipse(18:23, 3:2)
+  circle irisCol 10:23 2 fill
+  circle irisCol 18:23 2 fill
+  px ink 10:23
+  px ink 18:23
+  px white 9:22
+  px white 17:22
+  line brow 8:19 11:19 w1
+  line brow 17:19 20:19 w1
+  px skin.darken(16%) 14:25
+  px skin.darken(16%) 14:26
+  line mouth.alpha(75%) 12:28 15:28 w1
+  pin chin 14:30
+
+# ============================= TORSO (front) =============================
+draw torsoFront 34x42:
+  vest = poly(4:2, 30:2, 26:20, 28:40, 6:40, 8:20)
+  cel vest tunicMat 4
+  fill hi(tunic) vest.intersect(rect(4:2, 15:16))
+  fill lo(tunic) vest.intersect(rect(19:22, 30:40))
+  belt = rect(6:24, 27:28)
+  cel belt leatherMat 3
+  buckle = rect(15:25, 19:27)
+  model buckle metalMat
+  line leatherHi 8:3 22:15 w1
+  pin neck 17:3
+  pin shoulderL 6:4
+  pin shoulderR 28:4
+  pin hipL 8:38
+  pin hipR 26:38
+
+# ============================= ARMS (front/back, reused) =============================
+draw armBent 16x40:                    # bow-hand: bent, holds the bow low
+  upper = poly(3:0, 12:0, 11:17, 4:17)
+  fore  = poly(3:16, 11:16, 12:34, 5:36)
+  sleeve = upper.union(fore)
+  cel sleeve tunicMat 3
+  fill hi(tunic) sleeve.intersect(rect(3:0, 8:12))
+  fill lo(tunic) sleeve.intersect(rect(8:20, 12:34))
+  cuff = rect(2:32, 12:37)
+  cel cuff leatherMat 3
+  hand = circle(7:38, 3)
+  cel hand skinMat 3
+  pin shoulder 7:1
+  pin hand 7:38
+
+draw armRelaxed 14x40:                 # off hand: hangs straight at the hip
+  upper = poly(2:0, 11:0, 10:17, 3:17)
+  fore  = poly(3:16, 10:16, 9:35, 4:35)
+  sleeve = upper.union(fore)
+  cel sleeve tunicMat 3
+  fill hi(tunic) sleeve.intersect(rect(2:0, 7:12))
+  fill lo(tunic) sleeve.intersect(rect(7:20, 11:35))
+  cuff = rect(2:32, 11:37)
+  cel cuff leatherMat 3
+  hand = circle(6:38, 3)
+  cel hand skinMat 3
+  pin shoulder 6:1
+  pin hand 6:38
+
+# ============================= LEGS (front/back, reused) =============================
+draw legL 16x48:
+  thigh = poly(2:0, 14:0, 13:26, 3:26)
+  cel thigh pantsMat 4
+  fill hi(pants) thigh.intersect(rect(2:0, 9:11))
+  boot = poly(2:25, 14:25, 15:46, 1:46)
+  cel boot leatherMat 4
+  fill lo(leather) boot.intersect(rect(1:36, 15:46))
+  pin hip 8:1
+  pin foot 8:45
+
+draw legR 16x48:
+  thigh = poly(2:0, 14:0, 13:26, 3:26)
+  cel thigh pantsMat 4
+  fill hi(pants) thigh.intersect(rect(2:0, 9:11))
+  boot = poly(2:25, 14:25, 15:46, 1:46)
+  cel boot leatherMat 4
+  fill lo(leather) boot.intersect(rect(1:36, 15:46))
+  pin hip 8:1
+  pin foot 8:45
+
+# ============================= BOW & QUIVER (reused all views) =============================
+draw bow 12x56:
+  curve wood 8:1 3:14 5:28 3:42 8:55 w3
+  line string 8:2 8:54 w1
+  pin grip 8:28
+
+draw quiver 20x40:
+  fill #5a3f28 rect(4:0, 15:16)   # solid fletch backing: no transparent slots between arrows (closes C008 when the quiver peeks past the body)
+  line #b0784a 6:16 5:2 w2
+  line #c99a5a 10:14 9:0 w2
+  line #a8683c 14:16 15:2 w2
+  fill #a83a36 rect(4:0, 6:3)
+  fill #d8d0c0 rect(8:0, 10:3)
+  fill #3f5f9a rect(13:0, 15:3)
+  body = poly(3:16, 17:16, 18:38, 2:38)
+  cel body leatherMat 3
+  qmouth = ellipse(10:16, 8:3)
+  cel qmouth leatherMat 3
+  pin top 10:16
+
+# ============================= FRONT VIEW =============================
+draw archerFront 64x128:
+  stamp quiver (cx + 2):(shoulderY - 14)   # mostly hidden behind the torso; fletching peeks over the shoulder
+  fit torsoFront.neck cx:(shoulderY - 1)   # root part: ground-oracle fit registers every torso pin at once
+  fit headFront.chin torsoFront.neck
+  fit armBent.shoulder torsoFront.shoulderL
+  fit armRelaxed.shoulder torsoFront.shoulderR
+  fit legL.hip torsoFront.hipL
+  fit legR.hip torsoFront.hipR
+  fit bow.grip armBent.hand
+  outline
+
+# ============================= HEAD (side) =============================
+draw headSide 26x34:
+  skull = ellipse(12:17, 8:10)
+  nose  = poly(18:16, 23:18, 18:20)
+  jaw   = poly(6:22, 19:22, 16:32, 10:32)
+  face  = skull.union(nose).union(jaw)
+  cel face skinMat 3
+  capDome = ellipse(12:11, 10:9).intersect(rect(0:0, 25:14))
+  capBrim = poly(1:14, 24:13, 25:17, 2:17)
+  cel capDome.union(capBrim) capMat 3
+  fill feather poly(5:11, 2:6, 1:0, 4:4)   # solid plume (matches front; no thin-curve gap)
+  px feather.lighten(12%) 3:3
+  # profile face: one eye (white+iris+pupil+catchlight), brow, nose tick, mouth
+  fill white ellipse(14:23, 2:2)
+  circle irisCol 14:23 1 fill
+  px ink 15:23
+  px white 13:22
+  line brow 11:19 15:19 w1
+  px skin.darken(16%) 18:22
+  line mouth.alpha(75%) 17:28 20:28 w1
+  pin chin 13:30
+
+# ============================= TORSO (side) =============================
+draw torsoSide 26x42:
+  vest = poly(3:2, 22:2, 20:20, 21:40, 5:40, 4:20)
+  cel vest tunicMat 4
+  fill hi(tunic) vest.intersect(rect(3:2, 11:16))
+  fill lo(tunic) vest.intersect(rect(15:22, 22:40))
+  belt = rect(4:24, 21:28)
+  cel belt leatherMat 3
+  strapA = rect(9:2, 13:38)
+  cel strapA leatherMat 3
+  pin neck 12:3
+  pin shoulderNear 18:4
+  pin shoulderFar 6:5
+  pin hipNear 17:38
+  pin hipFar 7:38
+
+# ============================= ARMS (side, redrawn) =============================
+draw armSideNear 16x40:                # leading arm, holds the bow forward
+  upper = poly(3:0, 12:0, 12:16, 4:17)
+  fore  = poly(4:16, 12:16, 13:33, 6:36)
+  sleeve = upper.union(fore)
+  cel sleeve tunicMat 3
+  fill hi(tunic) sleeve.intersect(rect(3:0, 9:12))
+  fill lo(tunic) sleeve.intersect(rect(9:20, 13:33))
+  cuff = rect(3:31, 13:37)
+  cel cuff leatherMat 3
+  hand = circle(8:38, 3)
+  cel hand skinMat 3
+  pin shoulder 7:1
+  pin hand 8:38
+
+material farMat = #605c56 flat          # neutral-grey matte — depth cue for the hidden-side limb (ADR character-craft §5)
+
+draw armSideFar 10x34:                  # trailing arm, tucked behind the torso
+  upper = poly(2:0, 8:0, 7:15, 3:16)
+  fore  = poly(3:15, 7:15, 7:31, 4:32)
+  sleeve = upper.union(fore)
+  cel sleeve farMat 3
+  fill #86827a sleeve.intersect(rect(2:0, 6:12))     # neutral highlight — keeps the limb receding (no warm tint)
+  fill #333029 sleeve.intersect(rect(4:17, 8:31))     # neutral deep shade
+  pin shoulder 5:1
+
+# ============================= SIDE VIEW =============================
+draw archerSide 64x128:
+  stamp quiver 12:34                       # slung on the back, sticking out past the torso's rear edge
+  fit torsoSide.neck cx:(shoulderY - 1)    # root part: ground-oracle fit registers every torso pin at once
+  fit headSide.chin torsoSide.neck
+  fit armSideFar.shoulder torsoSide.shoulderFar
+  fit legL.hip torsoSide.hipFar
+  fit legR.hip torsoSide.hipNear
+  fit armSideNear.shoulder torsoSide.shoulderNear
+  fit bow.grip armSideNear.hand
+  outline
+
+# ============================= HEAD (back) =============================
+draw headBack 28x32:
+  skull = ellipse(14:16, 9:10)
+  nape  = poly(7:22, 21:22, 16:31, 12:31)
+  cel skull.union(nape) skinMat 3
+  fill lo(skin) nape.intersect(rect(7:26, 21:31))
+  hair = rect(6:16, 22:23)
+  cel hair capMat 3
+  capDome = ellipse(14:11, 11:9).intersect(rect(0:0, 27:14))
+  capBack = rrect(1:13, 26:18, 2)
+  capReg = capDome.union(capBack)
+  cel capReg capMat 3
+  fill hi(capBrown) capReg.intersect(rect(1:2, 12:10))
+  fill lo(capBrown) capReg.intersect(rect(15:11, 26:18))
+  curve feather 14:9 16:1 20:3 w2
+  px feather.lighten(10%) 18:2
+  pin nape 14:29
+
+# ============================= TORSO (back) =============================
+draw torsoBack 34x42:
+  vest = poly(4:2, 30:2, 26:20, 28:40, 6:40, 8:20)
+  cel vest tunicMat 4
+  fill hi(tunic) vest.intersect(rect(4:2, 15:16))
+  fill lo(tunic) vest.intersect(rect(19:22, 30:40))
+  line leather 6:2 27:34 w2
+  line leatherLo 7:2 28:34 w1
+  line leather 27:2 6:34 w2
+  line leatherLo 28:2 7:34 w1
+  belt = rect(6:24, 27:28)
+  cel belt leatherMat 3
+  pin nape 17:3
+  pin shoulderL 6:4
+  pin shoulderR 28:4
+  pin hipL 8:38
+  pin hipR 26:38
+
+# ============================= BACK VIEW =============================
+draw archerBack 64x128:
+  fit torsoBack.nape cx:(shoulderY - 1)    # root part: ground-oracle fit (expected W010 — nothing precedes it)
+  fit headBack.nape torsoBack.nape
+  fit armRelaxed.shoulder torsoBack.shoulderL
+  fit armBent.shoulder torsoBack.shoulderR
+  fit legL.hip torsoBack.hipL
+  fit legR.hip torsoBack.hipR
+  fit bow.grip armBent.hand
+  stamp quiver (cx - 10):(neckY)           # on top: the fully-visible back-mounted quiver
+  outline
+
+# ============================= COMPOSED SHEET (all three views, one PNG) =============================
+draw archerSheet 208x140:
+  text ink 22:2 "FRONT" font small
+  text ink 92:2 "SIDE" font small
+  text ink 160:2 "BACK" font small
+  stamp archerFront 0:12
+  stamp archerSide 72:12
+  stamp archerBack 144:12
+
+export archerFront archer-front:
+  png @1 @4
+
+export archerSide archer-side:
+  png @1 @4
+
+export archerBack archer-back:
+  png @1 @4
+
+export archerSheet archer-sheet:
+  png @1 @4
