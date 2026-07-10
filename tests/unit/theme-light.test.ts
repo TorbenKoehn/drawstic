@@ -5,6 +5,7 @@
 // order (explicit `light L` > `lit L:` block > theme default), determinism, and fold/fingerprint.
 
 import { describe, expect, test } from 'bun:test'
+import { DrawsticError } from '../../src/diagnostic.js'
 import { Engine, type ExplainRecord } from '../../src/eval.js'
 import type { Sprite } from '../../src/values.js'
 
@@ -125,6 +126,51 @@ describe('theme-level default light drives shading (ADR-0086 tier 3)', () => {
         'front',
       ),
     ).toThrow(/needs a light/)
+  })
+})
+
+describe('theme carries `light` but not `material` (ADR-0086: materials live in module/draw scope)', () => {
+  test('a `material NAME = …` in a theme body is a positioned E004, not a silent drop', () => {
+    // The theme folds a `light` default (tier 3) but has no place for a material — it used to fall
+    // into the fold's default branch and vanish (a latent footgun). Reject it at the declaration.
+    let err: DrawsticError | undefined
+    try {
+      render(
+        [
+          'theme t:',
+          '  size 10x10',
+          '  material steel = #8a95a5 metal', // no place in a theme body
+          'use t', // folding `t` (at load time) hits the material and throws
+        ].join('\n'),
+        'x',
+      )
+    } catch (e) {
+      err = e as DrawsticError
+    }
+    expect(err).toBeInstanceOf(DrawsticError)
+    expect(err?.code).toBe('E004')
+    expect(err?.message).toContain("no place for the material 'steel'")
+    // actionable hint points at module/draw scope, where `model`/`cel` reads a material.
+    expect(err?.hint).toContain('module scope')
+  })
+
+  test('the same material at module scope, above the theme, is accepted', () => {
+    // The fix rejects only the theme-body placement — module-scope materials keep working.
+    expect(() =>
+      render(
+        [
+          'material steel = #8a95a5 metal',
+          'light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%',
+          'theme t:',
+          '  size 12x12',
+          'use t',
+          'draw x 12x12:',
+          '  lit sun:',
+          '    model rect(1:1, 10:10) steel',
+        ].join('\n'),
+        'x',
+      ),
+    ).not.toThrow()
   })
 })
 

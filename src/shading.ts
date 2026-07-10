@@ -265,7 +265,15 @@ export const planMaterial = (region: Region, mat: Material, lt: Light): ShadeOp[
   return ops
 }
 
-/** Paint a cast-shadow band: the region's silhouette offset by `offset`, minus the region itself. */
+/**
+ * Paint a cast-shadow band: the region's silhouette offset by `offset`, minus the region itself, so
+ * it lands only in the surrounding margin and never over its own region. The band *can* fall on a
+ * neighbour region drawn earlier in the same `draw` — a deliberate, deterministic down-light cast
+ * (draw ground/back-to-front). Assembled `fit`/`stamp` figures avoid this entirely: each part is a
+ * separate draw rendered in isolation, so a part's cast is baked into its own margin and only ever
+ * meets a neighbour via ordinary source-over at assembly (ADR-0086/0087; language-spec § Light &
+ * material).
+ */
 const castBand = (
   ctx: Context,
   region: Region,

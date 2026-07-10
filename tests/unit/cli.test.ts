@@ -605,6 +605,50 @@ describe('build', () => {
       expect(diags[0]?.code).toBe('E008')
     })
   })
+
+  // A non-fatal render-time warning (W010 fit gap, ADR-0087) reaches the build diagnostics the
+  // same way `render` surfaces it — in JSON and, without --json, in the human output.
+  const GAP_EXPORT = [
+    'draw torso 12x20:',
+    '  fill #6a5030 rect(0:0, 11:19)',
+    '  pin shoulder 10:3',
+    'draw arm 6x14:',
+    '  fill #8a5a3a rect(0:0, 5:13)',
+    '  pin shoulder 0:2',
+    'draw fig 34x34:',
+    '  stamp torso 4:2',
+    '  pin far.spot 30:30',
+    '  fit arm.shoulder far.spot', // arm lands in empty space → W010
+    '',
+    'export fig out/fig:',
+    '  png',
+    '',
+  ].join('\n')
+
+  test('--json surfaces a W010 fit gap in build diagnostics (still exit 0)', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'gap.drw')
+      writeFileSync(file, GAP_EXPORT)
+      const r = runJson('build', file, '--out', dir, '--json')
+      expect(r.exitCode).toBe(0)
+      const body = r.json as {
+        diagnostics: { code: string; severity: string }[]
+        artifacts: unknown[]
+      }
+      expect(body.diagnostics.some((d) => d.code === 'W010' && d.severity === 'warning')).toBe(true)
+      expect(body.artifacts.length).toBeGreaterThan(0)
+    })
+  })
+
+  test('without --json prints the W010 fit gap after the wrote-lines', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'gap.drw')
+      writeFileSync(file, GAP_EXPORT)
+      const r = run('build', file, '--out', dir)
+      expect(r.exitCode).toBe(0)
+      expect(r.stdout.toString('utf8')).toContain('W010')
+    })
+  })
 })
 
 describe('render', () => {
@@ -1501,6 +1545,33 @@ describe('sheet', () => {
       expect(r.exitCode).toBe(1)
       const diags = r.json as { code: string; message: string }[]
       expect(diags[0]?.code).toBe('E022')
+    })
+  })
+
+  // A W010 fit gap raised while rendering a sheeted drawing surfaces in the sheet diagnostics,
+  // the same way `build`/`render` surface it (ADR-0087) — non-fatal, exit 0.
+  const GAP_SHEET = [
+    'draw torso 12x20:',
+    '  fill #6a5030 rect(0:0, 11:19)',
+    '  pin shoulder 10:3',
+    'draw arm 6x14:',
+    '  fill #8a5a3a rect(0:0, 5:13)',
+    '  pin shoulder 0:2',
+    'draw fig 34x34:',
+    '  stamp torso 4:2',
+    '  pin far.spot 30:30',
+    '  fit arm.shoulder far.spot', // arm lands in empty space → W010
+    '',
+  ].join('\n')
+
+  test('--json surfaces a W010 fit gap from a sheeted drawing (still exit 0)', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'gap.drw')
+      writeFileSync(file, GAP_SHEET)
+      const r = runJson('sheet', file, '--all', '--out', join(dir, 'gap.sheet.png'), '--json')
+      expect(r.exitCode).toBe(0)
+      const body = r.json as { diagnostics: { code: string; severity: string }[] }
+      expect(body.diagnostics.some((d) => d.code === 'W010' && d.severity === 'warning')).toBe(true)
     })
   })
 })

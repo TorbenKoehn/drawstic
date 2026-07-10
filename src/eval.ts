@@ -1380,6 +1380,18 @@ export class Engine {
       case 'lightBinding':
         this.#foldLight(item, mod, acc, state)
         return acc
+      case 'materialBinding':
+        // A theme carries a `light` default (ADR-0086 tier 3), but *not* materials — those live in
+        // module/draw scope, where a `model`/`cel` reads them. A `material NAME = …` in a theme body
+        // has nowhere to fold and used to vanish silently (a latent footgun). Reject it at the
+        // declaration with an actionable hint instead of dropping it (analogous to {@link #foldBinding}).
+        throw error(
+          ERROR_CODE.syntax,
+          `a theme body has no place for the material '${item.name}'`,
+          mod.displayPath,
+          item.span,
+          'materials live in module scope (above the theme) or a draw body, where `model`/`cel` reads them',
+        )
       case 'binding':
         this.#foldBinding(item, mod, acc, state)
         return acc

@@ -412,8 +412,8 @@ fit <partB>.<pin> <x:y> [shadow]            # ground oracle: land the pin on a c
   registers `b`'s pins in canvas space so the next `fit` chains (`fit hand.wrist arm.wrist`). Bare
   `fit b a` auto-matches a single shared pin name. Replaces hand-stamped socket offsets.
 - **Contact guarantee:** no pixel contact after placing ⇒ non-fatal **`W010`** gap warning (the
-  seam `critique` C007 also measures) — never silent. `fit` reuses the `stamp` blit (same
-  alpha/palette).
+  seam `critique` C007 also measures) — never silent, and in the `diagnostics` of `render`, `build`,
+  and `sheet` alike. `fit` reuses the `stamp` blit (same alpha/palette).
 - **Ground oracle:** a computed-point source plants on terrain — `fit tree.base x:duneY(x/(w-1))`
   (needs a named target pin) → floating/sinking impossible.
 - **`shadow`** flag: auto contact-shadow ellipse under the footprint, drawn first (feet cover it),
@@ -701,7 +701,10 @@ draw sword 24x48:
   **one** light, so shading is never mirrored per view.
 - **`model REGION MATERIAL [light L]`** lowers the material under the resolved light; `MATERIAL` is
   a `material` value **or** inline `COLOR [RESPONSE]`. Zero-dose steps are skipped (so `flat` emits
-  no rim/cast). **No light in any tier = hard `E024`** — never a silent default.
+  no rim/cast). **No light in any tier = hard `E024`** — never a silent default. The **cast is
+  region-scoped** (silhouette offset down-light, minus the region), so build multi-part figures as
+  separate part draws + `fit`/`stamp`: each part renders alone, its cast never smears a neighbour;
+  assembly is source-over (a part's baked shadow grounds the part beneath it, in stamp order).
 - **`cel REGION MATERIAL N`** fills with `N` crisp cel bands from `ramp(base, N)` (even,
   hue-consistent, warm→cool), banded by distance from the light — a hard-edged alternative to
   `model`'s smooth veils.
@@ -728,10 +731,11 @@ theme dusk:
 A theme body holds **only** `pal:` / `grad NAME = …` / `size` / `mode` / `font` / `light` / `style` /
 `with` / `filter` / `draw` (ADR-0081/0086). A theme `light NAME = …` folds like `size`/`mode`/`font`
 (later wins) → the drawing's outermost light (§ Light & material resolution order); the bound name is
-decorative. Surfaced by `context` (`## lighting`). A free binding there (`accent = #d8a53a`) is `E004` **at the
-declaration** (hint: put colours under `pal:`, move other constants to module scope) — a theme
-carries no non-colour design tokens (radius/margin/alpha), so keep those at module scope above the
-theme. Apply: `use themes dusk` at file level, or as the leading line(s) of one `draw` body.
+decorative. Surfaced by `context` (`## lighting`). A free binding there (`accent = #d8a53a`) — or a
+`material NAME = …` (materials live in module/draw scope, not the theme) — is `E004` **at the
+declaration** (hint: put colours under `pal:`, move other constants/materials to module scope) — a
+theme carries no non-colour design tokens (radius/margin/alpha), so keep those at module scope above
+the theme. Apply: `use themes dusk` at file level, or as the leading line(s) of one `draw` body.
 Fold order: file `use` → drawing `use` → drawing-local `pal`/`grad`/`filter` (last wins).
 Style guides concatenate (sectioned by source, deduplicated).
 

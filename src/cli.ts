@@ -820,12 +820,19 @@ const runBuild = (cli: CliArguments): number => {
     const mod = engine.loadEntry(file)
     const outDir = cli.out ?? process.cwd()
     const artifacts = buildModule(engine, mod, outDir)
+    // Non-fatal render-time warnings (e.g. a `fit` gap, W010 — ADR-0087) collected during the
+    // export renders surface here exactly as `render` surfaces them, in JSON and human output.
     if (cli.json) {
-      process.stdout.write(`${JSON.stringify({ diagnostics: [], artifacts }, null, 1)}\n`)
+      process.stdout.write(
+        `${JSON.stringify({ diagnostics: engine.warnings, artifacts }, null, 1)}\n`,
+      )
       return 0
     }
     for (const a of artifacts) {
       process.stdout.write(`wrote ${a.path} (${a.bytes} bytes)\n`)
+    }
+    for (const w of engine.warnings) {
+      process.stdout.write(`${formatDiagnostic(w)}\n`)
     }
     return 0
   } catch (e) {
@@ -1305,10 +1312,13 @@ const runSheet = (cli: CliArguments): number => {
       const output = cli.ascii ? spriteToAscii(sprite) : spriteToAnsi(sprite)
       if (cli.json) {
         process.stdout.write(
-          `${JSON.stringify(sheetJson(layout, { kind: cli.ascii ? 'ascii' : 'preview', output }), null, 1)}\n`,
+          `${JSON.stringify(sheetJson(layout, { kind: cli.ascii ? 'ascii' : 'preview', output }, engine.warnings), null, 1)}\n`,
         )
       } else {
         process.stdout.write(output)
+        for (const w of engine.warnings) {
+          process.stdout.write(`${formatDiagnostic(w)}\n`)
+        }
       }
       return 0
     }
@@ -1330,12 +1340,15 @@ const runSheet = (cli: CliArguments): number => {
     writeFileSync(resolve(out), png)
     if (cli.json) {
       process.stdout.write(
-        `${JSON.stringify(sheetJson(layout, { kind: 'png', output: resolve(out), width, height }), null, 1)}\n`,
+        `${JSON.stringify(sheetJson(layout, { kind: 'png', output: resolve(out), width, height }, engine.warnings), null, 1)}\n`,
       )
     } else {
       process.stdout.write(
         `wrote ${resolve(out)} (${width}x${height}, ${layout.cells.length} tiles)\n`,
       )
+      for (const w of engine.warnings) {
+        process.stdout.write(`${formatDiagnostic(w)}\n`)
+      }
     }
     return 0
   } catch (e) {
@@ -1348,8 +1361,9 @@ const runSheet = (cli: CliArguments): number => {
 const sheetJson = (
   layout: SheetLayout,
   render: Record<string, unknown>,
+  diags: readonly Diagnostic[],
 ): Record<string, unknown> => ({
-  diagnostics: [],
+  diagnostics: diags,
   sheet: {
     cols: layout.cols,
     rows: layout.rows,

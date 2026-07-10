@@ -213,11 +213,13 @@ _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen an
   als Point-Literal (`x:y`) oder geklammert geschrieben werden (Disambiguierung, sonst wäre `fit b pt`
   mehrdeutig). Dokumentiert in language-spec §9 / reference. Falls je ein Point-Binding als Source
   gebraucht wird: `fit b.pin (pt)` klammern.
-- [ ] **3a-finding: W010 nur über gerenderte Pfade sichtbar** Die Gap-Warnung sammelt sich in
-  `Engine.warnings` und wird von `render` (JSON-`diagnostics` + human) ausgegeben; `build`/`sheet`
-  reichen sie heute NICHT durch (kein Regressionsrisiko — der strukturelle Defekt wird ohnehin von
-  `critique` C007 gefangen). Falls `build` die Gap-Warnung surface soll: `engine.warnings` in den
-  build-Diagnostics-Sammler einfalten (Phase 4).
+- [x] **3a-finding: W010 nur über gerenderte Pfade sichtbar** → **gelöst**: `runBuild` und `runSheet`
+  (`cli.ts`) reichen `engine.warnings` jetzt konsistent zu `render` durch — JSON-`diagnostics` **und**
+  human-Ausgabe (nach den `wrote`-Zeilen bzw. ascii/preview-Output). `sheetJson` nimmt die Diagnostics
+  als Param (kein hartkodiertes `diagnostics: []` mehr). W010 bleibt `warning` → Exit 0. Tests
+  (`cli.test.ts`): build-Gap-Recipe → W010 in JSON-`diagnostics` + human-Output; sheet `--all`-Gap →
+  W010 in JSON-`diagnostics`. Doku: language-spec §9 (Contact guarantee: „surfaces in render/build/
+  sheet"), reference.md (W010-Zeile).
 
 - [ ] **measure-phase2** craft-eval (eine Kategorie, Charaktere) gegen die dokumentierten Baselines
   fahren (schwer, Multi-Agent, Review-Bedarf) — konsolidiert am Ende/Human-getriggert. Deckt die
@@ -248,12 +250,16 @@ _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen an
   = äußerster Fallback) ist erfüllt; nur die Ordnung der oberen zwei Tiers folgt ADR statt Task-Prosa.
   Numerisch gepinnt in `theme-light.test.ts`. Falls doch lit>explicit gewünscht: `#requireLight` auf
   `draw.lit ?? explicit ?? draw.themeLight` umbauen (bräuchte getrennte lit-/theme-Felder in DrawState).
-- [ ] **2d-finding: `material` im Theme-Body still verworfen** Ein `material NAME = …` in einem
-  Theme-Body fällt heute in `#foldThemeItem`s `default`-Zweig (stumm ignoriert), analog zur Alt-Lage
-  vor ADR-0081 für freie Bindings. Kein Regressionsrisiko (niemand schreibt das; 2c hat es nie
-  gefaltet), aber ein latenter Footgun. Theme-Materials sind nicht Teil von ADR-0086 (Materials leben
-  in Modul-/Draw-Scope). Falls je gebraucht: entweder falten oder mit positioniertem E004 ablehnen —
-  bewusst hier deferred (Scope 2d = nur Theme-Licht).
+- [x] **2d-finding: `material` im Theme-Body still verworfen** → **gelöst** (kleinere, saubere
+  Variante, konsistent mit ADR-0086: Materials leben in Modul-/Draw-Scope, sind NICHT Teil des
+  Themes): statt still zu droppen wirft `#foldThemeItem` jetzt einen eigenen `materialBinding`-Case
+  ein **positioniertes E004** an der Deklaration mit hilfreichem Hint (`materials live in module
+  scope … where model/cel reads them`) — exakt analog zu `#foldBinding`s Ablehnung freier Bindings.
+  Theme-Material zu falten wäre der größere Weg (fold/merge/fingerprint/context) und sprengt den
+  ADR-Scope; die Fehler-Variante ist die minimale, footgun-freie Lösung. Tests
+  (`theme-light.test.ts`): Theme-Body-`material` → E004 mit Message/Hint; Modul-Scope-`material`
+  darüber bleibt akzeptiert. Doku: language-spec §Themes + reference.md (E004 deckt jetzt auch
+  `material`).
 
 - [x] **2c-collapse** (die zweite Hälfte von 2c) — ADR-0088 umgesetzt: alle vier
   `pragma ?? LANGUAGE_VERSION >= 2`-Zweige aus `eval.ts` entfernt (E009-Versionscheck in `loadSource`,
@@ -322,13 +328,18 @@ _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen an
   gleichmäßig, unabhängig von der Lichtdistanz. Kontinuierliche Veils (`shadeRegion`/`lightRegion`) bleiben
   bewusst un-remappt (weiches Directional-Gefälle ist dort gewollt). Konsequenz für 2c: `cel REGION MAT N`
   kann direkt `lightPointFor(region, light)` durchreichen; `celRegion` normalisiert selbst.
-- [ ] **2b-finding `lowerMaterial`-Cast-Reihenfolge** Der Cast-Schritt ist region-scoped (verschobenes
-  Silhouetten-Band minus Region) und wird laut ADR-0086 als letzter Schritt der Sequenz gemalt. Da das
-  Band per Konstruktion außerhalb der eigenen Region liegt, ist die Reihenfolge relativ zur eigenen
-  Region unkritisch — aber es malt **über** Nachbar-Regionen, die vorher im selben `draw` gezeichnet
-  wurden (das Band steckt down-light heraus). Für einzelne `model`-Objekte korrekt; bei dicht
-  gepackten Multi-Part-Sprites in 2c/3 prüfen, ob Cast besser vor den Geschwistern (Ground-first,
-  scene-craft §8) statt am Ende der Objekt-Sequenz läuft. Heute unkritisch (interne Maschinerie).
+- [x] **2b-finding `lowerMaterial`-Cast-Reihenfolge** → **untersucht + geschlossen: KEIN Defekt für
+  assemblierte (`fit`) Multi-Part-Sprites** (2-Part-Testszenario gebaut, `assembly.test.ts`). Befund:
+  jeder Part ist ein eigener `draw`, isoliert gerendert — der Cast (Silhouetten-Band offset down-light
+  minus Region) landet im **part-eigenen** transparenten Margin (empirisch: Region rect(2:2,11:11) →
+  Cast-Pixel bei x=12, außerhalb der Region, semi-transparent) und berührt zur `model`-Zeit NIE einen
+  Nachbarn. Die einzige Cross-Part-Interaktion ist gewöhnliches source-over beim `fit`/`stamp`
+  (ein Part-Schatten groundet den darunterliegenden Part, in Stamp-Reihenfolge) — deterministisch und
+  gewollt (ADR-0087-Grounding), kein Fix nötig. Nur im **monolithischen** Fall (mehrere `model` in
+  EINEM Draw) fällt ein späterer Cast auf einen früher gezeichneten Nachbarn — bewusste back-to-front-
+  Semantik (scene-craft §8), ebenfalls kein Bug. Als bewusste Semantik dokumentiert: `shading.ts`
+  (`castBand`-Doc), language-spec §Light&Material (`model`-Zeile) + reference.md. 2 neue Tests
+  (Cast-Band im eigenen Margin; 2-Part-`fit`-Assembly deterministisch + unabhängige Shading).
 - [x] **2a-finding `ramp` kollidiert mit User-Bindings** `ramp` ist ein weit verbreiteter
   Recipe-Bezeichner (ADR-0060/0079; `examples/characters/{villager,skeleton,robot}.drw`,
   `items/shields.drw`, `scenes-v3/volcano.drw`, `scenes/orbit.drw`, Tests). Als unshadowbares

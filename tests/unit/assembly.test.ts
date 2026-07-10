@@ -209,6 +209,56 @@ describe('fit shadow — auto contact-shadow', () => {
   })
 })
 
+// A `model`'s cast is region-scoped: the cast band is the region's silhouette offset down-light,
+// minus the region itself, so it lands in the part's OWN transparent margin. For assembled (`fit`)
+// multi-part sprites each part is a separate `draw` rendered in isolation, so a part's cast can
+// never overpaint a neighbour at model time — the only cross-part interaction is ordinary
+// source-over compositing at `stamp`/`fit` (a part's baked shadow grounding a neighbour, in stamp
+// order). This is deliberate, documented semantics (language-spec § Light & material), not a defect.
+describe('material cast is region-scoped & baked per part (ADR-0086/0087)', () => {
+  const PART = [
+    'light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%',
+    'draw blockA 20x20:', // region smaller than the canvas, so the cast band has margin to land in
+    '  lit sun:',
+    '    model rect(2:2, 11:11) #8a95a5 metal',
+    '  pin corner 11:11',
+  ].join('\n')
+
+  test("a part's model cast band stays inside its own sprite margin, outside its region", () => {
+    const a = render(PART, 'blockA')
+    // region interior is opaque metal.
+    expect(alpha(a, 6, 6)).toBe(255)
+    // the cast band sits at x=12 (region max x is 11) — OUTSIDE the region, in the part's own
+    // transparent margin, and semi-transparent (the cast alpha), never over a neighbour.
+    expect(alpha(a, 12, 6)).toBeGreaterThan(0)
+    expect(alpha(a, 12, 6)).toBeLessThan(255)
+  })
+
+  test('two model parts assembled via fit keep independent shading and render deterministically', () => {
+    const asm = [
+      PART,
+      'draw blockB 20x20:',
+      '  lit sun:',
+      '    model rect(2:2, 11:11) #b04040 metal',
+      '  pin top 2:2',
+      'draw fig 40x40:',
+      '  stamp blockA 2:2', // blockA region → canvas 4..13
+      '  pin blockA.corner 13:13',
+      '  fit blockB.top blockA.corner', // blockB stamped ON TOP → region canvas 13..22
+    ].join('\n')
+    const a = render(asm, 'fig')
+    const b = render(asm, 'fig')
+    // deterministic: two renders are byte-identical.
+    expect(Array.from(a.data)).toEqual(Array.from(b.data))
+    // blockA-only pixel reads cool grey (metal base #8a95a5, b>r); blockB-only pixel reads warm red
+    // (base #b04040, r>b) — each part kept its own material through assembly, no cross-region bleed.
+    const [ar, , ab] = px(a, 6, 6)
+    expect(ab).toBeGreaterThanOrEqual(ar)
+    const [br, , bb] = px(a, 20, 20)
+    expect(br).toBeGreaterThan(bb)
+  })
+})
+
 describe('pin / fit — contextual keyword discipline', () => {
   test('pin and fit stay bindable as ordinary names', () => {
     const src = [

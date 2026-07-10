@@ -659,7 +659,8 @@ a bbox overlap is not pixel contact — a part **declares named attach points** 
   `fit partB partA` **auto-matches** it. A named pin absent on one side is a positioned error.
 - **Contact guarantee.** After placing, `fit` checks that the part touches existing content (pixel
   overlap or 8-adjacency). No contact ⇒ a non-fatal **`W010` gap warning** (the same seam the
-  `critique` **C007** check measures) — never a silent float.
+  `critique` **C007** check measures) — never a silent float. It surfaces in the `diagnostics` of
+  every render path: `render`, `build`, and `sheet` (JSON and human output).
 - **Ground-placement oracle.** A `fit` whose source is a **computed point** plants a part on a
   terrain function: `fit tree.base x:duneY(x/(w-1))` (scene-craft §2's *"terrain is a function"*
   formalized) makes floating/sinking structurally impossible. A point source needs a named target
@@ -1298,7 +1299,14 @@ draw sword 24x48:
 - **`model REGION MATERIAL [light L]`** lowers `MATERIAL` under the scoped (or explicit `light L`)
   light onto the fixed sequence `fill → shadeRegion → lightRegion → rim → ambientOcclusion →
   cast shadow` — every point/direction/offset derived from the one light, zero-dose steps
-  skipped. `MATERIAL` is a `material` value **or** an inline `COLOR [RESPONSE]`.
+  skipped. `MATERIAL` is a `material` value **or** an inline `COLOR [RESPONSE]`. The **cast is
+  region-scoped**: it paints the region's silhouette offset down-light, minus the region itself,
+  so it lands in the surrounding margin (never over its own region). Build parts as separate draws
+  and combine them with `fit`/`stamp` (§9) — each part renders in isolation, so a part's cast never
+  overpaints a neighbour at model time; the only cross-part interaction is ordinary source-over at
+  assembly (a part's baked shadow grounds the neighbour beneath it, in stamp order). Many `model`
+  calls in **one** draw body do let a later region's cast fall on an earlier-drawn neighbour (draw
+  ground/back-to-front, scene-craft §8) — a deliberate, deterministic effect, not a bug.
 - **`cel REGION MATERIAL N`** fills `REGION` with `N` crisp cel bands from `ramp(base, N)`
   (even, hue-consistent, warm→cool), banded by distance from the light — a hard-edged
   alternative to `model`'s smooth veils.
@@ -1346,6 +1354,9 @@ the default. A **free binding** written directly in the
 body (a plain `accent = #d8a53a`, outside `pal:`) has nowhere to fold and is a positioned
 **E004** at its declaration: put colours under `pal:` and other constants at **module scope**,
 above the theme ([ADR-0081](decisions/0081-loop-persistent-rebinding-and-theme-scope-edges.md)).
+A theme carries a default `light`, but **not** materials: a `material NAME = …` in a theme body is
+the same positioned **E004** — materials live in module/draw scope, where a `model`/`cel` reads
+them ([ADR-0086](decisions/0086-declarative-light-and-material.md)).
 
 ### Composition with `with` (no inheritance)
 
