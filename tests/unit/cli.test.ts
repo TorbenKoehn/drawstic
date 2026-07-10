@@ -643,6 +643,40 @@ describe('render', () => {
     })
   })
 
+  test('--explain --json reports the model/cel primitive expansion (ADR-0086 §6)', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'lit.drw')
+      writeFileSync(
+        file,
+        [
+          'light sun = dir 1:1 #ffe6b0',
+          'material steel = #8a95a5 metal',
+          'draw blade 16x16:',
+          '  body = rect(2:2, 13:13)',
+          '  lit sun:',
+          '    model body steel',
+          '',
+        ].join('\n'),
+      )
+      const r = runJson('render', `${file}#blade`, '--explain', '--json')
+      expect(r.exitCode).toBe(0)
+      const body = r.json as {
+        render: { kind: string; explain: { command: string; steps: { op: string }[] }[] }
+      }
+      expect(body.render.kind).toBe('explain')
+      expect(body.render.explain).toHaveLength(1)
+      expect(body.render.explain[0]?.command).toBe('model')
+      expect(body.render.explain[0]?.steps.map((s) => s.op)).toEqual([
+        'fill',
+        'shade',
+        'light',
+        'rim',
+        'ao',
+        'cast',
+      ])
+    })
+  })
+
   test('--preview --json with --fit reports a shrunk, fitted size', () => {
     withTmpDir((dir) => {
       const file = bigFixture(dir)

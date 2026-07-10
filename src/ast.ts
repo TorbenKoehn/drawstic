@@ -255,6 +255,46 @@ export type Statement =
       readonly body: Statement[]
       readonly span: TextSpan
     }
+  | {
+      /**
+       * A `lit L: body` block (ADR-0086): scopes a named light over `body` only —
+       * `expression` must evaluate to a Light (checked at eval time), set/restored
+       * like `mask …:`. No global mutable light state.
+       */
+      readonly kind: 'litBlock'
+      readonly expression: Expression
+      readonly body: Statement[]
+      readonly span: TextSpan
+    }
+  | {
+      /**
+       * A `light NAME = dir DX:DY COLOR [amb COOL AMT] [gain N]` (directional) or
+       * `light NAME = at X:Y COLOR …` (point-source) binding (ADR-0086): inline args,
+       * no constructor parentheses. `dir`/`at`/`amb`/`gain` are keywords *only* in
+       * this position (contextual, D7) — ordinary bindable names everywhere else.
+       */
+      readonly kind: 'lightBinding'
+      readonly name: string
+      readonly source: 'dir' | 'at'
+      readonly vec: Expression
+      readonly color: Expression
+      readonly amb: { readonly color: Expression; readonly amount: Expression } | undefined
+      readonly gain: Expression | undefined
+      readonly span: TextSpan
+    }
+  | {
+      /**
+       * A `material NAME = COLOR [RESPONSE]` binding (ADR-0086): a base colour plus an
+       * optional response word (`flat|metal|skin|cloth|glass|glow`; omitted ⇒ `flat`).
+       * The response is a keyword *only* in this slot (contextual, D7); validated at
+       * parse time so `response` is always a real {@link import('./values.js').MaterialResponse}.
+       */
+      readonly kind: 'materialBinding'
+      readonly name: string
+      readonly color: Expression
+      readonly response: string | undefined
+      readonly span: TextSpan
+    }
   | { readonly kind: 'palette'; readonly entries: PaletteEntry[]; readonly span: TextSpan }
   | { readonly kind: 'pixels'; readonly rows: PixelRow[]; readonly span: TextSpan }
   | {

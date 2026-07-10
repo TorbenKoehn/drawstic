@@ -1215,6 +1215,61 @@ argument shape and the frame `shadow` respects a `mask` block in version 2
 ([ADR-0070](decisions/0070-unified-shadow-argument-shape.md)), and the texture filters take an
 optional leading region ([ADR-0071](decisions/0071-region-scoped-texture-filters.md)).
 
+### Light & material
+
+The `shadeRegion`/`lightRegion`/`rim`/`ambientOcclusion`/`shadow` primitives above are the
+**floor**, but re-typing one light source as a point here, an inverted direction there, and a
+`dx:dy` offset elsewhere lets the encodings drift. The **declarative** layer
+([ADR-0086](decisions/0086-declarative-light-and-material.md)) is the default shading path: one
+named **light** drives everything; a named **material** picks the *physics* (never the colour);
+one `model`/`cel` command per object lowers to the primitives, coherently, and cannot drift.
+
+```drw
+light sun      = dir 1:1 #ffe6b0 amb #2a3a5e 15%   # directional: source up-left, lit edge up-left
+light torch    = at 12:8 #ffb060 gain 1.4          # point source at 12:8, 1.4× intensity
+material steel = #8a95a5 metal                      # base colour + response (dose profile)
+
+draw sword 24x48:
+  lit sun:                 # scopes `sun` over the block body only
+    model blade steel      # fill → shade → light → rim → AO → cast, all from `sun`
+    model guard #b08040 metal   # inline COLOR RESPONSE (no named material needed)
+    model grip  #3a2a1e     # bare colour ⇒ response `flat`
+    cel  pommel steel 3     # crisp 3-band cel fill (ramp(base, 3), banded by distance from `sun`)
+```
+
+- **`light NAME = dir DX:DY COLOR [amb COOL AMT] [gain N]`** (directional) or **`light NAME = at
+  X:Y COLOR …`** (point source) binds a first-class light — **no constructor parentheses**, the
+  keyword signals the type. `dir DX:DY` is the light's *travel* direction (`dir 1:1` = moving
+  down-right, so the source is up-left and the up-left edge is lit); `at X:Y` is a canvas
+  position. `COLOR` is the warm light colour. `amb COOL AMT` is optional fill light (a cool
+  colour + a `0..1` amount) that lifts shadows so they never go pure black; `gain N` scales every
+  derived dose (default `1`). `dir`/`at`/`amb`/`gain` are keywords **only** in this binding — they
+  stay ordinary bindable names everywhere else.
+- **`material NAME = COLOR [RESPONSE]`** binds a material: a base colour plus a `RESPONSE ∈
+  flat | metal | skin | cloth | glass | glow` that selects a **baked dose profile** (how far to
+  shade, how tight a rim, how much AO/cast), never the colour. A bare colour with no response is
+  `flat`. `glow` is self-illuminated (fill + inner light only — no shade/rim/cast). The response
+  word is a keyword **only** in this trailing slot.
+- **`lit L: body`** is a lexical block that scopes light `L` over its body only (set/restored like
+  `mask …:`, no global state). A `model`/`cel` with **no** light in scope **and** no explicit
+  `light L` argument is a hard error (`E024`) — a light is always named and always visible, never
+  a silent default.
+- **`model REGION MATERIAL [light L]`** lowers `MATERIAL` under the scoped (or explicit `light L`)
+  light onto the fixed sequence `fill → shadeRegion → lightRegion → rim → ambientOcclusion →
+  cast shadow` — every point/direction/offset derived from the one light, zero-dose steps
+  skipped. `MATERIAL` is a `material` value **or** an inline `COLOR [RESPONSE]`.
+- **`cel REGION MATERIAL N`** fills `REGION` with `N` crisp cel bands from `ramp(base, N)`
+  (even, hue-consistent, warm→cool), banded by distance from the light — a hard-edged
+  alternative to `model`'s smooth veils.
+- **Predictability.** `drawstic render <file>#<draw> --explain` prints the exact primitive
+  expansion of every `model`/`cel` — colours, amounts, points, offsets all resolved — so an agent
+  can predict the pixels and, if a baked dose doesn't fit, copy the expansion down to the raw
+  primitives (which stay the public floor) and hand-tune.
+- **Colour helpers** (usable directly, no new syntax): `litTone(base, light, amt)` (warm
+  highlight), `shadowTone(base, cool, amt[, darken])` (darken + capped ≤~20° cool hue nudge, never
+  cross-hue), `ramp(base, n)` (the even N-band tone list `cel`/`pixels:` want). See *Colour values*
+  above.
+
 ### Themes — a dual artifact
 
 A theme carries a **machine part** (palette, shared base drawings, the **canvas-size
@@ -1671,6 +1726,7 @@ version-pragma = "drawstic" INT NL ;                (* first line; pins semantic
 top-stmt       = from-stmt | use-stmt | size-dir | seed-dir | font-dir
                | binding | definition ;
 definition     = draw-def | path-def | theme-def | fn-def | grad-def | filter-def | mask-def
+               | light-def | material-def                              (* §12, ADR-0086 *)
                | font-def | image-import | tileset-def | atlas-def | export-def ;
 
 from-stmt      = "from" MODULE-PATH import-item { "," import-item } NL ;  (* source-first (§2) *)
@@ -1692,6 +1748,10 @@ name-list      = NAME { "," NAME } ;
 fn-def         = "fn" NAME "(" [ name-list ] ")" "=" expr NL ;   (* first-order (§10) *)
 grad-def       = "grad" NAME "=" expr NL ;          (* linear(…) / radial(…) paint (§12) *)
 mask-def       = "mask" NAME "=" expr NL ;          (* region expression (§9) *)
+light-def      = "light" NAME "=" ( "dir" | "at" ) point paint          (* Light value (§12, ADR-0086) *)
+                 [ "amb" paint expr ] [ "gain" expr ] NL ;              (* dir/at/amb/gain: contextual (D7) *)
+material-def   = "material" NAME "=" paint [ RESPONSE ] NL ;            (* Material value (§12, ADR-0086) *)
+RESPONSE       = "flat" | "metal" | "skin" | "cloth" | "glass" | "glow" ; (* contextual keyword (D7) *)
 image-import   = "import" NAME "=" FILE-PATH [ "sha256" HEX ] NL ;  (* PNG → drawing (§2) *)
 filter-def     = "filter" NAME ":" NL
                  INDENT filter-cmd NL { filter-cmd NL } DEDENT ;    (* pipeline (§12) *)
@@ -1713,10 +1773,13 @@ draw-def       = "draw" NAME [ "(" [ name-list ] ")" ] [ SIZE ] ":" NL
 draw-stmt      = pal-stmt | pixels-block | meta-stmt
                | seed-dir | font-dir                (* drawing-scoped directives (§8, §10) *)
                | grad-def | filter-def | mask-def   (* drawing-local overrides (§9, §12) *)
-               | binding | control-stmt | mask-block | call-stmt ;
+               | light-def | material-def           (* drawing-local light/material (§12, ADR-0086) *)
+               | binding | control-stmt | mask-block | lit-block | call-stmt ;
 
 meta-stmt      = ( "title" | "desc" ) STRING NL ;   (* SVG metadata (§6, §13) *)
 mask-block     = "mask" expr ":" block ;            (* expr must evaluate to a Region (§9) *)
+lit-block      = "lit" NAME ":" block ;             (* NAME must evaluate to a Light (§12, ADR-0086);
+                                                       `lit` is contextual — a name elsewhere (D7) *)
 block          = NL INDENT draw-stmt { draw-stmt } DEDENT ;
 
 pal-stmt       = "pal" pal-entry { pal-entry } NL                 (* inline form (§7) *)
@@ -1780,7 +1843,10 @@ filter-cmd     = "outline" paint [ expr ]           (* built-in filter set (§12
                | "shadeRegion" region point paint expr
                | "lightRegion" region point paint expr
                | "rim" region point paint [ expr ]
-               | "ambientOcclusion" region paint expr ;
+               | "ambientOcclusion" region paint expr
+               | "model" region material [ "light" NAME ]      (* declarative shading (§12, ADR-0086) *)
+               | "cel" region material expr [ "light" NAME ] ; (* N-band cel fill; expr = band count *)
+material       = NAME | paint [ RESPONSE ] ;        (* a `material` value, or inline COLOR [RESPONSE] *)
 
 (* ───────────────────────────── control flow ───────────────────────────── *)
 

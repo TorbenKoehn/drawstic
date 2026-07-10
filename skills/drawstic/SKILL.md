@@ -34,6 +34,9 @@ Examples below use `bunx drawstic`. Inside the Drawstic repo itself: `bun run dr
    - facts → `render file.drw#name --inspect --json` (size, bbox, distinct colors, occupancy,
      per-palette-key opaque pixel share, per-named-mask bbox/coverage — form-sanity without
      reading pixels)
+   - predict shading → `render file.drw#name --explain --json` (the exact primitive expansion of
+     every `model`/`cel` — colours, amounts, points, offsets resolved; verify a material lowers as
+     intended before committing, or copy the sequence to hand-tune)
    - shape-only silhouette → `render file.drw#name --silhouette --png@4` (or `--preview`) — flattens
      every covered pixel to opaque black, so you judge silhouette legibility + modular-part alignment
      with colour stripped; composes with `--inspect`/`--crop`/`--grid`, `--json` carries
@@ -141,6 +144,16 @@ draw scene 32x24:
   `text p pt "s" [font name]` · `flood p pt`.
 - **Stamp** `stamp name[(args)] pt [anchor center|bottom|…] [flipx] [flipy] [rot45] [scale2]
   [transform t] [tint p 0.3] [shadow 1:1 #0006] [mask r]`.
+- **Declarative light + material** (default shading path, ADR-0086) — one named light drives
+  everything, so encodings can't drift: `light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%` (travel dir;
+  source up-left ⇒ up-left edge lit) or `light torch = at 12:8 #ffb060 gain 1.4` (point source;
+  `gain` = intensity, `amb COOL AMT` = fill light). `material steel = #8a95a5 metal` (response ∈
+  `flat|metal|skin|cloth|glass|glow`; bare colour ⇒ `flat`; `glow` = self-lit). Then `lit sun:`
+  scopes the light over its body, and per object `model REGION MAT [light L]` lowers to
+  fill→shade→light→rim→AO→cast (all from the one light) · `cel REGION MAT N` = crisp N-band fill.
+  `MAT` = a `material` value **or** inline `COLOR [RESPONSE]`. No light in scope **and** no
+  `light L` = hard `E024` (never a silent default). `render … --explain` prints the exact primitive
+  expansion. `dir/at/amb/gain` + the response words are keywords **only** in their slot.
 - **Control flow:** `for i 0..8:` (half-open; `..=` inclusive) · `repeat n:` · `if c:`/`else:` ·
   `match x:` · expression `if c then a else b` · `fn f(a, b) = expr`.
 - **Scatter** `scatter p n seed region:` → body n times, `p` = a seeded point drawn uniformly from
@@ -167,13 +180,16 @@ draw scene 32x24:
   For a **procedural** horizon from a function (noise dune/ridge) use `profile p 0..w ridgeY fill`
   instead of a per-column loop — the `fn` gets normalized x∈[0,1], so `noise(seed, nx*4, 0)` is smooth
   by construction (the integer-lattice trap can't happen); `profile(0..w, ridgeY)` is a Region.
-- **Explicit light**: place shadows as geometry or `shadow`/`castShadow` filters; never assume
-  ambient lighting. `shadeRegion r light base amount` blends `base` as a shadow veil, `amount` =
-  opacity, deepest away from `light` — an opaque `base` is fine (it composites, not repaints).
-  `lightRegion r light paint amount` is the additive mirror (brightest nearest `light`; areal, keep
-  `amount` low). `rim r dir p` lights the edge facing away from `dir` (`0:1` → top edge) — on a
-  **filled** silhouette it strokes the whole contour, so `.intersect(rect(…))` it to the target edge.
-  Full compositing semantics (and the `drawstic 1` `shadeRegion` caveat): reference.md § Gradients & filters.
+- **Explicit light — declare it once**: bind a `light` and let `model`/`cel` lower it, so shade,
+  rim, and cast can't drift apart. `light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%` then `lit sun:` and
+  `model blade steel` / `cel pommel steel 3` per object — one call replaces the hand-dosed
+  shade+light+rim+AO+cast quartet, and `--explain` shows the exact expansion so you can predict it.
+  `material` picks the *physics* (`metal`/`skin`/…), never the colour. The raw primitives stay the
+  **floor / escape hatch** for hand-tuning: `shadeRegion r light base amount` (shadow veil, `amount`
+  = opacity, deepest away from `light`; opaque `base` composites, not repaints), `lightRegion` (its
+  additive mirror), `rim r dir p` (lights the edge facing away from `dir`; on a filled silhouette
+  `.intersect(rect(…))` it to one edge). Copy `--explain`'s output to drop down to them.
+  Full semantics: reference.md § Light & material and § Gradients & filters.
 - **Scattered marks** (stars, bubbles, gravel, sparks): `scatter p 40 7 rect(0:0, w-1:h-1):` then
   a mark on `p` — points come uniformly from the region's pixels, so pass a shape to confine them
   (no manual `rand`+`floor`+bbox loop). `noise(seed, x, y)` for smooth 2D texture. Deterministic.

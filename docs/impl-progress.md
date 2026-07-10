@@ -102,6 +102,18 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
   (Primitive-Expansion). **v1/v2-Branching komplett entfernen** — eine Semantik, kein Gate; Pragma
   `drawstic N` → No-op. e2e-Tests (render→decode→assert: ein Licht treibt shade+rim+shadow kohärent).
   Product-Skill + `docs/language-spec.md` §Licht&Material nachziehen.
+  → **2c-SYNTAX erledigt** (additive Hälfte): AST-Kinds `lightBinding`/`materialBinding`/`litBlock`;
+  Parser-Dispatch kontextuell (`light NAME =`, `material NAME =`, `lit NAME:`) + `#parseLightBinding`/
+  `#parseMaterialBinding`; `values.ts` `MATERIAL_RESPONSES`/`isMaterialResponse` (MaterialResponse
+  daraus abgeleitet); eval `#execLightBinding`/`#execMaterialBinding`/`#execLitBlock` (module- +
+  draw-scope), `DrawState.light` (set/restore wie mask), `#execCommand`-Cases `model`/`cel` mit
+  `Args.material()`/`Args.light()`/`Args.peekBareName()`, `#requireLight` → **E024** (neuer Code) bei
+  fehlendem Licht; `Engine.explain` + `ExplainRecord`/`ExplainStep` + `explainShadeOp`; CLI
+  `render --explain` (Output-Kind, `--json`-konform, `formatExplain`). `cel` nutzt `ramp(base,N)` +
+  `lightPointFor` (2b-finding). Keyword-Disziplin verifiziert (examples nutzen `lit`/`dir`/`glow` als
+  Namen — grün). 13 neue Tests (`tests/unit/light-material.test.ts` 12 + cli `--explain` 1), 733
+  gesamt grün, tsc + biome clean. **KOLLAPS OFFEN** → siehe „2c-collapse" unter Emergente Punkte;
+  darum bleibt die Checkbox offen.
 - [ ] **2d** Theme-Licht (`FoldedTheme.light`, fold/merge/fingerprint) für Cross-View-Kohärenz;
   Two-View-Character-Test (teilt Theme-Licht). Danach `craft-eval` (Kategorie) fahren, Report in `docs/`.
 
@@ -121,6 +133,23 @@ auf `feature/exp`. Erledigte Checkbox abhaken; neue Findings unter „Emergente 
 ## Emergente Punkte
 
 _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen anhängen.)_
+
+- [ ] **2c-collapse** (die zweite Hälfte von 2c, separater Teil): v1/v2-Branching komplett entfernen
+  (eval/raster/lint), `shadeRegionLegacy` weg, **W005** weg, stamp-anchor/whole-frame-shadow-Legacy
+  weg, Pragma `drawstic N` → inert/No-op (bleibt Sprachversion 1), betroffene v1/v2-Tests auf **eine**
+  Semantik anpassen. Verankerungspunkte für den Kollaps (heute noch aktiv, aus 2c-Syntax gesichtet):
+  `eval.ts` liest `state.module.ast.pragma ?? LANGUAGE_VERSION` an mind. 4 Stellen (shadeRegion-Split
+  ~Z.3020, whole-frame-shadow-mask ~Z.2930, stamp visualAnchors ~Z.3418) — alle auf v2-Zweig fixieren;
+  `raster.ts` `shadeRegionLegacy` entfernen (nur der eval-v1-Zweig referenziert es); `lint.ts` W005
+  (v1-only) entfernen; `docs/language-spec.md` §1 „version 2"-Notes + W005-Tabellenzeile + reference.md
+  „Determinism & budget"/`drawstic 1`-Hinweise bereinigen. Gehört laut Plan in Phase 2c, war aber
+  bewusst vom additiven Syntax-Teil getrennt (Scope-Grenze dieser Einheit).
+- [ ] **2c-finding `lit`-Block nur Bare-Name** Der `lit L:`-Block akzeptiert bewusst nur einen
+  Bare-Name (`lit sun:`), keinen komplexen Ausdruck (anders als `mask expr:`), um die kontextuelle
+  Dispatch-Ambiguität mit `lit = …`/`fill lit`/`fn lit` (bestehende Recipe-Nutzung von `lit`) sauber
+  zu halten. Falls je `lit theme.light:` o.Ä. gebraucht wird: erst an einen Namen binden. Analog nimmt
+  die `light L`-Override an `model`/`cel` einen Bare-Name-`light`-Marker (kein globaler KW_ARG), damit
+  `light` nirgends global reserviert wird.
 
 - [x] **1a-followup** (1c) showcase C004/C012: Threshold-Rauschen, kein Craft-Mangel. C012 auf
   Asymmetrie umgestellt (zentrierte Breathing-Room feuert nicht mehr); C004 bleibt advisory (flache

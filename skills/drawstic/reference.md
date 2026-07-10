@@ -49,6 +49,14 @@ Render outputs (mutually exclusive):
     the actual (possibly `--crop`ped) canvas, `null`/`0` if the mask touches no canvas
     pixel; `coverageFraction` is density *within the mask's own bbox* (a thin ring reads
     sparse even though its bbox is a full square), not a fraction of the whole canvas.
+- `--explain` (ADR-0086 §6) → prints the exact primitive expansion of every `model`/`cel` command
+  instead of an image: each record `{command, region, light:{x,y}, steps:[…]}`, one step per lowered
+  primitive with its resolved args — `{op:'fill'|'shade'|'light'|'rim'|'ao'|'cast', color, amount?,
+  point?, dir?, width?, offset?}` for `model`, `{op:'band', color}×N` for `cel`. Renders the drawing
+  to run the commands, then reports the trace (no PNG written). `--json` → `{diagnostics, render:{kind:
+  'explain', explain:[…]}}`; plain text otherwise. The predictability guardrail: verify a material
+  lowers as intended, or copy the sequence down to the raw primitives to hand-tune. Output-kind order
+  is `--ascii` > `--preview` > `--inspect` > `--explain` > PNG.
 
 Every render kind's JSON also carries `render.stats = {unknownPixelCount,
 unknownColorCount, paletteCoveredPercent}`: how much of the painted (non-transparent)
@@ -177,10 +185,10 @@ concrete, author it locally or copy from the motif cookbook — `std` stays abst
 |---|---|---|---|
 | `draw` `path` `fn` `theme` `tileset` `atlas` `export` | yes | **no** — E004 | order-independent; may forward-reference each other |
 | `filter` | yes | **yes** | module-level `filter name:` is order-independent like `fn`; a `filter name:` written inside a `draw` body is drawing-local and must precede its `apply name` |
-| `mask` `grad` `pal` / any binding (`=`) | yes | yes | sequential, not order-independent — a drawing-local one must be written before it is used |
+| `mask` `grad` `light` `material` `pal` / any binding (`=`) | yes | yes | sequential, not order-independent — a drawing-local one must be written before it is used (`light`/`material` = ADR-0086) |
 
 Writing `fn`/`path` (or `draw`/`theme`/`tileset`/`atlas`/`export`) inside a `draw` body is a
-positioned `E004`. `mask`/`grad`/`pal`/`filter`/bindings have no such restriction — they read
+positioned `E004`. `mask`/`grad`/`light`/`material`/`pal`/`filter`/bindings have no such restriction — they read
 identically at module or drawing-local scope; only their *position* changes what's already in
 scope when they run.
 
@@ -196,6 +204,8 @@ scope when they run.
 | List | `1, 2, 3` (bare; parens only group/nest) | `xs[expr]` any-expression index, `xs.0` literal index; destructure `r, g, b = rgb`; `len(xs)`; `xs.cycle(i)` auto-wraps (incl. negative `i`) — sugar for `xs[i mod len(xs)]`; empty list is E015. |
 | String | `"…"`, `"""…"""` | text/style guides only; paths are bareword. |
 | Boolean | comparisons, `true`, `false` | logic `& \| !`. |
+| Light | `light NAME = dir DX:DY COLOR [amb COOL AMT] [gain N]` / `= at X:Y …` | first-class light source (§ Light & material, ADR-0086); drives `lit`/`model`/`cel`. |
+| Material | `material NAME = COLOR [RESPONSE]` | base colour + response dose profile; consumed by `model`/`cel`. |
 
 Indices must be integers (fractional = error). `xs.0` is an index; `xs.name` is a UFCS call.
 
@@ -636,6 +646,50 @@ filter retro:            # reusable pipeline
 draw gem: …
   apply retro
 ```
+
+## Light & material (ADR-0086)
+
+The **default** shading path — one named light drives every dose, so shade, rim, and cast can't
+drift apart, and one `model`/`cel` per object replaces the hand-dosed
+`shadeRegion`+`lightRegion`+`rim`+`ambientOcclusion`+`shadow` quartet above (which stays the
+**floor / escape hatch**).
+
+```drw
+light sun      = dir 1:1 #ffe6b0 amb #2a3a5e 15%   # directional; source up-left ⇒ up-left edge lit
+light torch    = at 12:8 #ffb060 gain 1.4          # point source at 12:8, 1.4× intensity
+material steel = #8a95a5 metal                      # base colour + response
+
+draw sword 24x48:
+  lit sun:                 # scopes `sun` over the block body only (set/restore, no global state)
+    model blade steel      # fill → shade → light → rim → AO → cast, all from `sun`
+    model guard #b08040 metal   # inline COLOR RESPONSE — no named material needed
+    model grip  #3a2a1e     # bare colour ⇒ response `flat`
+    cel  pommel steel 3     # crisp 3-band cel fill (ramp(base,3), banded by distance from `sun`)
+```
+
+- **`light NAME = dir DX:DY COLOR [amb COOL AMT] [gain N]`** (directional) / **`light NAME = at X:Y
+  COLOR …`** (point source). `dir` = the light's *travel* direction (`dir 1:1` moves down-right ⇒
+  source up-left ⇒ up-left edge lit); `at` = a canvas position. `COLOR` = warm light colour; `amb
+  COOL AMT` = optional fill light (cool colour + `0..1` amount, lifts shadows off pure black);
+  `gain N` scales every dose (default `1`). **No constructor parens.** `dir`/`at`/`amb`/`gain` are
+  keywords **only** in this binding — ordinary names elsewhere (a recipe may still write `dir = …`).
+- **`material NAME = COLOR [RESPONSE]`**, `RESPONSE ∈ flat | metal | skin | cloth | glass | glow`.
+  The response selects a **baked dose profile** (shade depth, rim tightness, AO/cast) — never the
+  colour, which stays yours. Bare colour ⇒ `flat`. `glow` is self-illuminated (fill + inner light
+  only, no shade/rim/cast). The response word is a keyword **only** in this slot.
+- **`lit L: body`** scopes light `L` over its body (like `mask …:`). `L` must evaluate to a light.
+- **`model REGION MATERIAL [light L]`** lowers the material under the scoped (or explicit `light L`)
+  light; `MATERIAL` is a `material` value **or** inline `COLOR [RESPONSE]`. Zero-dose steps are
+  skipped (so `flat` emits no rim/cast). **No light in scope and no `light L` = hard `E024`** — a
+  light is always named and visible, never a silent default.
+- **`cel REGION MATERIAL N`** fills with `N` crisp cel bands from `ramp(base, N)` (even,
+  hue-consistent, warm→cool), banded by distance from the light — a hard-edged alternative to
+  `model`'s smooth veils.
+- **`render <file>#<draw> --explain`** prints the exact primitive expansion of every `model`/`cel`
+  (CLI § above) — predict the pixels, or copy the sequence to hand-tune with the raw primitives.
+- `light`/`material` bindings live at **module scope or drawing-local** (like `grad`/`mask`).
+  `model`/`cel` are command verbs; `light`/`material`/`lit`/`model`/`cel` all stay ordinary bindable
+  names outside these shapes.
 
 ## Themes
 

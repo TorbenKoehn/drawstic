@@ -110,4 +110,5 @@ export const ERROR_CODE = {
   format: 'E021',
   renderTarget: 'E022',
   diffMismatch: 'E023',
+  noLight: 'E024',
 } as const

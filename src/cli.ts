@@ -4,8 +4,8 @@
 //   drawstic context <file> [--json]
 //   drawstic build <file> [--out <dir>] [--json]
 //   drawstic render <file>#<drawing>[(args)] [--png@N] [--out <path>] [--stdout]
-//                   [--ascii] [--preview] [--silhouette] [--grid N] [--diff <png>]
-//                   [--mode pixel|smooth] [--json]
+//                   [--ascii] [--preview] [--silhouette] [--inspect] [--explain]
+//                   [--grid N] [--diff <png>] [--mode pixel|smooth] [--json]
 // A parametric drawing takes literal arguments in the fragment (ADR-0067):
 //   drawstic render parts.drw#house(#c04040, 3)
 // `--grid`/`--diff` are debug-only PNG-output aids (P3 drawing aids): `--grid`
@@ -37,7 +37,7 @@ import {
   formatDiagnostic,
   type TextSpan,
 } from './diagnostic.js'
-import { defaultBudget, Engine, type ModuleRecord } from './eval.js'
+import { defaultBudget, Engine, type ExplainRecord, type ModuleRecord } from './eval.js'
 import { format, formatDiff } from './fmt.js'
 import { inspectSprite } from './inspect.js'
 import { lintModule } from './lint.js'
@@ -90,6 +90,7 @@ type CliArguments = {
   readonly as: string | null
   readonly strict: boolean
   readonly family: readonly string[] | null
+  readonly explain: boolean
 }
 
 type Writable<T> = { -readonly [P in keyof T]: T[P] }
@@ -126,6 +127,7 @@ const parseArguments = (argv: string[]): CliArguments => {
     as: null,
     strict: false,
     family: null,
+    explain: false,
   }
 
   for (let i = 1; i < argv.length; i++) {
@@ -181,6 +183,8 @@ const parseArguments = (argv: string[]): CliArguments => {
       cli.as = argv[++i] ?? null
     } else if (a === '--strict') {
       cli.strict = true
+    } else if (a === '--explain') {
+      cli.explain = true
     } else if (a === '--family') {
       const names = (argv[++i] ?? '')
         .split(',')
@@ -838,7 +842,9 @@ const namedMasksOf = (mod: ModuleRecord): { readonly name: string; readonly regi
 /**
  * Runs `drawstic render <file>#<drawing>[(args)]`: renders one drawing ad-hoc, in
  * exactly one output kind per invocation (`--ascii` > `--preview` > `--inspect` >
- * PNG, checked in that order). `--crop` applies to every kind; `--fit`
+ * `--explain` > PNG, checked in that order). `--explain` (ADR-0086 §6) prints each
+ * `model`/`cel` command's lowered primitive expansion instead of an image. `--crop`
+ * applies to every image kind; `--fit`
  * applies only to `--ascii`/`--preview` (never to PNG — use `--png@N` for
  * that). A missing `<file>#<drawing>` target or unknown drawing name is an
  * `E022` (`renderTarget`) diagnostic, not a thrown error. A parametric
@@ -861,6 +867,11 @@ const runRender = (cli: CliArguments): number => {
       return emit(diags, cli.json)
     }
     const engine = createEngine(cli)
+    // `--explain` collects each model/cel command's lowered primitive sequence during the render
+    // (ADR-0086 §6) — a predictability guardrail, not a render output.
+    if (cli.explain) {
+      engine.explain = []
+    }
     const mod = engine.loadEntry(file)
     const entry = mod.definitions.get(targetRef.drawing)
     if (!entry) {
@@ -997,6 +1008,31 @@ const runRender = (cli: CliArguments): number => {
       }
       return 0
     }
+    if (cli.explain) {
+      const explain = engine.explain ?? []
+      if (cli.json) {
+        process.stdout.write(
+          `${JSON.stringify(
+            {
+              diagnostics: [],
+              render: {
+                drawing: targetRef.drawing,
+                width: sprite.w,
+                height: sprite.h,
+                kind: 'explain',
+                output: null,
+                explain,
+              },
+            },
+            null,
+            1,
+          )}\n`,
+        )
+      } else {
+        process.stdout.write(formatExplain(targetRef.drawing, explain))
+      }
+      return 0
+    }
     const s = cli.pngScale
     const width = sprite.w * s
     const height = sprite.h * s
@@ -1106,6 +1142,45 @@ const formatDiffSummary = (diff: RasterDiff): string => {
   }
   const b = diff.changedBBox
   return `diff: ${diff.changedPixelCount}/${diff.totalPixelCount} px changed, bbox ${b?.x}:${b?.y} ${b?.width}x${b?.height}`
+}
+
+/**
+ * Human-readable `render --explain` output (ADR-0086 §6): each `model`/`cel` command with the
+ * exact primitive sequence it lowered to — one line per step, colours/amounts already resolved.
+ */
+const formatExplain = (drawing: string, records: readonly ExplainRecord[]): string => {
+  if (records.length === 0) {
+    return `${drawing}: no model/cel commands to explain\n`
+  }
+  const lines: string[] = []
+  for (const r of records) {
+    const target = r.region ? ` ${r.region}` : ''
+    const at = r.light ? ` (light ${r.light.x}:${r.light.y})` : ''
+    lines.push(`${r.command}${target}${at}`)
+    for (const s of r.steps) {
+      const parts: string[] = []
+      if (s.color !== undefined) {
+        parts.push(s.color)
+      }
+      if (s.amount !== undefined) {
+        parts.push(`amount ${s.amount}`)
+      }
+      if (s.point) {
+        parts.push(`at ${s.point.x}:${s.point.y}`)
+      }
+      if (s.dir) {
+        parts.push(`dir ${s.dir.x}:${s.dir.y}`)
+      }
+      if (s.width !== undefined) {
+        parts.push(`w${s.width}`)
+      }
+      if (s.offset) {
+        parts.push(`offset ${s.offset.dx}:${s.offset.dy}`)
+      }
+      lines.push(`  ${s.op}${parts.length > 0 ? ` ${parts.join(' ')}` : ''}`)
+    }
+  }
+  return `${lines.join('\n')}\n`
 }
 
 /**
@@ -1381,8 +1456,8 @@ usage:
   drawstic context <file> [--json]
   drawstic build <file> [--out <dir>] [--json]
   drawstic render <file>#<drawing>[(args)] [--png@N] [--out <path>] [--stdout]
-                  [--ascii] [--preview] [--silhouette] [--grid N] [--diff <png>]
-                  [--mode pixel|smooth] [--json]
+                  [--ascii] [--preview] [--silhouette] [--inspect] [--explain]
+                  [--grid N] [--diff <png>] [--mode pixel|smooth] [--json]
   drawstic sheet <file> [--all] [--cols N] [--png@N] [--out <path>]
                   [--stdout] [--ascii] [--preview] [--json]
   drawstic critique <file> [--as icon|scene|character|item] [--family a,b,c]

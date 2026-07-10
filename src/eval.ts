@@ -39,6 +39,7 @@ import {
   saturate,
   shadowTone,
   TRANSPARENT,
+  toHexColor,
   withAlpha,
 } from './color.js'
 import { DrawsticError, ERROR_CODE, error, type TextSpan } from './diagnostic.js'
@@ -67,6 +68,7 @@ import {
   type Context,
   catmullRomLoopPoints,
   catmullRomPoints,
+  celRegion,
   drawText,
   type FontResolved,
   fillRegion,
@@ -95,6 +97,7 @@ import {
   strokeRegion,
   type UserFontResolved,
 } from './raster.js'
+import { lightPointFor, lowerMaterial, type ShadeOp } from './shading.js'
 import { STD_GLOBAL_FONTS, STD_MODULES } from './std.js'
 import {
   aboutPoint,
@@ -106,7 +109,12 @@ import {
   type Grad,
   IDENTITY,
   invertMatrix,
+  isMaterialResponse,
+  type Light,
+  light,
   list,
+  type Material,
+  material,
   multiplyMatrix,
   type Path,
   type PathContour,
@@ -435,6 +443,13 @@ type DrawState = {
   title: string | undefined
   description: string | undefined
   /**
+   * The light in scope for shading commands (ADR-0086), set only for the body of a `lit L:`
+   * block (set/restored like {@link DrawState.mirror}). `null` outside any `lit` block — a
+   * `model`/`cel` with no light in scope and no explicit `light L` argument is a hard E024,
+   * never a silent default.
+   */
+  light: Light | null
+  /**
    * The active `mirror` reflection (ADR-0078) during the reflected pass, or `null`
    * outside any mirror / during the normal pass. `matrix` maps author → real
    * coordinates (the full composition of nested mirrors), `inverse` is its inverse,
@@ -744,6 +759,68 @@ const assertLiteralArg = (expr: Expression, file: string): void => {
 }
 
 /**
+ * One serialized step of a `model`/`cel` expansion for `render --explain` (ADR-0086 §6):
+ * the raster primitive the step drives plus its already-resolved, JSON-friendly arguments
+ * (colours as hex, amounts rounded), so an agent can predict the exact pixels a material
+ * lowers to — and copy the sequence to hand-tune when a baked dose doesn't fit.
+ */
+export type ExplainStep = {
+  readonly op: string
+  readonly color?: string
+  readonly amount?: number
+  readonly point?: { readonly x: number; readonly y: number }
+  readonly dir?: { readonly x: number; readonly y: number }
+  readonly width?: number
+  readonly offset?: { readonly dx: number; readonly dy: number }
+}
+
+/** One recorded `model`/`cel` command expansion (ADR-0086 §6). */
+export type ExplainRecord = {
+  readonly command: 'model' | 'cel'
+  readonly region: string | undefined
+  readonly light: { readonly x: number; readonly y: number } | undefined
+  readonly steps: ExplainStep[]
+}
+
+const round3 = (v: number): number => Math.round(v * 1000) / 1000
+const roundVec = (v: { readonly x: number; readonly y: number }): { x: number; y: number } => ({
+  x: round3(v.x),
+  y: round3(v.y),
+})
+
+/** Serialize one planned {@link ShadeOp} to a JSON-friendly {@link ExplainStep}. */
+const explainShadeOp = (op: ShadeOp): ExplainStep => {
+  switch (op.kind) {
+    case 'fill':
+      return { op: 'fill', color: toHexColor(op.color) }
+    case 'shade':
+      return {
+        op: 'shade',
+        point: roundVec(op.point),
+        color: toHexColor(op.color),
+        amount: round3(op.amount),
+      }
+    case 'light':
+      return {
+        op: 'light',
+        point: roundVec(op.point),
+        color: toHexColor(op.color),
+        amount: round3(op.amount),
+      }
+    case 'rim':
+      return { op: 'rim', dir: roundVec(op.dir), color: toHexColor(op.color), width: op.width }
+    case 'ao':
+      return { op: 'ao', color: toHexColor(op.color), amount: round3(op.amount) }
+    case 'cast':
+      return { op: 'cast', offset: op.offset, color: toHexColor(op.color) }
+  }
+}
+
+/** The source name of a command argument when it is a bare name (for `--explain` labels). */
+const commandArgName = (arg: Argument | undefined): string | undefined =>
+  arg?.kind === 'expression' && arg.expression.kind === 'name' ? arg.expression.name : undefined
+
+/**
  * The Drawstic evaluator. One `Engine` instance owns a project root, a
  * shared {@link Budget}, and per-instance caches for parsed modules and
  * rendered sprites/tilesets/atlases — so repeated references to the same
@@ -775,6 +852,12 @@ export class Engine {
   readonly #atlasCache = new Map<string, AtlasValue>()
   /** Render-mode override for ad-hoc renders/exports. */
   modeOverride: RenderMode | null = null
+  /**
+   * When non-null, every `model`/`cel` command appends its lowered primitive expansion here
+   * (ADR-0086 §6) — the CLI's `render --explain` sets it to `[]` before rendering, then reads
+   * the collected trace. `null` (the default) disables collection with zero overhead.
+   */
+  explain: ExplainRecord[] | null = null
 
   /**
    * The `root` directory bounds every relative import/image path (ADR-0035
@@ -1070,6 +1153,12 @@ export class Engine {
           break
         case 'binding':
           this.#execBinding(s, rec.env, state)
+          break
+        case 'lightBinding':
+          this.#execLightBinding(s, rec.env, state)
+          break
+        case 'materialBinding':
+          this.#execMaterialBinding(s, rec.env, state)
           break
         case 'pathDefinition':
           break
@@ -1731,6 +1820,7 @@ export class Engine {
       fontName: theme.font ?? mod.fontDefault,
       title: undefined,
       description: undefined,
+      light: null,
       mirror: null,
     }
     const state: State = { module: mod, budget: this.budget, draw, functionDepth: 0 }
@@ -1811,6 +1901,138 @@ export class Engine {
       this.#execBody(stmt.body, env, state)
     } finally {
       draw.context.mask = prev
+    }
+  }
+
+  /** Evaluate a `light NAME = …` binding's inline args into a {@link Light} value (ADR-0086). */
+  #evalLightValue(
+    stmt: Extract<Statement, { readonly kind: 'lightBinding' }>,
+    env: Environment,
+    state: State,
+  ): Light {
+    const vec = this.evalExpr(stmt.vec, env, state)
+    if (typeof vec !== 'object' || vec?.type !== 'point' || vec.rel) {
+      throw error(
+        ERROR_CODE.typeError,
+        `light '${stmt.source}' needs a ${stmt.source === 'dir' ? 'DX:DY' : 'X:Y'} point, got ${typeName(vec)}`,
+        state.module.displayPath,
+        stmt.vec.span,
+      )
+    }
+    const col = this.evalExpr(stmt.color, env, state)
+    if (typeof col !== 'object' || col?.type !== 'color') {
+      throw error(
+        ERROR_CODE.typeError,
+        `light needs a colour, got ${typeName(col)}`,
+        state.module.displayPath,
+        stmt.color.span,
+      )
+    }
+    const gain = stmt.gain === undefined ? undefined : this.evalNumber(stmt.gain, env, state)
+    let amb: { color: Color; amount: number } | undefined
+    if (stmt.amb) {
+      const ambColor = this.evalExpr(stmt.amb.color, env, state)
+      if (typeof ambColor !== 'object' || ambColor?.type !== 'color') {
+        throw error(
+          ERROR_CODE.typeError,
+          `light 'amb' needs a colour, got ${typeName(ambColor)}`,
+          state.module.displayPath,
+          stmt.amb.color.span,
+        )
+      }
+      amb = { color: ambColor, amount: this.evalNumber(stmt.amb.amount, env, state) }
+    }
+    // Build the spec without ever passing `undefined` explicitly (exactOptionalPropertyTypes).
+    const common = {
+      color: col,
+      ...(gain === undefined ? {} : { gain }),
+      ...(amb === undefined ? {} : { amb }),
+    }
+    return light(
+      stmt.source === 'dir'
+        ? { ...common, dir: { x: vec.x, y: vec.y } }
+        : { ...common, pos: { x: vec.x, y: vec.y } },
+    )
+  }
+
+  /** Bind a `light NAME = …` value into scope (module- or drawing-local, ADR-0086). */
+  #execLightBinding(
+    stmt: Extract<Statement, { readonly kind: 'lightBinding' }>,
+    env: Environment,
+    state: State,
+  ): void {
+    const value = this.#evalLightValue(stmt, env, state)
+    this.#checkBindable(stmt.name, env, stmt.span, state)
+    if (!env.assignLocal(stmt.name, value)) {
+      env.declare(stmt.name, value)
+    }
+  }
+
+  /** Bind a `material NAME = COLOR [RESPONSE]` value into scope (ADR-0086). */
+  #execMaterialBinding(
+    stmt: Extract<Statement, { readonly kind: 'materialBinding' }>,
+    env: Environment,
+    state: State,
+  ): void {
+    const col = this.evalExpr(stmt.color, env, state)
+    if (typeof col !== 'object' || col?.type !== 'color') {
+      throw error(
+        ERROR_CODE.typeError,
+        `material needs a colour, got ${typeName(col)}`,
+        state.module.displayPath,
+        stmt.color.span,
+      )
+    }
+    const response = stmt.response ?? 'flat'
+    if (!isMaterialResponse(response)) {
+      throw error(
+        ERROR_CODE.typeError,
+        `unknown material response '${response}'`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const value = material(col, response)
+    this.#checkBindable(stmt.name, env, stmt.span, state)
+    if (!env.assignLocal(stmt.name, value)) {
+      env.declare(stmt.name, value)
+    }
+  }
+
+  /**
+   * Execute a `lit L: body` block (ADR-0086): resolve `L` to a light and scope it as
+   * `DrawState.light` for the body only (set/restore, like {@link #execMaskBlock}). No global
+   * mutable state — the light is visible to `model`/`cel` inside the body and nowhere else.
+   */
+  #execLitBlock(
+    stmt: Extract<Statement, { readonly kind: 'litBlock' }>,
+    env: Environment,
+    state: State,
+  ): void {
+    const value = this.evalExpr(stmt.expression, env, state)
+    if (typeof value !== 'object' || value?.type !== 'light') {
+      throw error(
+        ERROR_CODE.typeError,
+        `lit needs a light, got ${typeName(value)}`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const draw = state.draw
+    if (!draw) {
+      throw error(
+        ERROR_CODE.syntax,
+        'lit blocks belong in a drawing body',
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const prev = draw.light
+    draw.light = value
+    try {
+      this.#execBody(stmt.body, env, state)
+    } finally {
+      draw.light = prev
     }
   }
 
@@ -2018,6 +2240,12 @@ export class Engine {
       case 'binding':
         this.#execBinding(stmt, env, state)
         return
+      case 'lightBinding':
+        this.#execLightBinding(stmt, env, state)
+        return
+      case 'materialBinding':
+        this.#execMaterialBinding(stmt, env, state)
+        return
       case 'compound':
         this.#execCompound(stmt, env, state)
         return
@@ -2122,6 +2350,9 @@ export class Engine {
         return
       case 'maskBlock':
         this.#execMaskBlock(stmt, env, state)
+        return
+      case 'litBlock':
+        this.#execLitBlock(stmt, env, state)
         return
       case 'if':
         this.#execIf(stmt, env, state)
@@ -2655,6 +2886,30 @@ export class Engine {
   }
 
   /**
+   * Resolve the light for a `model`/`cel` command: an explicit `light L` argument wins, else the
+   * enclosing `lit L:` block's {@link DrawState.light}. No light in either is a hard E024 (ADR-0086
+   * §2) — never a silent default, so a light is always named and always visible.
+   */
+  #requireLight(
+    explicit: Light | null,
+    draw: DrawState,
+    stmt: Extract<Statement, { readonly kind: 'call' }>,
+    state: State,
+  ): Light {
+    const lt = explicit ?? draw.light
+    if (!lt) {
+      throw error(
+        ERROR_CODE.noLight,
+        `'${stmt.callee}' needs a light: wrap it in a 'lit L:' block or pass 'light L'`,
+        state.module.displayPath,
+        stmt.span,
+        'declare one (e.g. `light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%`), then open `lit sun:` around this command or add a trailing `light sun`',
+      )
+    }
+    return lt
+  }
+
+  /**
    * The command dispatcher for every drawing primitive and built-in
    * filter (spec §8 shapes/strokes, §9 stamp/apply, §12 filters). Each
    * case reads its fixed argument shape off `args` (an {@link Args}
@@ -3050,6 +3305,57 @@ export class Engine {
         const amount = args.num()
         args.done()
         ambientOcclusion(ctx, region, paint, amount)
+        return
+      }
+      case 'model': {
+        // `model REGION MATERIAL [light L]` (ADR-0086): lower a material under one light onto the
+        // fixed craft-correct primitive sequence — every shade/rim/AO/cast encoding derived from
+        // the one `Light`, so they can never drift apart. MATERIAL is a `material` value or an
+        // inline `COLOR [RESPONSE]` (bare colour ⇒ flat).
+        const region = args.region()
+        const mat = args.material()
+        let explicit: Light | null = null
+        if (args.peekBareName() === 'light') {
+          args.rawName()
+          explicit = args.light()
+        }
+        args.done()
+        const lt = this.#requireLight(explicit, draw, stmt, state)
+        const ops = lowerMaterial(ctx, region, mat, lt)
+        if (this.explain) {
+          this.explain.push({
+            command: 'model',
+            region: commandArgName(stmt.args[0]),
+            light: roundVec(lightPointFor(region, lt)),
+            steps: ops.map(explainShadeOp),
+          })
+        }
+        return
+      }
+      case 'cel': {
+        // `cel REGION MATERIAL N [light L]` (ADR-0086): a crisp N-band cel fill — `ramp(base, n)`
+        // tones (warm→cool, hue-consistent) banded by distance from the same light `model` uses.
+        const region = args.region()
+        const mat = args.material()
+        const n = quantInt(args.num())
+        let explicit: Light | null = null
+        if (args.peekBareName() === 'light') {
+          args.rawName()
+          explicit = args.light()
+        }
+        args.done()
+        const lt = this.#requireLight(explicit, draw, stmt, state)
+        const point = lightPointFor(region, lt)
+        const bands = ramp(mat.base, n)
+        celRegion(ctx, region, point, bands)
+        if (this.explain) {
+          this.explain.push({
+            command: 'cel',
+            region: commandArgName(stmt.args[0]),
+            light: roundVec(point),
+            steps: bands.map((c) => ({ op: 'band', color: toHexColor(c) })),
+          })
+        }
         return
       }
       default: {
@@ -5788,6 +6094,66 @@ class Args {
       this.#state.module.displayPath,
       expr.span,
     )
+  }
+
+  /**
+   * A `model`/`cel` material argument (ADR-0086): a `material` value, or an inline `COLOR
+   * [RESPONSE]` — a bare colour means `flat`. The response word is consumed only when the very
+   * next slot is one of `flat|metal|skin|cloth|glass|glow`; otherwise it stays for the next
+   * reader (e.g. `cel`'s band count), so a response word is a contextual keyword, never reserved.
+   */
+  material(): Material {
+    const arg = this.#items[this.#index]
+    if (arg?.kind !== 'expression') {
+      return this.#fail('missing material')
+    }
+    const value = this.#engine.evalExpr(arg.expression, this.#env, this.#state)
+    this.#index++
+    if (typeof value === 'object' && value !== null && value.type === 'material') {
+      return value
+    }
+    if (typeof value === 'object' && value !== null && value.type === 'color') {
+      const next = this.#items[this.#index]
+      if (
+        next?.kind === 'expression' &&
+        next.expression.kind === 'name' &&
+        isMaterialResponse(next.expression.name)
+      ) {
+        const response = next.expression.name
+        this.#index++
+        return material(value, response)
+      }
+      return material(value)
+    }
+    throw error(
+      ERROR_CODE.typeError,
+      `expected a material or a colour, got ${typeName(value)}`,
+      this.#state.module.displayPath,
+      arg.expression.span,
+    )
+  }
+
+  /** A light-valued argument (the `light L` override on `model`/`cel`, ADR-0086). */
+  light(): Light {
+    const expr = this.#nextExpr()
+    const value = this.#engine.evalExpr(expr, this.#env, this.#state)
+    if (typeof value === 'object' && value !== null && value.type === 'light') {
+      return value
+    }
+    throw error(
+      ERROR_CODE.typeError,
+      `expected a light, got ${typeName(value)}`,
+      this.#state.module.displayPath,
+      expr.span,
+    )
+  }
+
+  /** The current argument's bare name, if it is one (drives the contextual `light L` on model/cel). */
+  peekBareName(): string | undefined {
+    const arg = this.#items[this.#index]
+    return arg?.kind === 'expression' && arg.expression.kind === 'name'
+      ? arg.expression.name
+      : undefined
   }
 
   sprite(): Sprite {

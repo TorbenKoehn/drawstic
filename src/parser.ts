@@ -21,6 +21,7 @@ import type {
 } from './ast.js'
 import { ERROR_CODE, error, type TextSpan } from './diagnostic.js'
 import { lex, type Token } from './lexer.js'
+import { isMaterialResponse } from './values.js'
 
 // Keyword-prefixed sequences that form one argument (D2): the keyword plus
 // this many trailing expressions, e.g. `tint k 0.3` (arity 2) or `mask m`
@@ -352,6 +353,40 @@ class Parser {
         const body = this.#parseBlock()
         return { kind: 'maskBlock', expression, body, span: s }
       }
+      case 'light':
+        // D7: `light NAME =` → a Light value binding; anything else leaves `light`
+        // an ordinary bindable/call name (contextual).
+        if (this.#peek(1).kind === 'name' && this.#peek(2).text === '=') {
+          return this.#parseLightBinding()
+        }
+        break
+      case 'material':
+        // D7: `material NAME =` → a Material value binding; else `material` stays a name.
+        if (this.#peek(1).kind === 'name' && this.#peek(2).text === '=') {
+          return this.#parseMaterialBinding()
+        }
+        break
+      case 'lit':
+        // D7: `lit NAME:` → a lexical light block; `lit = …`, `lit(…)`, or `lit` as an
+        // argument all leave it an ordinary bindable/call name (contextual).
+        if (
+          this.#peek(1).kind === 'name' &&
+          this.#peek(2).kind === 'op' &&
+          this.#peek(2).text === ':' &&
+          this.#peek(2).blockColon
+        ) {
+          this.#next() // lit
+          const nameTok = this.#next()
+          const expression: Expression = {
+            kind: 'name',
+            name: nameTok.text,
+            span: this.#span(nameTok),
+          }
+          this.#expect('op', ':', "':' to open the lit body")
+          const body = this.#parseBlock()
+          return { kind: 'litBlock', expression, body, span: s }
+        }
+        break
       case 'filter':
         if (
           this.#peek(1).kind === 'name' &&
@@ -558,6 +593,77 @@ class Parser {
       }
     }
     return null
+  }
+
+  /**
+   * Parses `light NAME = ( "dir" | "at" ) point COLOR [ "amb" COLOR expr ] [ "gain" expr ]`
+   * (§17.4 `light-def`, ADR-0086). Inline args, no constructor parentheses: `dir`/`at` pick a
+   * directional vs point source, `amb`/`gain` are order-free optional tails. Each operand parses
+   * in command-arg mode (D2 whitespace-bounded) so `dir 1:1 #ffe6b0` splits cleanly. `dir`/`at`/
+   * `amb`/`gain` are keywords only here — the dispatch in `#parseStmt` reached this method only on
+   * the `light NAME =` shape, so they never reserve those words elsewhere.
+   */
+  readonly #parseLightBinding = (): Statement => {
+    const s = this.#span(this.#peek())
+    this.#next() // light
+    const name = this.#next().text
+    this.#next() // =
+    const srcTok = this.#peek()
+    if (srcTok.kind !== 'name' || (srcTok.text !== 'dir' && srcTok.text !== 'at')) {
+      this.#fail("light needs 'dir DX:DY …' (directional) or 'at X:Y …' (point source)", srcTok)
+    }
+    const source = this.#next().text as 'dir' | 'at'
+    const vec = this.#parseExpr(true)
+    const color = this.#parseExpr(true)
+    let amb: { readonly color: Expression; readonly amount: Expression } | undefined
+    let gain: Expression | undefined
+    while (!this.#at('nl') && !this.#at('eof') && !this.#at('dedent')) {
+      const kw = this.#peek()
+      if (kw.kind === 'name' && kw.text === 'amb') {
+        this.#next()
+        const ambColor = this.#parseExpr(true)
+        const ambAmount = this.#parseExpr(true)
+        amb = { color: ambColor, amount: ambAmount }
+        continue
+      }
+      if (kw.kind === 'name' && kw.text === 'gain') {
+        this.#next()
+        gain = this.#parseExpr(true)
+        continue
+      }
+      this.#fail(`unexpected '${kw.text || kw.kind}' in a light binding (expected amb or gain)`, kw)
+    }
+    this.#expectNL()
+    return { kind: 'lightBinding', name, source, vec, color, amb, gain, span: s }
+  }
+
+  /**
+   * Parses `material NAME = COLOR [ RESPONSE ]` (§17.4 `material-def`, ADR-0086). `RESPONSE` is one
+   * of `flat|metal|skin|cloth|glass|glow` — a keyword only in this trailing slot; a bare colour
+   * with no response means `flat`. The colour parses in command-arg mode so the response word (if
+   * any) stays a separate whitespace-bounded token.
+   */
+  readonly #parseMaterialBinding = (): Statement => {
+    const s = this.#span(this.#peek())
+    this.#next() // material
+    const name = this.#next().text
+    this.#next() // =
+    const color = this.#parseExpr(true)
+    let response: string | undefined
+    if (!this.#at('nl') && !this.#at('eof') && !this.#at('dedent')) {
+      const r = this.#peek()
+      if (r.kind === 'name' && isMaterialResponse(r.text)) {
+        this.#next()
+        response = r.text
+      } else {
+        this.#fail(
+          `unknown material response '${r.text || r.kind}' (flat|metal|skin|cloth|glass|glow)`,
+          r,
+        )
+      }
+    }
+    this.#expectNL()
+    return { kind: 'materialBinding', name, color, response, span: s }
   }
 
   readonly #parseFnDef = (): Statement => {

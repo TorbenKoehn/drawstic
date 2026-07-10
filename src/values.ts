@@ -117,8 +117,18 @@ export type Light = {
   amb: { readonly color: Color; readonly amount: number } | null
 }
 
-/** Material response families (ADR-0086); each selects a baked dose profile in `shading.ts`. */
-export type MaterialResponse = 'flat' | 'metal' | 'skin' | 'cloth' | 'glass' | 'glow'
+/**
+ * Material response families (ADR-0086); each selects a baked dose profile in `shading.ts`. The
+ * single source of truth is {@link MATERIAL_RESPONSES} — {@link MaterialResponse} derives from it
+ * so the parser's contextual keyword set (a response word is a keyword *only* in a `material`
+ * binding's response slot) and the engine's dose table can never drift apart.
+ */
+export const MATERIAL_RESPONSES = ['flat', 'metal', 'skin', 'cloth', 'glass', 'glow'] as const
+export type MaterialResponse = (typeof MATERIAL_RESPONSES)[number]
+
+/** Whether `s` names a material response — the contextual keyword test used by parser and eval. */
+export const isMaterialResponse = (s: string): s is MaterialResponse =>
+  (MATERIAL_RESPONSES as readonly string[]).includes(s)
 
 /**
  * A first-class material (ADR-0086): a base colour plus a `response` that selects a baked
