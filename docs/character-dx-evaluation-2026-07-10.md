@@ -367,3 +367,70 @@ human perception. The fix wave must lead with the human-visual code defects in �
 form-following shading, placement correctness, held-prop orientation, back-view idiom, outlines, faces
 — and must add a placement/craft check plus a mandated human visual pass so that "green" stops meaning
 "structurally connected" and starts meaning "reads as the intended character."
+
+## Fix Wave — Results (2026-07-10)
+
+The fix wave landed the §9 code-and-docs actions. It does **not** re-run the human visual review or
+change the §2 verdict — that authoritative human/vision pass and the follow-up craft-eval re-runs stay
+HUMAN-GATED. What shipped:
+
+- **HV1 — Form-following shading is now the `model` default** ([ADR-0089](decisions/0089-form-based-shading.md)).
+  The harsh distance-from-a-point veil (`shadeRegion`+`lightRegion` over the bbox) is replaced by
+  normal-based shading: exact inner distance-to-boundary (Felzenszwalb EDT) → dome height field →
+  per-pixel Lambert with an ambient floor, toned `warm→base→cool`. **Smooth is the default** (Bayer-
+  dithered terminator in pixel mode); `cel N` is the same intensity field as N form-following bands
+  (opt-in). Subsumes the builder findings §5.9 (C004 dark-material blind search), §5.14 (`model` grey
+  blob), §5.15 (`ramp()` dark→black clip) under one lowering rework.
+- **HV2/HV6 — `pin`/`fit` placement correctness + held-prop orientation** ([ADR-0087](decisions/0087-anchored-assembly.md)
+  Amendment 2). `fit` now takes the `stamp` transform flags (`flipx`/`flipy`/`rotN`/`scaleN`/`tint`/`mask`)
+  with pins riding the transform; `pin HEAD.KEY PT` seeds all of a real part's pins (fixes the §5.8
+  root-seed idiom); a placement self-check flags a pin >2px off its own part ink as **W011** (loose pin,
+  part-local, high-confidence). Held props carry a `grip` pin authored in true orientation and the
+  per-view *figure* flip is a separate `fit` that never touches the prop — front/side/back show the same
+  grip. `render … --explain` reports each fit's landing point, coincidence, and pin-to-ink gap.
+- **HV5 — Reliable silhouette outline** ([ADR-0090](decisions/0090-reliable-silhouette-outline.md)).
+  `filterOutline` now rings the **whole-figure** silhouette from ≥50% coverage (`OUTLINE_ALPHA_MIN=128`,
+  so the mandated soft contact shadow and AA fringe are not ringed), colour optional with a derived
+  dark tone (`inkTone`, OkLCh L≈0.15), default width 1, 4-connected. RO idiom: one bare `outline` as the
+  last statement of the assembly `draw`, not per part.
+- **HV4 — Back-view idiom** and **HV3 — chibi faces** shipped as craft/docs units in `character-craft.md`
+  §5b (rear part-selection, prop z-order inversion, front/back mirroring, side-clamp) and §7 (five-layer
+  face recipe: `model` skin base, almond+iris+pupil+highlight eye, separated brow, shadow-stroke nose,
+  ~70%-alpha mouth) — no engine change needed beyond the Amendment-2 fit transform.
+- **Tooling / trust:** W002 now counts `fit`/`pin` targets (not just `stamp`); the default critique family
+  auto-excludes a composed presentation sheet that stamps ≥2 siblings (§5.1); W010/W011 assembly warnings
+  surface through `render`/`build`/`sheet`/`critique` (§5.5); C009 no longer fires between a character's
+  own front/side/back views under `--as character` (§5.2 named contradiction resolved).
+- **C006 export-target-aware** ([ADR-0085](decisions/0085-critique-command.md) known-limitation fix, this
+  closeout). Smooth `model` shading spends 400–600 colours — a defect only for an indexed-PNG (≤256
+  palette) or SVG (`<rect>`-per-band) export, not for a straight-alpha RGBA-PNG sprite. C006 now reads the
+  drawing's declared export formats: a `'budgeted'` target (any `png … indexed`/`svg` line) enforces the
+  tight profile ceiling as a `pass`-blocking `warning`; an `'unbudgeted'` target (RGBA-PNG/JPEG or no
+  export — the conservative default) is a non-blocking advisory `info` under a generous ceiling. C006 was
+  never in the `--strict` must-fix subset, so the exit gate and the `examples-critique` CI gate are
+  unaffected.
+
+### Re-rendered characters + final gate status
+
+All four artifacts in `examples/characters-ro/` were rebuilt on the new default pipeline (Commit `5331bce`)
+and re-verified with `critique --as character` after the C006 fix:
+
+| Character | Shading style | distinct colours (view / sheet) | export | `pass` (plain) | `pass` (`--strict`) | `failedCodes` |
+|---|---|---|---|---|---|---|
+| Knight  | band `cel`/`flat`   | 21–29 / 33  | RGBA PNG @1 @4 | **true** | **true** (exit 0) | `[]` |
+| Archer  | band `cel`/`flat`   | 43–62 / 75  | RGBA PNG @1 @4 | **true** | **true** (exit 0) | `[]` |
+| Wizard  | full-smooth `model` | 468–481     | RGBA PNG @1 @4 | **true** | **true** (exit 0) | `[]` |
+| Assassin| full-smooth `model` | 270–382 / 534 | RGBA PNG @1 @4 | **true** | **true** (exit 0) | `[]` |
+
+Before the C006 fix, Wizard and Assassin were `pass:false` with `failedCodes:["C006"]` purely because
+their smooth-`model` colour count exceeded the tight 96 character ceiling — not a defect for their RGBA
+target. A synthetic indexed/SVG export of the same many-colour draw still fails (test-pinned), so the
+budget is not simply removed, only scoped to the targets where colour count is real.
+
+### One remaining open design decision (HUMAN-GATED)
+
+**Default shading style is not yet unified: Knight/Archer use band `cel`/`flat`, Wizard/Assassin use
+full-smooth `model`.** Both are ADR-0089 form-correct; which becomes the single RO default is a style
+preference, not a correctness question, and is deliberately left to the user. (The authoritative human
+visual pass on the re-rendered sheets and the craft-eval re-runs likewise remain HUMAN-GATED — see
+`docs/impl-progress.md` §Character Fix-Wave open points and `measure-phase2`/`measure-phase4`.)

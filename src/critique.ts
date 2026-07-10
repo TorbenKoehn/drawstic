@@ -51,14 +51,26 @@ export const CRITIQUE_CODE = {
 } as const
 
 /**
- * Category-agnostic default ceiling on distinct RGBA8 values (C006). Deliberately
- * generous — cel-shaded pixel art rarely exceeds ~24 colours, so 256 only trips
- * on runaway gradient/AA sprawl. Category `--as` profiles set their own ceiling
- * from the measured corpus maximum (see {@link PROFILES}); C006 is advisory
- * (`warning`, never a build-blocker), so the ceilings sit above every clean
- * bundled example rather than at an aspirational floor.
+ * The **budgeted-target** C006 ceiling on distinct RGBA8 values, applied only when the
+ * drawing declares an indexed-PNG or SVG export ({@link PaletteTarget} `'budgeted'`), where
+ * colour count is a real constraint (indexed palette cap / one SVG `<rect>` run per colour
+ * band). Deliberately generous — cel-shaded pixel art rarely exceeds ~24 colours, so 256
+ * only trips on runaway gradient/AA sprawl. Category `--as` profiles set their own budgeted
+ * ceiling from the measured corpus maximum (see {@link PROFILES}); the ceilings sit above
+ * every clean bundled example rather than at an aspirational floor.
  */
 const DEFAULT_COLOR_CEILING = 256
+
+/**
+ * The **unbudgeted-target** C006 ceiling ({@link PaletteTarget} `'unbudgeted'`): a
+ * straight-alpha RGBA-PNG / JPEG target — or no export at all — has *no* palette budget, so
+ * smooth normal-`model` shading (ADR-0089) legitimately spends 400–600 colours on a clean
+ * 64×128 character. C006 is therefore demoted to an advisory `info` (never blocks `pass`,
+ * never in `failedCodes`) under this generous backstop, which only surfaces genuinely
+ * pathological sprawl. Combined with the profile ceiling via `max(…)`, so a full-bleed
+ * `scene`'s already-high budget is preserved.
+ */
+const RGBA_COLOR_CEILING = 4096
 
 /** Minimum linear-luminance p90−p10 spread before a covered region reads as flat-shaded (C004). */
 const MIN_VALUE_SPREAD = 0.15
@@ -550,21 +562,47 @@ const checkValueSpread = (metrics: CritiqueMetrics): CritiqueCheck | null => {
   }
 }
 
-/** C006: palette/complexity budget — flags distinct colours over the ceiling (agnostic default, or the profile's). */
+/**
+ * Whether the drawing's declared export target makes its distinct-RGBA8-colour count a real
+ * budget (ADR-0085 known-limitation fix). `'budgeted'` — the module declares an indexed-PNG
+ * (`png … indexed`) or `svg` export for this drawing, where colour count caps the indexed
+ * palette / multiplies SVG `<rect>` runs: C006 applies the tight profile ceiling as a
+ * `pass`-blocking `warning`. `'unbudgeted'` — a straight-alpha RGBA-PNG/JPEG target, or no
+ * export at all, where smooth normal-`model` shading (ADR-0089) legitimately spends hundreds
+ * of colours: C006 is a non-blocking advisory `info` under {@link RGBA_COLOR_CEILING}. The
+ * conservative default when the target cannot be determined is `'unbudgeted'` (generous).
+ */
+export type PaletteTarget = 'budgeted' | 'unbudgeted'
+
+/**
+ * C006: palette/complexity budget — export-target-aware (ADR-0085). A `'budgeted'` target
+ * (indexed-PNG / SVG export declared) enforces the tight `budgetedCeiling` (agnostic default,
+ * or the profile's) as a `pass`-blocking `warning`; an `'unbudgeted'` target (RGBA-PNG/JPEG or
+ * no export) enforces only the generous {@link RGBA_COLOR_CEILING} as an advisory `info` that
+ * never blocks `pass` — a straight-alpha RGBA sprite has no palette budget, so smooth `model`
+ * shading is not a defect there.
+ */
 const checkPaletteBudget = (
   metrics: CritiqueMetrics,
-  ceiling: number = DEFAULT_COLOR_CEILING,
+  target: PaletteTarget,
+  budgetedCeiling: number = DEFAULT_COLOR_CEILING,
 ): CritiqueCheck | null => {
+  const budgeted = target === 'budgeted'
+  const ceiling = budgeted ? budgetedCeiling : Math.max(budgetedCeiling, RGBA_COLOR_CEILING)
   if (metrics.distinctColorCount <= ceiling) {
     return null
   }
   return {
     code: CRITIQUE_CODE.paletteBudget,
-    severity: 'warning',
-    message: `palette budget: ${metrics.distinctColorCount} distinct colors exceeds ${ceiling}`,
+    severity: budgeted ? 'warning' : 'info',
+    message: budgeted
+      ? `palette budget: ${metrics.distinctColorCount} distinct colors exceeds the ${ceiling}-colour indexed/SVG budget`
+      : `palette note: ${metrics.distinctColorCount} distinct colors (advisory — the RGBA/JPEG target has no palette budget; ${metrics.unknownColorCount} are outside the declared pal)`,
     measured: metrics.distinctColorCount,
     threshold: ceiling,
-    fix: `quantize the palette or drop gradient/AA sprawl (${metrics.unknownColorCount} colors are outside the declared pal)`,
+    fix: budgeted
+      ? `quantize the palette or drop gradient/AA sprawl for the indexed/SVG export (${metrics.unknownColorCount} colors are outside the declared pal)`
+      : 'no action needed for the RGBA/JPEG target; quantize only if you add an indexed-PNG or SVG export',
     detail: { unknownColorCount: metrics.unknownColorCount },
   }
 }
@@ -982,10 +1020,12 @@ const promoteStrict = (
   return list.map((c) => (mustFix.has(c.code) ? { ...c, severity: 'error' as const } : c))
 }
 
-/** Options for {@link critiqueSprite}: the resolved category profile and the strict gate (both optional; agnostic subset by default). */
+/** Options for {@link critiqueSprite}: the resolved category profile, the strict gate, and the C006 export target (all optional; agnostic subset, `'unbudgeted'` palette target by default). */
 export type CritiqueOptions = {
   readonly profile?: CritiqueProfile | null
   readonly strict?: boolean
+  /** C006 export target: `'budgeted'` (indexed-PNG/SVG declared) enforces the tight ceiling; `'unbudgeted'` (RGBA/JPEG or none, the default) is advisory-only. */
+  readonly paletteTarget?: PaletteTarget
 }
 
 /**
@@ -1018,7 +1058,7 @@ export const critiqueSprite = (
   }
   push(checkCentering(metrics))
   push(checkValueSpread(metrics))
-  push(checkPaletteBudget(metrics, profile?.colorCeiling))
+  push(checkPaletteBudget(metrics, options.paletteTarget ?? 'unbudgeted', profile?.colorCeiling))
   push(checkPinholes(sprite))
   push(checkTrailingEdgeRow(metrics))
 

@@ -276,7 +276,29 @@ adressieren die human-visuellen Befunde HV1–HV6 + Gesichter, oben (§9) nach H
   `headFront`, `check --json`=`[]`, `--png@8`+`--png@1`): Auge mit Iris/Highlight, Braue getrennt vom
   Haar, Nase/Mund sichtbar bei beiden Renderskalen — kein „2-Punkte"-Gesicht mehr. §6-Verweis auf die
   ADR-0089-Form-Schattierung bei Chibi-Skala bereits vorher korrekt (kein Fix nötig).
-- [ ] **g — Re-Render aller vier Charaktere + Human-Vision-Pass** gegen die neue Schattierung/Placement.
+- [x] **g — Re-Render aller vier Charaktere + C006 Export-Target-Awareness** ([ADR-0085](decisions/0085-critique-command.md)
+  Known-Limitation-Fix). Die vier neu gerenderten Charaktere sind committet (`examples/characters-ro/{knight,
+  wizard,archer,assassin}.drw`, Commit `5331bce`): Knight+Archer band-basiert (`cel`/`flat`, ≤33 Farben,
+  `pass:true` von Anfang an), Wizard+Assassin voll-smoothes `model` (ADR-0089, 400–600 Farben). Das smoothe
+  `model`-Shading kollidierte mit dem tighten C006-`character`-Ceiling (96) → `pass:false` **allein wegen
+  C006**, obwohl Farbzahl für ein straight-alpha RGBA-PNG-Sprite KEIN Defekt ist (für Indexed-PNG/SVG dagegen
+  schon: Palette-Limit, `<rect>`-Explosion). **Fix: C006 export-target-aware** (`critique.ts` `PaletteTarget`/
+  `checkPaletteBudget`, `cli.ts` `paletteTargetFor` über `mod.exports`): deklariert die Zeichnung einen
+  indexed-PNG- (`png … indexed`) oder `svg`-Export, gilt das tighte Profil-Ceiling als `pass`-blockierendes
+  `warning`; sonst (RGBA-PNG/JPEG oder kein Export — konservativer Default) nur `RGBA_COLOR_CEILING=4096` als
+  nicht-blockierendes `info`. C006 war nie im `--strict`-Must-Fix-Subset (immer `warning`/`info`, nie `error`)
+  → Exit-Gate unberührt, `examples-critique`-Gate bleibt grün. Alle vier erreichen nun `pass:true` mit und
+  ohne `--strict` (`failedCodes: []`); ein genuin palette-explodierter indexed/SVG-Export fällt weiterhin
+  (gepinnt: Unit-Tests budgeted-`warning`/unbudgeted-`info`/`--strict`, CLI-Test svg-vs-png). `tsc`+`biome`
+  clean, 810 Tests grün. Doku: ADR-0085 §5 + Known-Limitations, reference.md C006-Zeile, Eval-Report-Addendum
+  „Fix Wave — Results". **Human-Vision-Pass gegen die neue Schattierung/Placement bleibt human-gated**
+  (s. offene Punkte). **Damit ist die Character-Fix-Wave (a–g) abgeschlossen.**
+- [ ] **(HUMAN-GATED) Default-Shading-Stil vereinheitlichen** smooth `model` vs. form-folgendes `cel`
+  (Knight/Archer=`cel`, Wizard/Assassin=`model`) — reine Stilpräferenz, Nutzer-Entscheidung. Beide sind
+  ADR-0089-form-korrekt; die Wave lässt die Wahl bewusst offen.
+- [ ] **(HUMAN-GATED) measure-\*: craft-eval Re-Runs** (Charaktere) gegen die neue Schattierung/Placement
+  + Human-Vision-Pass — schwerer Multi-Agent-Lauf, deckt sich mit `measure-phase2`/`measure-phase4` unten;
+  nicht autonom anfassen.
 
 ## Emergente Punkte
 

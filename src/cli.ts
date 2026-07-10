@@ -27,6 +27,7 @@ import {
   critiqueFamily,
   critiqueSprite,
   type FamilyMetrics,
+  type PaletteTarget,
   resolveProfile,
 } from './critique.js'
 import {
@@ -1447,6 +1448,28 @@ const sheetJson = (
  * must still answer by looking. A render failure surfaces as its ordinary `E0xx`
  * diagnostic, exactly as in `check`.
  */
+/**
+ * The C006 {@link PaletteTarget} for one drawing (ADR-0085 export-target-aware palette budget):
+ * `'budgeted'` when the module declares an indexed-PNG (`png … indexed`) or `svg` export for
+ * `name` — colour count is a real indexed-palette / SVG-`<rect>` budget there — else
+ * `'unbudgeted'` (a straight-alpha RGBA-PNG/JPEG target, or no export at all, has no palette
+ * budget, so smooth `model` shading is not a defect). Conservatively defaults to `'unbudgeted'`
+ * when no export targets the drawing.
+ */
+const paletteTargetFor = (mod: ModuleRecord, name: string): PaletteTarget => {
+  for (const exp of mod.exports) {
+    if (exp.name !== name) {
+      continue
+    }
+    for (const fmt of exp.formats) {
+      if (fmt.format === 'svg' || (fmt.format === 'png' && fmt.indexed)) {
+        return 'budgeted'
+      }
+    }
+  }
+  return 'unbudgeted'
+}
+
 const runCritique = (cli: CliArguments): number => {
   const file = cli.target ?? ''
   const diags: Diagnostic[] = []
@@ -1472,6 +1495,7 @@ const runCritique = (cli: CliArguments): number => {
         const report = critiqueSprite(entry.definition.name, sprite, {
           profile,
           strict: cli.strict,
+          paletteTarget: paletteTargetFor(mod, entry.definition.name),
         })
         drawings.push(report)
         rendered.push({ name: entry.definition.name, span: entry.definition.span, sprite })

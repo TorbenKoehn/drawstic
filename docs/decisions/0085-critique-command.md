@@ -83,9 +83,11 @@ pixel check cannot distinguish from a bug: **C002** (icons/items intentionally f
 1–3 px gaps), **C009** (faction recolors, size variants, and shared bottle/shield/plate scaffolds
 collapse to one silhouette *by design* — a colour-blind silhouette check cannot tell an intended
 variant from a duplicate), **C011** (item sets legitimately mix a ring and a greatsword), **C012**
-(symmetric bottom breathing room), **C005/C006** (thin detail and gradient sprawl are style
-choices). This narrows the originally-planned list (C001/C002/C007/C008/C009); the rationale and
-measured floor are recorded in `docs/impl-progress.md`.
+(symmetric bottom breathing room), **C005** (thin detail is a style choice), **C006**
+(export-target-aware — see Known limitations; a `warning` only for an indexed-PNG/SVG target,
+advisory `info` for RGBA/JPEG, never a `--strict` error either way). This narrows the
+originally-planned list (C001/C002/C007/C008/C009); the rationale and measured floor are
+recorded in `docs/impl-progress.md`.
 
 **6 — A vision rubric block, printed after the automatic gate.** `critique` additionally
 prints an ordered list of silhouette-first render commands plus a category-specific rubric
@@ -130,3 +132,16 @@ false-positive risk of tightening them is gone:
   is inspectable without a render; a dedicated advisory margin-ratio check can be added later
   if item sets need it actively flagged. See the comment at `PARITY_FACTOR` in
   `src/critique.ts`.
+- **C006 is export-target-aware, not one fixed ceiling** (character-DX 2026-07-10 fix wave).
+  With smooth normal-`model` shading the default ([ADR-0089](0089-form-based-shading.md)), a clean
+  64×128 character spends 400–600 distinct colours — no defect for a straight-alpha RGBA-PNG
+  sprite, but a real budget for an indexed PNG (≤256-colour palette) or SVG (one `<rect>` run per
+  colour band). C006 therefore reads the drawing's declared `export` formats
+  (`paletteTargetFor` in `src/cli.ts` over `mod.exports`): a `'budgeted'` target — any `png … indexed`
+  or `svg` line — enforces the tight profile ceiling as a `pass`-blocking `warning`; a
+  `'unbudgeted'` target (RGBA-PNG/JPEG, or no export at all — the conservative default when the
+  target is unknown) enforces only the generous `RGBA_COLOR_CEILING` as a non-blocking advisory
+  `info`. So a smooth-`model` RGBA character reaches `pass:true` while a genuinely palette-exploded
+  indexed/SVG export still fails. The ceiling itself is unchanged as a `--strict` signal (C006 was
+  never in the must-fix subset — it is `warning`/`info`, never `error`). See `PaletteTarget` and
+  `checkPaletteBudget` in `src/critique.ts`.

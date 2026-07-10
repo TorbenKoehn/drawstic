@@ -221,6 +221,50 @@ describe('C006 palette / complexity budget', () => {
   })
 })
 
+// A block where every pixel is a distinct opaque colour — a stand-in for a smooth
+// normal-`model` sprite (ADR-0089) whose colour count blows past the tight character
+// ceiling but is a defect only for an indexed-PNG / SVG target.
+const manyColors = (name: string, side: number, step = 5): Sprite =>
+  synthSprite(name, side, side, (x, y) => {
+    const i = y * side + x
+    return [i & 0xff, (i >> 8) & 0xff, (i * step) & 0xff, 255]
+  })
+
+describe('C006 export-target-aware palette budget (ADR-0085)', () => {
+  test('a budgeted (indexed/SVG) target fires C006 as a pass-blocking warning at the tight ceiling', () => {
+    const sprite = manyColors('grad', 20) // 400 distinct colours
+    const d = critiqueSprite('grad', sprite, { profile: character, paletteTarget: 'budgeted' })
+    expect(d.distinctColorCount).toBe(400)
+    const c = byCode(d.checks, CRITIQUE_CODE.paletteBudget)
+    expect(c).toMatchObject({
+      code: 'C006',
+      severity: 'warning',
+      measured: 400,
+      threshold: character.colorCeiling,
+    })
+  })
+
+  test('an unbudgeted (RGBA/JPEG) target does not fire C006 under the generous ceiling', () => {
+    const sprite = manyColors('grad', 20)
+    const d = critiqueSprite('grad', sprite, { profile: character, paletteTarget: 'unbudgeted' })
+    expect(byCode(d.checks, CRITIQUE_CODE.paletteBudget)).toBeUndefined()
+  })
+
+  test('the default target is unbudgeted (conservative) — omitting paletteTarget never blocks pass on colour count', () => {
+    const sprite = manyColors('grad', 20)
+    const d = critiqueSprite('grad', sprite, { profile: character })
+    expect(byCode(d.checks, CRITIQUE_CODE.paletteBudget)).toBeUndefined()
+  })
+
+  test('an unbudgeted target still surfaces genuinely runaway sprawl as a non-blocking info', () => {
+    const sprite = manyColors('huge', 72, 3) // 5184 distinct colours > RGBA ceiling
+    const d = critiqueSprite('huge', sprite, { paletteTarget: 'unbudgeted' })
+    const c = byCode(d.checks, CRITIQUE_CODE.paletteBudget)
+    expect(c).toMatchObject({ code: 'C006', severity: 'info' })
+    expect(c?.measured).toBe(d.distinctColorCount)
+  })
+})
+
 describe('clean sprite and metric exposure', () => {
   test('a centered, value-varied, edge-to-edge sprite fires no checks but still exposes metrics', () => {
     const rows = Array.from({ length: 8 }, (_, y) => (y % 2 === 0 ? 'abababab' : 'babababa'))
@@ -797,6 +841,44 @@ describe('critique CLI family selection + rubric payload', () => {
     try {
       // a/b/c are identical full-canvas silhouettes -> C009 collapse, but advisory
       expect(runCapture(['critique', file, '--family', 'a,b,c', '--strict', '--json']).code).toBe(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('C006 is export-target-aware: an SVG/indexed export is budgeted, a plain PNG is not', () => {
+    // A wide diagonal gradient paints >96 distinct colours. The SVG-exported draw is a
+    // palette-budgeted target (C006 warning, blocks pass); the plain-PNG draw is not.
+    const dir = mkdtempSync(join(tmpdir(), 'drawstic-c006-'))
+    const file = join(dir, 'grad.drw')
+    writeFileSync(
+      file,
+      [
+        'grad sky = linear(45, #0040ff, #ff8000)',
+        'draw svgDraw 128x128:',
+        '  fill sky rect(0:0, 128:128)',
+        'draw pngDraw 128x128:',
+        '  fill sky rect(0:0, 128:128)',
+        'export svgDraw out/svgDraw:',
+        '  svg',
+        'export pngDraw out/pngDraw:',
+        '  png @1',
+        '',
+      ].join('\n'),
+    )
+    try {
+      const { json } = runCapture(['critique', file, '--as', 'character', '--json'])
+      const drawings = (
+        json as {
+          critique: {
+            drawings: { name: string; checks: { code: string; severity: string }[] }[]
+          }
+        }
+      ).critique.drawings
+      const c6 = (name: string) =>
+        drawings.find((d) => d.name === name)?.checks.find((c) => c.code === 'C006')
+      expect(c6('svgDraw')?.severity).toBe('warning')
+      expect(c6('pngDraw')).toBeUndefined()
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
