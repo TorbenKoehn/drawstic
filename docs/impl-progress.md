@@ -1,5 +1,35 @@
 # Drawstic-Transformation — Implementierungs-Fortschritt
 
+## Welle 2 — Craft-Qualität + Sprach-Diät (Spec: Plan-File, freigegeben 2026-07-11)
+
+Modus: autonom, sequenzielle Subagenten, Grading-Stopps. Human-Noten Runde 2: Knight 6/10,
+Archer 4/10, Wizard 4/10, Assassin 3/10. Ziel Messpunkt 2: ≥7/10 + Zensus-Kriterien grün.
+
+- [ ] **W2-1 Shading v2** (ADR-0091): Poisson-Inflation-Höhenfeld (statt EDT-Zelt; behebt
+  Toblerone-Grat + dünne-Teile-Flachheit, lokale Normalisierung), Blinn-Specular (`spec`/`specPow`
+  in DOSE + Material-Override; Cel-Glint bei s>0.5), `FORM_DITHER` 0.10 + entgatet (auch smooth),
+  Cel-Bandgrenzen ±0.5 Bayer-gedithert, `spread N%`-Override (ersetzt Hand-Patches),
+  per-Response-`puff` (cloth ×0.75), Golden-Tests + Probe-Renders (Kugel/Kapsel/Streifen).
+  DANACH ⏸ MESSPUNKT 1: 4 Charaktere UNVERÄNDERT re-rendern → Human-Grading (Stopp).
+- [ ] **W2-2 Okklusion/aim + Sprach-Diät** (ADR-0092, ADR-0094): zweiphasige Assembly
+  (behind/front-Relationen, topologische Paint-Ordnung), `aim PIN PT` (1-Bone-Solve), C013
+  occlusion-parity, `--explain` Paint-Ordnung+Winkel. Diät: `repeat`/`while`/`flood`/`lit:`-Block
+  entfernen, `replace` vs `recolor` auf einen konsolidieren; betroffene Repo-Recipes umschreiben;
+  W012–W015-Lints + kanonische Wege; Konstrukt-Zensus in critique/check-JSON.
+- [ ] **W2-3 Organik-Hybrid + Skill-Neustruktur** (ADR-0093): dome/lobe/crescent/band-Konstruktoren;
+  Proportions-Oracle (`figure`-Block im Theme → Guide-Punkte/Pins je View); Archetyp-Scaffolds im
+  Craft-Guide (KEIN std/chibi — Stil bleibt beim Projekt); `quantize(pal)`-Filter +
+  Import-Assist-Workflow; danach kompletter Product-Skill-Rewrite (kanonischer Pfad je Kategorie,
+  Floor nur reference.md).
+- [ ] **W2-4 Skeleton** (ADR-0095): `skeleton`-Block (Joints/Parent/Rest-Winkel/Constraints, FK),
+  `pose`-Blöcke, Auto-Z aus Bone-Tiefe je View (behind/front als Lowering), 4 Charaktere auf
+  Skeleton-Posen. DANACH ⏸ MESSPUNKT 2: Blind-Rebuild (craft-eval) + Human-Grading + Zensus (Stopp).
+
+### Welle-2 emergente Punkte
+
+_(Findings hier anhängen.)_
+
+
 Single Source of Truth für den autonomen Nacht-Dispatch. Spec-Quelle: der freigegebene Plan
 (`~/.claude/plans/die-qualit-t-der-bilder-silly-patterson.md`). Reihenfolge strikt von oben nach unten.
 Jede Einheit: real implementieren (kein Wegwerf), `bun run test` grün, Product-Skill synchron, Commit
