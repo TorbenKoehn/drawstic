@@ -42,6 +42,51 @@ theme wizTheme:
 
 use wizTheme
 
+# --- ONE skeleton for all three views (ADR-0095): each body attach point is a named joint, declared
+# once; views are poses of it and per-joint depth resolves the limb paint order via auto-Z. The staff
+# stays a held prop (per-view grip fit); the hat chains onto the head crown. Joints are tuned attach
+# points (the torso root formerly seeded them via `cx:neckY`).
+skeleton wizRig:
+  chestF at 32:62
+  headF at 32:62
+  shLF at 24:66
+  shRF at 40:66
+  hemF at 32:115
+  chestS at 32:62
+  headS at 32:62
+  shFarS at 30:67
+  shNearS at 37:65
+  hemS at 34:115
+  chestB at 32:62
+  headB at 32:62
+  shLB at 24:66
+  shRB at 40:66
+  hemB at 32:115
+
+pose front over wizRig:
+  view front
+  chestF 0 z 0
+  headF 0 z 1
+  shLF 0 z 2
+  shRF 0 z 3
+  hemF 0 z 4
+
+pose side over wizRig:
+  view side
+  shFarS 0 z 0
+  chestS 0 z 1
+  headS 0 z 2
+  shNearS 0 z 3
+  hemS 0 z 4
+
+pose back over wizRig:
+  view back
+  chestB 0 z 0
+  headB 0 z 1
+  shLB 0 z 2
+  shRB 0 z 3
+  hemB 0 z 4
+
 # ============================ ACCESSORY: hat ============================
 draw hat 36x40:
   cone = poly(18:5, 30:31, 6:31)
@@ -209,32 +254,35 @@ draw staff 16x78:
 
 # ============================ COMPOSERS ============================
 draw wizardFront 64x128:
+  pose front                               # one pose; auto-Z (bone depth) orders the limbs
   fit staff.grip 49:70                     # held prop, grip-fitted (behind: first placement); shaft overlaps the near sleeve
-  fit torsoFront.neck cx:neckY             # root: seeds every torso pin at once
-  fit headFront.chin torsoFront.neck
+  fit torsoFront.neck bone chestF          # root: its pins register for the hat chain
+  fit headFront.chin bone headF
   fit hat.brimC headFront.crown
-  fit sleeve.shoulder torsoFront.shoulderL
-  fit sleeve.shoulder torsoFront.shoulderR
-  fit feet.top torsoFront.hem shadow
+  fit sleeve.shoulder bone shLF
+  fit sleeve.shoulder bone shRF
+  fit feet.top bone hemF shadow
   outline
 
 draw wizardSide 64x128:
-  fit sleeve.shoulder 30:67 tint #2b2b2b 45%   # far arm (behind, neutral-grey depth cue)
+  pose side
+  fit sleeve.shoulder bone shFarS tint #2b2b2b 45%   # far arm (behind, neutral-grey depth cue)
   fit staff.grip 47:70                         # held prop, grip-fitted
-  fit torsoSide.neck cx:neckY              # root
-  fit headSide.chin torsoSide.neck
+  fit torsoSide.neck bone chestS
+  fit headSide.chin bone headS
   fit hatSide.brimC headSide.crown
-  fit sleeve.shoulder torsoSide.shoulderF  # near arm grips the staff
-  fit feet.top torsoSide.hem shadow
+  fit sleeve.shoulder bone shNearS         # near arm grips the staff
+  fit feet.top bone hemS shadow
   outline
 
 draw wizardBack 64x128:
+  pose back
   fit staff.grip 17:70                     # held prop, grip-fitted; held hand appears on the left from behind
-  fit torsoBack.neck cx:neckY              # root
-  fit headBack.chin torsoBack.neck
-  fit sleeve.shoulder torsoBack.shoulderL
-  fit sleeve.shoulder torsoBack.shoulderR
-  fit feet.top torsoBack.hem shadow
+  fit torsoBack.neck bone chestB
+  fit headBack.chin bone headB
+  fit sleeve.shoulder bone shLB
+  fit sleeve.shoulder bone shRB
+  fit feet.top bone hemB shadow
   fit hatBack.brimC headBack.crown         # mounted last: over the assembled figure
   outline
 

@@ -340,6 +340,10 @@ export type Statement =
       readonly source:
         | { readonly kind: 'ref'; readonly head: string; readonly pin: string | undefined }
         | { readonly kind: 'point'; readonly expression: Expression }
+        // A `bone JOINT` source (ADR-0095): the part's pin lands on the active pose's solved joint
+        // `JOINT` and the part inherits the joint's pose-angle change as its orientation (and its
+        // view depth for auto-Z). `bone` is a contextual keyword in this slot only.
+        | { readonly kind: 'bone'; readonly joint: string }
       readonly flags: Argument[]
       readonly shadow: boolean
       /**
@@ -357,6 +361,44 @@ export type Statement =
        * keyword in this trailing slot only.
        */
       readonly aim: { readonly pin: string; readonly point: Expression } | undefined
+      readonly span: TextSpan
+    }
+  | {
+      /**
+       * A `skeleton NAME:` rig block (ADR-0095), module scope. Each body line declares one joint:
+       * either `NAME at POINT` (anchored — position from a point, typically a `fig` guide point) or
+       * `NAME from PARENT ANGLE LENGTH` (forward-kinematic — position derived off the parent joint).
+       * Either form may carry a trailing `limit MIN:MAX` (allowed pose-delta range, degrees). Joints
+       * are declared parents-first. `skeleton` is a contextual keyword in this block position only.
+       */
+      readonly kind: 'skeletonBlock'
+      readonly name: string
+      readonly joints: readonly SkeletonJointAst[]
+      readonly span: TextSpan
+    }
+  | {
+      /**
+       * A `pose NAME over SKELETON:` block (ADR-0095), module scope. `view` selects the projection
+       * (`front|side|back`, folds into `fig`); each `JOINT DELTA [z Z]` line adds `DELTA` degrees to
+       * that joint's rest angle and optionally declares its auto-Z depth `Z` (higher = nearer the
+       * viewer). A delta outside the joint's `limit` is a positioned error (never silently clamped).
+       */
+      readonly kind: 'poseBlock'
+      readonly name: string
+      readonly skeleton: string
+      readonly view: 'front' | 'side' | 'back'
+      readonly entries: readonly PoseEntryAst[]
+      readonly span: TextSpan
+    }
+  | {
+      /**
+       * A `pose NAME` drawing-body statement (ADR-0095): applies the named pose — solves its skeleton
+       * over the drawing's canvas + figure oracle, then binds every joint as a bone anchor a later
+       * `fit part.pin bone JOINT` can reference. A view/stance is one pose; the pose's per-joint depth
+       * feeds auto-Z. Contextual keyword — `pose NAME over …:` (with `over`) is the block above.
+       */
+      readonly kind: 'poseApply'
+      readonly name: string
       readonly span: TextSpan
     }
   | { readonly kind: 'palette'; readonly entries: PaletteEntry[]; readonly span: TextSpan }
@@ -439,6 +481,29 @@ export type Statement =
       readonly items: { readonly name: string; readonly alias: string | undefined }[]
       readonly span: TextSpan
     }
+
+/**
+ * One joint line of a `skeleton NAME:` block (ADR-0095). `anchor` set ⇒ an anchored joint (position
+ * from the `anchor` point); otherwise an FK joint positioned off `parent` by `angle`/`length`. `limit`
+ * is the optional `MIN:MAX` pose-delta bound. All numeric fields are expressions (may reference `fig`).
+ */
+export type SkeletonJointAst = {
+  readonly name: string
+  readonly parent: string | null
+  readonly anchor: Expression | null
+  readonly angle: Expression | null
+  readonly length: Expression | null
+  readonly limit: { readonly min: Expression; readonly max: Expression } | null
+  readonly span: TextSpan
+}
+
+/** One `JOINT DELTA [z Z]` line of a `pose NAME over SKELETON:` block (ADR-0095). */
+export type PoseEntryAst = {
+  readonly joint: string
+  readonly delta: Expression
+  readonly depth: Expression | null
+  readonly span: TextSpan
+}
 
 /**
  * One `match` arm. `label` is `undefined` for the catch-all `else:` arm;

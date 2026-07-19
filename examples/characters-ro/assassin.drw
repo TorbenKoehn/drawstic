@@ -42,6 +42,67 @@ theme roTheme:
 
 use roTheme
 
+# --- ONE skeleton for all three views (ADR-0095): each body attach point is a named joint, declared
+# once (the torso root used to seed these pins by hand). Views are poses; per-joint depth resolves the
+# paint order via auto-Z — including the back view's inverted z-order (arms BEHIND the torso), which is
+# now just a lower depth on the arm joints instead of a hand-reordered stamp. Daggers/cloak stay props.
+skeleton assassinRig:
+  chestF at 32:34
+  headF at 32:34
+  shLF at 21:37
+  shRF at 43:37
+  hipLF at 23:63
+  hipRF at 41:63
+  beltLF at 21:52
+  beltRF at 43:52
+  chestS at 37:34
+  headS at 37:34
+  shS at 44:38
+  hipNearS at 41:62
+  hipFarS at 29:62
+  beltS at 40:54
+  cloakS at 29:37
+  chestB at 32:34
+  headB at 32:34
+  shLB at 21:37
+  shRB at 43:37
+  hipLB at 23:63
+  hipRB at 41:63
+  cloakB at 32:36
+
+pose front over assassinRig:
+  view front
+  chestF 0 z 0
+  hipLF 0 z 1
+  hipRF 0 z 2
+  shLF 0 z 3
+  shRF 0 z 4
+  beltLF 0 z 5
+  beltRF 0 z 6
+  headF 0 z 7
+
+pose side over assassinRig:
+  view side
+  chestS 0 z 0
+  hipFarS 0 z 1
+  hipNearS 0 z 2
+  cloakS 0 z 3
+  shS 0 z 4
+  beltS 0 z 5
+  headS 0 z 6
+
+# back view: the arm joints sit BELOW the torso in depth, so auto-Z paints the arms behind the torso —
+# the inverted z-order the old recipe got by stamping the torso after the arms. The cloak is highest.
+pose back over assassinRig:
+  view back
+  hipLB 0 z 0
+  hipRB 0 z 1
+  shLB 0 z 2
+  shRB 0 z 3
+  chestB 0 z 4
+  headB 0 z 5
+  cloakB 0 z 6
+
 # ---------------------------------------------------------------- head
 
 draw headFront 22x26:
@@ -209,55 +270,39 @@ draw dagger 9x16:
 # ---------------------------------------------------------------- composed views
 
 draw assassinFront 64x128:
-  stamp torsoFront 19:34
-  pin torsoFront.neck 32:34
-  pin torsoFront.shoulderL 21:37
-  pin torsoFront.shoulderR 43:37
-  pin torsoFront.hipL 23:63
-  pin torsoFront.hipR 41:63
-  pin torsoFront.beltL 21:52
-  pin torsoFront.beltR 43:52
-  fit legL.hip torsoFront.hipL shadow
-  fit legR.hip torsoFront.hipR shadow
-  fit arm.shoulder torsoFront.shoulderL
-  fit arm.shoulder torsoFront.shoulderR
-  fit dagger.grip torsoFront.beltL
-  fit dagger.grip torsoFront.beltR
-  fit headFront.neck torsoFront.neck
+  pose front                         # one pose; auto-Z (bone depth) orders the limbs
+  fit torsoFront.neck bone chestF    # root: its pins seed nothing by hand now
+  fit legL.hip bone hipLF shadow
+  fit legR.hip bone hipRF shadow
+  fit arm.shoulder bone shLF
+  fit arm.shoulder bone shRF
+  fit dagger.grip bone beltLF
+  fit dagger.grip bone beltRF
+  fit headFront.neck bone headF
   outline
 
 draw assassinSide 64x128:
-  stamp torsoSide 23:34
-  pin torsoSide.neck 37:34            # +6 on x vs the raw pose to centre the trailing cape (C003)
-  pin torsoSide.shoulder 44:38
-  pin torsoSide.hipNear 41:62
-  pin torsoSide.hipFar 29:62
-  pin torsoSide.belt 40:54
-  pin torsoSide.cloak 29:37
-  fit legSideBack.hip torsoSide.hipFar shadow
-  fit legSideFront.hip torsoSide.hipNear shadow
-  fit cloakSide.attach torsoSide.cloak
-  fit arm.shoulder torsoSide.shoulder
-  fit dagger.grip torsoSide.belt
-  fit headSide.neck torsoSide.neck
+  pose side                          # figure oracle folds to profile; auto-Z sorts near over far
+  fit torsoSide.neck bone chestS     # root
+  fit legSideBack.hip bone hipFarS shadow
+  fit legSideFront.hip bone hipNearS shadow
+  fit cloakSide.attach bone cloakS
+  fit arm.shoulder bone shS
+  fit dagger.grip bone beltS
+  fit headSide.neck bone headS
   outline
 
-# back view (ADR-0090 §5b): no face; arms tuck BEHIND the torso (fitted before it is
-# stamped, inverted z-order); the cloak is a mounted prop fitted LAST, over the whole back.
+# back view (ADR-0095): no face; the arm joints sit below the torso in depth, so auto-Z paints the
+# arms BEHIND the torso — no hand-reordered stamp. The cloak is a mounted prop, highest depth.
 draw assassinBack 64x128:
-  pin torsoBack.neck 32:34          # seeds ALL torsoBack pins in canvas space
-  pin torsoBack.shoulderL 21:37
-  pin torsoBack.shoulderR 43:37
-  pin torsoBack.hipL 23:63
-  pin torsoBack.hipR 41:63
-  pin torsoBack.cloak 32:36
-  fit legL.hip torsoBack.hipL shadow
-  fit legR.hip torsoBack.hipR shadow
-  fit arm.shoulder torsoBack.shoulderL     # arms painted BEHIND the torso …
-  fit arm.shoulder torsoBack.shoulderR
-  stamp torsoBack 19:34                     # … torso stamped over them
-  fit headBack.neck torsoBack.neck
-  fit cloakBack.attach torsoBack.cloak      # cloak LAST — over the assembled back
+  pose back
+  fit legL.hip bone hipLB shadow
+  fit legR.hip bone hipRB shadow
+  fit arm.shoulder bone shLB         # arm joints are below the torso in depth …
+  fit arm.shoulder bone shRB
+  fit torsoBack.neck bone chestB     # … so the torso paints over them (auto-Z)
+  fit headBack.neck bone headB
+  fit cloakBack.attach bone cloakB   # cloak highest — over the assembled back
   outline
 
 # ---------------------------------------------------------------- sheet

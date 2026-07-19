@@ -44,6 +44,7 @@ import {
   type ExplainRecord,
   type ModuleRecord,
   type PlacementRecord,
+  type PoseSolveRecord,
 } from './eval.js'
 import { format, formatDiff } from './fmt.js'
 import { inspectSprite } from './inspect.js'
@@ -931,6 +932,7 @@ const runRender = (cli: CliArguments): number => {
       engine.explain = []
       engine.placements = []
       engine.paintOrders = []
+      engine.poses = []
     }
     const mod = engine.loadEntry(file)
     const entry = mod.definitions.get(targetRef.drawing)
@@ -1072,6 +1074,7 @@ const runRender = (cli: CliArguments): number => {
       const explain = engine.explain ?? []
       const placements = engine.placements ?? []
       const paintOrder = (engine.paintOrders ?? []).find((p) => p.drawing === targetRef.drawing)
+      const poses = (engine.poses ?? []).filter((p) => p.drawing === targetRef.drawing)
       if (cli.json) {
         process.stdout.write(
           `${JSON.stringify(
@@ -1085,6 +1088,7 @@ const runRender = (cli: CliArguments): number => {
                 output: null,
                 explain,
                 placements,
+                ...(poses.length > 0 ? { poses } : {}),
                 ...(paintOrder ? { paintOrder: paintOrder.order } : {}),
                 ...(sprite.occlusions ? { occlusions: sprite.occlusions } : {}),
               },
@@ -1101,6 +1105,7 @@ const runRender = (cli: CliArguments): number => {
             placements,
             paintOrder?.order,
             sprite.occlusions,
+            poses,
           ),
         )
       }
@@ -1230,16 +1235,28 @@ const formatExplain = (
   placements: readonly PlacementRecord[] = [],
   paintOrder: readonly { readonly name: string; readonly reason: string }[] | undefined = undefined,
   occlusions: readonly OcclusionResult[] | undefined = undefined,
+  poses: readonly PoseSolveRecord[] = [],
 ): string => {
   if (
     records.length === 0 &&
     placements.length === 0 &&
     !paintOrder &&
+    poses.length === 0 &&
     (!occlusions || occlusions.length === 0)
   ) {
     return `${drawing}: no model/cel commands or fits to explain\n`
   }
   const lines: string[] = []
+  const round3 = (v: number): number => Math.round(v * 1000) / 1000
+  // Applied poses (ADR-0095): each joint's solved world angle, pose-angle delta, and auto-Z depth.
+  for (const p of poses) {
+    lines.push(`pose ${p.pose} (view ${p.view}):`)
+    for (const j of p.joints) {
+      lines.push(
+        `  ${j.name} at ${round3(j.x)}:${round3(j.y)} angle ${round3(j.worldAngle)}° Δ${round3(j.angleDelta)}° z${j.depth}`,
+      )
+    }
+  }
   // Placement report (ADR-0087 amendment 2): where every `fit` landed its pins, whether they
   // coincide, and how far the target pin sits from the part's own ink (the float signal); plus the
   // solved `aim` angle (ADR-0092).

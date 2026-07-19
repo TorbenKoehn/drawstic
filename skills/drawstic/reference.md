@@ -473,6 +473,45 @@ stamp <part> <pt> [flags] [rel]                    # rel = behind <part> | front
 `pin`/`fit` are contextual keywords (only in these statement shapes) — bindable as names elsewhere.
 `behind`/`front`/`aim` are likewise contextual (only in the trailing slot of `stamp`/`fit`).
 
+## Skeleton & pose (ADR-0095)
+
+```drw
+skeleton body:                          # module scope: a rig — the three views are poses of it
+  pelvis at fig.hip                     # anchored joint: position from a point (usually a fig guide)
+  shoulderL at fig.shoulderL
+  hipL at fig.hipL
+  armL from shoulderL 90 20 limit -60:120   # FK joint: parent, local rest angle°, bone length
+
+pose front over body:                   # module scope: an angle set over a skeleton
+  view front                            # folds the figure oracle to this projection
+  shoulderL 0 z 2                       # JOINT DELTA° [z DEPTH] — DELTA adds to the rest angle
+  hipL 0 z 0                            # z DEPTH: auto-Z (higher = nearer the viewer)
+
+draw front 64x128:
+  pose front                            # solve the rig over this canvas + figure oracle
+  fit torso.neck bone chest             # land the pin on joint `chest`, inherit its pose orientation
+  fit legL.hip  bone hipL shadow
+```
+
+- **`skeleton NAME:`** — a joint per line: `NAME at POINT` (anchored — usually a `fig` guide point, so
+  the rig binds to the figure oracle's proportions) or `NAME from PARENT ANGLE LENGTH` (forward-
+  kinematic — placed off its parent; both read `fig`). `limit MIN:MAX` (either form) bounds the pose
+  delta. Parents first. FK is deterministic; a delta on a parent rotates the whole subtree.
+- **`pose NAME over SKELETON:`** — `view front|side|back` folds `fig` to that projection; each `JOINT
+  DELTA [z Z]` adds `DELTA°` to the rest angle. A delta **outside a joint's `limit` is a positioned
+  error** (never a silent clamp). `z Z` is the joint's view depth.
+- **`pose NAME`** (draw body) — solves the pose's skeleton over the drawing and binds every joint as a
+  bone anchor. A view/stance is one pose.
+- **`fit part.pin bone JOINT`** — land `part`'s pin on joint `JOINT`'s solved position and rotate the
+  part by the joint's pose-angle change about the pin (inherits the bone orientation). At the rest
+  pose (delta 0) it is a plain translation. `bone` is contextual (only in this fit-source slot).
+- **Auto-Z** — a bone fit carries its joint's depth onto its layer; the paint order sorts bone-fitted
+  layers by depth (deeper behind, nearer front) automatically. **Explicit `behind`/`front` overrides**
+  it. `render --explain` prints each pose's solved joints (position, angle, delta, depth) and the
+  paint order's `zN` reasons; C013 still checks only *declared* relations.
+- `skeleton`/`pose`/`bone` + the block words `at`/`from`/`limit`/`over`/`view`/`z` are contextual —
+  bindable as names elsewhere. A pose is an interpolable delta set (the animation data model).
+
 ## Expressions, functions, loops
 
 ```drw

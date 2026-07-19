@@ -32,7 +32,9 @@ the light coherence, and the pixel contact, so you declare intent instead of han
 3. **Parts** — each mass is a `Region` binding from a primitive or an **organic constructor**
    (`dome`/`lobe`/`crescent`/`band`); a modular part declares its seams as **`pin`s**.
 4. **Assembly** — `fit` (contact-guaranteed placement) with `behind`/`front` (z-order), `aim` (orient a
-   held prop), `fit … shadow` (plant on the ground), `fit … tint` (push a far limb back).
+   held prop), `fit … shadow` (plant on the ground), `fit … tint` (push a far limb back). For a
+   multi-view figure, declare one `skeleton` and make each view a `pose` (auto-Z from bone depth) —
+   `fit part.pin bone JOINT` (ADR-0095).
 5. **Shade** — `model REGION MAT` (smooth, form-following, the default) or `cel REGION MAT N` (crisp
    bands, opt-in).
 6. **`outline`** — one bare pass as the last statement, for a closed silhouette.
@@ -187,6 +189,15 @@ be a `pixels:` grid with a `pal` (palette keys = one ASCII letter, `.` = transpa
   at a canvas point (orient a bow/sword per view: `fit bow.grip a.grip aim tip 60:20`). Assembly is
   two-phase (placements defer into layers, inline paints are barriers). A conflict is E025. `critique`
   **C013** verifies each relation in the composite (a `--strict` must-fix).
+- **Skeleton + pose (ADR-0095, the canonical multi-view path)** — declare a figure's attach points
+  once as a `skeleton NAME:` (each joint `NAME at POINT` — usually a `fig` guide point — or FK `NAME
+  from PARENT ANGLE LENGTH [limit MIN:MAX]`); make each view a `pose NAME over SKELETON:` with a `view
+  front|side|back` line and per-joint `JOINT DELTA [z DEPTH]` lines. In a draw: `pose NAME` solves the
+  rig, then `fit part.pin bone JOINT` lands the pin on the joint and inherits its pose orientation. The
+  **`z` depth drives auto-Z** — the body's paint order falls out of the pose (no hand `behind`/`front`
+  on limbs; explicit `behind`/`front` stays the override for props). A delta past a joint's `limit` is
+  a positioned error. `render --explain` prints solved joints + the paint order. See
+  character-craft.md §6·0 and `examples/characters-ro/*.drw`.
 - **Declarative light + material** (default shading path, ADR-0086) — one named light drives
   everything, so encodings can't drift: `light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%` (travel dir;
   source up-left ⇒ up-left edge lit) or `light torch = at 12:8 #ffb060 gain 1.4` (point source; `amb

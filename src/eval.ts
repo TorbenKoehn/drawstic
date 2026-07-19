@@ -136,6 +136,7 @@ import {
   type PathContour,
   type PathPoint,
   type Point,
+  type Pose,
   path,
   pathFillRegion,
   pathFromRegion,
@@ -155,9 +156,13 @@ import {
   rotationXDeg,
   rotationYDeg,
   rrectRegion,
+  type Skeleton,
+  type SkeletonJoint,
+  type SolvedJoint,
   type Sprite,
   scaling,
   skewX,
+  solveSkeleton,
   spriteRegion,
   type Transform,
   translation,
@@ -321,6 +326,16 @@ export type DefinitionEntry =
   | { readonly kind: 'draw'; readonly definition: DrawDefinition; readonly module: ModuleRecord }
   | { readonly kind: 'path'; readonly definition: PathDefinition; readonly module: ModuleRecord }
   | { readonly kind: 'theme'; readonly definition: ThemeDefinition; readonly module: ModuleRecord }
+  | {
+      readonly kind: 'skeleton'
+      readonly definition: Extract<Statement, { readonly kind: 'skeletonBlock' }>
+      readonly module: ModuleRecord
+    }
+  | {
+      readonly kind: 'pose'
+      readonly definition: Extract<Statement, { readonly kind: 'poseBlock' }>
+      readonly module: ModuleRecord
+    }
   | {
       readonly kind: 'function'
       readonly name: string
@@ -523,6 +538,19 @@ type DrawState = {
     readonly cp: { readonly x: number; readonly y: number }
     readonly span: TextSpan
   }[]
+  /**
+   * The active pose's solved bones (ADR-0095): joint name → {@link SolvedJoint}. Set by a `pose NAME`
+   * statement (forward kinematics over the drawing's canvas + figure oracle); read by
+   * `fit part.pin bone JOINT` to land the pin on the joint, inherit its `angleDelta` as orientation,
+   * and carry its depth into auto-Z. Empty until a pose is applied.
+   */
+  readonly bones: Map<string, SolvedJoint>
+  /**
+   * The view depth of the most recent bone-`fit`/`stamp` placement (ADR-0095 auto-Z), or `null` when
+   * it carried no bone. `#execAssemblyBody` reads it right after executing each placement to tag the
+   * layer, then resets it — the plumbing that turns bone depth into paint-order edges automatically.
+   */
+  lastPlacementDepth: number | null
 }
 
 /**
@@ -599,6 +627,8 @@ type PaintLayer = {
   readonly front: PaintLayer[]
   readonly reason: string
   readonly span: TextSpan
+  /** The bone depth of a `fit … bone JOINT` placement (ADR-0095 auto-Z), or `undefined` — see {@link Engine.#orderLayers}. */
+  readonly depth: number | undefined
 }
 
 /** The packed (`y*w+x`) pixels of a layer buffer at or above `minAlpha` — its opaque coverage. */
@@ -965,6 +995,18 @@ export type PaintOrderRecord = {
   readonly order: readonly { readonly name: string; readonly reason: string }[]
 }
 
+/**
+ * One applied `pose` for `render --explain` (ADR-0095): the drawing, the pose and its view, and every
+ * solved joint (world position, solved world angle, pose-angle delta, depth) — so a rig's forward
+ * kinematics and its auto-Z depth order are inspectable, not implicit.
+ */
+export type PoseSolveRecord = {
+  readonly drawing: string
+  readonly pose: string
+  readonly view: string
+  readonly joints: readonly SolvedJoint[]
+}
+
 const round3 = (v: number): number => Math.round(v * 1000) / 1000
 const roundVec = (v: { readonly x: number; readonly y: number }): { x: number; y: number } => ({
   x: round3(v.x),
@@ -1081,6 +1123,13 @@ export class Engine {
    * the bottom-to-top layer order with each layer's reason. `null` disables collection.
    */
   paintOrders: PaintOrderRecord[] | null = null
+
+  /**
+   * When non-null, every applied `pose` appends its solved rig here (ADR-0095) — the CLI's
+   * `render --explain` sets it to `[]` to print each joint's solved world angle, pose-angle delta,
+   * and auto-Z depth. `null` disables collection.
+   */
+  poses: PoseSolveRecord[] | null = null
 
   /**
    * The `root` directory bounds every relative import/image path (ADR-0035
@@ -1279,6 +1328,12 @@ export class Engine {
           break
         case 'themeDefinition':
           add(s.def.name, { kind: 'theme', definition: s.def, module: rec }, s.span)
+          break
+        case 'skeletonBlock':
+          add(s.name, { kind: 'skeleton', definition: s, module: rec }, s.span)
+          break
+        case 'poseBlock':
+          add(s.name, { kind: 'pose', definition: s, module: rec }, s.span)
           break
         case 'functionDefinition':
           add(
@@ -2118,6 +2173,8 @@ export class Engine {
       pins: new Map(),
       mirror: null,
       pendingFits: [],
+      bones: new Map(),
+      lastPlacementDepth: null,
     }
     const state: State = { module: mod, budget: this.budget, draw, functionDepth: 0 }
     // seed theme palette into the artifact (drawing-local pal overrides later)
@@ -2238,6 +2295,8 @@ export class Engine {
         let name: string
         let behind: readonly string[]
         let front: readonly string[]
+        // Reset the bone-depth channel before the placement; `#execFit` sets it for a `bone` source.
+        draw.lastPlacementDepth = null
         if (isFit) {
           name = s.target.head
           behind = s.behind
@@ -2249,8 +2308,12 @@ export class Engine {
           front = rel.front
           name = this.#execStamp(s, new Args(this, rel.args, env, state, s.span), env, state)
         }
+        const depth = draw.lastPlacementDepth ?? undefined
         draw.context.buffer = prev
         if (behind.length > 0 || front.length > 0) {
+          sawRelation = true
+        }
+        if (depth !== undefined) {
           sawRelation = true
         }
         const reason =
@@ -2258,7 +2321,9 @@ export class Engine {
             ? `behind ${behind.join(',')}`
             : front.length > 0
               ? `front ${front.join(',')}`
-              : 'sequence'
+              : depth !== undefined
+                ? `z${depth}`
+                : 'sequence'
         const layer: PaintLayer = {
           id,
           name,
@@ -2268,6 +2333,7 @@ export class Engine {
           front: [],
           reason,
           span: s.span,
+          depth,
         }
         // Resolve each relation target to the most-recent placement of that name. A target in the
         // current pending segment yields a real ordering edge; one already flushed is recorded for
@@ -2397,11 +2463,25 @@ export class Engine {
         succ.get(t)?.add(l)
       }
     }
+    // Auto-Z (ADR-0095): a `fit … bone JOINT` layer carries the joint's view depth; higher = nearer
+    // the viewer = painted later (on top). A layer without a bone depth inherits the nearest earlier
+    // one (so a decoration stamped right after a limb sits with it), defaulting to 0. Explicit
+    // `behind`/`front` edges above are hard constraints that always win; depth only breaks ties among
+    // otherwise-unordered layers — so manual occlusion overrides auto-Z, exactly as specified.
+    const effDepth = new Map<PaintLayer, number>()
+    let running = 0
+    for (const l of layers) {
+      if (l.depth !== undefined) {
+        running = l.depth
+      }
+      effDepth.set(l, l.depth ?? running)
+    }
     const emittedTop: PaintLayer[] = []
     const done = new Set<PaintLayer>()
     const remaining = new Set(layers)
     while (remaining.size > 0) {
       let pick: PaintLayer | undefined
+      let pickDepth = Number.NEGATIVE_INFINITY
       let pickIdx = -1
       for (const l of remaining) {
         let ready = true
@@ -2412,8 +2492,11 @@ export class Engine {
           }
         }
         if (ready) {
+          // Emit the topmost first: highest depth, then highest statement index (later on top).
+          const d = effDepth.get(l) ?? 0
           const idx = layers.indexOf(l)
-          if (idx > pickIdx) {
+          if (d > pickDepth || (d === pickDepth && idx > pickIdx)) {
+            pickDepth = d
             pickIdx = idx
             pick = l
           }
@@ -2663,6 +2746,145 @@ export class Engine {
   }
 
   /**
+   * Build a first-class {@link Skeleton} value from a `skeleton NAME:` definition (ADR-0095) by
+   * evaluating each joint's expressions (`at POINT`, `from PARENT ANGLE LENGTH`, `limit MIN:MAX`) in
+   * `env` — which may bind `fig` (the figure oracle, ADR-0093), so a rest length/anchor binds to the
+   * same proportion numbers. Pure; the caller re-views `fig` for the pose before calling.
+   */
+  #buildSkeleton(
+    entry: Extract<DefinitionEntry, { readonly kind: 'skeleton' }>,
+    env: Environment,
+    state: State,
+  ): Skeleton {
+    const joints: SkeletonJoint[] = []
+    for (const j of entry.definition.joints) {
+      let anchor: { readonly x: number; readonly y: number } | null = null
+      let restAngle = 0
+      let length = 0
+      if (j.anchor) {
+        const p = this.evalExpr(j.anchor, env, state)
+        if (typeof p !== 'object' || p?.type !== 'point') {
+          throw error(
+            ERROR_CODE.typeError,
+            `joint '${j.name}' at needs a point, got ${typeName(p)}`,
+            state.module.displayPath,
+            j.span,
+          )
+        }
+        anchor = { x: p.x, y: p.y }
+      } else if (j.angle && j.length) {
+        restAngle = this.evalNumber(j.angle, env, state)
+        length = this.evalNumber(j.length, env, state)
+      }
+      let limit: { readonly min: number; readonly max: number } | null = null
+      if (j.limit) {
+        limit = {
+          min: this.evalNumber(j.limit.min, env, state),
+          max: this.evalNumber(j.limit.max, env, state),
+        }
+      }
+      joints.push({ name: j.name, parent: j.parent, anchor, restAngle, length, limit })
+    }
+    return { type: 'skeleton', name: entry.definition.name, joints }
+  }
+
+  /** Build a first-class {@link Pose} value from a `pose NAME over SKELETON:` definition (ADR-0095). */
+  #buildPose(
+    entry: Extract<DefinitionEntry, { readonly kind: 'pose' }>,
+    env: Environment,
+    state: State,
+  ): Pose {
+    const deltas = new Map<string, number>()
+    const depth = new Map<string, number>()
+    for (const e of entry.definition.entries) {
+      deltas.set(e.joint, this.evalNumber(e.delta, env, state))
+      if (e.depth) {
+        depth.set(e.joint, this.evalNumber(e.depth, env, state))
+      }
+    }
+    return {
+      type: 'pose',
+      name: entry.definition.name,
+      skeleton: entry.definition.skeleton,
+      view: entry.definition.view,
+      deltas,
+      depth,
+    }
+  }
+
+  /**
+   * Execute a `pose NAME` statement (ADR-0095): resolve the pose and its skeleton, re-view the figure
+   * oracle to the pose's view, evaluate the rig over the drawing's canvas, check every pose delta
+   * against its joint's angle `limit` (a violation is a positioned error, never a silent clamp), solve
+   * the forward kinematics, and bind each solved joint as a bone anchor the following
+   * `fit part.pin bone JOINT` reads. The pose's per-joint depth drives auto-Z.
+   */
+  #execPoseApply(
+    stmt: Extract<Statement, { readonly kind: 'poseApply' }>,
+    env: Environment,
+    state: State,
+  ): void {
+    const draw = state.draw
+    if (!draw) {
+      throw error(
+        ERROR_CODE.syntax,
+        "'pose' belongs in a drawing body",
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const poseEntry = state.module.definitions.get(stmt.name)
+    if (poseEntry?.kind !== 'pose') {
+      throw error(
+        ERROR_CODE.unknownName,
+        `pose '${stmt.name}' not found`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const skelEntry = poseEntry.module.definitions.get(poseEntry.definition.skeleton)
+    if (skelEntry?.kind !== 'skeleton') {
+      throw error(
+        ERROR_CODE.unknownName,
+        `pose '${stmt.name}' names skeleton '${poseEntry.definition.skeleton}', which is not defined`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const pose = this.#buildPose(poseEntry, env, state)
+    // Re-view `fig` to the pose's view for the skeleton evaluation, so view-aware guide points
+    // (shoulders/hips collapse in profile, ADR-0093) lay the rig out correctly per view.
+    const skelEnv = new Environment(env)
+    const figBinding = env.lookup('fig')
+    if (figBinding && typeof figBinding.value === 'object' && figBinding.value?.type === 'figure') {
+      skelEnv.declare('fig', { ...figBinding.value, view: pose.view }, true, false)
+    }
+    const skel = this.#buildSkeleton(skelEntry, skelEnv, state)
+    // Constraint check: a pose delta outside a joint's declared limit is a positioned error.
+    const limits = new Map(skel.joints.map((j) => [j.name, j.limit] as const))
+    for (const [joint, delta] of pose.deltas) {
+      const lim = limits.get(joint)
+      if (lim && (delta < lim.min || delta > lim.max)) {
+        throw error(
+          ERROR_CODE.syntax,
+          `pose '${stmt.name}' bends joint '${joint}' by ${delta}°, outside its limit ${lim.min}:${lim.max}`,
+          state.module.displayPath,
+          stmt.span,
+          'widen the joint limit in the skeleton, or reduce the pose delta',
+        )
+      }
+    }
+    const solved = solveSkeleton(skel, pose.deltas, pose.depth)
+    draw.bones.clear()
+    for (const j of solved) {
+      draw.bones.set(j.name, j)
+    }
+    if (this.poses) {
+      this.poses.push({ drawing: draw.drawName, pose: pose.name, view: pose.view, joints: solved })
+    }
+  }
+
+  /**
    * Resolve `name` to an already-buildable sprite WITHOUT throwing: an in-scope binding whose value
    * is a sprite, or a non-parametric drawing definition (rendered/cached). Returns `undefined` for
    * an unbound name, a parametric drawing, or any non-sprite value — so a caller can probe whether a
@@ -2730,8 +2952,15 @@ export class Engine {
     const sprite = targetValue
     const localPins = sprite.pins ?? new Map<string, { readonly x: number; readonly y: number }>()
 
-    // 2 — resolve the source contact point (canvas) and the pin name to attach by.
-    const { canvas: cp, pinName } = this.#resolveFitSource(stmt, localPins, env, state)
+    // 2 — resolve the source contact point (canvas) and the pin name to attach by. A `bone` source
+    // additionally carries the joint's pose-angle change (inherited as the part's orientation) and
+    // its view depth (auto-Z, ADR-0095).
+    const {
+      canvas: cp,
+      pinName,
+      boneRot,
+      depth: boneDepth,
+    } = this.#resolveFitSource(stmt, localPins, env, state)
 
     // 3 — the target's local pin to land on the source.
     const localPin = localPins.get(pinName)
@@ -2753,6 +2982,17 @@ export class Engine {
       stmt.span,
     )
     let matrix = this.#buildStampMatrix(sprite, flags)
+    // 4a — bone orientation (ADR-0095): a `bone JOINT` source rotates the part about its fit pin by
+    // the joint's pose-angle change, so the part inherits the bone's orientation from the active pose
+    // (the same about-a-point machinery `aim` uses). Records the joint's depth for auto-Z.
+    draw.lastPlacementDepth = boneDepth ?? null
+    if (boneRot !== undefined && boneRot !== 0) {
+      const base = matrix ?? IDENTITY
+      const p0 = applyMatrix(base, localPin.x, localPin.y)
+      if (p0) {
+        matrix = compose(base, aboutPoint(rotationDeg(boneRot), p0.x, p0.y))
+      }
+    }
     // 4b — aim (ADR-0092): rotate the part about the fit pin so a second named pin points at PT.
     // The flag-only transform positions both pins; the solved rotation about the (flagged) fit pin
     // then swings the aim pin's direction onto (PT − contact point). Pins ride the same matrix.
@@ -2918,6 +3158,9 @@ export class Engine {
     if (stmt.source.kind === 'point') {
       return 'point'
     }
+    if (stmt.source.kind === 'bone') {
+      return `bone ${stmt.source.joint}`
+    }
     return stmt.source.pin ? `${stmt.source.head}.${stmt.source.pin}` : stmt.source.head
   }
 
@@ -2953,8 +3196,41 @@ export class Engine {
     localPins: ReadonlyMap<string, { readonly x: number; readonly y: number }>,
     env: Environment,
     state: State,
-  ): { readonly canvas: { readonly x: number; readonly y: number }; readonly pinName: string } {
+  ): {
+    readonly canvas: { readonly x: number; readonly y: number }
+    readonly pinName: string
+    readonly boneRot?: number
+    readonly depth?: number
+  } {
     const draw = state.draw as DrawState
+    // A `bone JOINT` source (ADR-0095): land the target pin on the active pose's solved joint, and
+    // carry the joint's pose-angle change (inherited as the part's orientation) and its view depth.
+    if (stmt.source.kind === 'bone') {
+      const joint = draw.bones.get(stmt.source.joint)
+      if (!joint) {
+        throw error(
+          ERROR_CODE.unknownName,
+          `fit source bone '${stmt.source.joint}' is not a joint of the active pose`,
+          state.module.displayPath,
+          stmt.span,
+          'apply a pose first (`pose NAME`) whose skeleton declares that joint',
+        )
+      }
+      if (!stmt.target.pin) {
+        throw error(
+          ERROR_CODE.syntax,
+          `fit onto a bone needs a named target pin (e.g. 'fit ${stmt.target.head}.attach bone ${stmt.source.joint}')`,
+          state.module.displayPath,
+          stmt.span,
+        )
+      }
+      return {
+        canvas: { x: joint.x, y: joint.y },
+        pinName: stmt.target.pin,
+        boneRot: joint.angleDelta,
+        depth: joint.depth,
+      }
+    }
     if (stmt.source.kind === 'point') {
       const value = this.evalExpr(stmt.source.expression, env, state)
       if (typeof value !== 'object' || value?.type !== 'point' || value.rel) {
@@ -3538,6 +3814,9 @@ export class Engine {
         return
       case 'fit':
         this.#execFit(stmt, env, state)
+        return
+      case 'poseApply':
+        this.#execPoseApply(stmt, env, state)
         return
       case 'if':
         this.#execIf(stmt, env, state)

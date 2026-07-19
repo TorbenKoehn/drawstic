@@ -17,6 +17,8 @@ import type {
   PaletteEntry,
   PathCommand,
   PathDefinition,
+  PoseEntryAst,
+  SkeletonJointAst,
   Statement,
   ThemeDefinition,
   TilesetDefinition,
@@ -405,6 +407,34 @@ class Parser {
           return this.#parseFit()
         }
         break
+      case 'skeleton':
+        // D7: `skeleton NAME:` → a rig block (ADR-0095); `skeleton` stays a bindable name otherwise.
+        if (
+          this.#peek(1).kind === 'name' &&
+          this.#peek(2).kind === 'op' &&
+          this.#peek(2).text === ':' &&
+          this.#peek(2).blockColon
+        ) {
+          return this.#parseSkeletonBlock()
+        }
+        break
+      case 'pose': {
+        // D7: `pose NAME over SKEL:` → a pose block (module); `pose NAME` (no `over`) → apply the
+        // pose in a draw body; anything else leaves `pose` an ordinary bindable/call name.
+        if (this.#peek(1).kind === 'name') {
+          const after = this.#peek(2)
+          if (after.kind === 'name' && after.text === 'over') {
+            return this.#parsePoseBlock()
+          }
+          if (after.kind === 'nl' || after.kind === 'dedent' || after.kind === 'eof') {
+            this.#next()
+            const name = this.#next().text
+            this.#expectNL()
+            return { kind: 'poseApply', name, span: s }
+          }
+        }
+        break
+      }
       case 'filter':
         if (
           this.#peek(1).kind === 'name' &&
@@ -812,7 +842,15 @@ class Parser {
     let source:
       | { readonly kind: 'ref'; readonly head: string; readonly pin: string | undefined }
       | { readonly kind: 'point'; readonly expression: Expression }
-    if (this.#atFitRef()) {
+      | { readonly kind: 'bone'; readonly joint: string }
+    if (
+      this.#peek().kind === 'name' &&
+      this.#peek().text === 'bone' &&
+      this.#peek(1).kind === 'name'
+    ) {
+      this.#next() // bone
+      source = { kind: 'bone', joint: this.#next().text }
+    } else if (this.#atFitRef()) {
       const ref = this.#parseFitRef()
       source = { kind: 'ref', head: ref.head, pin: ref.pin }
     } else {
@@ -867,6 +905,108 @@ class Parser {
     }
     this.#expectNL()
     return { kind: 'fit', target, source, flags, shadow, behind, front, aim, span: s }
+  }
+
+  /**
+   * Parses `skeleton NAME:` (ADR-0095): an indented block of joint lines, each `NAME at POINT`
+   * (anchored) or `NAME from PARENT ANGLE LENGTH` (forward-kinematic), with an optional trailing
+   * `limit MIN:MAX` pose-delta bound. `at`/`from`/`limit` are contextual keywords in this block only.
+   */
+  readonly #parseSkeletonBlock = (): Statement => {
+    const s = this.#span(this.#peek())
+    this.#next() // skeleton
+    const name = this.#next().text
+    this.#next() // :
+    this.#expect('nl')
+    this.#skipNLs()
+    this.#expect('indent', undefined, 'an indented skeleton body')
+    this.#skipNLs()
+    const joints: SkeletonJointAst[] = []
+    while (!this.#at('dedent') && !this.#at('eof')) {
+      const js = this.#span(this.#peek())
+      const jname = this.#expect('name', undefined, 'a joint name').text
+      let parent: string | null = null
+      let anchor: Expression | null = null
+      let angle: Expression | null = null
+      let length: Expression | null = null
+      const kw = this.#peek()
+      if (kw.kind === 'name' && kw.text === 'at') {
+        this.#next()
+        anchor = this.#parseCmdArgExpr()
+      } else if (kw.kind === 'name' && kw.text === 'from') {
+        this.#next()
+        parent = this.#expect('name', undefined, 'a parent joint name').text
+        angle = this.#parseCmdArgExpr()
+        length = this.#parseCmdArgExpr()
+      } else {
+        this.#fail("a joint needs 'at POINT' (anchored) or 'from PARENT ANGLE LENGTH' (FK)", kw)
+      }
+      let limit: { readonly min: Expression; readonly max: Expression } | null = null
+      if (this.#peek().kind === 'name' && this.#peek().text === 'limit') {
+        this.#next()
+        const lp = this.#parseCmdArgExpr()
+        if (lp.kind !== 'point') {
+          this.#fail('limit needs a MIN:MAX range', this.#peek())
+        } else {
+          limit = { min: lp.x, max: lp.y }
+        }
+      }
+      this.#expectNL()
+      joints.push({ name: jname, parent, anchor, angle, length, limit, span: js })
+      this.#skipNLs()
+    }
+    if (this.#at('dedent')) {
+      this.#next()
+    }
+    return { kind: 'skeletonBlock', name, joints, span: s }
+  }
+
+  /**
+   * Parses `pose NAME over SKELETON:` (ADR-0095): a `view front|side|back` line plus `JOINT DELTA
+   * [z Z]` lines. `view`/`z` are contextual keywords in this block only.
+   */
+  readonly #parsePoseBlock = (): Statement => {
+    const s = this.#span(this.#peek())
+    this.#next() // pose
+    const name = this.#next().text
+    this.#next() // over
+    const skeleton = this.#expect('name', undefined, 'a skeleton name').text
+    this.#next() // :
+    this.#expect('nl')
+    this.#skipNLs()
+    this.#expect('indent', undefined, 'an indented pose body')
+    this.#skipNLs()
+    let view: 'front' | 'side' | 'back' = 'front'
+    const entries: PoseEntryAst[] = []
+    while (!this.#at('dedent') && !this.#at('eof')) {
+      const ps = this.#span(this.#peek())
+      const first = this.#peek()
+      if (first.kind === 'name' && first.text === 'view') {
+        this.#next()
+        const v = this.#next().text
+        if (v !== 'front' && v !== 'side' && v !== 'back') {
+          this.#fail("view must be 'front', 'side', or 'back'", first)
+        }
+        view = v as 'front' | 'side' | 'back'
+        this.#expectNL()
+        this.#skipNLs()
+        continue
+      }
+      const joint = this.#expect('name', undefined, 'a joint name').text
+      const delta = this.#parseCmdArgExpr()
+      let depth: Expression | null = null
+      if (this.#peek().kind === 'name' && this.#peek().text === 'z') {
+        this.#next()
+        depth = this.#parseCmdArgExpr()
+      }
+      this.#expectNL()
+      entries.push({ joint, delta, depth, span: ps })
+      this.#skipNLs()
+    }
+    if (this.#at('dedent')) {
+      this.#next()
+    }
+    return { kind: 'poseBlock', name, skeleton, view, entries, span: s }
   }
 
   readonly #parseFnDef = (): Statement => {

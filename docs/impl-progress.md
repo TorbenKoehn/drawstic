@@ -151,11 +151,63 @@ Archer 4/10, Wizard 4/10, Assassin 3/10. Ziel Messpunkt 2: ≥7/10 + Zensus-Krit
     im Skill `check`-clean probe-verifiziert (Scaffolds, Sword-Anatomy, quantize+outline); keine
     Erwähnung entfernter Konstrukte mehr in skills/ + best-practices + motif-cookbook (nur legitime
     „was removed"-Notizen). tsc+biome clean, **864 Tests grün** (reine Doku/Skill — kein Engine-Δ).
-- [ ] **W2-4 Skeleton** (ADR-0095): `skeleton`-Block (Joints/Parent/Rest-Winkel/Constraints, FK),
-  `pose`-Blöcke, Auto-Z aus Bone-Tiefe je View (behind/front als Lowering), 4 Charaktere auf
-  Skeleton-Posen. DANACH ⏸ MESSPUNKT 2: Blind-Rebuild (craft-eval) + Human-Grading + Zensus (Stopp).
+- [x] **W2-4 Skeleton** ([ADR-0095](decisions/0095-skeleton-and-pose.md)): **`skeleton NAME:`-Block**
+  (module-scope, First-Class-Value) — Joints als `NAME at POINT` (anchored, i.d.R. `fig`-Guide-Punkt →
+  Rig bindet an dieselben Proportionszahlen wie das Figure-Oracle, ADR-0093) oder `NAME from PARENT
+  ANGLE LENGTH` (FK, Länge/Winkel dürfen `fig` lesen), optional `limit MIN:MAX` (Pose-Delta-Grenze);
+  deterministische Forward-Kinematik (`solveSkeleton`, dmath `dcosDeg`/`dsinDeg`/`datan2`, keine
+  Iteration; Parent-Delta rotiert den ganzen Subtree). **`pose NAME over SKELETON:`** — `view
+  front|side|back` (faltet `fig`) + `JOINT DELTA [z DEPTH]`-Zeilen; **Delta außerhalb `limit` =
+  positionierter Fehler** (kein stilles Clampen). **`pose NAME`** im Draw löst das Rig über Canvas+Oracle,
+  bindet jedes Joint als Bone-Anker; **`fit part.pin bone JOINT`** landet den Pin auf der gelösten
+  Joint-Position und rotiert den Part um die Pose-Winkeländerung (erbt die Bone-Orientierung; Rest-Pose
+  = reine Translation, ADR-0087-about-a-point-Maschinerie). **Auto-Z**: Bone-Tiefe wandert auf die
+  Paint-Layer, `#orderLayers` sortiert Bone-Fits nach Tiefe (tiefer=hinten), tiefenlose Layer behalten
+  ihren Slot; **explizites `behind`/`front` bleibt Override** (Prop-Cape/-Schwert). `render --explain`
+  druckt je Pose die gelösten Joints (Position/Winkel/Delta/Tiefe) + Paint-Ordnung mit `zN`-Grund; C013
+  unverändert (misst nur *deklarierte* Relationen). **4 Charaktere umgestellt**: je ein Skeleton + drei
+  Posen; die Assembly-Draws sind koordinatenfrei (`pose X` + `fit part.pin bone JOINT`). **Wizard +
+  Assassin re-rendern byte-identisch**, Knight + Archer ändern nur die Side-View (fig-abgeleitete
+  Schultern / Fern-Glieder jetzt korrekt hinter dem Torso — kleine Verbesserung); alle 4 `critique --as
+  character --strict` `pass:true`, Schwert/Bogen/Cape-Fixes erhalten (aim am Prop-Fit, Cape als
+  expliziter Override). Assassin-Back-View: „Arme hinter dem Torso" ist jetzt niedrigere Bone-Tiefe statt
+  handumgeordnetem Stamp — reine Auto-Z-Demonstration. Kontextuelle Keywords (`skeleton`/`pose`/`bone`/
+  `at`/`from`/`limit`/`over`/`view`/`z` bleiben überall sonst bindbar). tsc+biome clean, **878 Tests grün**
+  (+14 `skeleton.test.ts`: FK-Kette + Parent-Rotation deterministisch, Constraint-Fehler positioniert,
+  Bone-Fit erbt Orientierung / Rest-Pose unrotiert, Auto-Z-Paint-Ordnung folgt Tiefe, explizites
+  behind/front schlägt Auto-Z, C013 clean, 2×-Determinismus byte-gleich, Kontext-Keywords bindbar).
+  Spec (§Skeleton & pose + Grammatik), reference.md, SKILL.md (§Core-syntax + Workflow-Schritt 4),
+  character-craft.md (§6·0 kanonischer Mehr-View-Weg) synchron. **Messpunkt-2-Teil (Blind-Rebuild via
+  craft-eval + Human-Grading + Zensus) bleibt offen** — vom Orchestrator human-getriggert.
 
 ### Welle-2 emergente Punkte
+
+- **W2-4: Ein Part attacht am Joint mit dessen eigener Position + nur dem Pose-DELTA (nicht der
+  absoluten Rest-Winkel).** Ein Bone ist konzeptionell die Parent-Kante, aber der Part sitzt am Joint
+  selbst und rotiert nur um die *Änderung* der Joint-Weltorientierung. So wird der Part in der Rest-Pose
+  gezeichnet (Delta 0 → keine Rotation → reine Translation, identisch zum Pin-Fit), und Posing rotiert
+  ihn — die Skelett-Rest-Winkel landen nie in der Part-Kunst. Sauberer als „Anker am Parent-Ende" (das
+  verlangte für End-Effektoren wie Hand-Props Extra-Joints und war für Kopf/Torso unintuitiv).
+- **W2-4: Auto-Z braucht per-Part-Joints, wo zwei Parts einen Punkt teilen.** Torso und Kopf attachen
+  beide am Hals-Punkt, brauchen aber verschiedene Tiefen. Lösung: zwei Joints an derselben Koordinate
+  (`chestF`/`headF`) mit unterschiedlichem `z`. „Ein Joint pro Body-Part" ist das kanonische Muster im
+  Craft-Guide (§6·0).
+- **W2-4: Die drei Views EINES Skeletts brauchen per-View-Joints oder view-aware fig — nicht statische
+  Joint-Positionen.** Ein planares Skelett mit festen Joint-Koordinaten kann Front/Side/Back nicht
+  gleichzeitig bedienen (Profil kollabiert lateral). Zwei saubere Wege, beide genutzt: (a) `fig`-anchored
+  Joints re-viewen sich automatisch pro Pose-`view` (Schultern/Hüften kollabieren im Profil via
+  ADR-0093), (b) per-View-Joint-Sätze (Front-/Side-/Back-Namen) als getunte Punkte. Die vier Charaktere
+  nutzen überwiegend (b) für byte-nahe Optik + (a) für die Knight-Front-Schultern (Demonstration der
+  Oracle-Bindung). Die Pose evaluiert das GANZE Skelett mit ihrem View — daher gibt ein geteilter
+  `fig.shoulderL`-Joint in `pose front` die Front- und in `pose side` die Profil-Position gratis.
+- **W2-4: Auto-Z macht die Back-View-Z-Inversion strukturell.** Der Assassin-Back stampte früher den
+  Torso NACH den Armen (Arme dahinter). Jetzt sind die Arm-Joints einfach niedrigere `z` als der Torso
+  → Auto-Z malt sie hinter den Torso, ohne handumgeordneten Stamp. Der ADR-0092-behind/front-Weg bleibt
+  für dominante Props (Cape) als Override — Auto-Z ordnet den Körper, Overrides die Props.
+- **W2-4: Statement-Ordnung als Depth-Fallback hält die Konversion regressionsarm.** Wo die alte
+  Assembly bereits in korrekter Reihenfolge malte (Front/Side ohne behind/front), reproduzieren `z`-Werte
+  = Statement-Rang die Ordnung exakt → Wizard/Assassin byte-identisch. Auto-Z „gewinnt" nur, wo Tiefe ≠
+  Statement (Assassin-Back, Archer-Side Fern-Glieder hinter den Torso — dort eine kleine Verbesserung).
 
 - **W2-3a: `fig`-Getter müssen den globalen UFCS-Dispatch umgehen — sonst werden `crown`/`eye`/`ear`
   reservierte Builtins.** Ein `fig.eyeL` parst als `method`-Kind → würde per `callBuiltinOrFn('eyeL',

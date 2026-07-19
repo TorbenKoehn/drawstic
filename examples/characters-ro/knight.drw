@@ -13,6 +13,13 @@
 theme knightTheme:
   mode pixel                                    # crisp RO pixel-art; cel bands stay a tight palette
   light sun = dir 1:1 #ffe6b0 amb #2a3a5e 18%   # source up-left ⇒ up-left edge lit
+  # figure oracle (ADR-0093): the project's proportions; the skeleton's front shoulders read
+  # fig.shoulderL/R off these numbers so the rig binds to the same proportions as the figure.
+  figure:
+    heads 3.5
+    headW 22
+    shoulderW 24
+    hipW 24
   style """RO chibi knight, ~3.5 heads. Single whole-figure outline, form-following cel shading.
 Steel plate, red cape + plume, gold trim. Light up-left, shared across all views.
 Sword grip-pinned into the hand (blade up) in every view — never flipped."""
@@ -40,6 +47,55 @@ material cloth = #b23a34 cloth
 # hanging cape: `drape` profile (per-row half-tube, no turtle-shell) + `spread` for the C004 value
 # range that the retired capeHi/capeDeep `.intersect` corner patches used to supply (W2-1b).
 material capeM = capeRed cloth drape spread 230%
+
+# --- ONE skeleton for all three views (ADR-0095): every part attach point is a named joint here,
+# declared once, instead of ~6 scattered `pin`/`fit` coordinate lines per assembly draw. The front
+# shoulders bind to the figure oracle's guide points (ADR-0093 proportions); the remaining joints are
+# the character's tuned attach points. Held props (sword) keep their own grip pins + `aim`.
+skeleton knightRig:
+  # front joints (one per body part; chestF and headF share a point but take different depths)
+  hipLF at 26:84
+  hipRF at 38:84
+  chestF at 32:44
+  shLF at fig.shoulderL
+  shRF at fig.shoulderR
+  headF at 32:44
+  # side joints
+  hipFarS at 39:86
+  hipNearS at 26:86
+  chestS at 31:44
+  shS at 30:49
+  headS at 31:44
+  # back joints
+  hipLB at 26:84
+  hipRB at 38:84
+  headB at 32:44
+
+# Views are poses of that one skeleton. Each declares its view (folds the figure oracle for that
+# projection) and the per-joint auto-Z depth (higher = nearer the viewer) that resolves the body's
+# paint order automatically — no hand `behind`/`front` on the limbs.
+pose front over knightRig:
+  view front
+  hipLF 0 z 0
+  hipRF 0 z 0
+  chestF 0 z 1
+  shLF 0 z 2
+  shRF 0 z 2
+  headF 0 z 3
+
+pose side over knightRig:
+  view side
+  hipFarS 0 z 0
+  chestS 0 z 1
+  hipNearS 0 z 2
+  shS 0 z 3
+  headS 0 z 4
+
+pose back over knightRig:
+  view back
+  hipLB 0 z 0
+  hipRB 0 z 0
+  headB 0 z 2
 
 # ===================== FRONT PARTS =====================
 
@@ -135,30 +191,25 @@ draw capeEdge 10x34:
   line capeDark 4:4 5:32
 
 draw knightFront 64x128:
+  # one pose replaces every hand-placed body coordinate; auto-Z (bone depth) orders the limbs.
+  pose front
   # cape peeks behind each shoulder
   stamp capeEdge 12:44
   stamp capeEdge 42:44 flipx
-  # chainmail between the legs (fills the inter-leg gap; legs stamp over the sides)
+  # chainmail between the legs (fills the inter-leg gap; legs cover the sides)
   fill chain rect(29:88, 34:119)
-  # legs (back-to-front: legs, torso/faulds cover the tops); the `shadow` flag drops the
-  # auto contact-shadow under each foot (ADR-0094 W015 — no hand ellipse)
-  pin a.hipL 26:84
-  pin a.hipR 38:84
-  fit legFront.hip a.hipL shadow
-  fit legFront.hip a.hipR shadow
-  # torso root: stamped, then its pins seeded in canvas space (pin-seeded root — ADR-0092/0094)
-  stamp torsoFront 14:43
-  pin torsoFront.neck 32:44
-  pin torsoFront.shoulderL 20:48
-  pin torsoFront.shoulderR 44:48
-  # arms
-  fit armFront.shoulder torsoFront.shoulderL
-  fit armFront.shoulder torsoFront.shoulderR
+  # legs, torso, arms, head — each fitted to its skeleton joint; the `shadow` flag drops the auto
+  # contact-shadow under each foot (ADR-0094 W015 — no hand ellipse). Paint order is bone depth.
+  fit legFront.hip bone hipLF shadow
+  fit legFront.hip bone hipRF shadow
+  fit torsoFront.neck bone chestF
+  fit armFront.shoulder bone shLF
+  fit armFront.shoulder bone shRF
   # pauldrons over the arm/torso seams (pin-less decoration)
   stamp pauldron 12:44
   stamp pauldron 36:44 flipx
   # head
-  fit helmFront.chin torsoFront.neck
+  fit helmFront.chin bone headF
   # sword: grip in the figure's left fist (viewer right), blade up — grip-pinned, never flipped
   pin a.grip 45:70
   fit sword.grip a.grip
@@ -219,25 +270,21 @@ draw capeSide 26x64:
   line capeDark 12:30 17:54
 
 draw knightSide 64x128:
+  # same skeleton, side pose: the figure oracle folds to profile, auto-Z sorts near-over-far.
+  pose side
   # cape flows behind, from the back shoulder
   stamp capeSide 33:44
-  # seal the inter-leg slot (matches the front/back crotch fill; legs stamp over it)
+  # seal the inter-leg slot (matches the front/back crotch fill; legs cover it)
   fill chain rect(31:87, 34:119)
-  # back leg (far): grip-fitted at the same landing, neutral-grey tint for depth, pushed back
-  fit legSide.hip 39:86 tint #2b2b2b 42%
-  # front leg — `shadow` flag drops the auto contact-shadow (ADR-0094 W015)
-  pin a.hip 26:86
-  fit legSide.hip a.hip shadow
-  # torso root: stamped, then its pins seeded in canvas space (pin-seeded root)
-  stamp torsoSide 17:43
-  pin torsoSide.neck 31:44
-  pin torsoSide.shoulder 30:49
-  # near arm (forward)
-  fit armSide.shoulder torsoSide.shoulder
+  # far leg (neutral-grey depth tint) then near leg (contact shadow) — depth pushes near over far
+  fit legSide.hip bone hipFarS tint #2b2b2b 42%
+  fit legSide.hip bone hipNearS shadow
+  # torso, near arm, head
+  fit torsoSide.neck bone chestS
+  fit armSide.shoulder bone shS
   # pauldron over the shoulder seam (pin-less decoration)
   stamp pauldron 22:45
-  # head profile
-  fit helmSide.chin torsoSide.neck
+  fit helmSide.chin bone headS
   # sword: grip in the near (forward) fist; `aim` cants the blade up-forward so it lies across the
   # front of the body instead of stabbing straight up into the head (ADR-0092)
   pin a.grip 23:74
@@ -274,13 +321,14 @@ draw capeBack 50x72:
   pin top 25:1
 
 draw knightBack 64x128:
+  # same skeleton, back pose: cape dominates, so it stays an explicit prop layer (behind/front
+  # override, ADR-0095) over the auto-Z body.
+  pose back
   # chainmail + back of legs (lower legs peek below the cape)
   fill chain rect(29:88, 34:119)
   # legs — `shadow` flag drops the auto contact-shadow under each foot (ADR-0094 W015)
-  pin a.hipL 26:84
-  pin a.hipR 38:84
-  fit legFront.hip a.hipL shadow
-  fit legFront.hip a.hipR shadow
+  fit legFront.hip bone hipLB shadow
+  fit legFront.hip bone hipRB shadow
   # cape drapes over the whole back (mounted prop: fits AFTER the body, z-inverted vs front/side)
   pin a.capeTop 32:42
   fit capeBack.top a.capeTop
@@ -288,8 +336,7 @@ draw knightBack 64x128:
   stamp pauldron 12:44 front capeBack
   stamp pauldron 36:44 flipx front capeBack
   # head from behind (hair/nape, no face)
-  pin a.neck 32:44
-  fit helmBack.chin a.neck
+  fit helmBack.chin bone headB
   # sword slung on the back, blade-up in the figure's left hand — `aim` cants it out to the left so it
   # reads as carried behind the back, and `behind capeBack` tucks the grip-side edge behind the body
   # instead of floating in front of the sprite (ADR-0092)

@@ -326,7 +326,53 @@ Five rules:
 on a 56px figure, and a colour-similar neighbour hides a multi-pixel gap (visible only under
 `--silhouette`).
 
-## 6. Views — front, side, back (with declared z-order + `aim`)
+## 6. Views — front, side, back (one skeleton, three poses)
+
+### 6·0. The canonical multi-view path: a skeleton (ADR-0095)
+
+Declare the figure's attach points **once** as a `skeleton`, then make each view a `pose` of it —
+instead of three assembly draws full of hand-placed coordinates. A pose folds the figure oracle to its
+view and declares each joint's **auto-Z depth**, so the limb paint order falls out of the pose; no hand
+`behind`/`front` on the body.
+
+```drw
+skeleton rig:                          # one rig; anchored joints usually read fig guide points
+  chestF at fig.shoulder
+  headF  at fig.neck
+  shLF   at fig.shoulderL
+  shRF   at fig.shoulderR
+  hipLF  at 26:84                      # a tuned point where the oracle line doesn't suit
+  hipRF  at 38:84
+  # …side/back joints (a joint per body part; two parts sharing a point take different depths)
+
+pose front over rig:
+  view front
+  chestF 0 z 0                         # JOINT DELTA° [z DEPTH] — DELTA 0 for a static view
+  hipLF 0 z 0
+  shLF 0 z 2
+  headF 0 z 3                          # head highest → paints over the torso/arms
+
+draw figFront 64x128:
+  pose front
+  fit torsoFront.neck bone chestF      # land the pin on the joint; inherit its pose orientation
+  fit legFront.hip    bone hipLF shadow
+  fit armFront.shoulder bone shLF
+  fit helmFront.chin  bone headF
+  outline
+```
+
+- **Give each body part its own joint.** Two parts that share a point (torso + head at the neck) get
+  two joints at that point with **different depths**, so auto-Z stacks the head over the torso.
+- **Depth = view stacking.** Higher `z` = nearer the viewer = painted later. Match it to the desired
+  order; the back view's "arms behind the torso" is just a lower depth on the arm joints (no reordered
+  stamp). `render --explain` prints every joint's solved position/angle/depth and the paint order.
+- **Constraints.** `limit MIN:MAX` on a joint (mostly for FK/animatable limbs) makes an over-bent pose
+  a positioned error, not a silent clamp.
+- **Held props stay props.** A sword/bow/staff keeps its own `grip` fit + `aim` (§6a); a dominating
+  cape stays an explicit `behind`/`front` layer (§6b) — auto-Z orders the body, overrides handle props.
+
+The rest of §6 is the detail this path builds on: what to redraw per view (§6a), the back-view rules
+and explicit prop z-order (§6b). See `examples/characters-ro/*.drw` for four full skeleton rigs.
 
 ### 6a. Front vs. side — a different pose, not a mirror
 
@@ -358,10 +404,11 @@ Back gets its own composer. Four rules:
 head draws hair/nape/collar — never eyes/brows/mouth (build it from the same `dome`/`crescent` skull,
 minus the face marks). A limb posed *toward the viewer* redraws relaxed.
 
-**(b) Declare z-order with `behind`/`front`, don't rely on fit order (ADR-0092).** A part's layer is a
-trailing `behind <part>` / `front <part>` clause on its `stamp`/`fit`, so intent is explicit and
-`critique`'s **C013** verifies it. Front/side hide a prop behind the torso; back mounts a cape *over*
-the figure and tucks the held prop *behind* it:
+**(b) Auto-Z orders the body; `behind`/`front` is the override for props (ADR-0095/0092).** The pose's
+per-joint depth already stacks the limbs (§6·0) — reach for an explicit trailing `behind <part>` /
+`front <part>` clause on a `stamp`/`fit` only for a **prop** that doesn't ride a bone (a dominating
+cape, a slung sword). It always wins over auto-Z, and `critique`'s **C013** verifies it. Front/side
+hide a prop behind the torso; back mounts a cape *over* the figure and tucks the held prop *behind* it:
 
 ```drw
 draw figureBack 64x128:

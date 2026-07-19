@@ -2,7 +2,7 @@
 // (ADR-0044), regions (ADR-0036/0039), and rendered sprites.
 
 import type { Color } from './color.js'
-import { dcosDeg, dhypot, dsinDeg, roundHalfUp } from './dmath.js'
+import { datan2, dcosDeg, dhypot, dsinDeg, PI, roundHalfUp } from './dmath.js'
 
 /**
  * A 2D point. `rel` marks a point built with the `rel` keyword inside a `path` pen block — an
@@ -208,6 +208,8 @@ export type Value =
   | Light
   | Material
   | Figure
+  | Skeleton
+  | Pose
 
 export const point = (x: number, y: number, rel = false): Point => ({ type: 'point', x, y, rel })
 export const list = (items: Value[]): List => ({ type: 'list', items })
@@ -454,6 +456,132 @@ export const figureField = (fig: Figure, name: string): FigureField | undefined 
     default:
       return undefined
   }
+}
+
+// ── skeleton / pose (ADR-0095) ──────────────────────────────────────────────
+
+/**
+ * One joint of a {@link Skeleton} rig (ADR-0095): a node in the parent-tree. A joint is either
+ * **anchored** (`anchor` set — its position is a fixed point, typically a `fig` guide point, so the
+ * rig binds to the same proportion numbers as the figure oracle, ADR-0093) or **FK** (`anchor` null —
+ * its position is derived by forward kinematics from `restAngle` + `length` off its parent). `limit`
+ * bounds the pose delta this joint may take (degrees); `null` = unconstrained.
+ */
+export type SkeletonJoint = {
+  readonly name: string
+  readonly parent: string | null
+  readonly anchor: { readonly x: number; readonly y: number } | null
+  readonly restAngle: number
+  readonly length: number
+  readonly limit: { readonly min: number; readonly max: number } | null
+}
+
+/**
+ * A skeleton rig (ADR-0095): a named parent-tree of {@link SkeletonJoint}s (parents precede children).
+ * A first-class value, resolved over a drawing's canvas + figure oracle when a `pose` is applied.
+ */
+export type Skeleton = {
+  type: 'skeleton'
+  readonly name: string
+  readonly joints: readonly SkeletonJoint[]
+}
+
+/**
+ * A pose over a skeleton (ADR-0095): per-joint angle **deltas** (added to each joint's rest angle),
+ * the `view` it projects, and per-joint auto-Z **depth** (higher = nearer the viewer). A first-class
+ * value; applied in a drawing with `pose NAME`, which solves the skeleton and binds bone anchors.
+ */
+export type Pose = {
+  type: 'pose'
+  readonly name: string
+  readonly skeleton: string
+  readonly view: FigureView
+  readonly deltas: ReadonlyMap<string, number>
+  readonly depth: ReadonlyMap<string, number>
+}
+
+/**
+ * A joint after forward kinematics (ADR-0095): its posed world position, the world angle in both the
+ * rest and posed configurations, and the accumulated `angleDelta` (posed − rest) a part fitted to the
+ * bone inherits as its orientation. `depth` is the joint's view depth (auto-Z ordering key).
+ */
+export type SolvedJoint = {
+  readonly name: string
+  readonly parent: string | null
+  readonly x: number
+  readonly y: number
+  readonly px: number
+  readonly py: number
+  readonly worldAngle: number
+  readonly restWorldAngle: number
+  readonly angleDelta: number
+  readonly depth: number
+}
+
+/**
+ * Solve a {@link Skeleton} into world-space {@link SolvedJoint}s (ADR-0095), pure and deterministic
+ * (dmath only). Walks the joints in declared order (parents first): an **anchored** joint sits at its
+ * fixed point and its bone direction is measured from its parent; an **FK** joint is placed at
+ * `parent + length·(cos, sin)` of the accumulated world angle. Pose deltas add to each joint's local
+ * angle, so a delta on a parent rotates the whole subtree (proper forward kinematics). A part fitted
+ * to a joint inherits its posed position and its `angleDelta`.
+ */
+export const solveSkeleton = (
+  skel: Skeleton,
+  deltas: ReadonlyMap<string, number>,
+  depth: ReadonlyMap<string, number>,
+): SolvedJoint[] => {
+  const solved = new Map<string, SolvedJoint>()
+  const out: SolvedJoint[] = []
+  for (const j of skel.joints) {
+    const delta = deltas.get(j.name) ?? 0
+    const parent = j.parent !== null ? solved.get(j.parent) : undefined
+    let x: number
+    let y: number
+    let px: number
+    let py: number
+    let restWorldAngle: number
+    let worldAngle: number
+    if (j.anchor) {
+      x = j.anchor.x
+      y = j.anchor.y
+      px = parent ? parent.x : x
+      py = parent ? parent.y : y
+      // The bone direction of an anchored joint is measured from its parent (0 for a parentless root).
+      restWorldAngle = parent ? (datan2(y - py, x - px) * 180) / PI : 0
+      worldAngle = restWorldAngle + delta
+    } else if (parent) {
+      px = parent.x
+      py = parent.y
+      restWorldAngle = parent.restWorldAngle + j.restAngle
+      worldAngle = parent.worldAngle + j.restAngle + delta
+      x = px + j.length * dcosDeg(worldAngle)
+      y = py + j.length * dsinDeg(worldAngle)
+    } else {
+      // FK root with no anchor: sits at the origin, its rest angle is its world base.
+      x = 0
+      y = 0
+      px = 0
+      py = 0
+      restWorldAngle = j.restAngle
+      worldAngle = j.restAngle + delta
+    }
+    const sj: SolvedJoint = {
+      name: j.name,
+      parent: j.parent,
+      x,
+      y,
+      px,
+      py,
+      worldAngle,
+      restWorldAngle,
+      angleDelta: worldAngle - restWorldAngle,
+      depth: depth.get(j.name) ?? 0,
+    }
+    solved.set(j.name, sj)
+    out.push(sj)
+  }
+  return out
 }
 
 export const isObj = (v: Value): v is Exclude<Value, number | boolean | string> =>

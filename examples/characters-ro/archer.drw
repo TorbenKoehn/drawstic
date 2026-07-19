@@ -50,6 +50,57 @@ theme archerTheme:
 
 use archerTheme
 
+# --- ONE skeleton for all three views (ADR-0095): every body attach point is a named joint, declared
+# once. Views are poses of it; each pose's per-joint depth resolves the limb paint order via auto-Z,
+# replacing the hand-chained fit order. Held props (bow) keep their own grip fit + `aim`; the quiver
+# stays a decoration stamp. Joint coordinates are the character's tuned attach points.
+skeleton archerRig:
+  chestF at 32:37
+  headF at 32:37
+  shLF at 21:38
+  shRF at 43:38
+  hipLF at 23:72
+  hipRF at 41:72
+  chestS at 32:37
+  headS at 32:37
+  shNearS at 38:38
+  shFarS at 26:39
+  hipNearS at 37:72
+  hipFarS at 27:72
+  napeB at 32:37
+  headB at 32:37
+  shLB at 21:38
+  shRB at 43:38
+  hipLB at 23:72
+  hipRB at 41:72
+
+pose front over archerRig:
+  view front
+  chestF 0 z 0
+  headF 0 z 1
+  shLF 0 z 2
+  shRF 0 z 3
+  hipLF 0 z 4
+  hipRF 0 z 5
+
+pose side over archerRig:
+  view side
+  chestS 0 z 1
+  headS 0 z 5
+  shFarS 0 z 0
+  hipFarS 0 z 0
+  hipNearS 0 z 2
+  shNearS 0 z 3
+
+pose back over archerRig:
+  view back
+  napeB 0 z 0
+  headB 0 z 1
+  shLB 0 z 2
+  shRB 0 z 3
+  hipLB 0 z 4
+  hipRB 0 z 5
+
 # ============================= HEAD (front) =============================
 draw headFront 28x34:
   skull = ellipse(14:17, 9:10)
@@ -160,13 +211,14 @@ draw quiver 20x40:
 
 # ============================= FRONT VIEW =============================
 draw archerFront 64x128:
+  pose front                               # one pose; auto-Z (bone depth) orders the limbs
   stamp quiver (cx + 2):(shoulderY - 14)   # mostly hidden behind the torso; fletching peeks over the shoulder
-  fit torsoFront.neck cx:(shoulderY - 1)   # root part: ground-oracle fit registers every torso pin at once
-  fit headFront.chin torsoFront.neck
-  fit armBent.shoulder torsoFront.shoulderL
-  fit armRelaxed.shoulder torsoFront.shoulderR
-  fit legL.hip torsoFront.hipL
-  fit legR.hip torsoFront.hipR
+  fit torsoFront.neck bone chestF          # root part: its pins register for the bow chain
+  fit headFront.chin bone headF
+  fit armBent.shoulder bone shLF
+  fit armRelaxed.shoulder bone shRF
+  fit legL.hip bone hipLF
+  fit legR.hip bone hipRF
   fit bow.grip armBent.hand
   outline
 
@@ -230,13 +282,14 @@ draw armSideFar 10x34:                  # trailing arm, tucked behind the torso
 
 # ============================= SIDE VIEW =============================
 draw archerSide 64x128:
+  pose side                                # figure oracle folds to profile; auto-Z sorts near over far
   stamp quiver 12:34                       # slung on the back, sticking out past the torso's rear edge
-  fit torsoSide.neck cx:(shoulderY - 1)    # root part: ground-oracle fit registers every torso pin at once
-  fit headSide.chin torsoSide.neck
-  fit armSideFar.shoulder torsoSide.shoulderFar
-  fit legL.hip torsoSide.hipFar
-  fit legR.hip torsoSide.hipNear
-  fit armSideNear.shoulder torsoSide.shoulderNear
+  fit torsoSide.neck bone chestS           # root part: its pins register for the bow chain
+  fit headSide.chin bone headS
+  fit armSideFar.shoulder bone shFarS
+  fit legL.hip bone hipFarS
+  fit legR.hip bone hipNearS
+  fit armSideNear.shoulder bone shNearS
   # bow held forward in the leading hand: `aim` cants the upper limb up-and-forward (ADR-0092)
   fit bow.grip armSideNear.hand aim tip 4:2
   outline
@@ -274,12 +327,13 @@ draw torsoBack 34x42:
 
 # ============================= BACK VIEW =============================
 draw archerBack 64x128:
-  fit torsoBack.nape cx:(shoulderY - 1)    # root part: ground-oracle fit (expected W010 — nothing precedes it)
-  fit headBack.nape torsoBack.nape
-  fit armRelaxed.shoulder torsoBack.shoulderL
-  fit armBent.shoulder torsoBack.shoulderR
-  fit legL.hip torsoBack.hipL
-  fit legR.hip torsoBack.hipR
+  pose back
+  fit torsoBack.nape bone napeB            # root part: its pins register for the bow chain
+  fit headBack.nape bone headB
+  fit armRelaxed.shoulder bone shLB
+  fit armBent.shoulder bone shRB
+  fit legL.hip bone hipLB
+  fit legR.hip bone hipRB
   # bow held out to the figure's right: `aim` cants the upper limb up-and-out so it no longer runs
   # straight down the back leg, and `behind torsoBack` tucks its inner half behind the body (ADR-0092)
   fit bow.grip armBent.hand aim tip 48:60 behind torsoBack

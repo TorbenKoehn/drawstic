@@ -745,6 +745,74 @@ fit bow.grip a.grip aim tip 60:20            # rotate about the grip until `tip`
 names anywhere else. `fit` is at its core a `stamp` with a pin-derived offset, so alpha/palette
 semantics are identical.
 
+### Skeleton & pose ([ADR-0095](decisions/0095-skeleton-and-pose.md))
+
+A **skeleton** is a named rig — one parent-tree of joints — that a figure's three views are *poses*
+of, instead of three hand-placed assemblies. Declared once at module scope:
+
+```drw
+skeleton body:
+  pelvis at fig.hip                # anchored joint: position from a point (a fig guide point)
+  chest  at fig.shoulder
+  neck   at fig.neck
+  shoulderL at fig.shoulderL
+  hipL   at fig.hipL
+  armL   from shoulderL 90 20 limit -60:120   # FK joint: parent, local rest angle, bone length
+```
+
+- A joint is **anchored** (`NAME at POINT` — its position is a point, typically a `fig` guide point
+  so the rig binds to the figure oracle's proportions, §12) or **forward-kinematic** (`NAME from
+  PARENT ANGLE LENGTH` — placed off its parent by a local rest angle and a bone length; both may read
+  `fig` values). Joints are declared parents-first.
+- `limit MIN:MAX` (either form, optional) bounds the pose delta the joint may take (degrees).
+- Forward kinematics is deterministic (dmath, no iteration): a joint's world angle is its parent's
+  plus its local rest angle plus its pose delta, so a delta on a parent rotates the whole subtree.
+
+A **pose** is an angle set over a skeleton (module scope):
+
+```drw
+pose front over body:
+  view front               # folds the figure oracle to this projection
+  chest 0 z 1              # JOINT DELTA [z DEPTH]: add DELTA° to the rest angle; DEPTH is auto-Z
+  shoulderL 0 z 2
+  hipL 0 z 0
+```
+
+- `view front|side|back` folds `fig` to that projection (shoulders/hips collapse in profile, §12).
+- Each `JOINT DELTA [z Z]` adds `DELTA` degrees to the joint's rest angle. A delta **outside the
+  joint's `limit` is a positioned error** — an unreachable pose is a red diagnostic, never a silent
+  clamp. `z Z` declares the joint's view depth (higher = nearer the viewer).
+
+A drawing applies a pose and fits parts to bones:
+
+```drw
+draw front 64x128:
+  pose front                       # solves the rig over this canvas + figure oracle
+  fit torso.neck bone chest        # land the pin on joint `chest`, inherit its pose orientation
+  fit legL.hip  bone hipL shadow
+  fit head.chin bone neck
+```
+
+- `pose NAME` solves the named pose's skeleton over the drawing's own `w`×`h` + figure oracle, then
+  binds every joint as a bone anchor. A view/stance is one `pose`.
+- `fit part.pin bone JOINT` lands `part`'s named pin on joint `JOINT`'s solved position and rotates
+  the part by the joint's **pose-angle change** about that pin (the same about-a-point machinery as
+  `aim`), so the part inherits the bone's orientation from the active pose. At the rest pose (delta 0)
+  it is a plain translation, identical to a pin fit — a part is authored in the rest pose and posing
+  rotates it. `bone` is a keyword only in this fit-source slot.
+- **Auto-Z.** A bone fit carries its joint's view depth onto its placement layer; in the resolved
+  paint order (§9 anchored assembly) depth orders the bone-fitted layers automatically — deeper
+  paints first (behind), nearer last (front) — so the per-view occlusion falls out of the pose. A
+  layer with no bone depth keeps its sequence slot. **Explicit `behind`/`front` always wins** — manual
+  occlusion is the override, auto-Z orders only what the author left unstated.
+- **Verified.** `render --explain` prints each applied pose's joints (solved world position, world
+  angle, pose-angle delta, depth) and the resolved paint order with each bone-fit's `zN` reason. C013
+  occlusion parity is unchanged — it measures only *declared* `behind`/`front` relations.
+
+`skeleton`/`pose`/`bone` and the block keywords `at`/`from`/`limit`/`over`/`view`/`z` are contextual
+(D7) — bindable as ordinary names everywhere else. A pose is an interpolable set of joint deltas over
+a fixed skeleton (the data model for later animation).
+
 **Alpha compositing.** The framebuffer is straight-alpha **RGBA8**; painting composites
 **source-over** with a fixed round-half-up rule, in integer math (deterministic). `stamp`
 honours the source's **alpha** (not 1-bit); fully transparent pixels are skipped. Pixel mode
@@ -1949,6 +2017,7 @@ top-stmt       = from-stmt | use-stmt | size-dir | seed-dir | font-dir
                | binding | definition ;
 definition     = draw-def | path-def | theme-def | fn-def | grad-def | filter-def | mask-def
                | light-def | material-def                              (* §12, ADR-0086 *)
+               | skeleton-def | pose-def                               (* §9, ADR-0095 *)
                | font-def | image-import | tileset-def | atlas-def | export-def ;
 
 from-stmt      = "from" MODULE-PATH import-item { "," import-item } NL ;  (* source-first (§2) *)
@@ -1974,6 +2043,15 @@ light-def      = "light" NAME "=" ( "dir" | "at" ) point paint          (* Light
                  [ "amb" paint expr ] [ "gain" expr ] NL ;              (* dir/at/amb/gain: contextual (D7) *)
 material-def   = "material" NAME "=" paint [ RESPONSE ] NL ;            (* Material value (§12, ADR-0086) *)
 RESPONSE       = "flat" | "metal" | "skin" | "cloth" | "glass" | "glow" ; (* contextual keyword (D7) *)
+skeleton-def   = "skeleton" NAME ":" NL                                 (* rig (§9, ADR-0095) *)
+                 INDENT skel-joint NL { skel-joint NL } DEDENT ;
+skel-joint     = NAME ( "at" point                                     (* anchored joint *)
+                      | "from" NAME expr expr )                        (* FK: parent, angle, length *)
+                 [ "limit" point ] ;                                   (* MIN:MAX pose-delta bound *)
+pose-def       = "pose" NAME "over" NAME ":" NL                        (* pose (§9, ADR-0095) *)
+                 INDENT { pose-line NL } DEDENT ;
+pose-line      = "view" ( "front" | "side" | "back" )                  (* projection (folds fig) *)
+               | NAME expr [ "z" expr ] ;                              (* JOINT DELTA [z DEPTH] *)
 image-import   = "import" NAME "=" FILE-PATH [ "sha256" HEX ] NL ;  (* PNG → drawing (§2) *)
 filter-def     = "filter" NAME ":" NL
                  INDENT filter-cmd NL { filter-cmd NL } DEDENT ;    (* pipeline (§12) *)
@@ -1996,7 +2074,9 @@ draw-stmt      = pal-stmt | pixels-block | meta-stmt
                | seed-dir | font-dir                (* drawing-scoped directives (§8, §10) *)
                | grad-def | filter-def | mask-def   (* drawing-local overrides (§9, §12) *)
                | light-def | material-def           (* drawing-local light/material (§12, ADR-0086) *)
+               | pose-apply                          (* apply a pose (§9, ADR-0095) *)
                | binding | control-stmt | mask-block | call-stmt ;
+pose-apply     = "pose" NAME NL ;                    (* solves the pose's rig for this drawing *)
 
 meta-stmt      = ( "title" | "desc" ) STRING NL ;   (* SVG metadata (§6, §13) *)
 mask-block     = "mask" expr ":" block ;            (* expr must evaluate to a Region (§9) *)
