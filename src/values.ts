@@ -103,6 +103,24 @@ export type Sprite = {
    * image imports, tilesets, and atlases carry none.
    */
   pins?: ReadonlyMap<string, { readonly x: number; readonly y: number }>
+  /**
+   * The measured result of each declared `behind`/`front` occlusion relation (ADR-0092), captured
+   * during two-phase assembly for `critique`'s C013 occlusion-parity check. `behind`/`front` name the
+   * two parts (behind = the part meant to be under, front = the occluder); `overlap` is how many
+   * pixels their coverages share; `violating` is how many of those the behind-part is still the
+   * visible top of in the final composite (0 ⇒ the declared occlusion holds). `undefined`/empty for a
+   * drawing with no relations.
+   */
+  occlusions?: readonly OcclusionResult[]
+}
+
+/** One measured occlusion relation (ADR-0092, C013 support). See {@link Sprite.occlusions}. */
+export type OcclusionResult = {
+  readonly behind: string
+  readonly front: string
+  readonly clause: 'behind' | 'front'
+  readonly overlap: number
+  readonly violating: number
 }
 
 /**

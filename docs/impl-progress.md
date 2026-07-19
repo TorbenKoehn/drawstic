@@ -41,6 +41,28 @@ Archer 4/10, Wizard 4/10, Assassin 3/10. Ziel Messpunkt 2: ≥7/10 + Zensus-Krit
   occlusion-parity, `--explain` Paint-Ordnung+Winkel. Diät: `repeat`/`while`/`flood`/`lit:`-Block
   entfernen, `replace` vs `recolor` auf einen konsolidieren; betroffene Repo-Recipes umschreiben;
   W012–W015-Lints + kanonische Wege; Konstrukt-Zensus in critique/check-JSON.
+  - [x] **W2-2a Okklusion/aim** ([ADR-0092](decisions/0092-occlusion-relations-and-aim.md)): **zweiphasige
+    Assembly** (`#execAssemblyBody` in eval.ts) — top-level `stamp`/`fit` rendern in private Layer, jedes
+    andere Statement (`fill`/`px`/`line`/Blöcke/`outline`) ist eine Ordnungs-**Barriere**, die die
+    Pending-Layer flusht (topologisch sortiert) und dann live malt; Pin-/Origin-Bookkeeping läuft weiter in
+    Statement-Ordnung (chained fits intakt), nur das Compositing wird umgeordnet. **`behind`/`front <part>`**-
+    Trailing-Klauseln auf `stamp` UND `fit` (kontextuell; Ziel = zuvor platzierter Part-Name); **minimal-
+    disruption stabiler Topo-Sort** (top-down, höchster Statement-Index dessen Nachfolger alle platziert →
+    ein einzelnes `behind` bewegt nur seinen Subjekt-Layer, Ties = Statement-Ordnung); Zyklus = positionierter
+    **E025**, unplatziertes Ziel = positionierter Fehler. **`aim PIN PT`** auf `fit` (`#solveAim`): Rotation um
+    den Fit-Pin (beliebiger Winkel, `datan2` → `rotationDeg`/`aboutPoint`, Pins reiten mit) bis der zweite
+    Pin auf PT zeigt. **C013 occlusion-parity** in critique (Per-Pixel-Owner-Tracking im Flush + Barrier-
+    Sentinel via Alpha-Diff; misst je Relation Overlap ∩ sichtbare Behind-Top-Pixel; `violating>0` → warning,
+    deklarativ → in `STRICT_MUST_FIX`); `Sprite.occlusions`/`OcclusionResult` tragen die Messung zum Sprite.
+    **`render --explain`** druckt Paint-Ordnung (bottom→top + Grund), gelösten `aim N°`, Overlap/Violation je
+    Relation. **Smoke-Edits** an knight+archer: Knight-Back-Schwert `aim … behind capeBack`, Side-Schwert
+    `aim` nach vorn (nicht mehr im Kopf), Pauldrons `front capeBack`; Archer-Bogen je View `aim` (Back auch
+    `behind torsoBack`) + `tip`-Pin + Bogen-Limb w3→w4 (Rotations-Pinhole). Neu gebaut, Sheets visuell
+    verifiziert (Schwert Back/Side, Bogen je View sichtbar behoben); alle 4 `critique --as character --strict`
+    `pass:true`. tsc+biome clean, **841 Tests grün** (+14: Topo-Ordnung/minimal-disruption via paintOrder,
+    E025-Zyklus, unplatziertes Ziel, aim-Winkel exakt (up→right=90°, 0°), unknown aim-Pin, C013 clean/fires+
+    strict-Promotion, Inline-Paint-Sequenz stabil, behind/front bindbar außerhalb, Determinismus byte-gleich).
+    **W2-2b Sprach-Diät bleibt offen → W2-2-Checkbox erst danach.**
 - [ ] **W2-3 Organik-Hybrid + Skill-Neustruktur** (ADR-0093): dome/lobe/crescent/band-Konstruktoren;
   Proportions-Oracle (`figure`-Block im Theme → Guide-Punkte/Pins je View); Archetyp-Scaffolds im
   Craft-Guide (KEIN std/chibi — Stil bleibt beim Projekt); `quantize(pal)`-Filter +
@@ -86,6 +108,33 @@ Archer 4/10, Wizard 4/10, Assassin 3/10. Ziel Messpunkt 2: ≥7/10 + Zensus-Krit
   p90 des Hut-Draws; es zu `model`n dunkelt seine Schattenseite → C004 fällt. Lösung: nur die *großen* Trim-
   Flächen (Robe-Sash/Saum/Manschette) modellieren (dort ist Form sichtbar + genug Fläche), kleine Bright-Akzente
   (Hut-Band, Stern-Gem) flach lassen; Trim-Material bekommt eigenes `spread`.
+- **W2-2a: Origin/Pin-Berechnung und Paint-Ordnung entkoppeln — nur so bleibt die Zweiphasigkeit korrekt.** Ein
+  `fit` liest die von früheren `fit`s registrierten Pins; die Datenabhängigkeit erzwingt **Statement-Ordnung**
+  für Pins/Origin/Transform. Nur das **Compositing** wird umgeordnet. Lösung: jede Platzierung rendert in einen
+  eigenen Layer (Statement-Ordnung), der Flush komponiert topologisch. Pin-Registry, `pendingFits` (W010),
+  W011, `placements` laufen unverändert zur Fit-Zeit.
+- **W2-2a: Naiver Topo-Sort (Kahn, kleinster Index) verwirft die Minimal-Disruption.** Eine einzelne
+  `sword behind cape`-Kante zog mit Kahn-kleinster-Index das *Cape* nach ganz oben (Pauldrons/Helm landeten
+  darunter) statt den Sword nach unten. Korrekt ist **Reverse-Kahn top-down mit größtem Statement-Index**: baue
+  die Ordnung von oben, gib jeweils den höchsten Layer aus, dessen Paint-nach-Nachfolger alle platziert sind →
+  unbeteiligte Parts behalten ihren Slot, ein `behind` bewegt nur seinen Subjekt-Layer. Test-gepinnt via
+  `paintOrder`.
+- **W2-2a: Inline-Paints müssen den laufenden Composite sehen (Filter-Fall) → sie sind harte Barrieren.** Ein
+  whole-figure `outline` liest den Composite; würde er in einen eigenen leeren Layer rendern, käme nichts
+  heraus. Gewählte kleinste saubere Semantik: jedes Nicht-Platzierungs-Statement flusht die Pending-Layer und
+  malt live. Preis: `behind`/`front` können nur *innerhalb* eines barriere-begrenzten Segments umordnen; ein Ziel
+  jenseits einer Inline-Paint-Barriere kann nicht darunter — **C013 macht genau diesen unerfüllbaren Fall im
+  Composite sichtbar** (statt still falsch), was C013 echte Must-fix-Zähne gibt (Test: Fill-Barriere zwischen
+  zwei Platzierungen → `violating>0`).
+- **W2-2a: NN-Rotation einer dünnen gekrümmten Strichform öffnet winkelabhängig ein 1px-Pinhole (C008).** Der
+  Archer-Bogen (`curve wood … w3` + `line string w1`) pinholte nach `aim`-Rotation bei fast jedem Winkel; der
+  Knight-Back-Sword nur bei manchen. Fix ist Authoring, nicht Engine: Bogen-Limb w3→w4 (robuster gegen NN) und
+  einen sauberen Aim-Winkel wählen (Sweep gegen C008/C003). Dokumentiert im Craft-Guide (aim-Bullet §5).
+- **W2-2a: `stamp` behind/front kontextuell nur beim `stamp`-Callee.** `behind`/`front` global in
+  `KW_ARG_ARITY` aufzunehmen hätte sie überall reserviert (Diät-Risiko). Gelöst: in `#parseCallStmt` nur für
+  `callee==='stamp'` als Keyword-Arg (arity 1) erkannt; `#execStamp` strippt sie via `stampRelations` (no-op
+  in Blöcken), die Zweiphasen-Schleife liest sie fürs Top-Level. Test: `behind`/`front` bleiben außerhalb
+  bindbar.
 
 
 Single Source of Truth für den autonomen Nacht-Dispatch. Spec-Quelle: der freigegebene Plan

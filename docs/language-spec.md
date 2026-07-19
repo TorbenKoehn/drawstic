@@ -709,6 +709,36 @@ draw knight 32x48:
   Mirror the prop *deliberately* only when the view needs it (`fit sword.grip hand.grip flipx` mirrors
   horizontally, keeping the blade up) — never let a figure-wide flip invert it.
 
+#### Occlusion relations & aim ([ADR-0092](decisions/0092-occlusion-relations-and-aim.md))
+
+Assembly is **two-phase**: top-level `stamp`/`fit` placements render into private layers and composite
+in a resolved order; every other statement (`fill`, `px`, `line`, blocks, `outline`, …) is an ordering
+**barrier** that flushes the pending layers, then paints live in sequence. So inline paints keep their
+exact slot and a whole-figure `outline` still closes over the full composite, while placements can be
+re-layered declaratively — no `z` numbers, no view-specific hacks.
+
+```drw
+fit sword.grip a.grip behind capeBack       # sword layered BELOW the cape
+stamp pauldron 12:44 front capeBack          # pauldron layered ABOVE the cape
+fit bow.grip a.grip aim tip 60:20            # rotate about the grip until `tip` points at 60:20
+```
+
+- **`behind TARGET` / `front TARGET`** — trailing clauses on `stamp` **and** `fit`. `TARGET` is a bare
+  part-name placed earlier in the same body. `behind` layers the subject below `TARGET`, `front` above
+  it. Both may repeat. Ordering is a **minimal-disruption** stable sort — an unconstrained part keeps
+  its statement slot and a lone `behind` moves only its own subject; ties break by statement order.
+  A relation whose target sits on the far side of an intervening barrier can't be reordered across it.
+  A conflicting pair (`behind X front X`) is a positioned **E025** cycle; an unplaced target is a
+  positioned error. `behind`/`front` are ordinary bindable names everywhere except this trailing slot.
+- **`aim PIN PT`** — a trailing clause on `fit`. Rotates the part about its fit pin (any angle) until
+  the second named pin `PIN` points from the contact point toward the canvas point `PT`. The pins ride
+  the rotation, so the fit pin still lands exactly on its target. A 1-bone orientation solve — orient a
+  bow/sword per view without a bespoke redraw. An unknown `PIN` is a positioned error.
+- **Verified.** `critique`'s **C013 occlusion parity** measures each declared relation in the final
+  composite: how many of the overlap pixels the behind-part is still the visible top of (`> 0` fires,
+  and is a `--strict` must-fix). `render --explain` prints the resolved bottom-to-top paint order with
+  each layer's reason, every `fit`'s solved `aim N°`, and each relation's overlap/violation counts.
+
 `pin` and `fit` are keywords **only** in these statement positions (D7) — bindable as ordinary
 names anywhere else. `fit` is at its core a `stamp` with a pin-derived offset, so alpha/palette
 semantics are identical.
@@ -1709,7 +1739,9 @@ finding a structured diagnostic in a new **`C0xx`** namespace carrying `{measure
 
 - **Category-agnostic (always run):** `C001` empty/near-empty · `C003` optical centring (`x0+x1==W−1`)
   · `C004` value/contrast spread · `C006` palette/complexity budget · `C008` interior pinholes ·
-  `C012` asymmetric bottom-padding.
+  `C012` asymmetric bottom-padding · `C013` occlusion parity — a declared `behind`/`front` relation
+  whose behind-part is still the visible top of the overlap zone ([ADR-0092](decisions/0092-occlusion-relations-and-aim.md);
+  declarative + high-confidence, so also a `--strict` must-fix).
 - **Profile-gated (`--as`):** `C002` edge-clip (`icon`/`item`) · `C005` stroke width (`icon`/`item`/
   `character`) · `C007` floating-part/seam via 8-connected components + chamfer distance (`character`).
 - **Family (needs ≥2 exported siblings, or `--family a,b,c`):** `C009` sibling-silhouette collapse

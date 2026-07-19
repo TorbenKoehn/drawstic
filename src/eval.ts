@@ -123,6 +123,7 @@ import {
   type Material,
   material,
   multiplyMatrix,
+  type OcclusionResult,
   type Path,
   type PathContour,
   type PathPoint,
@@ -547,6 +548,70 @@ const isStampAnchor = (value: string | null): value is StampAnchor =>
 const LOOSE_PIN_MAX = 2
 
 /**
+ * The alpha (0–255) at which a pixel is considered opaquely "owned" by the layer that painted it,
+ * for two-phase occlusion ownership + coverage (ADR-0092). Mirrors the 50 % silhouette floor
+ * (`OUTLINE_ALPHA_MIN`): a soft contact shadow or AA fringe never claims ownership of a pixel.
+ */
+const OCCLUSION_ALPHA_MIN = 128
+
+/** Owner-map sentinel for a pixel last painted by an inline (barrier) statement, not a placement layer. */
+const SENTINEL_INLINE = -2
+
+/**
+ * One deferred placement in a two-phase assembly (ADR-0092): its stable `id`, the part `name` used as
+ * a `behind`/`front` target, the transparent `buffer` it painted into, its opaque `cover` pixel set
+ * (packed `y*w+x`), the resolved same-segment layers it must paint `behind`/in `front` of, and a human
+ * `reason` for `--explain`.
+ */
+type PaintLayer = {
+  readonly id: number
+  readonly name: string
+  readonly buffer: Framebuffer
+  readonly cover: Set<number>
+  readonly behind: PaintLayer[]
+  readonly front: PaintLayer[]
+  readonly reason: string
+  readonly span: TextSpan
+}
+
+/** The packed (`y*w+x`) pixels of a layer buffer at or above `minAlpha` — its opaque coverage. */
+const coverPixels = (fb: Framebuffer, minAlpha: number): Set<number> => {
+  const set = new Set<number>()
+  const n = fb.width * fb.height
+  for (let i = 0; i < n; i++) {
+    if ((fb.data[i * 4 + 3] ?? 0) >= minAlpha) {
+      set.add(i)
+    }
+  }
+  return set
+}
+
+/**
+ * Split a `stamp` call's args into its occlusion relations (`behind`/`front` keyword args, ADR-0092)
+ * and the remaining stamp args. The target of each relation is the bare part-name token the parser
+ * stored as a single name expression.
+ */
+const stampRelations = (
+  stmt: Extract<Statement, { readonly kind: 'call' }>,
+): { readonly behind: string[]; readonly front: string[]; readonly args: Argument[] } => {
+  const behind: string[] = []
+  const front: string[] = []
+  const args: Argument[] = []
+  for (const a of stmt.args) {
+    if (a.kind === 'keyword' && (a.keyword === 'behind' || a.keyword === 'front')) {
+      const part = a.parts[0]
+      const target = part?.kind === 'name' ? part.name : undefined
+      if (target) {
+        ;(a.keyword === 'behind' ? behind : front).push(target)
+        continue
+      }
+    }
+    args.push(a)
+  }
+  return { behind, front, args }
+}
+
+/**
  * Ambient evaluation context threaded through every eval/exec call: which
  * module's scope errors report against, the shared budget, the enclosing
  * drawing (`null` outside a drawing body — e.g. module-level bindings or
@@ -854,6 +919,19 @@ export type PlacementRecord = {
   readonly coincident: boolean
   readonly pinToInk: number
   readonly transformed: boolean
+  /** The solved `aim` rotation in degrees (ADR-0092), when the fit carried an `aim PIN PT` clause. */
+  readonly aimDeg?: number
+}
+
+/**
+ * The resolved paint order of one two-phase assembly (ADR-0092) for `render --explain`: `drawing`
+ * names the assembly, `order` lists every top-level `stamp`/`fit` bottom-to-top with the reason it
+ * sits there (`sequence`, `behind X`, `front X`, or a cross-segment note). Recorded only for a body
+ * that declared at least one `behind`/`front` relation.
+ */
+export type PaintOrderRecord = {
+  readonly drawing: string
+  readonly order: readonly { readonly name: string; readonly reason: string }[]
 }
 
 const round3 = (v: number): number => Math.round(v * 1000) / 1000
@@ -965,6 +1043,13 @@ export class Engine {
    * run; the sprite cache means a given draw's `fit`s warn once.
    */
   readonly warnings: Diagnostic[] = []
+
+  /**
+   * When non-null, every two-phase assembly body that declares a `behind`/`front` relation appends
+   * its resolved paint order here (ADR-0092) — the CLI's `render --explain` sets it to `[]` to print
+   * the bottom-to-top layer order with each layer's reason. `null` disables collection.
+   */
+  paintOrders: PaintOrderRecord[] | null = null
 
   /**
    * The `root` directory bounds every relative import/image path (ADR-0035
@@ -1974,13 +2059,10 @@ export class Engine {
         env.declare(p, args[i] ?? 0)
       })
     }
-    // 4 — run the body
-    for (const s of def.body) {
-      if (s.kind === 'use') {
-        continue
-      }
-      this.#execDrawStmt(s, env, state)
-    }
+    // 4 — run the body as a two-phase assembly (ADR-0092): top-level `stamp`/`fit` are deferred into
+    // layers and composited in a topologically-resolved order (behind/front), everything else paints
+    // live in sequence. Returns each declared occlusion relation's measured parity.
+    const occlusions = this.#execAssemblyBody(def, env, state, buffer)
     // 5 — resolve every deferred `fit` contact check (W010) against the FINAL composite, now
     // that the whole body has painted — see `DrawState.pendingFits`.
     this.#resolvePendingFits(draw, mod.displayPath)
@@ -1997,7 +2079,290 @@ export class Engine {
       desc: draw.description,
       // Export the drawing's own attach points (ADR-0087) so an assembling `fit` can read them.
       ...(draw.pins.size > 0 ? { pins: new Map(draw.pins) } : {}),
+      // Export each declared occlusion relation's measured parity (ADR-0092) for `critique`'s C013.
+      ...(occlusions.length > 0 ? { occlusions } : {}),
     }
+  }
+
+  /**
+   * Run a drawing body as a two-phase assembly (ADR-0092). Phase 1 walks the top-level statements in
+   * source order: a top-level `stamp`/`fit` is a **placement** — rendered into its own transparent
+   * layer (so pin/origin bookkeeping still runs in statement order for chained fits) and set aside
+   * with its `behind`/`front` relations; every other statement (`fill`, `px`, `line`, blocks, the
+   * `outline` filter, …) is a **barrier** that first flushes the pending placement layers, then paints
+   * live onto the shared buffer. A `pin` declaration is neither — it registers an attach point in
+   * place without painting. Phase 2 (each flush) topologically sorts the pending layers by their
+   * relations — ties break by statement order, a cycle is a positioned E025 — and composites them
+   * bottom-to-top, tracking per-pixel ownership so a declared occlusion's parity can be measured
+   * (C013). `behind`/`front` reorder placements only within one barrier-delimited segment; a target in
+   * an already-flushed segment can't be reordered under, which C013 then flags in the composite.
+   */
+  #execAssemblyBody(
+    def: DrawDefinition,
+    env: Environment,
+    state: State,
+    buffer: Framebuffer,
+  ): OcclusionResult[] {
+    const draw = state.draw as DrawState
+    const w = buffer.width
+    const h = buffer.height
+    const owner = new Int32Array(w * h).fill(-1)
+    const pending: PaintLayer[] = []
+    const units: PaintLayer[] = []
+    const relations: {
+      readonly behindId: number
+      readonly frontId: number
+      readonly behindName: string
+      readonly frontName: string
+      readonly clause: 'behind' | 'front'
+    }[] = []
+    let nextId = 0
+    const order: { name: string; reason: string }[] = []
+    let sawRelation = false
+
+    const compositeLayer = (layer: PaintLayer): void => {
+      const src = layer.buffer.data
+      for (let i = 0; i < w * h; i++) {
+        const a = src[i * 4 + 3] ?? 0
+        if (a === 0) {
+          continue
+        }
+        const x = i % w
+        const y = (i - x) / w
+        buffer.blend(x, y, src[i * 4] ?? 0, src[i * 4 + 1] ?? 0, src[i * 4 + 2] ?? 0, a)
+        if (a >= OCCLUSION_ALPHA_MIN) {
+          owner[i] = layer.id
+        }
+      }
+    }
+
+    const flush = (): void => {
+      if (pending.length === 0) {
+        return
+      }
+      const ordered = this.#orderLayers(pending, state, def.span)
+      for (const layer of ordered) {
+        compositeLayer(layer)
+        order.push({ name: layer.name, reason: layer.reason })
+      }
+      pending.length = 0
+    }
+
+    for (const s of def.body) {
+      if (s.kind === 'use') {
+        continue
+      }
+      if (s.kind === 'pinDeclaration') {
+        this.#execDrawStmt(s, env, state)
+        continue
+      }
+      const isFit = s.kind === 'fit'
+      const isStamp = s.kind === 'call' && s.callee === 'stamp'
+      if (isFit || isStamp) {
+        const layerBuf = new Framebuffer(w, h)
+        layerBuf.onWrite = buffer.onWrite
+        const prev = draw.context.buffer
+        draw.context.buffer = layerBuf
+        const id = nextId++
+        let name: string
+        let behind: readonly string[]
+        let front: readonly string[]
+        if (isFit) {
+          name = s.target.head
+          behind = s.behind
+          front = s.front
+          this.#execFit(s, env, state)
+        } else {
+          const rel = stampRelations(s)
+          behind = rel.behind
+          front = rel.front
+          name = this.#execStamp(s, new Args(this, rel.args, env, state, s.span), env, state)
+        }
+        draw.context.buffer = prev
+        if (behind.length > 0 || front.length > 0) {
+          sawRelation = true
+        }
+        const reason =
+          behind.length > 0
+            ? `behind ${behind.join(',')}`
+            : front.length > 0
+              ? `front ${front.join(',')}`
+              : 'sequence'
+        const layer: PaintLayer = {
+          id,
+          name,
+          buffer: layerBuf,
+          cover: coverPixels(layerBuf, OCCLUSION_ALPHA_MIN),
+          behind: [],
+          front: [],
+          reason,
+          span: s.span,
+        }
+        // Resolve each relation target to the most-recent placement of that name. A target in the
+        // current pending segment yields a real ordering edge; one already flushed is recorded for
+        // C013 only (it can't be reordered under). An unplaced target is a positioned error.
+        for (const t of behind) {
+          const target = this.#resolveRelationTarget(t, units, state, s.span)
+          relations.push({
+            behindId: id,
+            frontId: target.id,
+            behindName: name,
+            frontName: t,
+            clause: 'behind',
+          })
+          if (pending.includes(target)) {
+            layer.behind.push(target)
+          }
+        }
+        for (const t of front) {
+          const target = this.#resolveRelationTarget(t, units, state, s.span)
+          relations.push({
+            behindId: target.id,
+            frontId: id,
+            behindName: t,
+            frontName: name,
+            clause: 'front',
+          })
+          if (pending.includes(target)) {
+            layer.front.push(target)
+          }
+        }
+        pending.push(layer)
+        units.push(layer)
+      } else {
+        // barrier: flush pending placements, then paint live while attributing touched pixels to a
+        // sentinel owner so a relation whose behind-part an inline paint later covers isn't a false C013.
+        flush()
+        const before = buffer.data.slice()
+        this.#execDrawStmt(s, env, state)
+        for (let i = 0; i < w * h; i++) {
+          if ((buffer.data[i * 4 + 3] ?? 0) >= OCCLUSION_ALPHA_MIN) {
+            const off = i * 4
+            if (
+              buffer.data[off] !== before[off] ||
+              buffer.data[off + 1] !== before[off + 1] ||
+              buffer.data[off + 2] !== before[off + 2] ||
+              buffer.data[off + 3] !== before[off + 3]
+            ) {
+              owner[i] = SENTINEL_INLINE
+            }
+          }
+        }
+      }
+    }
+    flush()
+
+    if (sawRelation && this.paintOrders) {
+      this.paintOrders.push({ drawing: def.name, order })
+    }
+
+    return relations.map((r) => {
+      const bCover = units.find((u) => u.id === r.behindId)?.cover ?? new Set<number>()
+      const fCover = units.find((u) => u.id === r.frontId)?.cover ?? new Set<number>()
+      let overlap = 0
+      let violating = 0
+      for (const p of bCover) {
+        if (fCover.has(p)) {
+          overlap++
+          if (owner[p] === r.behindId) {
+            violating++
+          }
+        }
+      }
+      return {
+        behind: r.behindName,
+        front: r.frontName,
+        clause: r.clause,
+        overlap,
+        violating,
+      }
+    })
+  }
+
+  /**
+   * Resolve a `behind`/`front` target part-name to its most-recently-placed unit (ADR-0092). A name
+   * that was never placed by an earlier top-level `stamp`/`fit` is a positioned error.
+   */
+  #resolveRelationTarget(
+    name: string,
+    units: readonly PaintLayer[],
+    state: State,
+    span: TextSpan,
+  ): PaintLayer {
+    for (let i = units.length - 1; i >= 0; i--) {
+      const u = units[i]
+      if (u && u.name === name) {
+        return u
+      }
+    }
+    throw error(
+      ERROR_CODE.unknownName,
+      `behind/front target '${name}' names no part placed earlier in this drawing`,
+      state.module.displayPath,
+      span,
+      `stamp or fit '${name}' before the part that references it`,
+    )
+  }
+
+  /**
+   * Topologically order one segment's pending placement layers bottom-to-top (ADR-0092): a `behind`
+   * edge forces the subject before its target, a `front` edge after. Minimal-disruption stable order —
+   * built top-down, at each step emitting the highest-statement-index layer all of whose
+   * paint-after successors are already emitted, so an unconstrained layer keeps its sequence slot and
+   * a single `behind` moves only its own subject. An unbreakable cycle is a positioned E025.
+   */
+  #orderLayers(layers: readonly PaintLayer[], state: State, span: TextSpan): PaintLayer[] {
+    // succ[L] = layers that must paint AFTER L (L is below them): a `behind` edge on L adds its
+    // targets; a `front` edge on L adds L as a successor of each target.
+    const succ = new Map<PaintLayer, Set<PaintLayer>>()
+    for (const l of layers) {
+      succ.set(l, new Set())
+    }
+    for (const l of layers) {
+      for (const t of l.behind) {
+        succ.get(l)?.add(t)
+      }
+      for (const t of l.front) {
+        succ.get(t)?.add(l)
+      }
+    }
+    const emittedTop: PaintLayer[] = []
+    const done = new Set<PaintLayer>()
+    const remaining = new Set(layers)
+    while (remaining.size > 0) {
+      let pick: PaintLayer | undefined
+      let pickIdx = -1
+      for (const l of remaining) {
+        let ready = true
+        for (const s of succ.get(l) ?? []) {
+          if (!done.has(s)) {
+            ready = false
+            break
+          }
+        }
+        if (ready) {
+          const idx = layers.indexOf(l)
+          if (idx > pickIdx) {
+            pickIdx = idx
+            pick = l
+          }
+        }
+      }
+      if (!pick) {
+        const names = [...remaining].map((l) => l.name).join(', ')
+        throw error(
+          ERROR_CODE.occlusionCycle,
+          `occlusion cycle among parts: ${names} — their behind/front relations can't be satisfied`,
+          state.module.displayPath,
+          span,
+          'remove one of the conflicting behind/front clauses',
+        )
+      }
+      emittedTop.push(pick)
+      done.add(pick)
+      remaining.delete(pick)
+    }
+    return emittedTop.reverse()
   }
 
   // ── statement execution inside a drawing ──────────────────────────────
@@ -2353,7 +2718,18 @@ export class Engine {
       state,
       stmt.span,
     )
-    const matrix = this.#buildStampMatrix(sprite, flags)
+    let matrix = this.#buildStampMatrix(sprite, flags)
+    // 4b — aim (ADR-0092): rotate the part about the fit pin so a second named pin points at PT.
+    // The flag-only transform positions both pins; the solved rotation about the (flagged) fit pin
+    // then swings the aim pin's direction onto (PT − contact point). Pins ride the same matrix.
+    const aimDeg = this.#solveAim(stmt, sprite, localPin, cp, matrix, env, state)
+    if (aimDeg !== undefined) {
+      const base = matrix ?? IDENTITY
+      const p0 = applyMatrix(base, localPin.x, localPin.y)
+      if (p0) {
+        matrix = compose(base, aboutPoint(rotationDeg(aimDeg), p0.x, p0.y))
+      }
+    }
     const map = (p: { readonly x: number; readonly y: number }): { x: number; y: number } => {
       if (!matrix) {
         return { x: p.x, y: p.y }
@@ -2422,6 +2798,7 @@ export class Engine {
         coincident,
         pinToInk: Number.isFinite(pinToInk) ? pinToInk : -1,
         transformed: matrix !== undefined,
+        ...(aimDeg === undefined ? {} : { aimDeg }),
       })
     }
     if (Number.isFinite(pinToInk) && pinToInk > LOOSE_PIN_MAX) {
@@ -2451,6 +2828,55 @@ export class Engine {
       cp,
       span: stmt.span,
     })
+  }
+
+  /**
+   * Solve the `aim PIN PT` rotation (ADR-0092) for a `fit`: the angle (degrees) to rotate the part
+   * about its fit pin so the second named pin `PIN` points from the contact point toward `PT`. The
+   * flag-only `flagMatrix` positions both pins first; the returned angle is layered on top by
+   * `#execFit`. `undefined` when the fit carries no `aim` (zero-cost) or the pins map to infinity.
+   */
+  #solveAim(
+    stmt: Extract<Statement, { readonly kind: 'fit' }>,
+    sprite: Sprite,
+    localPin: { readonly x: number; readonly y: number },
+    cp: { readonly x: number; readonly y: number },
+    flagMatrix: readonly number[] | undefined,
+    env: Environment,
+    state: State,
+  ): number | undefined {
+    if (!stmt.aim) {
+      return undefined
+    }
+    const aimLocal = sprite.pins?.get(stmt.aim.pin)
+    if (!aimLocal) {
+      throw error(
+        ERROR_CODE.unknownName,
+        `fit target '${stmt.target.head}' has no aim pin '${stmt.aim.pin}'`,
+        state.module.displayPath,
+        stmt.span,
+        `declare it in ${sprite.name} with 'pin ${stmt.aim.pin} X:Y'`,
+      )
+    }
+    const aimVal = this.evalExpr(stmt.aim.point, env, state)
+    if (typeof aimVal !== 'object' || aimVal?.type !== 'point' || aimVal.rel) {
+      throw error(
+        ERROR_CODE.typeError,
+        `aim needs an absolute point, got ${typeName(aimVal)}`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const base = flagMatrix ?? IDENTITY
+    const p0 = applyMatrix(base, localPin.x, localPin.y)
+    const a0 = applyMatrix(base, aimLocal.x, aimLocal.y)
+    if (!p0 || !a0) {
+      return undefined
+    }
+    const srcAng = datan2(a0.y - p0.y, a0.x - p0.x)
+    const dstAng = datan2(aimVal.y - cp.y, aimVal.x - cp.x)
+    const deg = ((dstAng - srcAng) * 180) / PI
+    return Math.round(deg * 1000) / 1000
   }
 
   /** A human label for a `fit` source (the ground point or the `head.pin`/`head` ref), for --explain. */
@@ -3883,7 +4309,14 @@ export class Engine {
         return
       }
       case 'stamp':
-        this.#execStamp(stmt, args, env, state)
+        // `behind`/`front` clauses (ADR-0092) are honored by the two-phase assembly pass, not here;
+        // strip them so a stamp reached through a block (barrier) doesn't choke on the extra args.
+        this.#execStamp(
+          stmt,
+          new Args(this, stampRelations(stmt).args, env, state, stmt.span),
+          env,
+          state,
+        )
         return
       case 'apply': {
         const name = args.rawName()
@@ -4396,10 +4829,10 @@ export class Engine {
     args: Args,
     _env: Environment,
     state: State,
-  ): void {
+  ): string {
     const draw = state.draw
     if (!draw) {
-      return
+      return ''
     }
     const sprite = args.sprite()
     const point = args.point(draw)
@@ -4443,6 +4876,7 @@ export class Engine {
     if (!draw.sprite.stamped.includes(sprite)) {
       draw.sprite.stamped.push(sprite)
     }
+    return sprite.name
   }
 
   // ── fonts (ADR-0022 bitmap fonts, ADR-0042 user fonts, ADR-0054 std fonts) ─

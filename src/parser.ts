@@ -772,14 +772,38 @@ class Parser {
       source = { kind: 'point', expression: this.#parseCmdArgExpr() }
     }
     // Trailing modifiers: the stamp transform/paint flags (same grammar as a `call`'s arg run) plus
-    // the bare `shadow` boolean — special-cased before the keyword check so it never eats args.
+    // the bare `shadow` boolean and the occlusion/aim clauses (`behind`/`front` NAME, `aim` PIN PT,
+    // ADR-0092) — all special-cased before the keyword check so they never eat stamp-flag args.
     const flags: Argument[] = []
     let shadow = false
+    const behind: string[] = []
+    const front: string[] = []
+    let aim: { readonly pin: string; readonly point: Expression } | undefined
     while (!this.#at('nl') && !this.#at('eof') && !this.#at('dedent')) {
       const f = this.#peek()
       if (f.kind === 'name' && f.text === 'shadow') {
         this.#next()
         shadow = true
+        continue
+      }
+      if (
+        f.kind === 'name' &&
+        (f.text === 'behind' || f.text === 'front') &&
+        this.#peek(1).kind === 'name'
+      ) {
+        const clause = this.#next().text
+        const rel = this.#next().text
+        if (clause === 'behind') {
+          behind.push(rel)
+        } else {
+          front.push(rel)
+        }
+        continue
+      }
+      if (f.kind === 'name' && f.text === 'aim' && this.#peek(1).kind === 'name') {
+        this.#next()
+        const pin = this.#next().text
+        aim = { pin, point: this.#parseCmdArgExpr() }
         continue
       }
       if (f.kind === 'name' && KW_ARG_ARITY[f.text] !== undefined) {
@@ -795,7 +819,7 @@ class Parser {
       flags.push({ kind: 'expression', expression: this.#parseCmdArgExpr(), span: this.#span(f) })
     }
     this.#expectNL()
-    return { kind: 'fit', target, source, flags, shadow, span: s }
+    return { kind: 'fit', target, source, flags, shadow, behind, front, aim, span: s }
   }
 
   readonly #parseFnDef = (): Statement => {
@@ -1720,6 +1744,20 @@ class Parser {
     const args: Argument[] = []
     while (!this.#at('nl') && !this.#at('eof') && !this.#at('dedent')) {
       const f = this.#peek()
+      // `stamp PART PT behind/front TARGET` (ADR-0092): the occlusion clauses are contextual
+      // keyword args recognized only for the `stamp` command, so `behind`/`front` stay ordinary
+      // bindable names everywhere else. The one trailing token is the target part-name.
+      if (
+        callee === 'stamp' &&
+        f.kind === 'name' &&
+        (f.text === 'behind' || f.text === 'front') &&
+        this.#peek(1).kind === 'name'
+      ) {
+        const kw = this.#next().text
+        const parts: Expression[] = [this.#parseCmdArgExpr()]
+        args.push({ kind: 'keyword', keyword: kw, parts, span: this.#span(f) })
+        continue
+      }
       if (f.kind === 'name' && KW_ARG_ARITY[f.text] !== undefined) {
         const kw = this.#next().text
         const arity = KW_ARG_ARITY[kw] ?? 1

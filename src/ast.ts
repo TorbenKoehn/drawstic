@@ -354,6 +354,21 @@ export type Statement =
         | { readonly kind: 'point'; readonly expression: Expression }
       readonly flags: Argument[]
       readonly shadow: boolean
+      /**
+       * Optional occlusion relations (ADR-0092): `behind TARGET` layers this part below the
+       * already-placed part `TARGET` in the resolved paint order; `front TARGET` layers it above.
+       * `TARGET` is a bare part-name (a `head` of an earlier top-level `stamp`/`fit`). Contextual
+       * keywords in this trailing slot only. Both may repeat; ties break by statement order, a cycle
+       * is a positioned E025.
+       */
+      readonly behind: readonly string[]
+      readonly front: readonly string[]
+      /**
+       * Optional 1-bone orientation solve (ADR-0092): `aim PIN PT` rotates the part about its fit
+       * pin until the named second pin `PIN` points at the canvas point `PT` (atan2). Contextual
+       * keyword in this trailing slot only.
+       */
+      readonly aim: { readonly pin: string; readonly point: Expression } | undefined
       readonly span: TextSpan
     }
   | { readonly kind: 'palette'; readonly entries: PaletteEntry[]; readonly span: TextSpan }

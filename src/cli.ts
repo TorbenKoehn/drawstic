@@ -62,7 +62,7 @@ import {
 } from './preview.js'
 import { scaleBitmap } from './raster.js'
 import { buildSheet, type SheetLayout, selectCritiqueFamily } from './sheet.js'
-import type { Light, Region, Sprite } from './values.js'
+import type { Light, OcclusionResult, Region, Sprite } from './values.js'
 
 // union of every subcommand's flags; each `run*` handler reads only the
 // ones it recognizes and ignores the rest.
@@ -909,6 +909,7 @@ const runRender = (cli: CliArguments): number => {
     if (cli.explain) {
       engine.explain = []
       engine.placements = []
+      engine.paintOrders = []
     }
     const mod = engine.loadEntry(file)
     const entry = mod.definitions.get(targetRef.drawing)
@@ -1049,6 +1050,7 @@ const runRender = (cli: CliArguments): number => {
     if (cli.explain) {
       const explain = engine.explain ?? []
       const placements = engine.placements ?? []
+      const paintOrder = (engine.paintOrders ?? []).find((p) => p.drawing === targetRef.drawing)
       if (cli.json) {
         process.stdout.write(
           `${JSON.stringify(
@@ -1062,6 +1064,8 @@ const runRender = (cli: CliArguments): number => {
                 output: null,
                 explain,
                 placements,
+                ...(paintOrder ? { paintOrder: paintOrder.order } : {}),
+                ...(sprite.occlusions ? { occlusions: sprite.occlusions } : {}),
               },
             },
             null,
@@ -1069,7 +1073,15 @@ const runRender = (cli: CliArguments): number => {
           )}\n`,
         )
       } else {
-        process.stdout.write(formatExplain(targetRef.drawing, explain, placements))
+        process.stdout.write(
+          formatExplain(
+            targetRef.drawing,
+            explain,
+            placements,
+            paintOrder?.order,
+            sprite.occlusions,
+          ),
+        )
       }
       return 0
     }
@@ -1195,13 +1207,21 @@ const formatExplain = (
   drawing: string,
   records: readonly ExplainRecord[],
   placements: readonly PlacementRecord[] = [],
+  paintOrder: readonly { readonly name: string; readonly reason: string }[] | undefined = undefined,
+  occlusions: readonly OcclusionResult[] | undefined = undefined,
 ): string => {
-  if (records.length === 0 && placements.length === 0) {
+  if (
+    records.length === 0 &&
+    placements.length === 0 &&
+    !paintOrder &&
+    (!occlusions || occlusions.length === 0)
+  ) {
     return `${drawing}: no model/cel commands or fits to explain\n`
   }
   const lines: string[] = []
   // Placement report (ADR-0087 amendment 2): where every `fit` landed its pins, whether they
-  // coincide, and how far the target pin sits from the part's own ink (the float signal).
+  // coincide, and how far the target pin sits from the part's own ink (the float signal); plus the
+  // solved `aim` angle (ADR-0092).
   for (const p of placements) {
     const flip = p.transformed ? ' transformed' : ''
     const coincide = p.coincident ? 'coincident' : 'NOT COINCIDENT'
@@ -1209,9 +1229,26 @@ const formatExplain = (
       p.pinToInk < 0
         ? ''
         : ` pin-to-ink ${p.pinToInk}px${p.pinToInk > 2 ? ' (LOOSE — join floats)' : ''}`
+    const aim = p.aimDeg === undefined ? '' : ` aim ${p.aimDeg}°`
     lines.push(
-      `fit ${p.target} ← ${p.source}: lands ${p.landed.x}:${p.landed.y} (source ${p.at.x}:${p.at.y}) ${coincide}${ink}${flip}`,
+      `fit ${p.target} ← ${p.source}: lands ${p.landed.x}:${p.landed.y} (source ${p.at.x}:${p.at.y}) ${coincide}${ink}${aim}${flip}`,
     )
+  }
+  // Resolved paint order (ADR-0092): bottom-to-top, with each layer's behind/front reason.
+  if (paintOrder && paintOrder.length > 0) {
+    lines.push('paint order (bottom → top):')
+    paintOrder.forEach((o, i) => {
+      lines.push(`  ${i + 1}. ${o.name}${o.reason === 'sequence' ? '' : ` [${o.reason}]`}`)
+    })
+  }
+  // Occlusion parity (ADR-0092, C013 source): each declared relation's measured overlap/violation.
+  if (occlusions && occlusions.length > 0) {
+    for (const o of occlusions) {
+      const verdict = o.overlap === 0 ? 'no overlap' : o.violating > 0 ? 'VIOLATED' : 'ok'
+      lines.push(
+        `occlusion ${o.behind} ${o.clause} ${o.front}: overlap ${o.overlap}px, violating ${o.violating}px — ${verdict}`,
+      )
+    }
   }
   for (const r of records) {
     const target = r.region ? ` ${r.region}` : ''

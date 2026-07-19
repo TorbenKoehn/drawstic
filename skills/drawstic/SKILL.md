@@ -193,6 +193,13 @@ draw sword 24x48:
   across views. **Ground oracle:** `fit tree.base x:duneY(x/(w-1))` plants a part on a terrain fn
   (needs a named target pin) → no floating/sinking. `shadow` flag = auto contact-shadow ellipse.
   `pin`/`fit` are keywords only in these slots.
+- **Occlusion + aim (ADR-0092)** — layer parts declaratively, not by fit order: `behind <part>` /
+  `front <part>` trailing clauses on `stamp`/`fit` set the paint order (a slung sword `behind cape`,
+  pauldrons `front cape`), and `aim <pin> <pt>` rotates a `fit` about its pin until a second pin points
+  at a canvas point (orient a bow/sword per view: `fit bow.grip a.grip aim tip 60:20`). Assembly is
+  two-phase (placements defer into layers, inline paints are barriers that keep their slot); a conflict
+  is E025. `critique` **C013** verifies each relation in the composite (a `--strict` must-fix); `render
+  --explain` prints the resolved paint order, each solved aim angle, and the parity counts.
 - **Declarative light + material** (default shading path, ADR-0086) — one named light drives
   everything, so encodings can't drift: `light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%` (travel dir;
   source up-left ⇒ up-left edge lit) or `light torch = at 12:8 #ffb060 gain 1.4` (point source;
@@ -336,10 +343,10 @@ seam raises `W010`/C007 instead of shipping silently. Plant a standing figure wi
 + its `shadow` flag (auto contact-shadow) rather than a hand `ellipse`. (5) **recolor
 parametrically, never themes** (a theme palette does not cross a `stamp`/`fit`; pass the 1–2 variant
 colours, thin wrapper per variant). (6) **redraw pose-leading parts for side AND back — neither is a
-flip.** Side: reuse pose-invariant limbs, far limb via neutral-grey `tint`. Back: its own part set
-(no face — hair/nape instead), **inverted prop z-order** (a hidden prop fits/stamps *before* the
-torso on front/side, a mounted prop/cape fits *after* every limb on back), and **mirrored left-right**
-shoulder/hip attach vs. front (character-craft.md §5b). (7) **the RO silhouette outline is ONE bare
+flip.** Side: reuse pose-invariant limbs, far limb via neutral-grey `tint`, orient a held prop with
+`aim`. Back: its own part set (no face — hair/nape instead), **declared prop z-order** (`behind`/
+`front` clauses — cape over the body, slung sword `behind` it; C013 verifies, ADR-0092), and
+**mirrored left-right** shoulder/hip attach vs. front (character-craft.md §5b). (7) **the RO silhouette outline is ONE bare
 `outline` as the last statement of the assembly draw** (ADR-0090) — over the composited figure, width
 1, colour derived-or-`ink`. Never bake `outline` per part (rings become internal seams); the
 50%-alpha floor means a soft contact shadow painted first is not ringed.

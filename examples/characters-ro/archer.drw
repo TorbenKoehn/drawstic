@@ -139,9 +139,10 @@ draw legR 16x48:
 
 # ============================= BOW & QUIVER (reused all views) =============================
 draw bow 12x56:
-  curve wood 8:1 3:14 5:28 3:42 8:55 w3
+  curve wood 8:1 3:14 5:28 3:42 8:55 w4
   line string 8:2 8:54 w1
   pin grip 8:28
+  pin tip 8:1          # upper limb tip — the aim pin for per-view bow orientation (ADR-0092)
 
 draw quiver 20x40:
   fill #5a3f28 rect(4:0, 15:16)   # solid fletch backing: no transparent slots between arrows (closes C008 when the quiver peeks past the body)
@@ -236,7 +237,8 @@ draw archerSide 64x128:
   fit legL.hip torsoSide.hipFar
   fit legR.hip torsoSide.hipNear
   fit armSideNear.shoulder torsoSide.shoulderNear
-  fit bow.grip armSideNear.hand
+  # bow held forward in the leading hand: `aim` cants the upper limb up-and-forward (ADR-0092)
+  fit bow.grip armSideNear.hand aim tip 4:2
   outline
 
 # ============================= HEAD (back) =============================
@@ -278,7 +280,9 @@ draw archerBack 64x128:
   fit armBent.shoulder torsoBack.shoulderR
   fit legL.hip torsoBack.hipL
   fit legR.hip torsoBack.hipR
-  fit bow.grip armBent.hand
+  # bow held out to the figure's right: `aim` cants the upper limb up-and-out so it no longer runs
+  # straight down the back leg, and `behind torsoBack` tucks its inner half behind the body (ADR-0092)
+  fit bow.grip armBent.hand aim tip 48:60 behind torsoBack
   stamp quiver (cx - 10):(neckY)           # on top: the fully-visible back-mounted quiver
   outline
 

@@ -30,7 +30,8 @@ The order that wins on the first attempt — do not reorder:
 5. **Full body back-to-front via `fit`** (pin-anchored, contact-guaranteed — §4); plant standing
    parts with `fit … shadow` (auto contact-shadow) instead of a hand `ellipse` (§4).
 6. **Three composers — front, side, back** (§5): side redraws pose-leading parts, back redraws the
-   head (no face) and **inverts prop z-order** (mounted props/cape fit *after* the body, not before).
+   head (no face) and **declares prop z-order with `behind`/`front`** (mounted cape over the body,
+   held prop `behind` it; ADR-0092 — §5b), orienting each per view with `aim` where needed.
 7. **Bright accents, then ONE bare `outline` last** — emissive lights/glints/orbs (like scene-craft,
    so the shade pass never dims them), then a single `outline` as the assembly draw's **final**
    statement closes the silhouette (§6, ADR-0090).
@@ -174,6 +175,12 @@ pose). All 7 runs confirmed the split:
   the air). The figure's per-view flip is a *separate* `fit`; it must never touch the prop. Mirror the
   prop deliberately only when a view truly needs it, with the prop's own `fit sword.grip hand.grip
   flipx` (horizontal mirror, blade still up — the pin rides the flip and stays in the hand).
+- **Orient a held prop per view with `aim`, not a redraw (ADR-0092).** Give the prop a second pin
+  (`tip`) and `fit sword.grip hand.grip aim tip <pt>` to rotate it about the grip until the tip points
+  at a canvas point — the sword cants forward in side view (clear of the head), the bow angles out on
+  the back. Pick a clean angle: nearest-neighbour rotation of a *thin* limb can open a 1-px pinhole
+  (C008) — widen a 3-px bow limb to 4 px, or nudge the aim point (`render --explain` prints the solved
+  angle; `critique` catches the hole).
 - **Push the far limb back** with a **neutral-grey** `tint` (`tint #2b2b2b 40%`, R=G=B — the cheapest
   depth cue) + a small offset. A **chromatic** `tint cool 40%` is safe **only on already-cool
   material** (knight steel, mage boot); on warm/saturated material it rotates the hue (§6).
@@ -193,23 +200,29 @@ sleeve, a hanging arm) reuses as-is; a limb posed *toward the viewer* (raised to
 forward) still reads as facing front when reused unchanged on the back — redraw it relaxed, or accept
 the left-right swap in (c) below instead of a literal redraw.
 
-**(b) Z-order inverts vs. front/side: a mounted prop paints AFTER the body, not before it.**
-Front/side hide a prop behind the torso (`stamp quiver …` **before** the root `fit`, so the torso
-covers most of it — archer's `archerFront`); back mounts the same class of prop *over* the assembled
-figure, so it must fit/stamp **last**, after every limb:
+**(b) Declare z-order with `behind`/`front`, don't rely on fit order (ADR-0092).** A part's layer is
+set by a trailing `behind <part>` / `front <part>` clause on its `stamp`/`fit`, not by where it sits
+in the body — so the intent is explicit and `critique`'s **C013** verifies it. Front/side hide a prop
+behind the torso; back mounts the same class of prop *over* the figure and tucks the held prop
+*behind* it:
 
 ```drw
 draw figureBack WxH:
   fit torsoBack.neck cx:shoulderY          # root first, as always
   fit headBack.nape torsoBack.neck
-  fit armL.shoulder torsoBack.shoulderL    # arms BEFORE the prop — tucked under it
+  fit armL.shoulder torsoBack.shoulderL
   fit armR.shoulder torsoBack.shoulderR
-  fit cape.attach torsoBack.cape           # prop LAST — on top, fully visible
+  fit cape.attach torsoBack.cape           # cape over the body (its own layer)
+  fit pauldron.inner a.shoulderL front cape    # shoulders ABOVE the cape — explicit
+  fit sword.grip a.grip aim tip 3:34 behind cape   # slung sword BELOW the cape, canted out
   outline
 ```
 
-Backwards (prop fit ahead of the arms) is the 2026-07-10 Assassin bug: the cloak painted before the
-sleeves, so the arms landed on top of it and read as pasted onto the back instead of tucked beneath.
+The 2026-07-10 defects this fixes: the Knight back sword painted *in front of* the sprite (declare it
+`behind cape`), the side sword stabbed *into the head* (`aim` cants the blade forward), and pauldrons
+punched *through* the cape (`front cape`). The old "make it work by fit order" rule was fragile — an
+intervening inline paint (a `fill`, a detail `px`) is a barrier that pins order, and C013 turns any
+un-honored relation into a red, positioned finding.
 
 **(c) Front and back mirror left↔right at the shoulder/hip attach — the figure turned around, the
 part didn't.** Reuse the identical, non-mirrored part draws and swap which named pin each fits to:

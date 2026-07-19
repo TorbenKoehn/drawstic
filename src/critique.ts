@@ -33,7 +33,7 @@ import { relativeLuminance } from './color.js'
 import type { Diagnostic, Severity, TextSpan } from './diagnostic.js'
 import { inspectSprite } from './inspect.js'
 import { spritePreviewStats } from './preview.js'
-import type { Sprite } from './values.js'
+import type { OcclusionResult, Sprite } from './values.js'
 
 /** Stable `C0xx` diagnostic codes. Public API — never renumber. */
 export const CRITIQUE_CODE = {
@@ -48,6 +48,7 @@ export const CRITIQUE_CODE = {
   siblingCollapse: 'C009',
   familyParity: 'C011',
   trailingEdgeRow: 'C012',
+  occlusionParity: 'C013',
 } as const
 
 /**
@@ -961,6 +962,40 @@ const checkFloatingPart = (name: string, parts: readonly FloatingPart[]): Critiq
   }
 }
 
+/**
+ * C013: occlusion parity (ADR-0092) — a declared `behind`/`front` relation whose behind-part is still
+ * the visible top of the overlap zone in the final composite. High-confidence and declarative (it only
+ * ever measures relations the author asked for), so it carries no false-positive risk and joins the
+ * `--strict` must-fix subset. Fires when any relation has visible violating pixels; a zero-overlap
+ * relation (the target parts don't actually overlap) is silent — a likely-wrong target, but not a
+ * broken composite.
+ */
+const checkOcclusionParity = (sprite: Sprite): CritiqueCheck | null => {
+  const occ = sprite.occlusions ?? []
+  const bad = occ.filter((o) => o.overlap > 0 && o.violating > 0)
+  if (bad.length === 0) {
+    return null
+  }
+  let worst = bad[0] as OcclusionResult
+  for (const o of bad) {
+    if (o.violating > worst.violating) {
+      worst = o
+    }
+  }
+  const detail = bad
+    .map((o) => `'${o.behind}' shows ${o.violating}/${o.overlap}px over '${o.front}'`)
+    .join('; ')
+  return {
+    code: CRITIQUE_CODE.occlusionParity,
+    severity: 'warning',
+    message: `occlusion parity: ${detail} — a declared behind/front relation isn't honored in the composite`,
+    measured: worst.violating,
+    threshold: 0,
+    fix: `the behind-part is still visible above its occluder in the overlap zone — declare the relation within one paint run (no intervening fill/px), or reorder so the occluder paints after '${worst.behind}'`,
+    detail: { relations: bad.length, violating: worst.violating, overlap: worst.overlap },
+  }
+}
+
 /** C005: stroke width — fires when load-bearing strokes are overwhelmingly under the scale floor at ≥32px (ADR-0085 §3). */
 const checkStrokeWidth = (metrics: CritiqueMetrics, stroke: StrokeScan): CritiqueCheck | null => {
   const size = Math.max(metrics.width, metrics.height)
@@ -1001,7 +1036,11 @@ const checkStrokeWidth = (metrics: CritiqueMetrics, stroke: StrokeScan): Critiqu
  * §5's original list (C001/C002/C007/C008/C009) to what the corpus proves is
  * unambiguous — recorded there and in docs/impl-progress.md.
  */
-const STRICT_MUST_FIX: readonly string[] = [CRITIQUE_CODE.empty, CRITIQUE_CODE.floatingPart]
+const STRICT_MUST_FIX: readonly string[] = [
+  CRITIQUE_CODE.empty,
+  CRITIQUE_CODE.floatingPart,
+  CRITIQUE_CODE.occlusionParity,
+]
 
 /** Under `strict`, promotes {@link STRICT_MUST_FIX} (plus C003 for a `strictCentering` profile) from `warning` to `error`. */
 const promoteStrict = (
@@ -1061,6 +1100,7 @@ export const critiqueSprite = (
   push(checkPaletteBudget(metrics, options.paletteTarget ?? 'unbudgeted', profile?.colorCeiling))
   push(checkPinholes(sprite))
   push(checkTrailingEdgeRow(metrics))
+  push(checkOcclusionParity(sprite))
 
   let componentCount: number | undefined
   let minStrokeWidth: number | null | undefined

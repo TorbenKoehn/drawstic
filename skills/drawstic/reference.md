@@ -15,7 +15,7 @@ Runner prefix (`bunx` / `npx` / `pnpm dlx` / `yarn dlx`) omitted below.
 | `drawstic build <file> [--out <dir>] [--json]` | run every `export`, write artifacts (default: cwd). JSON: `{diagnostics, artifacts: [{path, bytes}]}`. |
 | `drawstic render <file>#<drawing>[(args)] …` | ad-hoc render of one drawing (see below). |
 | `drawstic sheet <file> [--all] [--cols N] [--png@N] [--out <path>] [--stdout] [--ascii] [--preview] [--json]` | family contact sheet: composes selected drawings size-normalized into one labeled comparison grid (see below). |
-| `drawstic critique <file> [--as icon\|scene\|character\|item] [--family a,b,c] [--strict] [--json]` | pixel-based, vision-free quality checks (`C0xx`) over every rendered non-parametric drawing, plus family checks across siblings. Category-agnostic (always run): C001 empty/near-empty, C003 optical centering, C004 value/contrast spread, C006 palette/complexity budget (export-target-aware — see below), C008 interior pinholes, C012 asymmetric bottom-padding. `--as` selects a category profile (thresholds, never inferred) and opts in the profile-gated checks — **C002** edge-clip (opaque content touching a canvas edge; `icon`/`item` only, not full-bleed scenes), **C007** floating-part/seam (8-connected components + chamfer distance; `character` only), **C005** stroke width (`icon`/`item`/`character`); without `--as` only the agnostic subset runs plus a `C000` info nudge. Family checks compare the exported siblings (or `--all`; `--family a,b,c` overrides) **minus any drawing that is itself a composed presentation of ≥2 other candidates** (a hand-built `draw xSheet: stamp xFront …; stamp xSide …` panel never pollutes its own family — name it explicitly via `--family` if you do want it compared), need ≥2 members: **C009** sibling-silhouette collapse (scale-/position-invariant 32×32 signatures, mass-normalized L1 < 0.12 — under `--as character`, never fires between two views that share a front/side/back name stem, e.g. `knightFront`/`knightBack`; still fires between different characters/items) and **C011** weight parity (a sibling >6× off the family median mass). All findings default to `warning` (exit 0, never blocking); `--strict` promotes only the *unambiguous* must-fix subset — **C001** empty, **C007** character seam, plus **C003** for `icon` — to `error` (exit 1), the CI regression gate. C002/C005/C008/C009/C011/C012 stay advisory (silhouette-sharing recolors/shared-shells, gradient sprawl, and legit small gaps are correct art). **C006 is export-target-aware**: only a drawing that declares an indexed-PNG (`png … indexed`) or `svg` export budgets its colour count — a `warning` that blocks `pass` (indexed palettes cap, SVG emits one `<rect>` run per band); a straight-alpha RGBA-PNG/JPEG target, or no export at all, has no palette budget (smooth `model` shading spends hundreds of colours by design), so C006 is a non-blocking advisory `info` there. None of C002/C005/C006/C008/C009/C011/C012 trip the `--strict` exit. Each finding carries `{measured, threshold, fix}`. JSON: `{diagnostics, critique: {pass, profile, strict, failedCodes, drawings:[{name,width,height,bbox,coveredPixelCount,opaquePixelCount,distinctColorCount,unknownColorCount,luminance,componentCount?,minStrokeWidth?,checks:[…]}], familyMetrics?:{members:[{name,coveredPixelCount,bbox,nearest:{name,distance}}],distanceMatrix,medianCoveredPixelCount}, rubric:{renders:[…],items:[{id,when,ask}],note}}}`. **`pass`≠exit code:** `pass` is `false` on *any* fired finding (must-fix or advisory — one lone C009/C011/C012 warning flips it); the process exit code trips only on the `--strict` must-fix subset above, so exit 0 does not imply `pass:true`. Read `failedCodes`/per-drawing `checks[]` for what's actually outstanding. `pass:true` is necessary, not sufficient — run `rubric.renders` (silhouette-first) and answer every `rubric.items` prompt by looking. The metric bundle is a superset of `render --inspect`. |
+| `drawstic critique <file> [--as icon\|scene\|character\|item] [--family a,b,c] [--strict] [--json]` | pixel-based, vision-free quality checks (`C0xx`) over every rendered non-parametric drawing, plus family checks across siblings. Category-agnostic (always run): C001 empty/near-empty, C003 optical centering, C004 value/contrast spread, C006 palette/complexity budget (export-target-aware — see below), C008 interior pinholes, C012 asymmetric bottom-padding, C013 occlusion parity (a declared `behind`/`front` relation whose behind-part is still visible atop its occluder in the composite — ADR-0092). `--as` selects a category profile (thresholds, never inferred) and opts in the profile-gated checks — **C002** edge-clip (opaque content touching a canvas edge; `icon`/`item` only, not full-bleed scenes), **C007** floating-part/seam (8-connected components + chamfer distance; `character` only), **C005** stroke width (`icon`/`item`/`character`); without `--as` only the agnostic subset runs plus a `C000` info nudge. Family checks compare the exported siblings (or `--all`; `--family a,b,c` overrides) **minus any drawing that is itself a composed presentation of ≥2 other candidates** (a hand-built `draw xSheet: stamp xFront …; stamp xSide …` panel never pollutes its own family — name it explicitly via `--family` if you do want it compared), need ≥2 members: **C009** sibling-silhouette collapse (scale-/position-invariant 32×32 signatures, mass-normalized L1 < 0.12 — under `--as character`, never fires between two views that share a front/side/back name stem, e.g. `knightFront`/`knightBack`; still fires between different characters/items) and **C011** weight parity (a sibling >6× off the family median mass). All findings default to `warning` (exit 0, never blocking); `--strict` promotes only the *unambiguous* must-fix subset — **C001** empty, **C007** character seam, **C013** occlusion parity (declarative, no false-positive risk), plus **C003** for `icon` — to `error` (exit 1), the CI regression gate. C002/C005/C008/C009/C011/C012 stay advisory (silhouette-sharing recolors/shared-shells, gradient sprawl, and legit small gaps are correct art). **C006 is export-target-aware**: only a drawing that declares an indexed-PNG (`png … indexed`) or `svg` export budgets its colour count — a `warning` that blocks `pass` (indexed palettes cap, SVG emits one `<rect>` run per band); a straight-alpha RGBA-PNG/JPEG target, or no export at all, has no palette budget (smooth `model` shading spends hundreds of colours by design), so C006 is a non-blocking advisory `info` there. None of C002/C005/C006/C008/C009/C011/C012 trip the `--strict` exit. Each finding carries `{measured, threshold, fix}`. JSON: `{diagnostics, critique: {pass, profile, strict, failedCodes, drawings:[{name,width,height,bbox,coveredPixelCount,opaquePixelCount,distinctColorCount,unknownColorCount,luminance,componentCount?,minStrokeWidth?,checks:[…]}], familyMetrics?:{members:[{name,coveredPixelCount,bbox,nearest:{name,distance}}],distanceMatrix,medianCoveredPixelCount}, rubric:{renders:[…],items:[{id,when,ask}],note}}}`. **`pass`≠exit code:** `pass` is `false` on *any* fired finding (must-fix or advisory — one lone C009/C011/C012 warning flips it); the process exit code trips only on the `--strict` must-fix subset above, so exit 0 does not imply `pass:true`. Read `failedCodes`/per-drawing `checks[]` for what's actually outstanding. `pass:true` is necessary, not sufficient — run `rubric.renders` (silhouette-first) and answer every `rubric.items` prompt by looking. The metric bundle is a superset of `render --inspect`. |
 
 **Fragment arguments** (ADR-0067): a parametric drawing takes literal args directly in the
 `#<drawing>(...)` fragment — `render parts.drw#house(#c04040, 3)` — no throwaway wrapper draw
@@ -53,10 +53,13 @@ Render outputs (mutually exclusive):
   instead of an image: each record `{command, region, light:{x,y}, steps:[…]}`, one step per lowered
   primitive with its resolved args — `{op:'fill'|'shade'|'light'|'rim'|'ao'|'cast', color, amount?,
   point?, dir?, width?, offset?}` for `model`, `{op:'band', color}×N` for `cel`. Renders the drawing
-  to run the commands, then reports the trace (no PNG written). `--json` → `{diagnostics, render:{kind:
-  'explain', explain:[…]}}`; plain text otherwise. The predictability guardrail: verify a material
-  lowers as intended, or copy the sequence down to the raw primitives to hand-tune. Output-kind order
-  is `--ascii` > `--preview` > `--inspect` > `--explain` > PNG.
+  to run the commands, then reports the trace (no PNG written). It also reports each `fit`'s
+  placement (landed pins, aim angle) and, for a two-phase assembly with `behind`/`front` relations,
+  the resolved bottom-to-top `paintOrder` (each `{name, reason}`) and each relation's `occlusions`
+  (`{behind, front, clause, overlap, violating}`) — ADR-0092. `--json` → `{diagnostics, render:{kind:
+  'explain', explain:[…], placements:[…], paintOrder?:[…], occlusions?:[…]}}`; plain text otherwise.
+  The predictability guardrail: verify a material lowers as intended, or copy the sequence down to the
+  raw primitives to hand-tune. Output-kind order is `--ascii` > `--preview` > `--inspect` > `--explain` > PNG.
 
 Every render kind's JSON also carries `render.stats = {unknownPixelCount,
 unknownColorCount, paletteCoveredPercent}`: how much of the painted (non-transparent)
@@ -402,8 +405,9 @@ quarter-turns, integer shifts/scales are lossless; non-invertible transforms are
 
 ```drw
 pin <key> <pt>                                     # attach point in this drawing's own space
-fit <partB>[.<pin>] <partA>.<pin> [flags] [shadow] # land partB's pin on partA's placed pin (contact-guaranteed)
-fit <partB>.<pin> <x:y> [flags] [shadow]           # ground oracle: land the pin on a computed point
+fit <partB>[.<pin>] <partA>.<pin> [flags] [rel] [aim <pin> <pt>] [shadow]  # land partB's pin on partA's placed pin
+fit <partB>.<pin> <x:y> [flags] [rel] [shadow]     # ground oracle: land the pin on a computed point
+stamp <part> <pt> [flags] [rel]                    # rel = behind <part> | front <part>
 ```
 
 - **`pin key pt`** — a bare key in a **part** (`pin shoulder 4:0`) exports on the rendered sprite;
@@ -437,8 +441,21 @@ fit <partB>.<pin> <x:y> [flags] [shadow]           # ground oracle: land the pin
 - **`shadow`** flag: auto contact-shadow ellipse anchored at the footprint bottom (the feet), not
   the fit pin — a joint-to-joint fit still pools under the feet, never at the hip. Drawn first (feet
   cover it), cool from the light in scope.
+- **Occlusion relations (ADR-0092)** — `behind <part>` / `front <part>` trailing clauses on `stamp`
+  **and** `fit` layer the subject below/above an already-placed part in the resolved paint order (no
+  `z` numbers). Assembly is two-phase: placements defer into layers and composite in a
+  minimal-disruption topological order (a lone `behind` moves only its subject; ties = statement
+  order); inline paints (`fill`/`px`/`outline`/…) are barriers that keep their sequence slot. A
+  conflicting pair is a positioned **E025** cycle; an unplaced target errors. `critique` **C013**
+  measures each relation in the composite (a still-visible behind-part fires; declarative so it is a
+  `--strict` must-fix).
+- **`aim <pin> <pt>`** (fit only) — rotate the part about its fit pin until the named second `<pin>`
+  points at canvas `<pt>` (any angle). Orient a bow/sword per view without a redraw:
+  `fit bow.grip a.grip aim tip 60:20`. Pins ride the rotation. `render --explain` prints the resolved
+  paint order, each solved `aim N°`, and each relation's overlap/violation.
 
 `pin`/`fit` are contextual keywords (only in these statement shapes) — bindable as names elsewhere.
+`behind`/`front`/`aim` are likewise contextual (only in the trailing slot of `stamp`/`fit`).
 
 ## Expressions, functions, loops
 
