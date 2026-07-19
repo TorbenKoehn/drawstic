@@ -278,6 +278,10 @@ on every stroking command **except `poly`** (see its row).
 | `curvePoly` | `curvePoly <paint> <p1> <p2> <p3> … [fill]` — closed loop through the points; `fill` = solid mass, else inner-boundary stroke; a Region without paint (≥3) |
 | `profile` | `profile <paint> <span> <fn> [<baseline>] [fill]` — filled area under `y=f(x)`, one sample/column; `fn` gets normalized x∈[0,1]; a Region without paint |
 | `poly` | `poly <paint> <p1> <p2> … [fill]` — no trailing `w<N>` (its variadic point tail consumes it: `w2` → `E001 unknown name 'w2'`); for a wide outline stroke a Region: `stroke p poly(p1, p2, …) w2` |
+| `dome` | `dome <paint> <c> <rx>:<ry> [fill]` — upper half of the same-param `ellipse`, flat bottom edge (rows `cy−ry … cy−1`; `c` = flat base midpoint) — skull/helmet/hat crown (ADR-0093) |
+| `lobe` | `lobe <paint> <base> <tip> <w> [fill]` — teardrop: round cap (Ø`w`) at `base` tapering to a point at `tip` — ear/hair strand/nose/plume/tassel |
+| `crescent` | `crescent <paint> <c> <rx>:<ry> <thick> <dir> [fill]` — outer ellipse minus inner (`thick` px smaller, shifted `thick` toward `dir`); thickest opposite `dir`, tapers to 0 on the `dir` side — fringe/brim/eyelid |
+| `band` | `band <paint> <p0> <p1> <p2> <w> [fill]` — width-`w` ribbon along the arc through the 3 points; **stacked = turban wraps**; curved hat band/belt |
 | `fill` | `fill <paint> <region>` — rasterize any region solid |
 | `stroke` | `stroke <paint> <region> [w<N>]` — inner boundary, width N; on a region whose **short axis is ≤2N px** the border spans the whole region and the fill shows 0 % (an 8×2 bar stroked `w1` is 100 % stroke colour) — fill thin bars/bones/blades, don't stroke them |
 | `text` | `text <paint> <pt> <string> [font <name>]` — top-left at pt |
@@ -321,10 +325,12 @@ Both lines above are **draw-body** statements: `w`/`h` are the canvas size and e
 or hard-code the span (`profile(0..64, …)`) if you need it at module scope. The optional baseline
 likewise defaults to the canvas bottom `h−1`, a draw-scope value.
 
-Shapes are region constructors (`rect`/`rrect`/`circle`/`ellipse`/`poly`/`curvePoly`): with a leading
-paint at statement position they draw (`circle k 8:8 5` ≡ `stroke k circle(8:8, 5)`; `… fill` ≡
-`fill k circle(8:8, 5)`); without a paint, the call is a Region expression (`mask blob =
-curvePoly(4:12, 12:3, 20:12, 12:21)`). A paintless shape *statement* is an error.
+Shapes are region constructors (`rect`/`rrect`/`circle`/`ellipse`/`poly`/`curvePoly` + the organic
+`dome`/`lobe`/`crescent`/`band`): with a leading paint at statement position they draw (`circle k 8:8
+5` ≡ `stroke k circle(8:8, 5)`; `… fill` ≡ `fill k circle(8:8, 5)`); without a paint, the call is a
+Region expression (`mask blob = curvePoly(4:12, 12:3, 20:12, 12:21)`; `mask cap = dome(8:8, 6:6)`). A
+paintless shape *statement* is an error. The four organic constructors are exact analytic tests
+(smooth at any size, no bezier blocking) and even-diameter consistent with `circle`/`ellipse`.
 
 ## Paths
 
@@ -653,6 +659,7 @@ optional leading region scope (ADR-0071):
 `outline [k] [2]` (silhouette outline; colour+width both optional — bare `outline` = 1px derived-dark ink; builds the silhouette from ≥50%-alpha pixels, so it ignores soft shadows/AA and never eats thin features — ADR-0090) · `tint p 0.3` · `shadow dx:dy p` (whole-frame drop) ·
 `castShadow r 2:3 p` / `shadow r 2:3 p` (local, region-first) · `grain [r] amount seed p` ·
 `speckle [r] density seed p` · `ripple [r] strength seed p` · `dither [r] a b threshold` ·
+`quantize [r] palette` (remap opaque pixels to the nearest palette colour — OkLab, first-declared wins ties; `palette` is a colour list; import-assist: `import … sha256` → `quantize` → `outline` → `critique`, ADR-0093) ·
 `shadeRegion r lightPt base amount` · `lightRegion r lightPt paint amount` ·
 `rim r dir p width` · `ambientOcclusion r p amount`.
 
@@ -800,10 +807,20 @@ theme dusk:
   style """…"""             # natural-language style guide — read it via `context`
 ```
 
-A theme body holds **only** `pal:` / `grad NAME = …` / `size` / `mode` / `font` / `light` / `style` /
-`with` / `filter` / `draw` (ADR-0081/0086). A theme `light NAME = …` folds like `size`/`mode`/`font`
-(later wins) → the drawing's outermost light (§ Light & material resolution order); the bound name is
-decorative. Surfaced by `context` (`## lighting`). A free binding there (`accent = #d8a53a`) — or a
+A theme body holds **only** `pal:` / `grad NAME = …` / `size` / `mode` / `font` / `light` / `figure:` /
+`style` / `with` / `filter` / `draw` (ADR-0081/0086/0093). A theme `light NAME = …` folds like
+`size`/`mode`/`font` (later wins) → the drawing's outermost light (§ Light & material resolution
+order); the bound name is decorative. Surfaced by `context` (`## lighting`).
+
+**Figure oracle** (ADR-0093). A theme `figure:` block declares the project's proportion numbers
+(`heads`, `headW`, `eyeLine`/`earLine` as head-height fractions, `eyeSep`, `neckW`, `shoulderW`,
+`hipW`); it folds like `light` (later wins) and binds a first-class `fig` in every drawing over that
+drawing's `w`×`h`. Read guide **points** — `fig.crown`/`chin`/`neckL`/`neckR`/`eyeL`/`eyeR`/`earL`/
+`earR`/`shoulderL`/`shoulderR`/`hipL`/`hipR` — and **scalars** (`fig.headH`/`headW`/`eyeY`/`earY`/
+`center`/…) instead of inventing coordinates. Views: `fig.front`/`fig.side`/`fig.back` re-view the same
+numbers (`fig.side.eye`, `fig.back.earL`); `fig.NAME(view)` also works. Crown at `y=0`, one head =
+`h/heads`; **side faces `+x`** (eye forward off centre, ear toward the back). Surfaced by `context`
+(`## figure`). A free binding there (`accent = #d8a53a`) — or a
 `material NAME = …` (materials live in module/draw scope, not the theme) — is `E004` **at the
 declaration** (hint: put colours under `pal:`, move other constants/materials to module scope) — a
 theme carries no non-colour design tokens (radius/margin/alpha), so keep those at module scope above

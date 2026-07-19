@@ -280,6 +280,17 @@ export type Statement =
        * The response is a keyword *only* in this slot (contextual, D7); validated at
        * parse time so `response` is always a real {@link import('./values.js').MaterialResponse}.
        */
+      readonly kind: 'figureBlock'
+      /**
+       * A theme `figure:` block (ADR-0093) declaring the project's proportion numbers. Each field is a
+       * bare name (`heads`, `headW`, `eyeLine`, `earLine`, `eyeSep`, `neckW`, `shoulderW`, `hipW`)
+       * paired with a numeric expression; the engine folds them into the theme and derives a `fig`
+       * guide value per drawing. Field names are contextual — validated by the evaluator, not reserved.
+       */
+      readonly fields: readonly { readonly name: string; readonly value: Expression }[]
+      readonly span: TextSpan
+    }
+  | {
       readonly kind: 'materialBinding'
       readonly name: string
       readonly color: Expression

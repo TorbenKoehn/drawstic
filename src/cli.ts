@@ -492,6 +492,7 @@ type Brief = {
     readonly mode: string | null
     readonly font: string | null
     readonly light: string | null
+    readonly figure: string | null
   }
   readonly drawings: readonly {
     readonly name: string
@@ -635,6 +636,11 @@ const buildBrief = (engine: Engine, mod: ModuleRecord): Brief => {
       mode: theme?.mode ?? null,
       font: theme?.font ?? null,
       light: theme?.light ? formatThemeLight(theme.light) : null,
+      figure: theme?.figure
+        ? Object.entries(theme.figure)
+            .map(([k, v]) => `${k} ${v}`)
+            .join(' · ')
+        : null,
     },
     drawings,
     exports,
@@ -762,6 +768,13 @@ const runContext = (cli: CliArguments): number => {
       lines.push(
         '## lighting',
         `  light ${brief.theme.light}  (theme default, shared by all views)`,
+        '',
+      )
+    }
+    if (brief.theme.figure) {
+      lines.push(
+        '## figure',
+        `  ${brief.theme.figure}  (read guide points via fig.crown/eyeL/earR/… — see reference)`,
         '',
       )
     }

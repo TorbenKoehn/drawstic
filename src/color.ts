@@ -346,6 +346,33 @@ export const mix = (a: Color, b: Color, t: number, space: MixSpace = 'oklch'): C
 }
 
 /**
+ * The perceptually nearest colour in `palette` to `target`, by squared Euclidean OkLab distance
+ * (ADR-0093, `quantize` filter). Deterministic and tie-stable: on an exact distance tie the
+ * first-declared palette entry wins (strict `<`). Compares RGB only — the caller keeps the source
+ * alpha. Returns `target` unchanged for an empty palette.
+ */
+export const nearestColor = (target: Color, palette: readonly Color[]): Color => {
+  if (palette.length === 0) {
+    return target
+  }
+  const t = rgbToOklab(target.r / 255, target.g / 255, target.b / 255)
+  let best = palette[0] as Color
+  let bestDist = Number.POSITIVE_INFINITY
+  for (const p of palette) {
+    const o = rgbToOklab(p.r / 255, p.g / 255, p.b / 255)
+    const dl = o.l - t.l
+    const da = o.a - t.a
+    const db = o.b - t.b
+    const dist = dl * dl + da * da + db * db
+    if (dist < bestDist) {
+      bestDist = dist
+      best = p
+    }
+  }
+  return best
+}
+
+/**
  * Decompose committed sRGB into HSL (h in degrees [0,360), s/l in [0,1]); used only by mix's 'hsl' space.
  */
 const rgbToHslTuple = (

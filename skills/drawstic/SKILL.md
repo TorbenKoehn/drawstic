@@ -335,8 +335,13 @@ view + recolor variant shares that outermost source and the lit edge lands on th
 side** in front AND side (the structural fix for "light mirrored per view" — ADR-0086; a shared
 `warm`/`cool` + `fn lit/shd/deep` colour system is the ≤64px fallback where `shadeRegion`/`rim` are
 too weak). Side is a different pose, **not** a mirror; the theme light stays put across both.
-(2) **proportions constants** (`headTop/shoulderLine/hipLine/kneeLine/footLine` at module scope; ~4
-heads for 48–64px). (3) **parametric parts** (`draw part(c)`), each declaring its seam rows as
+(2) **proportions** — prefer the theme **`figure:` oracle** (ADR-0093): declare `heads/headW/eyeLine/
+earLine/eyeSep/…` once and read named guide points (`fig.crown`, `fig.eyeL/R`, `fig.side.eye`,
+`fig.earL/R`, `fig.neckL/R`, `fig.shoulderL/R`) per view — the engine derives them, so eyes/ears/neck
+can't drift and the profile eye lands forward (hand `headTop/shoulderLine/…` module constants are the
+theme-less floor). Build head + headwear from the organic constructors — `dome` (skull/helmet/crown),
+`lobe` (ear/plume/tassel), `crescent` (fringe/brim), `band` (curved hat band; **stacked = turban**) —
+not hand poly-lists. (3) **parametric parts** (`draw part(c)`), each declaring its seam rows as
 **`pin`s** in its own space (`pin shoulder 4:0` — replaces the old socket *comment*). (4) full body
 **back-to-front via `fit`** (not hand-computed `stamp` points): seed the root with `pin
 torso.shoulder …`, then `fit armL.shoulder torso.shoulder` — pixel contact is now structural and a

@@ -51,6 +51,41 @@ kneeLine     = 44
 footLine     = 55
 ```
 
+**Preferred: the theme `figure:` oracle** (ADR-0093). Declare the numbers once in the theme and read
+**named guide points** per view instead of hand-constants — the engine derives them, so eyes/ears/neck
+can't drift and the profile eye lands forward automatically:
+
+```drw
+theme ro:
+  figure:
+    heads 3.5
+    headW 22
+    eyeLine 0.62   # fraction of head height from the crown
+    earLine 0.58
+    eyeSep 10
+# in a draw applying the theme, `fig` is bound over its own w×h:
+circle ink fig.eyeL 1            # front: symmetric eyes on fig.eyeL / fig.eyeR
+circle ink fig.side.eye 1        # side: one eye, shifted forward off centre
+lobe skin fig.earL 4:13 6        # ear on the ear line (no more "wulst" guessing)
+```
+
+Views: `fig.front` / `fig.side` / `fig.back` re-view the same numbers; scalars (`fig.headH`,
+`fig.center`, …) and points (`fig.crown`/`chin`/`neckL`/`neckR`/`shoulderL`/`shoulderR`/`hipL`/`hipR`)
+are all readable. `context` prints the numbers. (The hand-constant block above still works as the
+theme-less floor.)
+
+**Build the head and headwear from the organic constructors, not hand poly-lists** (ADR-0093) — they
+are exact analytic shapes, even-diameter consistent with `circle`/`ellipse`, smooth at any size:
+`dome` = skull / helmet / hat crown; `lobe` = ear / hair strand / plume / hat tassel; `crescent` =
+hair fringe / hat-brim curve / eyelid; `band` = a curved hat band, and **3–4 stacked `band`s over a
+`dome` read as a turban, not a helmet**. These structurally retire the conical-neck / bulging-ear /
+missing-tassel / "helmet-instead-of-turban" / angular-form defects.
+
+**Import-assist alternative** (ADR-0093, for a one-off portrait where an external generator helps):
+external PNG → `import name = "…" sha256 …` → `quantize pal` (deterministic OkLab palette snap) →
+`outline` → `critique`. Determinism holds from the `sha256` pin onward. The parametric constructors
+above stay the main path for anything needing view consistency.
+
 | Figure | Canvas | Head:body | Notes |
 |---|---|---|---|
 | Normal (knight, archer, mage, robot) | 40–52 × **60–64** | **~1:3.5–4** | head+headgear ≈ 40 % of height; figure fills ~85–90 % of canvas |

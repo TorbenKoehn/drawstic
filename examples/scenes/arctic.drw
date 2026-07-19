@@ -35,7 +35,7 @@ fn twinkle(i) = 0.35 + rand(11, i) * 0.65
 fn starKind(i) = i mod 3
 fn starShape(i) = i mod 8
 fn driftY(x) = noise(21, x, 0) * 3 - 1.5
-fn crescent(cx, cy, r, dx) = circle(cx:cy, r).subtract(circle((cx + dx):cy, r))
+fn moonCut(cx, cy, r, dx) = circle(cx:cy, r).subtract(circle((cx + dx):cy, r))
 
 path auroraCore 160x50:
   move 18:32
@@ -125,7 +125,7 @@ draw arctic 160x96:
   grad moonHalo = radial(moonRim.alpha(25%), transparent)
   circle moonHalo 132:18 22 fill
   circle shadowCol.alpha(85%) 132:18 10 fill
-  fill moonCore crescent(132, 18, 10, 5)
+  fill moonCore moonCut(132, 18, 10, 5)
   circle craterCol 126:16 1 fill
   arc moonRim.alpha(55%) 132:18 14 200 340
   mask glintMask = circle(150:8, 2).xor(circle(152:8, 2))

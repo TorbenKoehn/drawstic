@@ -91,12 +91,71 @@ Archer 4/10, Wizard 4/10, Assassin 3/10. Ziel Messpunkt 2: ≥7/10 + Zensus-Krit
   Craft-Guide (KEIN std/chibi — Stil bleibt beim Projekt); `quantize(pal)`-Filter +
   Import-Assist-Workflow; danach kompletter Product-Skill-Rewrite (kanonischer Pfad je Kategorie,
   Floor nur reference.md).
+  - [x] **W2-3a Organik-Primitive + Proportions-Oracle + quantize (Engine-Teil)** ([ADR-0093](decisions/0093-organic-region-constructors-figure-oracle-quantize.md)):
+    **4 stil-neutrale Region-Konstruktoren** (`src/values.ts`, exakt-analytisch, even-diameter-konsistent,
+    Draw-Command- + Expression-Form + UFCS): `dome(c, rx:ry)` = obere Ellipsen-Hälfte mit flacher
+    Unterkante (bewiesen `dome.has == ellipse.has && y≤cy-1`); `lobe(base, tip, w)` = Tropfen (runder
+    Cap Ø`w` → C¹-Spitze, Halb-Ellipsen-Taper); `crescent(c, rx:ry, thick, dir)` = Ellipse minus nach
+    `dir` verschobene innere Ellipse (dick gegenüber `dir`, läuft auf 0 an der `dir`-Seite aus, via
+    `regionSubtract` zweier `ellipseRegion` → Konvention gratis geerbt); `band(p0, p1, p2, w)` =
+    Konstant-Breiten-Ribbon entlang des quadratischen 3-Punkt-Bogens (dichte Polylinie + exakter
+    Min-Distanz-Test, glatt/rund an den Enden, kein Bezier-Blocking). **Proportions-Oracle** als
+    Theme-Mechanik (`figure:`-Block, `figureBlock` AST-Kind, Parser `#parseFigureBlock`): das Projekt
+    deklariert `heads/headW/eyeLine/earLine/eyeSep/neckW/shoulderW/hipW`, die Engine faltet sie
+    (`FoldedTheme.figure`, fold/merge later-wins/fingerprint wie Theme-Licht) und bindet den First-Class-
+    Wert **`fig`** je Draw über dessen `w×h` (neben `w`/`h`). `fig`-Getter (`#figureMember`, intercept vor
+    globalem UFCS → `crown`/`eye`/`ear` bleiben freie Namen): Skalare (`fig.headH/headW/eyeY/center/…`) +
+    Guide-Punkte (`fig.crown/chin/neckL/R/eyeL/R/earL/R/shoulderL/R/hipL/R`); Views token-minimal per
+    Specializer `fig.front/side/back` (+ `fig.NAME(view)`). Side-View faces `+x` → Auge nach vorn
+    versetzt, Ohr nach hinten (struktureller Fix für „Augen-zu-mittig im Profil"). `context` zeigt die
+    Figur-Zahlen (`## figure`). **`quantize [region] palette`-Filter** (`src/raster.ts` `filterQuantize`
+    + `src/color.ts` `nearestColor`): OkLab-nächste Palette-Farbe je opakem Pixel, Ties first-declared,
+    Alpha bleibt; optionale Leading-Region wie grain/dither; Import-Assist-Pipeline (`import…sha256` →
+    `quantize` → `outline` → `critique`). **Probe-verifiziert** (`--png@6`, Scratch): Kopf front (runder
+    Schädel, symmetrische Tropfen-Ohren ohne Wulst, Augen auf `fig.eyeL/R`, Fransen), Kopf side (ein
+    Auge vorn, Ohr hinten), **Turban aus 3 `band`s liest als Turban, nicht Helm**, gekrümmtes Hutband
+    folgt der Krone, quantize snappt Gradienten auf 8er-Palette (2× byte-gleich). tsc+biome clean,
+    **864 Tests grün** (+19 `organic.test.ts`: Footprints/Symmetrie je Konstruktor, dome==Ellipsen-
+    Oberhälfte, band folgt Bogen + Breite, fig-Getter-Werte + Side-Shift, figure fold/merge/unknown-
+    field-Error, quantize deterministisch + Ties). Kollisionen (neue Builtins unshadowbar, ADR-0088-
+    Präzedenz): `dome`→`skull`/`mound`, `crescent`→`moon`/`moonCut`, `band`→`rowBand`/`strip` in
+    betroffenen examples/tests umgeschrieben. Spec (§Regions/§Themes/§Filters) + reference.md synchron;
+    SKILL/character-craft minimal ergänzt (großer Rewrite bleibt **W2-3b**). W2-3-Checkbox bleibt offen.
 - [ ] **W2-4 Skeleton** (ADR-0095): `skeleton`-Block (Joints/Parent/Rest-Winkel/Constraints, FK),
   `pose`-Blöcke, Auto-Z aus Bone-Tiefe je View (behind/front als Lowering), 4 Charaktere auf
   Skeleton-Posen. DANACH ⏸ MESSPUNKT 2: Blind-Rebuild (craft-eval) + Human-Grading + Zensus (Stopp).
 
 ### Welle-2 emergente Punkte
 
+- **W2-3a: `fig`-Getter müssen den globalen UFCS-Dispatch umgehen — sonst werden `crown`/`eye`/`ear`
+  reservierte Builtins.** Ein `fig.eyeL` parst als `method`-Kind → würde per `callBuiltinOrFn('eyeL',
+  [fig])` aufgelöst, was `eyeL` (und `crown`/`chin`/`ear`/…) zu globalen Builtin-Namen machte und via
+  `#checkBindable` unshadowbar → ein Charakter-Projekt könnte `draw crown`/`pin chin` nicht mehr nutzen.
+  Lösung: im `case 'method'` VOR dem UFCS-Call abfangen, wenn das Objekt eine Figure ist
+  (`#figureMember`) → die Getter sind figure-lokale Felder, keine globalen Namen.
+- **W2-3a: View als Specializer (`fig.side.eye`) ist token-minimaler als View-Argument.** Der Plan bot
+  „Getter nimmt View als Arg ODER Theme je View" zur Wahl. Gewählt: `fig.front/side/back` liefern eine
+  re-viewte Figure, danach sind alle Getter parenlos (`fig.side.eye`, `fig.back.earL`) — keine
+  Bare-Keyword-Argumente nötig. `fig.NAME(view)` bleibt zusätzlich akzeptiert (lenient), aber der
+  Specializer ist der dokumentierte Hauptweg. Weil der Member-Access ohnehin abgefangen wird, kostet der
+  zweite „View-Wert" keinen eigenen Typ (nur ein `view`-Feld auf `Figure`).
+- **W2-3a: `crescent` aus zwei `ellipseRegion` + `regionSubtract` erbt die Even-Diameter-Konvention
+  gratis.** Statt einer eigenen analytischen Sichel-Membership (die die Ecken-Zentrierung
+  ADR-0056/0087 von Hand reproduzieren müsste) ist die Sichel `regionSubtract(outer, innerVerschoben)` —
+  beide `ellipseRegion` tragen die Konvention bereits, also ist die Sichel automatisch konsistent und
+  reuse-t getesteten Code. `dome` analog als Ellipsen-Oberhälfte (delegiert an `ellipseRegion.has`).
+- **W2-3a: `band` analytisch (Min-Distanz zur Polylinie) statt via `pathStrokeRegion` — exakte Breite +
+  keine values→raster-Zirkularität.** `pathStrokeRegion` (in values.ts vorhanden) hätte Disc-Radius
+  `floor((w-1)/2)` genutzt → Breite ~`2·floor((w-1)/2)+1` statt exakt `w`. Zudem lebt die Catmull-Rom-
+  Flattening-Maschinerie in raster.ts (values.ts darf nicht davon importieren, Zirkel). Gewählt: lokale
+  quadratische-Bézier-Abtastung (interpoliert p1 bei t=0.5 → echter 3-Punkt-Bogen) + exakter Segment-
+  Min-Distanz-Test in values.ts → exakte Breite `w`, glatt, self-contained, deterministisch.
+- **W2-3a: Die neuen Shape-Namen kollidieren mit gängigen Identifiern in bestehenden Recipes.** `dome`/
+  `crescent`/`band` sind natürliche lokale Namen (Coral-Dome, Mond-Sichel, Zeilen-Band). Als Builtins
+  werden sie unshadowbar → 6 examples + 2 Test-Fixtures brachen. Konsequent zur ADR-0088/0086/0087-
+  Präzedenz (neuer Builtin → kollidierende Recipes umschreiben): `dome`→`skull`/`mound`, `crescent`→
+  `moon`/`moonCut`, `band`→`rowBand`/`strip`. Kein Determinismus-/Render-Δ (reine Umbenennung); der
+  examples-census-Gate und die cli-context-Assertions wurden nachgezogen.
 - **W2-1: EDT-Warmstart muss LINEAR sein, nicht quadratisch.** Der Plan sagte „EDT-Feld als
   Warmstart". Der *quadratische* EDT (`dist2` direkt) warmstartet P als Kegel mit konstanter
   Flankensteigung → unter-konvergierte Jacobi behält eine harte Terminator-Schulter (Probe: Kugel-Diagonale

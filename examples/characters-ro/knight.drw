@@ -87,8 +87,8 @@ draw torsoFront 36x46:
   pin hip 18:45
 
 draw pauldron 16x13:
-  dome = ellipse(8:8, 8:7)
-  cel dome plate 4
+  skull = ellipse(8:8, 8:7)
+  cel skull plate 4
   fill steelDark rect(0:10, 15:12)
   px gold 7:4
   px steelSpec 4:3

@@ -37,19 +37,19 @@ grad hazeBand = linear(90, haze.alpha(0%), haze.alpha(40%), haze.alpha(0%))
 grad vign = radial(abyss.alpha(0%), abyss.alpha(58%))
 
 # ---- coral components (light from top) ---------------------------------------
-# brain coral: shaded dome with wavy grooves
+# brain coral: shaded mound with wavy grooves
 draw brainCoral(c) 46x34:
-  dome = ellipse(23:24, 21:15)
-  fill c dome
-  mask dome:
+  mound = ellipse(23:24, 21:15)
+  fill c mound
+  mask mound:
     for i 0..6:
       gy = 8 + i * 4
       curve c.darken(26%) 2:gy 12:(gy + 3) 23:(gy - 2) 34:(gy + 3) 44:gy w2
     for i 0..6:
       gy = 10 + i * 4
       curve c.lighten(14%) 2:(gy - 1) 12:(gy + 2) 23:(gy - 3) 34:(gy + 2) 44:(gy - 1)
-  shadeRegion dome 23:0 abyss.alpha(70%) 0.7
-  rim dome.intersect(rect(0:0, 45:20)) 0:1 c.lighten(30%) 1
+  shadeRegion mound 23:0 abyss.alpha(70%) 0.7
+  rim mound.intersect(rect(0:0, 45:20)) 0:1 c.lighten(30%) 1
 
 # staghorn: branching coral, brighter toward the tips
 draw staghorn(c) 42x50:
@@ -102,7 +102,7 @@ draw seagrass(c) 18x56:
   curve c.darken(6%) 13:55 15:40 10:26 13:9 w2
   curve c.lighten(10%) 9:55 10:36 8:20 9:4
 
-# anemone: soft column crowned with a dome of waving tentacles
+# anemone: soft column crowned with a mound of waving tentacles
 draw anemone(c) 28x24:
   ellipse c.darken(16%) 14:20 8:5 fill
   shadeRegion ellipse(14:20, 8:5) 14:0 abyss.alpha(60%) 0.55

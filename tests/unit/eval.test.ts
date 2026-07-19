@@ -131,7 +131,7 @@ describe('evaluator', () => {
 
   test('loops, lists, fn, floored // and mod', () => {
     const s = render(
-      'fn band(row) = row // 2 mod 2\n\ndraw stripes 4x4:\n  pal k=#000000  y=#ffffff\n  cols = k, y\n  for row 0..h:\n    poly cols[band(row)] 0:row w:row\n',
+      'fn rowBand(row) = row // 2 mod 2\n\ndraw stripes 4x4:\n  pal k=#000000  y=#ffffff\n  cols = k, y\n  for row 0..h:\n    poly cols[rowBand(row)] 0:row w:row\n',
       'stripes',
     )
     expect(px(s, 0, 0)).toEqual([0, 0, 0, 255])
@@ -797,25 +797,25 @@ draw d 2x2:
   })
 
   test('region-scoped texture filters confine to the region; whole-frame form unchanged (ADR-0071)', () => {
-    // grain confined to the left band leaves the rest of the row untouched
+    // grain confined to the left strip leaves the rest of the row untouched
     const grained = render(
-      'draw d 6x1:\n  bg #ffffff\n  band = rect(0:0, 2:0)\n  grain band 1 7 #000000\n',
+      'draw d 6x1:\n  bg #ffffff\n  strip = rect(0:0, 2:0)\n  grain strip 1 7 #000000\n',
       'd',
     )
-    expect(px(grained, 0, 0)).toEqual([0, 0, 0, 255]) // inside band: grained
-    expect(px(grained, 5, 0)).toEqual([255, 255, 255, 255]) // outside band: untouched
+    expect(px(grained, 0, 0)).toEqual([0, 0, 0, 255]) // inside strip: grained
+    expect(px(grained, 5, 0)).toEqual([255, 255, 255, 255]) // outside strip: untouched
 
-    // dither raw-sets only inside the band
+    // dither raw-sets only inside the strip
     const dithered = render(
-      'draw d 6x1:\n  bg #ffffff\n  band = rect(0:0, 2:0)\n  dither band #000000 #ffffff 1\n',
+      'draw d 6x1:\n  bg #ffffff\n  strip = rect(0:0, 2:0)\n  dither strip #000000 #ffffff 1\n',
       'd',
     )
-    expect(px(dithered, 0, 0)).toEqual([0, 0, 0, 255]) // threshold 1 -> paintA inside band
-    expect(px(dithered, 5, 0)).toEqual([255, 255, 255, 255]) // outside band: untouched
+    expect(px(dithered, 0, 0)).toEqual([0, 0, 0, 255]) // threshold 1 -> paintA inside strip
+    expect(px(dithered, 5, 0)).toEqual([255, 255, 255, 255]) // outside strip: untouched
 
     // speckle/ripple accept the leading region too
     const speckled = render(
-      'draw d 6x1:\n  bg #ffffff\n  band = rect(0:0, 2:0)\n  speckle band 1 11 #ff0000\n  ripple band 1 5 #0000ff\n',
+      'draw d 6x1:\n  bg #ffffff\n  strip = rect(0:0, 2:0)\n  speckle strip 1 11 #ff0000\n  ripple strip 1 5 #0000ff\n',
       'd',
     )
     expect(px(speckled, 5, 0)).toEqual([255, 255, 255, 255]) // both filters leave the outside clean

@@ -374,7 +374,7 @@ required only where a call is nested inside an expression.
 after, flags last* ([ADR-0066](decisions/0066-paint-first-painting-commands.md)).
 
 **Shapes are region constructors** ([ADR-0036](decisions/0036-shapes-as-region-constructors.md)).
-`rect`/`rrect`/`circle`/`ellipse`/`poly`/`curvePoly` construct a **Region** (§4); at statement position a
+`rect`/`rrect`/`circle`/`ellipse`/`poly`/`curvePoly`/`dome`/`lobe`/`crescent`/`band` construct a **Region** (§4); at statement position a
 **leading `<paint>`** rasterizes it, with trailing `[fill] [w<N>]` flags as modifiers — the
 statement means *construct the region, then rasterize it*. **Without** a paint the same
 call is an expression yielding the region (used in masks, §9); a shape *statement* without
@@ -415,6 +415,10 @@ N via 4-erosion), a function of the coverage set alone — never of how the regi
 | `curvePoly`| `curvePoly <paint> <p1> <p2> <p3> … [fill]` | closed Catmull-Rom loop through the points — fillable organic mass; a Region without paint (≥3; [ADR-0075](decisions/0075-curvepoly-closed-curve-region.md)) |
 | `profile`| `profile <paint> <span> <fn> [<baseline>] [fill]` | filled silhouette under `y = f(x)`, sampled once per column; `fn` gets normalized x∈[0,1]; a Region without paint ([ADR-0076](decisions/0076-profile-filled-function-silhouette.md)) |
 | `poly`  | `poly <paint> <p1> <p2> … [fill]` | polyline / polygon (explicit vertices) |
+| `dome`  | `dome <paint> <center> <rx>:<ry> [fill]` | dome / cap: the upper half of the same-parameter `ellipse` with a flat bottom edge (rows `cy−ry … cy−1`; `center` is the flat base midpoint) — skull, helmet, hat crown ([ADR-0093](decisions/0093-organic-region-constructors-figure-oracle-quantize.md)) |
+| `lobe`  | `lobe <paint> <base> <tip> <w> [fill]` | teardrop: round cap of diameter `w` at `base` tapering to a point at `tip` — ear, hair strand, side nose, plume, hat tassel |
+| `crescent`| `crescent <paint> <center> <rx>:<ry> <thick> <dir> [fill]` | crescent/lune: outer ellipse minus an inner one `thick` px smaller and shifted `thick` px toward `dir`; thickest opposite `dir`, tapering to nothing on the `dir` side — hair fringe, brim curve, eyelid |
+| `band`  | `band <paint> <p0> <p1> <p2> <w> [fill]` | constant-width `w` ribbon along the quadratic arc through the three points — curved hat band, belt; **stacked = turban wraps** |
 | `fill`  | `fill <paint> <region>` | rasterize any region expression solid (§9, [ADR-0039](decisions/0039-region-algebra-constructors-combinators-eliminators.md)) |
 | `stroke`| `stroke <paint> <region> [w<N>]` | rasterize a region's inner boundary, width `N` (default 1) |
 | `text`  | `text <paint> <pt> <string> [font <name>]` | bitmap text, top-left at `<pt>` |
@@ -1225,6 +1229,8 @@ grain sand 0.2 11 k # …confined to a region — optional leading region, likew
 speckle 0.1 17 k   # sparse marks over opaque pixels — density then seed
 ripple 0.4 23 k    # horizontal bands over opaque pixels — strength then seed
 dither k y 0.5     # Bayer-select two paints over opaque pixels
+quantize pal8      # remap opaque pixels to the nearest palette colour (OkLab, first-declared wins ties; ADR-0093)
+quantize face pal8 # …confined to a region (optional leading region, like grain/speckle/ripple/dither)
 shadeRegion r sun #0c1830 0.6   # shadow veil: amount = opacity, deepest away from the light
 lightRegion r sun #ffd08a 0.8   # additive light veil: brightest nearest the light
 rim r 1:0 #ffffff80 1
@@ -1258,6 +1264,12 @@ alone (`check` cannot catch a wrong filter argument; it stays semantically silen
   there. A partner paint at `alpha(0%)` therefore punches a **transparency hole**, not a
   no-op. On small or radial fills the fixed 4×4 Bayer tile reads as a hard checkerboard
   rather than a smooth gradient — expect visible banding below roughly 16px.
+- **`quantize [region] palette`** remaps every opaque pixel's RGB to its **perceptually nearest**
+  colour in `palette` (squared OkLab distance; on an exact tie the **first-declared** entry wins),
+  keeping the source alpha. `palette` is a list of colours (`pal8 = #111, #eee, …`). It is the
+  pipeline half of the **import-assist workflow** — external PNG → `import … sha256` → `quantize`
+  → `outline` → `critique`: determinism holds from the `sha256` pin onward, the PNG's generation
+  stays outside the engine ([ADR-0093](decisions/0093-organic-region-constructors-figure-oracle-quantize.md)).
 - **All four shadow surfaces share one `[region] dx:dy paint` shape**
   ([ADR-0070](decisions/0070-unified-shadow-argument-shape.md)): the stamp flag
   `shadow dx:dy p` (§9), the whole-frame filter `shadow dx:dy p`, the local region form
@@ -1404,9 +1416,9 @@ draw sword 24x48:
 ### Themes — a dual artifact
 
 A theme carries a **machine part** (palette, shared base drawings, the **canvas-size
-default**, **render mode**, **text-font default**, and a **default light**) **and an LLM part**: a
-natural-language **style guide**. The style guide is what makes many drawings *look like a set*. See
-[ADR-0003](decisions/0003-themes-as-style-guides.md).
+default**, **render mode**, **text-font default**, a **default light**, and an optional **figure
+proportions oracle**) **and an LLM part**: a natural-language **style guide**. The style guide is
+what makes many drawings *look like a set*. See [ADR-0003](decisions/0003-themes-as-style-guides.md).
 
 ```drw
 theme dusk:
@@ -1427,7 +1439,7 @@ theme dusk:
 ```
 
 A theme body holds only these forms — `pal:` / `grad NAME = …`, `size` / `mode` / `font` /
-`light`, `style`, `with`, and `filter` / `draw` definitions. A theme's `light NAME = …`
+`light` / `figure:`, `style`, `with`, and `filter` / `draw` definitions. A theme's `light NAME = …`
 ([ADR-0086](decisions/0086-declarative-light-and-material.md)) folds like `size`/`mode`/`font`
 (later wins) and becomes the drawing's **outermost** light — so every `model`/`cel` in every
 drawing applying the theme shares one source unless a `light L` argument
@@ -1439,6 +1451,34 @@ above the theme ([ADR-0081](decisions/0081-loop-persistent-rebinding-and-theme-s
 A theme carries a default `light`, but **not** materials: a `material NAME = …` in a theme body is
 the same positioned **E004** — materials live in module/draw scope, where a `model`/`cel` reads
 them ([ADR-0086](decisions/0086-declarative-light-and-material.md)).
+
+**Figure proportions oracle** ([ADR-0093](decisions/0093-organic-region-constructors-figure-oracle-quantize.md)).
+A theme may declare a `figure:` block — the PROJECT's proportion numbers. Drawstic gives no style; it
+supplies the mechanism to read a *declared* position instead of inventing coordinates (the structural
+fix for conical necks, bulging ears, and eyes too central in profile). It folds like `light` (later
+wins) and binds a first-class **`fig`** value in every drawing applying the theme, laid out over that
+drawing's own `w`×`h`:
+
+```drw
+theme ro:
+  figure:
+    heads 3.5       # figure height in head-heights
+    headW 22        # head width, px
+    eyeLine 0.62    # eye line as a fraction of head height, from the crown
+    earLine 0.58
+    eyeSep 10       # front eye separation, px  (derives from headW if omitted)
+    neckW 11        # + shoulderW / hipW
+```
+
+`fig` exposes guide **scalars** (`fig.headH`, `fig.headW`, `fig.eyeY`, `fig.earY`, `fig.center`, …)
+and guide **points** — `fig.crown`, `fig.chin`, `fig.neckL`/`fig.neckR`, `fig.eyeL`/`fig.eyeR`,
+`fig.earL`/`fig.earR`, `fig.shoulderL`/`fig.shoulderR`, `fig.hipL`/`fig.hipR`. Views are a
+token-minimal specializer: `fig.front` / `fig.side` / `fig.back` re-view the same numbers
+(`fig.side.eye`, `fig.back.earL`); `fig.NAME(view)` is also accepted. The crown sits at `y=0`, one
+head is `h/heads` tall, so every line falls out of the head height. **Side view faces `+x`**, shifting
+its single eye forward off centre and its ear toward the back. `context` prints the figure numbers.
+Field names are contextual keywords — validated at fold time (`heads`, `headW`, `eyeLine`, `earLine`,
+`eyeSep`, `neckW`, `shoulderW`, `hipW`); an unknown name is a positioned error.
 
 ### Composition with `with` (no inheritance)
 

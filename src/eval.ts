@@ -76,6 +76,7 @@ import {
   filterDither,
   filterGrain,
   filterOutline,
+  filterQuantize,
   filterRipple,
   filterShadow,
   filterSpeckle,
@@ -106,18 +107,27 @@ import { STD_GLOBAL_FONTS, STD_MODULES } from './std.js'
 import {
   aboutPoint,
   applyMatrix,
+  bandRegion,
   circleRegion,
   compose,
+  crescentRegion,
+  domeRegion,
   ellipseRegion,
   emptyRegion,
+  type Figure,
+  type FigureSpec,
+  figure,
+  figureField,
   type Grad,
   IDENTITY,
   invertMatrix,
+  isFigureView,
   isFormProfile,
   isMaterialResponse,
   type Light,
   light,
   list,
+  lobeRegion,
   type Material,
   material,
   multiplyMatrix,
@@ -179,6 +189,18 @@ const regionScopeOf = (v: Value): Region | undefined => {
  */
 const curvePolyRegion = (pts: readonly { readonly x: number; readonly y: number }[]): Region =>
   polyRegion(catmullRomLoopPoints(pts).map((p) => ({ x: quantInt(p.x), y: quantInt(p.y) })))
+
+/** The proportion field names a theme `figure:` block may declare (ADR-0093). */
+const FIGURE_FIELDS: ReadonlySet<string> = new Set([
+  'heads',
+  'headW',
+  'eyeLine',
+  'earLine',
+  'eyeSep',
+  'neckW',
+  'shoulderW',
+  'hipW',
+])
 
 // ── budget (spec §15) ───────────────────────────────────────────────────────
 
@@ -380,6 +402,12 @@ export type FoldedTheme = {
   mode: RenderMode | null
   font: string | null
   light: Light | null
+  /**
+   * The theme's declared figure proportions (ADR-0093), or `null`. Folded like `light` (later wins);
+   * a drawing whose theme carries this gets a `fig` guide value bound from these numbers and its own
+   * canvas size, so every view/variant reads the same proportions.
+   */
+  figure: FigureSpec | null
 }
 
 const emptyTheme = (): FoldedTheme => ({
@@ -391,6 +419,7 @@ const emptyTheme = (): FoldedTheme => ({
   mode: null,
   font: null,
   light: null,
+  figure: null,
   style: [],
 })
 
@@ -677,6 +706,11 @@ const BUILTIN_NAMES = new Set([
   'rrect',
   'ellipse',
   'poly',
+  // organic region constructors (ADR-0093)
+  'dome',
+  'lobe',
+  'crescent',
+  'band',
   'region',
   'union',
   'intersect',
@@ -719,6 +753,7 @@ const BUILTIN_NAMES = new Set([
   'speckle',
   'ripple',
   'dither',
+  'quantize',
   'shadeRegion',
   'lightRegion',
   'rim',
@@ -1521,6 +1556,37 @@ export class Engine {
     acc.light = this.#evalLightValue(item, env, state)
   }
 
+  /**
+   * Fold a theme-body `figure:` block (ADR-0093) into a {@link FigureSpec} — each field a validated
+   * proportion name paired with its evaluated number. The block evaluates with the folded palette
+   * visible (like `#foldLight`), and an unknown field name is a positioned E006 with the valid set.
+   */
+  #foldFigure(
+    item: Extract<Statement, { readonly kind: 'figureBlock' }>,
+    mod: ModuleRecord,
+    acc: FoldedTheme,
+    state: State,
+  ): FigureSpec {
+    const env = new Environment(mod.env)
+    for (const p of acc.palette) {
+      env.declare(p.key, p.color, true, true)
+    }
+    const spec: { -readonly [K in keyof FigureSpec]: FigureSpec[K] } = {}
+    for (const field of item.fields) {
+      if (!FIGURE_FIELDS.has(field.name)) {
+        throw error(
+          ERROR_CODE.typeError,
+          `unknown figure field '${field.name}' (heads, headW, eyeLine, earLine, eyeSep, ` +
+            `neckW, shoulderW, hipW)`,
+          mod.displayPath,
+          field.value.span,
+        )
+      }
+      spec[field.name as keyof FigureSpec] = this.evalNumber(field.value, env, state)
+    }
+    return spec
+  }
+
   #foldThemeItem(
     item: Statement,
     def: ThemeDefinition,
@@ -1551,6 +1617,9 @@ export class Engine {
         return acc
       case 'lightBinding':
         this.#foldLight(item, mod, acc, state)
+        return acc
+      case 'figureBlock':
+        acc.figure = this.#foldFigure(item, mod, acc, state)
         return acc
       case 'materialBinding':
         // A theme carries a `light` default (ADR-0086 tier 3), but *not* materials — those live in
@@ -2002,6 +2071,12 @@ export class Engine {
     const env = new Environment(mod.env, true)
     env.declare('w', width, true, false)
     env.declare('h', height, true, false)
+    // The proportions oracle (ADR-0093): a theme `figure:` block binds `fig` for the drawing,
+    // laid out over this canvas — a first-class guide value alongside `w`/`h`. Declared before the
+    // palette so a theme `pal` key `fig` still shadows it (consistent with `w`/`h`).
+    if (theme.figure) {
+      env.declare('fig', figure(width, height, theme.figure), true, false)
+    }
     for (const p of theme.palette) {
       env.declare(p.key, p.color, true, true)
     }
@@ -4116,6 +4191,70 @@ export class Engine {
         this.#emitShape(ctx, ellipseRegion(quantInt(c.x), quantInt(c.y), rr.x, rr.y), paint, flags)
         return
       }
+      case 'dome': {
+        const paint = args.drawPaint(stmt.span)
+        const c = args.point(draw)
+        const rr = args.pair()
+        const flags = args.drawFlags()
+        args.done()
+        this.#emitShape(ctx, domeRegion(quantInt(c.x), quantInt(c.y), rr.x, rr.y), paint, flags)
+        return
+      }
+      case 'lobe': {
+        const paint = args.drawPaint(stmt.span)
+        const base = args.point(draw)
+        const tip = args.point(draw)
+        const width = args.num()
+        const flags = args.drawFlags()
+        args.done()
+        this.#emitShape(
+          ctx,
+          lobeRegion(quantInt(base.x), quantInt(base.y), quantInt(tip.x), quantInt(tip.y), width),
+          paint,
+          flags,
+        )
+        return
+      }
+      case 'crescent': {
+        const paint = args.drawPaint(stmt.span)
+        const c = args.point(draw)
+        const rr = args.pair()
+        const thick = args.num()
+        const dir = args.pair()
+        const flags = args.drawFlags()
+        args.done()
+        this.#emitShape(
+          ctx,
+          crescentRegion(quantInt(c.x), quantInt(c.y), rr.x, rr.y, thick, dir.x, dir.y),
+          paint,
+          flags,
+        )
+        return
+      }
+      case 'band': {
+        const paint = args.drawPaint(stmt.span)
+        const p0 = args.point(draw)
+        const p1 = args.point(draw)
+        const p2 = args.point(draw)
+        const width = args.num()
+        const flags = args.drawFlags()
+        args.done()
+        this.#emitShape(
+          ctx,
+          bandRegion(
+            quantInt(p0.x),
+            quantInt(p0.y),
+            quantInt(p1.x),
+            quantInt(p1.y),
+            quantInt(p2.x),
+            quantInt(p2.y),
+            width,
+          ),
+          paint,
+          flags,
+        )
+        return
+      }
       case 'arc': {
         const paint = args.paint()
         const c = args.point(draw)
@@ -4354,6 +4493,16 @@ export class Engine {
         filterDither(ctx, paintA, paintB, threshold, region)
         return
       }
+      case 'quantize': {
+        // `quantize [REGION] PALETTE` (ADR-0093): remap opaque pixels to their nearest palette colour.
+        // Optional leading region scope, like the other texture filters; PALETTE is a list of colours.
+        const first = args.value()
+        const region = regionScopeOf(first)
+        const palVal = region ? args.value() : first
+        args.done()
+        filterQuantize(ctx, this.#paletteColors(palVal, stmt.span, state), region)
+        return
+      }
       case 'shadeRegion': {
         const region = args.region()
         const light = args.pair()
@@ -4484,6 +4633,32 @@ export class Engine {
     throw error(
       ERROR_CODE.typeError,
       `expected a number, got ${typeName(v)}`,
+      state.module.displayPath,
+      span,
+    )
+  }
+
+  /** Coerce a value to a flat palette of solid colours (the `quantize` target, ADR-0093). */
+  #paletteColors(v: Value, span: TextSpan, state: State): Color[] {
+    if (typeof v === 'object' && v !== null && v.type === 'list') {
+      const colors: Color[] = []
+      for (const item of v.items) {
+        if (typeof item === 'object' && item !== null && item.type === 'color') {
+          colors.push(item)
+          continue
+        }
+        throw error(
+          ERROR_CODE.typeError,
+          `quantize palette must be a list of colours, got ${typeName(item)}`,
+          state.module.displayPath,
+          span,
+        )
+      }
+      return colors
+    }
+    throw error(
+      ERROR_CODE.typeError,
+      `quantize needs a list of colours, got ${typeName(v)}`,
       state.module.displayPath,
       span,
     )
@@ -5756,6 +5931,11 @@ export class Engine {
         return this.#evalDotIndex(expr, env, state)
       case 'method': {
         const obj = this.evalExpr(expr.target, env, state)
+        // A figure's guide getters (`fig.crown`, `fig.eyeL`, `fig.side.eye`, ADR-0093) resolve as
+        // figure-local fields, not global builtins — so `crown`/`eye`/`ear`/… stay ordinary names.
+        if (typeof obj === 'object' && obj !== null && obj.type === 'figure') {
+          return this.#figureMember(obj, expr.name, expr.args, state, expr.span)
+        }
         const args = (expr.args ?? []).map((a) => this.#evalArgValue(a, env, state))
         return this.callBuiltinOrFn(expr.name, [obj, ...args], state, expr.span)
       }
@@ -5767,6 +5947,58 @@ export class Engine {
           (expr as Expression).span,
         )
     }
+  }
+
+  /**
+   * Resolve a `fig.NAME` / `fig.NAME(view)` guide getter (ADR-0093). `front`/`side`/`back` re-view the
+   * figure; `fig.NAME(view)` overrides the view for one read (the bare view word is a contextual
+   * keyword, never evaluated). Every other name is a scalar or a guide point via {@link figureField};
+   * an unknown name is a positioned E006.
+   */
+  #figureMember(
+    fig: Figure,
+    name: string,
+    rawArgs: readonly Argument[] | undefined,
+    state: State,
+    span: TextSpan,
+  ): Value {
+    let subject = fig
+    if (rawArgs && rawArgs.length > 0) {
+      const first = rawArgs[0]
+      if (
+        rawArgs.length === 1 &&
+        first?.kind === 'expression' &&
+        first.expression.kind === 'name' &&
+        isFigureView(first.expression.name)
+      ) {
+        subject = { ...fig, view: first.expression.name }
+      } else {
+        throw error(
+          ERROR_CODE.typeError,
+          `figure getter '${name}' takes at most one view (front|side|back)`,
+          state.module.displayPath,
+          span,
+        )
+      }
+    }
+    const field = figureField(subject, name)
+    if (!field) {
+      throw error(
+        ERROR_CODE.typeError,
+        `figure has no field '${name}' (points: crown/chin/neck(L/R)/eye(L/R)/ear(L/R)/` +
+          `shoulder(L/R)/hip(L/R); scalars: heads/headW/headH/eyeLine/earLine/eyeSep/neckW/` +
+          `shoulderW/hipW/center/eyeY/earY/chinY/shoulderY/hipY; views: front/side/back)`,
+        state.module.displayPath,
+        span,
+      )
+    }
+    if (field.kind === 'num') {
+      return field.value
+    }
+    if (field.kind === 'point') {
+      return point(field.x, field.y)
+    }
+    return field.figure
   }
 
   /**
@@ -6483,6 +6715,47 @@ export class Engine {
       case 'poly': {
         const pts = args.map((_, i) => pt(i))
         return polyRegion(pts.map((p) => ({ x: quantInt(p.x), y: quantInt(p.y) })))
+      }
+      case 'dome': {
+        arity(2)
+        const c = pt(0)
+        const r = pt(1) // rx:ry pair
+        return domeRegion(quantInt(c.x), quantInt(c.y), r.x, r.y)
+      }
+      case 'lobe': {
+        arity(3)
+        const base = pt(0)
+        const tip = pt(1)
+        return lobeRegion(
+          quantInt(base.x),
+          quantInt(base.y),
+          quantInt(tip.x),
+          quantInt(tip.y),
+          num(2),
+        )
+      }
+      case 'crescent': {
+        arity(4)
+        const c = pt(0)
+        const r = pt(1) // rx:ry pair
+        const thick = num(2)
+        const dir = pt(3) // opening direction vector
+        return crescentRegion(quantInt(c.x), quantInt(c.y), r.x, r.y, thick, dir.x, dir.y)
+      }
+      case 'band': {
+        arity(4)
+        const p0 = pt(0)
+        const p1 = pt(1)
+        const p2 = pt(2)
+        return bandRegion(
+          quantInt(p0.x),
+          quantInt(p0.y),
+          quantInt(p1.x),
+          quantInt(p1.y),
+          quantInt(p2.x),
+          quantInt(p2.y),
+          num(3),
+        )
       }
       case 'curvePoly': {
         if (args.length < 3) {
@@ -7467,7 +7740,13 @@ const themeFingerprint = (t: FoldedTheme): string => {
     .join(';')
   const style = t.style.map((s) => s.text).join('')
   const size = t.size ? `${t.size.width}x${t.size.height}` : ''
-  return `${pal}|${t.mode ?? ''}|${t.font ?? ''}|${size}|G:${grads}|F:${filters}|D:${draws}|S:${style}|L:${t.light ? lightFingerprint(t.light) : ''}`
+  const fig = t.figure
+    ? Object.entries(t.figure)
+        .map(([k, v]) => `${k}=${v}`)
+        .sort()
+        .join(',')
+    : ''
+  return `${pal}|${t.mode ?? ''}|${t.font ?? ''}|${size}|G:${grads}|F:${filters}|D:${draws}|S:${style}|L:${t.light ? lightFingerprint(t.light) : ''}|FIG:${fig}`
 }
 
 /**
@@ -7569,6 +7848,7 @@ const mergeThemes = (a: FoldedTheme, b: FoldedTheme): FoldedTheme => {
     mode: b.mode ?? a.mode,
     font: b.font ?? a.font,
     light: b.light ?? a.light,
+    figure: b.figure ?? a.figure,
     style,
   }
 }

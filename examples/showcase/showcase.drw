@@ -7,7 +7,7 @@ use themes dusk
 
 TILE = 16
 
-fn band(row) = row // 4 mod 2
+fn rowBand(row) = row // 4 mod 2
 fn ring(c, r) = circle(c, r).subtract(circle(c, r - 2))
 
 mask keyhole = circle(8:5, 4).union(rect(6:5, 9:14))
@@ -15,7 +15,7 @@ mask keyhole = circle(8:5, 4).union(rect(6:5, 9:14))
 draw stripes 32x32:
   cols = k, y
   for row 0..h:
-    poly cols[band(row)] 0:row w:row
+    poly cols[rowBand(row)] 0:row w:row
 
 draw face 16x16:
   bg y

@@ -141,11 +141,11 @@ draw compass 32x32:
   line p.lighten(14%) 10:9 13:7 w1
 
 draw moon 32x32:
-  mask crescent = circle(16:16, 10).subtract(circle(21:12, 9))
+  mask moon = circle(16:16, 10).subtract(circle(21:12, 9))
   moonTone = p.mix(c, 20%)
-  fill moonTone crescent
-  fill d crescent.intersect(rect(0:22, 32:32))
-  stroke k crescent w2
+  fill moonTone moon
+  fill d moon.intersect(rect(0:22, 32:32))
+  stroke k moon w2
   circle d 10:16 1 fill
   circle d 13:22 1 fill
   line p.lighten(14%) 8:10 11:8 w1

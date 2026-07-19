@@ -207,6 +207,7 @@ export type Value =
   | Sprite
   | Light
   | Material
+  | Figure
 
 export const point = (x: number, y: number, rel = false): Point => ({ type: 'point', x, y, rel })
 export const list = (items: Value[]): List => ({ type: 'list', items })
@@ -273,6 +274,187 @@ export const material = (
   ...(overrides.spread !== undefined ? { spread: overrides.spread } : {}),
   ...(overrides.profile !== undefined ? { profile: overrides.profile } : {}),
 })
+
+// ── figure proportions oracle (ADR-0093) ───────────────────────────────────
+
+/** Which projection of a figure a guide point is read for. */
+export const FIGURE_VIEWS = ['front', 'side', 'back'] as const
+export type FigureView = (typeof FIGURE_VIEWS)[number]
+
+/** Whether `s` names a figure view — the contextual keyword test used by the `fig` getters. */
+export const isFigureView = (s: string): s is FigureView =>
+  (FIGURE_VIEWS as readonly string[]).includes(s)
+
+/**
+ * The resolved proportion numbers a {@link Figure} carries (ADR-0093). `heads` is the figure's total
+ * height in head-heights; `headW`/`neckW`/`shoulderW`/`hipW`/`eyeSep` are pixel widths; `eyeLine`/
+ * `earLine` are fractions of the head height measured from the crown. These are the PROJECT's numbers
+ * (declared in a theme's `figure` block) — the engine derives named guide points from them, so an
+ * author reads a position instead of inventing it.
+ */
+export type FigureProps = {
+  readonly heads: number
+  readonly headW: number
+  readonly eyeLine: number
+  readonly earLine: number
+  readonly eyeSep: number
+  readonly neckW: number
+  readonly shoulderW: number
+  readonly hipW: number
+}
+/** The declared subset of {@link FigureProps} (a theme need only state what differs from the defaults). */
+export type FigureSpec = Partial<FigureProps>
+
+/**
+ * A first-class figure proportions value (ADR-0093), bound as `fig` in a drawing whose theme declares
+ * a `figure` block. It maps the theme's proportion numbers onto the drawing's own `w`×`h` canvas and
+ * a `view`, exposing named guide points (`fig.crown`, `fig.eyeL`, `fig.earR`, `fig.neckL`, …) and
+ * scalars (`fig.headH`, `fig.headW`, …) — see {@link figureField}. `fig.front`/`fig.side`/`fig.back`
+ * re-view the same numbers; view-dependent getters take the view from that or an optional argument.
+ */
+export type Figure = {
+  type: 'figure'
+  readonly w: number
+  readonly h: number
+  readonly view: FigureView
+  readonly props: FigureProps
+}
+
+/**
+ * Resolve a {@link FigureSpec} into full {@link FigureProps}: canvas-independent defaults, with the
+ * derived widths (`eyeSep`/`neckW`/`shoulderW`/`hipW`) scaling off `headW` when not stated so a theme
+ * that declares only `headW` still gets a coherent set.
+ */
+export const figure = (
+  w: number,
+  h: number,
+  spec: FigureSpec,
+  view: FigureView = 'front',
+): Figure => {
+  const headW = spec.headW ?? 24
+  const props: FigureProps = {
+    heads: spec.heads ?? 4,
+    headW,
+    eyeLine: spec.eyeLine ?? 0.6,
+    earLine: spec.earLine ?? 0.55,
+    eyeSep: spec.eyeSep ?? headW * 0.42,
+    neckW: spec.neckW ?? headW * 0.5,
+    shoulderW: spec.shoulderW ?? headW * 1.5,
+    hipW: spec.hipW ?? headW * 1.15,
+  }
+  return { type: 'figure', w, h, view, props }
+}
+
+/** The result of reading one {@link Figure} field: a scalar, a guide point, or a re-viewed figure. */
+export type FigureField =
+  | { readonly kind: 'num'; readonly value: number }
+  | { readonly kind: 'point'; readonly x: number; readonly y: number }
+  | { readonly kind: 'figure'; readonly figure: Figure }
+
+/**
+ * Read a named guide value off a figure (ADR-0093), pure and deterministic. The figure is laid out
+ * over its full canvas height: the crown sits at `y=0`, one head is `h/heads` tall, so `chin`, the
+ * eye/ear lines, the shoulder and hip lines all fall out of the head height. Widths come straight from
+ * the props. View selection: `front`/`side`/`back` return a re-viewed figure; every other name is a
+ * scalar (`kind:'num'`) or a guide point (`kind:'point'`). Side view faces `+x`, so its single eye is
+ * shifted forward off centre and its ear sits toward the back — the structural fix for "eyes too
+ * central in profile". Returns `undefined` for an unknown name.
+ */
+export const figureField = (fig: Figure, name: string): FigureField | undefined => {
+  if (isFigureView(name)) {
+    return { kind: 'figure', figure: { ...fig, view: name } }
+  }
+  const { w, h, view, props } = fig
+  const cx = w / 2
+  const headH = props.heads > 0 ? h / props.heads : h
+  const crownY = 0
+  const chinY = headH
+  const eyeY = props.eyeLine * headH
+  const earY = props.earLine * headH
+  const shoulderY = headH * 1.3
+  const hipY = h * 0.5
+  const num = (value: number): FigureField => ({ kind: 'num', value })
+  const pt = (x: number, y: number): FigureField => ({ kind: 'point', x, y })
+  const facing = props.headW * 0.28
+  const earBack = props.headW * 0.18
+  switch (name) {
+    // scalars
+    case 'heads':
+      return num(props.heads)
+    case 'headW':
+      return num(props.headW)
+    case 'headH':
+      return num(headH)
+    case 'eyeLine':
+      return num(props.eyeLine)
+    case 'earLine':
+      return num(props.earLine)
+    case 'eyeSep':
+      return num(props.eyeSep)
+    case 'neckW':
+      return num(props.neckW)
+    case 'shoulderW':
+      return num(props.shoulderW)
+    case 'hipW':
+      return num(props.hipW)
+    case 'center':
+      return num(cx)
+    case 'eyeY':
+      return num(eyeY)
+    case 'earY':
+      return num(earY)
+    case 'crownY':
+      return num(crownY)
+    case 'chinY':
+      return num(chinY)
+    case 'shoulderY':
+      return num(shoulderY)
+    case 'hipY':
+      return num(hipY)
+    // view-independent guide points
+    case 'crown':
+      return pt(cx, crownY)
+    case 'chin':
+      return pt(cx, chinY)
+    case 'neck':
+      return pt(cx, chinY)
+    case 'neckL':
+      return pt(cx - props.neckW / 2, chinY)
+    case 'neckR':
+      return pt(cx + props.neckW / 2, chinY)
+    case 'shoulder':
+      return pt(cx, shoulderY)
+    case 'hip':
+      return pt(cx, hipY)
+    // view-dependent guide points
+    case 'eye':
+      return view === 'side' ? pt(cx + facing, eyeY) : pt(cx, eyeY)
+    case 'eyeL':
+      return view === 'side' ? pt(cx + facing, eyeY) : pt(cx - props.eyeSep / 2, eyeY)
+    case 'eyeR':
+      return view === 'side' ? pt(cx + facing, eyeY) : pt(cx + props.eyeSep / 2, eyeY)
+    case 'ear':
+      return view === 'side' ? pt(cx - earBack, earY) : pt(cx + props.headW / 2, earY)
+    case 'earL':
+      return view === 'side' ? pt(cx - earBack, earY) : pt(cx - props.headW / 2, earY)
+    case 'earR':
+      return view === 'side' ? pt(cx - earBack, earY) : pt(cx + props.headW / 2, earY)
+    case 'shoulderL':
+      return view === 'side'
+        ? pt(cx - props.shoulderW * 0.18, shoulderY)
+        : pt(cx - props.shoulderW / 2, shoulderY)
+    case 'shoulderR':
+      return view === 'side'
+        ? pt(cx + props.shoulderW * 0.18, shoulderY)
+        : pt(cx + props.shoulderW / 2, shoulderY)
+    case 'hipL':
+      return view === 'side' ? pt(cx - props.hipW * 0.18, hipY) : pt(cx - props.hipW / 2, hipY)
+    case 'hipR':
+      return view === 'side' ? pt(cx + props.hipW * 0.18, hipY) : pt(cx + props.hipW / 2, hipY)
+    default:
+      return undefined
+  }
+}
 
 export const isObj = (v: Value): v is Exclude<Value, number | boolean | string> =>
   typeof v === 'object' && v !== null
@@ -834,6 +1016,189 @@ export const regionXor = (a: Region, b: Region): Region => ({
   has: (x, y) => a.has(x, y) !== b.has(x, y),
   test: (fx, fy) => a.test(fx, fy) !== b.test(fx, fy),
 })
+
+// ── organic region constructors (ADR-0093) ──────────────────────────────────
+// Style-neutral parametric shapes for heads/ears/hair/headwear: LLMs are poor at inventing point
+// lists but good at parametrising named forms. All four share the even-diameter, corner-centred
+// convention (ADR-0056/ADR-0087) — membership is sampled at the pixel corner so a symmetric shape
+// gets a balanced `2·r` footprint — and are exact analytic tests (no polyline blocking at small
+// sizes). Each is a first-class Region: maskable, model/cel-shadeable, and outline-able.
+
+/**
+ * Dome / cap (ADR-0093): the upper half of {@link ellipseRegion}`(cx, cy, rx, ry)` with a flat
+ * bottom edge — a skull, helmet, or hat crown. It occupies rows `cy-ry .. cy-1` (the flat edge is the
+ * widest row `cy-1`), so `(cx, cy)` is the pixel-corner centre of the flat base. By construction
+ * `dome(c, rx, ry).has(x, y) === ellipse(c, rx, ry).has(x, y) && y <= cy-1` — one convention shared
+ * with the ellipse it is half of.
+ */
+export const domeRegion = (cx: number, cy: number, rx: number, ry: number): Region => {
+  const rxi = Math.max(0, roundHalfUp(rx))
+  const ryi = Math.max(0, roundHalfUp(ry))
+  if (rxi === 0 || ryi === 0) {
+    return emptyRegion
+  }
+  const full = ellipseRegion(cx, cy, rx, ry)
+  return {
+    type: 'region',
+    bbox: { x0: cx - rxi, y0: cy - ryi, x1: cx + rxi - 1, y1: cy - 1 },
+    has: (x, y) => y <= cy - 1 && full.has(x, y),
+    test: (fx, fy) => fy <= cy - 0.5 && full.test(fx, fy),
+  }
+}
+
+/**
+ * Lobe / teardrop (ADR-0093): round at `base` (a semicircle cap of diameter `w`), tapering smoothly
+ * to a point at `tip` — ears, hair strands, a side nose, a plume, a hat tassel. The half-width along
+ * the base→tip axis is `w/2` at the base and shrinks as a half-ellipse to 0 at the tip (C¹-smooth at
+ * the base join). Exact analytic membership (axial + perpendicular projection), sampled at the pixel
+ * corner so a vertical lobe gets a symmetric even footprint.
+ */
+export const lobeRegion = (bx: number, by: number, tx: number, ty: number, w: number): Region => {
+  const r = Math.max(0.5, w / 2)
+  const dx = tx - bx
+  const dy = ty - by
+  const len = dhypot(dx, dy)
+  const ux = len < 1e-9 ? 0 : dx / len
+  const uy = len < 1e-9 ? 1 : dy / len
+  const inside = (px: number, py: number): boolean => {
+    const rx0 = px - bx
+    const ry0 = py - by
+    const s = rx0 * ux + ry0 * uy // axial distance from base
+    const perp = Math.abs(-rx0 * uy + ry0 * ux) // perpendicular distance
+    if (s < 0) {
+      return dhypot(s, perp) <= r // rounded base cap
+    }
+    if (s > len) {
+      return false
+    }
+    const frac = len < 1e-9 ? 0 : s / len
+    const hw = r * Math.sqrt(Math.max(0, 1 - frac * frac))
+    return perp <= hw
+  }
+  const pad = Math.ceil(r) + 1
+  const x0 = Math.floor(Math.min(bx, tx)) - pad
+  const y0 = Math.floor(Math.min(by, ty)) - pad
+  const x1 = Math.ceil(Math.max(bx, tx)) + pad
+  const y1 = Math.ceil(Math.max(by, ty)) + pad
+  return {
+    type: 'region',
+    bbox: { x0, y0, x1, y1 },
+    has: (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1 && inside(x + 0.5, y + 0.5),
+    test: (fx, fy) => inside(fx + 0.5, fy + 0.5),
+  }
+}
+
+/**
+ * Crescent / lune (ADR-0093): an outer {@link ellipseRegion} with an inner ellipse — `thick` px
+ * smaller on each axis and shifted `thick` px toward `dir` — subtracted out. The band is thickest on
+ * the side opposite `dir` and tapers to nothing on the `dir` side, opening the crescent that way:
+ * hair fringes, hat-brim curves, eyelids, shells. Because it is built from two `ellipseRegion`s it
+ * inherits their even-diameter convention exactly. A `thick` at/above a radius yields the full
+ * (solid) ellipse.
+ */
+export const crescentRegion = (
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  thick: number,
+  dirx: number,
+  diry: number,
+): Region => {
+  const t = Math.max(0, thick)
+  const outer = ellipseRegion(cx, cy, rx, ry)
+  const irx = rx - t
+  const iry = ry - t
+  if (irx <= 0 || iry <= 0) {
+    return outer
+  }
+  const u = unitVec(dirx, diry)
+  const inner = ellipseRegion(cx + roundHalfUp(u.x * t), cy + roundHalfUp(u.y * t), irx, iry)
+  return regionSubtract(outer, inner)
+}
+
+/**
+ * Band / curved ribbon (ADR-0093): a constant-width sweep of `w` px along the quadratic arc that
+ * passes through `p0`, `p1` (mid), and `p2` — a curved hat band, a belt, and, stacked, turban wraps.
+ * The arc is flattened to a dense polyline (so there is no low-resolution bezier blocking) and
+ * membership is the exact min-distance-to-the-polyline test, giving round end caps and a smooth,
+ * even-width ribbon at any size. Sampled at the pixel corner for a balanced footprint.
+ */
+export const bandRegion = (
+  p0x: number,
+  p0y: number,
+  p1x: number,
+  p1y: number,
+  p2x: number,
+  p2y: number,
+  w: number,
+): Region => {
+  const hw = Math.max(0.5, w / 2)
+  // Control point of the quadratic Bézier that interpolates p1 at t=0.5 (a true 3-point arc).
+  const cxc = 2 * p1x - (p0x + p2x) / 2
+  const cyc = 2 * p1y - (p0y + p2y) / 2
+  const chord = dhypot(p1x - p0x, p1y - p0y) + dhypot(p2x - p1x, p2y - p1y)
+  const n = Math.max(8, Math.min(160, Math.ceil(chord)))
+  const pts: { x: number; y: number }[] = []
+  for (let i = 0; i <= n; i++) {
+    const s = i / n
+    const om = 1 - s
+    pts.push({
+      x: om * om * p0x + 2 * om * s * cxc + s * s * p2x,
+      y: om * om * p0y + 2 * om * s * cyc + s * s * p2y,
+    })
+  }
+  const segDist2 = (
+    px: number,
+    py: number,
+    ax: number,
+    ay: number,
+    bx: number,
+    by: number,
+  ): number => {
+    const vx = bx - ax
+    const vy = by - ay
+    const wx = px - ax
+    const wy = py - ay
+    const vv = vx * vx + vy * vy
+    const tt = vv < 1e-12 ? 0 : Math.max(0, Math.min(1, (wx * vx + wy * vy) / vv))
+    const qx = ax + tt * vx - px
+    const qy = ay + tt * vy - py
+    return qx * qx + qy * qy
+  }
+  const hw2 = hw * hw
+  const inside = (px: number, py: number): boolean => {
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i] as { x: number; y: number }
+      const b = pts[i + 1] as { x: number; y: number }
+      if (segDist2(px, py, a.x, a.y, b.x, b.y) <= hw2) {
+        return true
+      }
+    }
+    return false
+  }
+  let bx0 = Number.POSITIVE_INFINITY
+  let by0 = Number.POSITIVE_INFINITY
+  let bx1 = Number.NEGATIVE_INFINITY
+  let by1 = Number.NEGATIVE_INFINITY
+  for (const p of pts) {
+    bx0 = Math.min(bx0, p.x)
+    by0 = Math.min(by0, p.y)
+    bx1 = Math.max(bx1, p.x)
+    by1 = Math.max(by1, p.y)
+  }
+  const pad = Math.ceil(hw) + 1
+  const x0 = Math.floor(bx0) - pad
+  const y0 = Math.floor(by0) - pad
+  const x1 = Math.ceil(bx1) + pad
+  const y1 = Math.ceil(by1) + pad
+  return {
+    type: 'region',
+    bbox: { x0, y0, x1, y1 },
+    has: (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1 && inside(x + 0.5, y + 0.5),
+    test: (fx, fy) => inside(fx + 0.5, fy + 0.5),
+  }
+}
 
 /** Apply a first-class transform to a region: inverse-map membership. */
 export const regionTransform = (

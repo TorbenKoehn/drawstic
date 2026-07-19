@@ -46,15 +46,15 @@ draw staghorn(c) 22x28:
 draw brainCoral(c) 24x16:
   cf = c.darken(32%)
   cl = c.lighten(18%)
-  mask dome = ellipse(12:15, 11:9)
-  fill c dome
+  mask mound = ellipse(12:15, 11:9)
+  fill c mound
   # meandering brain furrows — stacked shallow valleys
   for i 0..7:
     yy = 2 + i * 2
     arc cf 12:yy (5 + (i mod 2) * 3) 200 340
   ripple 0.32 21 cf
-  shadeRegion dome 12:0 c 0.3
-  rim dome 0:-1 cl 1
+  shadeRegion mound 12:0 c 0.3
+  rim mound 0:-1 cl 1
 
 draw fanCoral(c) 22x22:
   cd = c.darken(14%)

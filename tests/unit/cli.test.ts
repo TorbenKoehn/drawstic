@@ -359,7 +359,7 @@ describe('context', () => {
       source: 'badge',
       basePath: 'showcase/badge',
     })
-    expect(body.context.functions).toContainEqual({ name: 'band', signature: 'band(row)' })
+    expect(body.context.functions).toContainEqual({ name: 'rowBand', signature: 'rowBand(row)' })
     expect(body.context.functions).toContainEqual({ name: 'ring', signature: 'ring(c, r)' })
   })
 
@@ -392,7 +392,7 @@ describe('context', () => {
     expect(text).toContain('## exports')
     expect(text).toContain('  scene -> showcase/scene')
     expect(text).toContain('## functions')
-    expect(text).toContain('  band(row)')
+    expect(text).toContain('  rowBand(row)')
   })
 
   test('text mode prints a hint line (no inline preview) for oversized drawings', () => {

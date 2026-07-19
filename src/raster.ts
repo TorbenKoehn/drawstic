@@ -2,7 +2,16 @@
 // pinned primitives, region eliminators, gradients (ordered-dithered in
 // pixel mode), stamps (inverse-mapped NN), filters, text.
 
-import { type Color, color, inkTone, litTone, mix, shadowTone, TRANSPARENT } from './color.js'
+import {
+  type Color,
+  color,
+  inkTone,
+  litTone,
+  mix,
+  nearestColor,
+  shadowTone,
+  TRANSPARENT,
+} from './color.js'
 import { dcosDeg, dhypot, dsinDeg, roundHalfUp } from './dmath.js'
 import { type BitmapFont, missingGlyph } from './fonts.js'
 import type { Framebuffer } from './framebuffer.js'
@@ -1107,6 +1116,31 @@ export const filterDither = (
     (x, y) => {
       const th = ((BAYER4[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16
       ctx.buffer.set(x, y, paintAt(th < limit ? paintA : paintB, x, y, bbox, ctx.mode))
+    },
+    region,
+  )
+}
+
+/**
+ * Palette reduction (ADR-0093): remap every opaque pixel's RGB to its perceptually nearest colour in
+ * `palette` (OkLab distance, first-declared wins ties — {@link nearestColor}), keeping the source
+ * alpha. Deterministic; the pipeline half of the import-assist workflow (external PNG →
+ * `import … sha256` → `quantize` → `outline` → `critique`). An empty palette is a no-op. An optional
+ * leading region scope confines it, like the other texture filters.
+ */
+export const filterQuantize = (
+  ctx: Context,
+  palette: readonly Color[],
+  region?: Region | null,
+): void => {
+  if (palette.length === 0) {
+    return
+  }
+  forOpaquePixels(
+    ctx,
+    (x, y, source) => {
+      const near = nearestColor(source, palette)
+      ctx.buffer.set(x, y, color(near.r, near.g, near.b, source.a))
     },
     region,
   )

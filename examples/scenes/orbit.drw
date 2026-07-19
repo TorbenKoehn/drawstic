@@ -79,7 +79,7 @@ draw orbit 160x96:
   grad atmo = radial(atmoGlow.alpha(70%), atmoGlow.alpha(0%))
   grad earth = radial(earthGlow.alpha(42%), earthGlow.alpha(0%))
   mask planetDisk = circle(pc, pr)
-  mask crescent = circle(138:20, 7).subtract(circle(134:17, 8))
+  mask moon = circle(138:20, 7).subtract(circle(134:17, 8))
   mask lPanel = rect(62:26, 88:46)
   mask rPanel = rect(134:26, 158:46)
   mask hubBody = rrect(100:28, 124:44, 2)
@@ -100,8 +100,8 @@ draw orbit 160x96:
       1: stamp spark(starW) p anchor center scale2
       else: stamp spark(starB) p anchor center
 
-  # 3 · crescent moon (region set-op)
-  fill (starW.alpha(88%)) crescent
+  # 3 · moon moon (region set-op)
+  fill (starW.alpha(88%)) moon
 
   # 4 · comet streak (path) upper-left
   circle (starB.alpha(45%)) 6:6 2 fill

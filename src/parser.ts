@@ -369,6 +369,12 @@ class Parser {
           return this.#parseMaterialBinding()
         }
         break
+      case 'figure':
+        // D7: `figure:` → a theme proportions block (ADR-0093); `figure` stays a bindable name.
+        if (this.#peek(1).kind === 'op' && this.#peek(1).text === ':' && this.#peek(1).blockColon) {
+          return this.#parseFigureBlock()
+        }
+        break
       case 'lit':
         // The `lit L:` light-scoping block was removed (ADR-0094): the theme default light
         // and an explicit `light L` argument on `model`/`cel` cover both real cases. `lit` as
@@ -710,6 +716,34 @@ class Parser {
     }
     this.#expectNL()
     return { kind: 'materialBinding', name, color, response, profile, overrides, span: s }
+  }
+
+  /**
+   * Parses `figure:` (§Themes, ADR-0093): an indented block of `NAME EXPR` proportion lines
+   * (`heads 3.5`, `headW 22`, `eyeLine 0.62`, …). The field name is a bare contextual keyword (the
+   * evaluator validates it against the known proportion set); the value parses in command-arg mode.
+   * Only reachable via the `figure:` block-colon lookahead, so `figure` stays bindable elsewhere.
+   */
+  readonly #parseFigureBlock = (): Statement => {
+    const s = this.#span(this.#peek())
+    this.#next() // figure
+    this.#next() // :
+    this.#expect('nl')
+    this.#skipNLs()
+    this.#expect('indent', undefined, 'an indented figure body')
+    this.#skipNLs()
+    const fields: { name: string; value: Expression }[] = []
+    while (!this.#at('dedent') && !this.#at('eof')) {
+      const name = this.#expect('name', undefined, 'a figure field name').text
+      const value = this.#parseExpr(true)
+      this.#expectNL()
+      fields.push({ name, value })
+      this.#skipNLs()
+    }
+    if (this.#at('dedent')) {
+      this.#next()
+    }
+    return { kind: 'figureBlock', fields, span: s }
   }
 
   /**
