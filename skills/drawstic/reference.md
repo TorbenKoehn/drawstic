@@ -204,7 +204,7 @@ scope when they run.
 | String | `"…"`, `"""…"""` | text/style guides only; paths are bareword. |
 | Boolean | comparisons, `true`, `false` | logic `& \| !`. |
 | Light | `light NAME = dir DX:DY COLOR [amb COOL AMT] [gain N]` / `= at X:Y …` | first-class light source (§ Light & material, ADR-0086); drives `lit`/`model`/`cel`. |
-| Material | `material NAME = COLOR [RESPONSE] [shade/hi/rim/ao/spec/puff/spread N]` | base colour + response dose profile (+ optional trailing dose overrides, `spread N%` = value-spread knob); consumed by `model`/`cel`. |
+| Material | `material NAME = COLOR [RESPONSE] [round\|drape] [shade/hi/rim/ao/spec/puff/spread N]` | base colour + response dose profile (+ optional `round`/`drape` height-field profile + trailing dose overrides, `spread N%` = value-spread knob); consumed by `model`/`cel`. |
 
 Indices must be integers (fractional = error). `xs.0` is an index; `xs.name` is a UFCS call.
 
@@ -722,13 +722,17 @@ draw sword 24x48:
   self-illuminated (fill + inner light only, no shade/rim/cast/spec). The response word is a keyword
   **only** in this slot. **Overrides** (order-free trailing keywords, this slot only): `shade`/`hi`/
   `rim`/`ao`/`spec` replace one dose, `puff` the curvature gain, **`spread N%`** scales `hi`+`shade`
-  symmetrically (the value-spread knob — `material robe = #3a2a1e cloth spread 140%`).
+  symmetrically (the value-spread knob — `material robe = #3a2a1e cloth spread 140%`). A trailing
+  **profile** `round` (default) | `drape` picks the height field: **`drape`** inflates a per-row 1D
+  half-tube (curves across, flat down its length) so a *hanging* cloak/skirt does **not** darken toward
+  its hem (`material cloak = #4a3f56 cloth drape spread 200%`) — the fix for a "turtle-shell" cape; keep
+  `round` for compact masses.
 - **`lit L: body`** scopes light `L` over its body (like `mask …:`). `L` must evaluate to a light.
 - **Resolution order** (most-local first): explicit `light L` arg → enclosing `lit L:` block →
   applied **theme default** (`light` in a `theme` body, § Themes). None in any tier = hard `E024`.
   The theme default is the cross-view fix: front + side + recolor variants applying one theme share
   **one** light, so shading is never mirrored per view.
-- **`model REGION MATERIAL [light L]`** lowers the material under the resolved light onto a **form
+- **`model REGION MATERIAL [over UNION] [light L]`** lowers the material under the resolved light onto a **form
   (normal-based) body shade → rim → AO → cast** (ADR-0089, ADR-0091); `MATERIAL` is a `material` value
   **or** inline `COLOR [RESPONSE]`. Zero-dose edge steps are skipped (so `flat` emits no rim/cast).
   **No light in any tier = hard `E024`** — never a silent default. The **body follows the surface**: an
@@ -741,8 +745,10 @@ draw sword 24x48:
   (silhouette offset down-light, minus the region, minus every transparent pixel): within one draw it
   lands on an earlier-drawn opaque neighbour but never bakes onto empty canvas, so an isolated part
   casts nothing (no floating blob). Ground assembled figures with `fit … shadow`, not a baked
-  material cast.
-- **`cel REGION MATERIAL N`** renders the **same form body as `N` crisp bands** that follow the
+  material cast. **`over UNION`** builds the height field from `UNION` (a region, usually
+  `partA.union(partB)`) but tones only `REGION`, so stacked parts (leg + boot, arm + glove) co-shade as
+  **one continuous limb** instead of restarting the field at the seam — each part keeps its own material.
+- **`cel REGION MATERIAL N [over UNION]`** renders the **same form body as `N` crisp bands** that follow the
   surface normal (the intensity field quantized, band-centre tone-mapped) — the **opt-in** hard
   cel-shaded look (`model` is the smooth default). Bands wrap the form, not straight iso-distance
   lines; band **boundaries are Bayer-dithered** (a ±0.5-band dithered edge, not a hard line), and a

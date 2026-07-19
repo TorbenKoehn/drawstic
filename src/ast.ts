@@ -308,6 +308,11 @@ export type Statement =
       readonly color: Expression
       readonly response: string | undefined
       /**
+       * Optional form profile (`round`|`drape`, ADR-0091): how the height field inflates the region.
+       * A contextual keyword in this trailing slot only (`omitted ⇒ round`); validated at parse time.
+       */
+      readonly profile: string | undefined
+      /**
        * Optional trailing dose overrides (ADR-0091), order-free keywords in this slot only:
        * `shade`/`hi`/`rim`/`ao`/`spec` replace a response's baked dose; `puff` its curvature gain;
        * `spread` scales `hi`+`shade` symmetrically. Each value is a `0..1`/percent expression.

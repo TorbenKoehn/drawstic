@@ -24,7 +24,7 @@ import type {
 import { MATERIAL_OVERRIDE_KEYS } from './ast.js'
 import { ERROR_CODE, error, type TextSpan } from './diagnostic.js'
 import { lex, type Token } from './lexer.js'
-import { isMaterialResponse } from './values.js'
+import { isFormProfile, isMaterialResponse } from './values.js'
 
 // Keyword-prefixed sequences that form one argument (D2): the keyword plus
 // this many trailing expressions, e.g. `tint k 0.3` (arity 2) or `mask m`
@@ -671,11 +671,18 @@ class Parser {
     if (this.#peek().kind === 'name' && isMaterialResponse(this.#peek().text)) {
       response = this.#next().text
     }
-    // Optional order-free trailing dose overrides (ADR-0091): `shade`/`hi`/`rim`/`ao`/`spec`/`puff`/
-    // `spread`, each a value expression. Keywords only in this slot — bindable names elsewhere.
+    // Optional order-free trailing modifiers (ADR-0091): a form profile (`round`|`drape`, a bare
+    // keyword flag), and dose overrides `shade`/`hi`/`rim`/`ao`/`spec`/`puff`/`spread` (each a value
+    // expression). Keywords only in this slot — bindable names elsewhere.
+    let profile: string | undefined
     const overrides: MaterialOverrides = {}
     while (!this.#at('nl') && !this.#at('eof') && !this.#at('dedent')) {
       const kw = this.#peek()
+      if (kw.kind === 'name' && isFormProfile(kw.text)) {
+        this.#next()
+        profile = kw.text
+        continue
+      }
       if (kw.kind === 'name' && (MATERIAL_OVERRIDE_KEYS as readonly string[]).includes(kw.text)) {
         this.#next()
         overrides[kw.text as MaterialOverrideKey] = this.#parseExpr(true)
@@ -683,12 +690,13 @@ class Parser {
       }
       this.#fail(
         `unexpected '${kw.text || kw.kind}' in a material binding (a response ` +
-          `flat|metal|skin|cloth|glass|glow, or an override shade|hi|rim|ao|spec|puff|spread N)`,
+          `flat|metal|skin|cloth|glass|glow, a profile round|drape, or an override ` +
+          `shade|hi|rim|ao|spec|puff|spread N)`,
         kw,
       )
     }
     this.#expectNL()
-    return { kind: 'materialBinding', name, color, response, overrides, span: s }
+    return { kind: 'materialBinding', name, color, response, profile, overrides, span: s }
   }
 
   /**

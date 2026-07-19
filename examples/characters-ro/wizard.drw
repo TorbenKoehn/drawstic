@@ -28,8 +28,9 @@ material hatM  = hatBase  cloth
 material skinM = skinBase skin
 material hairM = hairBase cloth
 material woodM = woodBase cloth
-material bootM = bootBase cloth
+material bootM = bootBase cloth spread 760%
 material orbM  = orbBase  glow
+material trimM = trim     cloth spread 240%   # gold trim (sash/hem/cuff/band) modelled so it shows form (W2-1b)
 
 # --- one light for every view/variant (theme default; never mirrored per view) ---
 theme wizTheme:
@@ -48,7 +49,7 @@ draw hat 36x40:
   knob = circle(18:4, 2)
   mass = cone.union(brim).union(knob)
   model mass hatM
-  fill trim rect(7:28, 29:30)              # hat band
+  fill trim rect(7:28, 29:30)              # hat band (bright gold accent)
   poly trim 18:14 21:17 18:20 15:17 fill   # star gem
   pin brimC 18:32
 
@@ -124,7 +125,6 @@ draw headBack 32x36:
   jaw   = poly(9:20, 23:20, 20:30, 12:30)
   mass  = skull.union(jaw)
   model mass hairM
-  fill hairBase.litTone(#ffe6b0, 40%) ellipse(11:8, 4:3)   # lit crown (value spread, upper-left)
   fill skinBase rect(13:29, 19:34)              # nape of neck
   line hairBase.darken(24%) 16:5 16:29          # centre part
   line hairBase.darken(16%) 11:8 12:28
@@ -138,10 +138,10 @@ draw torsoFront 40x54:
   model robe robeM
   fill robeBase.darken(24%) poly(16:0, 24:0, 20:6)   # collar V
   line trim 20:6 20:50                               # gold placket
-  fill trim rect(4:25, 36:28)                        # waist sash
+  model rect(4:25, 36:28) trimM                        # waist sash
   line robeBase.darken(18%) 12:16 9:50               # fold shadow L
   line robeBase.darken(18%) 28:16 31:50              # fold shadow R
-  fill trim rect(3:50, 37:52)                        # hem band
+  model rect(3:50, 37:52) trimM                        # hem band
   pin neck      20:0
   pin shoulderL 12:4
   pin shoulderR 28:4
@@ -150,10 +150,10 @@ draw torsoFront 40x54:
 draw torsoSide 40x54:
   robe = poly(14:0, 24:0, 34:53, 8:53)               # hem drapes forward (right)
   model robe robeM
-  fill trim rect(9:25, 33:28)                        # sash
+  model rect(9:25, 33:28) trimM                        # sash
   line robeBase.darken(20%) 19:8 22:50               # front drape fold
   line robeBase.darken(16%) 12:10 11:50              # back fold
-  fill trim rect(8:50, 34:52)                        # hem band
+  model rect(8:50, 34:52) trimM                        # hem band
   pin neck      19:0
   pin shoulderF 24:3
   pin shoulderB 14:3
@@ -164,10 +164,10 @@ draw torsoBack 40x54:
   model robe robeM
   fill robeBase.darken(16%) ellipse(20:3, 9:4)       # hood/collar drape
   line robeBase.darken(22%) 20:6 20:50               # centre back seam
-  fill trim rect(4:25, 36:28)                        # sash
+  model rect(4:25, 36:28) trimM                        # sash
   line robeBase.darken(16%) 12:12 10:50
   line robeBase.darken(16%) 28:12 30:50
-  fill trim rect(3:50, 37:52)                        # hem band
+  model rect(3:50, 37:52) trimM                        # hem band
   pin neck      20:0
   pin shoulderL 12:4
   pin shoulderR 28:4
@@ -177,7 +177,7 @@ draw torsoBack 40x54:
 draw sleeve 16x30:
   bell = poly(5:0, 11:0, 14:26, 2:26)
   model bell robeM
-  fill trim rect(2:24, 14:26)         # cuff
+  model rect(2:24, 14:26) trimM         # cuff
   fill skinBase ellipse(8:28, 3:2)    # hand
   pin shoulder 8:1
   pin wrist    8:27
@@ -188,8 +188,6 @@ draw feet 20x11:
   bootR = poly(10:0, 18:0, 18:10, 13:10, 10:8)
   model bootL bootM
   model bootR bootM
-  fill #c39b6d rect(2:1, 5:3)     # bright leather sheen L (value spread)
-  fill #c39b6d rect(11:1, 14:3)   # bright leather sheen R
   fill #0e0b06 rect(1:9, 6:10)     # near-black sole L
   fill #0e0b06 rect(10:9, 18:10)   # near-black sole R
   pin top 9:0
@@ -200,7 +198,7 @@ draw staff 16x78:
   model shaft woodM
   line woodBase.darken(25%) 3:16 8:11     # claw L
   line woodBase.darken(25%) 13:16 8:11    # claw R
-  fill trim rect(6:44, 10:48)             # grip wrap
+  model rect(6:44, 10:48) trimM             # grip wrap
   circle orbBase.alpha(20%) 8:9 10 fill   # soft halo (translucent → not outlined)
   circle orbBase.alpha(38%) 8:9 8 fill
   orb = circle(8:9, 6)

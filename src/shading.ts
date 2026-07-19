@@ -252,7 +252,7 @@ const castLenFor = (region: Region): number => {
  */
 export type ShadeOp =
   | { readonly kind: 'fill'; readonly color: Color }
-  | { readonly kind: 'form'; readonly spec: FormSpec }
+  | { readonly kind: 'form'; readonly spec: FormSpec; readonly field?: Region }
   | { readonly kind: 'shade'; readonly point: Vec2; readonly color: Color; readonly amount: number }
   | { readonly kind: 'light'; readonly point: Vec2; readonly color: Color; readonly amount: number }
   | { readonly kind: 'rim'; readonly dir: Vec2; readonly color: Color; readonly width: number }
@@ -308,6 +308,7 @@ export const formSpecOf = (
     puff: Math.max(0, mat.puff ?? dose.puff),
     ambient: clamp01(lt.amb ? lt.amb.amount : DEFAULT_AMBIENT),
     bands,
+    profile: mat.profile ?? 'round',
   }
 }
 
@@ -321,7 +322,12 @@ export const formSpecOf = (
  * yields only a fill and a self-light centred on the region — it never darkens, rims, or casts, and
  * (because this only ever touches `region`) never lights a neighbour.
  */
-export const planMaterial = (region: Region, mat: Material, lt: Light): ShadeOp[] => {
+export const planMaterial = (
+  region: Region,
+  mat: Material,
+  lt: Light,
+  field?: Region,
+): ShadeOp[] => {
   const gain = lt.gain
   const warm = lt.color
   const cool = lt.amb?.color ?? DEFAULT_COOL
@@ -343,7 +349,10 @@ export const planMaterial = (region: Region, mat: Material, lt: Light): ShadeOp[
   }
 
   // the body: form-based smooth shading (bands = null), following the surface normal, not a ramp.
-  const ops: ShadeOp[] = [{ kind: 'form', spec: formSpecOf(region, mat, lt, null) }]
+  // `field` (an `over` union) co-shades this part on a larger surface; absent, the field is `region`.
+  const ops: ShadeOp[] = [
+    { kind: 'form', spec: formSpecOf(field ?? region, mat, lt, null), ...(field ? { field } : {}) },
+  ]
   const rim = doseOf(dose.rim, mat.rim, gain)
   if (rim > 0) {
     ops.push({
@@ -410,7 +419,7 @@ const executeOp = (ctx: Context, region: Region, op: ShadeOp): void => {
       fillRegion(ctx, region, op.color)
       return
     case 'form':
-      formShade(ctx, region, op.spec)
+      formShade(ctx, region, op.spec, op.field ?? region)
       return
     case 'shade':
       shadeRegion(ctx, region, op.point, op.color, op.amount)
@@ -440,8 +449,9 @@ export const lowerMaterial = (
   region: Region,
   mat: Material,
   lt: Light,
+  field?: Region,
 ): ShadeOp[] => {
-  const ops = planMaterial(region, mat, lt)
+  const ops = planMaterial(region, mat, lt, field)
   for (const op of ops) {
     executeOp(ctx, region, op)
   }
@@ -462,8 +472,13 @@ export const lowerCel = (
   mat: Material,
   lt: Light,
   n: number,
+  field?: Region,
 ): ShadeOp[] => {
-  const op: ShadeOp = { kind: 'form', spec: formSpecOf(region, mat, lt, Math.max(1, n)) }
+  const op: ShadeOp = {
+    kind: 'form',
+    spec: formSpecOf(field ?? region, mat, lt, Math.max(1, n)),
+    ...(field ? { field } : {}),
+  }
   executeOp(ctx, region, op)
   return [op]
 }

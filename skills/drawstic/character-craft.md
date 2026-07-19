@@ -286,13 +286,41 @@ A raw `mix(cool)` is safe only on **already-cool** cloth (mage's indigo robe).
 
 **Dark material needs a deliberate value-spread dose, or `critique`'s C004 stays red** (Assassin,
 Wizard). A `cel`/`model` pass on a near-black base can sit under C004's 0.15 luminance-spread floor
-even after shading — a `litTone(warm, X%)` corner patch has almost no measurable effect below ~35 %,
-then overshoots above ~50 %, with no usable middle to search. The verified fix is a **pair**, not one
-bigger dose — a thin low-alpha edge for crispness plus a moderate corner fill for the metric:
+even after shading. **The canonical fix is the material's own `spread N%`** (ADR-0091) — one knob that
+scales the highlight + shadow doses symmetrically, so the value range comes *from the form shading*:
 
 ```drw
-rim darkReg 1:1 warm.alpha(55%) 1                                              # thin edge, w1
-fill darkC.litTone(warm, 44%) darkReg.intersect(rect(0:0, (w*7//10):(h//5)))   # ~15–20% corner
+material cloth = #2a2333 cloth spread 300%   # dark cloth: crank spread until C004 clears
+```
+
+> **Anti-pattern (retired W2-1b, W013 preview): the hand corner patch.** Do **not** paint value spread
+> by clipping a lit/shadow tone to a sub-rect — `fill darkC.litTone(warm, 44%) reg.intersect(rect(…))`
+> or a `fn hi/lo` ramp. It reads as a **visible rectangular block** that collides with the form shading
+> (the exact defect the 07-10 human grading flagged on every dark part). Use material `spread` instead;
+> a CI guard (`examples-critique.test.ts`) rejects the idiom in `examples/characters-ro`.
+>
+> *Caveat for `model` (smooth) on a **dark monochrome** part:* the smooth terminator is a gradient, so
+> only the peak pixel reaches the C004 `p90` — `spread` must run **high** (assassin cloth `~780 %`), and
+> lifting a near-black base slightly off the floor (`#2a2333`→`#37304a`) helps it clear without the lit
+> face washing warm. `cel`'s flat top band reaches `p90` far cheaper — prefer `cel` for tight-palette
+> dark masses. Keep small **bright accents** (a gold hat band, a gem) as a flat `fill`: they *supply*
+> the part's p90; modelling them darkens their shadow side and can *lower* C004.
+
+**Hanging cloth → `drape` profile.** A long cloak/skirt/cape shaded with the default `round` field
+curls into a **"turtle-shell"** — it darkens toward the hem because the 2D field pins the bottom edge
+to zero. Give the drape material the **`drape`** profile (`material cape = capeRed cloth drape spread
+200%`): a per-row half-tube that curves only across its width and stays even down its length, so the
+hem does not darken and the lower edge reads as standing off. Use `drape` **only** for hanging drapes.
+
+**Stacked limb parts → `over` co-shading.** A leg + boot (or arm + glove) shaded as separate `model`/
+`cel` passes restart the height field at the seam — a visible shading break mid-limb. Shade both
+**`over` their union** so they read as one continuous form:
+
+```drw
+limbReg = thighReg.union(shinReg).union(bootReg)   # the whole limb is one shading unit
+model thighReg clothMat   over limbReg
+model shinReg  leatherMat over limbReg
+model bootReg  leatherMat over limbReg             # field is continuous; each keeps its own material
 ```
 
 Verified ramps (module bindings; each part pulls its tones from these):

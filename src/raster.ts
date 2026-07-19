@@ -11,6 +11,7 @@ import {
   type BBox,
   bresenham,
   circleSpans,
+  type FormProfile,
   type Grad,
   invertMatrix,
   type Region,
@@ -1401,6 +1402,13 @@ export type FormSpec = {
   readonly puff: number
   readonly ambient: number
   readonly bands: number | null
+  /**
+   * The height-field profile (ADR-0091): `round` inflates the isotropic 2D Poisson field
+   * (hemisphere/half-cylinder, darkening toward every boundary); `drape` inflates a per-row 1D
+   * field (horizontal curvature only, flat down its length) so a hanging cloth reads as a vertical
+   * half-tube that does not darken toward its hem.
+   */
+  readonly profile: FormProfile
 }
 
 /** Intensity at which the tone equals `base`; brighter lifts toward `warm`, darker toward `cool`. */
@@ -1579,10 +1587,75 @@ const poissonHeight = (dist2: Float64Array, w: number, h: number): Float64Array 
 }
 
 /**
+ * **Anisotropic drape height field** (ADR-0091) — the `drape` profile's replacement for the
+ * isotropic {@link poissonHeight}. Instead of the 2D field it inflates each horizontal row's run of
+ * in-region cells (length `n`) to a **1D half-cylinder** cross-section `H[i] = sqrt(0.5·i·(n+1−i))`
+ * (the discrete `−P'' = 1`, `P = 0` at the two *left/right* run ends only — the top and bottom edges
+ * are never pinned). A hanging cloak/skirt therefore curves only left↔right (a vertical half-tube)
+ * and does **not** accumulate the downward darkening the isotropic field bakes into a long region
+ * (the "turtle-shell" defect), because the hem is not a height-zero boundary. The raw per-row field
+ * has integer row-to-row steps where the silhouette slopes (the run's start/length jump by whole
+ * pixels), which would read as faint horizontal bands, so a few **vertical-only Neumann smoothing
+ * passes** average each cell with its in-region vertical neighbours (out-of-region neighbours fall
+ * back to the cell itself — a free top/bottom edge that keeps the hem lift). This flattens the steps
+ * while preserving the horizontal curvature and the un-darkened hem. Deterministic: `+ − * /` and
+ * `Math.sqrt` of a non-negative value; `dist2 > 0` marks the in-region cells.
+ */
+const drapeHeight = (dist2: Float64Array, w: number, h: number): Float64Array => {
+  let cur = new Float64Array(w * h)
+  for (let gy = 0; gy < h; gy++) {
+    let gx = 0
+    while (gx < w) {
+      if ((dist2[gy * w + gx] ?? 0) <= 0) {
+        gx++
+        continue
+      }
+      const start = gx
+      while (gx < w && (dist2[gy * w + gx] ?? 0) > 0) {
+        gx++
+      }
+      const n = gx - start
+      for (let k = 0; k < n; k++) {
+        const i = k + 1
+        const p = 0.5 * i * (n + 1 - i)
+        cur[start + k + gy * w] = p > 0 ? Math.sqrt(p) : 0
+      }
+    }
+  }
+  // vertical-only Neumann smoothing: remove the per-row discretization steps without pinning (and
+  // thus darkening) the top/bottom edges. Iterations scale with height like the isotropic solve.
+  const iters = Math.max(
+    POISSON_ITER_MIN,
+    Math.min(POISSON_ITER_MAX, Math.round(h * POISSON_ITER_GAIN)),
+  )
+  let next = new Float64Array(w * h)
+  for (let it = 0; it < iters; it++) {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x
+        if ((dist2[i] ?? 0) <= 0) {
+          next[i] = 0
+          continue
+        }
+        const self = cur[i] ?? 0
+        const u = y > 0 && (dist2[i - w] ?? 0) > 0 ? (cur[i - w] ?? 0) : self
+        const d = y < h - 1 && (dist2[i + w] ?? 0) > 0 ? (cur[i + w] ?? 0) : self
+        next[i] = (self + u + d) / 3
+      }
+    }
+    const tmp = cur
+    cur = next
+    next = tmp
+  }
+  return cur
+}
+
+/**
  * **Form (normal-based) shading** — the ADR-0089/0091 default that replaces the old form-ignoring
  * distance-from-a-point veil in `model`. From the region's own geometry it derives an inner-distance
  * SDF ({@link innerDistance2}), inflates it to a **Poisson height field** ({@link poissonHeight};
- * disc → hemisphere, stripe → half-cylinder, no medial ridge), reads a per-pixel surface normal
+ * disc → hemisphere, stripe → half-cylinder, no medial ridge) — or, for the `drape` profile, the
+ * anisotropic per-row {@link drapeHeight} — reads a per-pixel surface normal
  * `n = normalize(−∂H/∂x·puff, −∂H/∂y·puff, 1)`, and shades each pixel by the Lambert term
  * `clamp(n · light, 0..1)` lifted by the `ambient` floor. The intensity is mapped to a tone by
  * {@link formTone}: brightest where the normal faces the light, softly terminating into a cool
@@ -1592,11 +1665,22 @@ const poissonHeight = (dist2: Float64Array, w: number, h: number): Float64Array 
  * look). `bands === null` renders the smooth default (Bayer-dithered **always**, ADR-0091, so the
  * terminator stipples cleanly); `bands === N` snaps the field into `N` crisp cel bands whose
  * boundaries are themselves Bayer-dithered across a ±0.5-band zone (dithered pixel-art band edges).
- * Only in-region pixels are written (through {@link putPixel}, so mask + budget are honoured);
+ * Only pixels of `region` are written (through {@link putPixel}, so mask + budget are honoured);
  * deterministic throughout (dmath-only arithmetic, no RNG).
+ *
+ * `fieldRegion` (ADR-0091 `over`) decouples the surface from the paint mask: the height field and
+ * normals are derived from `fieldRegion` (default: `region` itself), but only `region`'s pixels are
+ * toned. Passing a **union** of two adjacent parts as `fieldRegion` makes them share **one**
+ * continuous form — a leg and its boot shade as a single limb instead of restarting the field at the
+ * part seam — while each part keeps its own material/tone.
  */
-export const formShade = (ctx: Context, region: Region, spec: FormSpec): void => {
-  const b = regionBounds(ctx, region)
+export const formShade = (
+  ctx: Context,
+  region: Region,
+  spec: FormSpec,
+  fieldRegion: Region = region,
+): void => {
+  const b = regionBounds(ctx, fieldRegion)
   if (!b) {
     return
   }
@@ -1604,8 +1688,11 @@ export const formShade = (ctx: Context, region: Region, spec: FormSpec): void =>
   const by = b.y0 - 1
   const w = b.x1 - b.x0 + 3
   const h = b.y1 - b.y0 + 3
-  const dist2 = innerDistance2(region, bx, by, w, h)
-  const height = poissonHeight(dist2, w, h)
+  const dist2 = innerDistance2(fieldRegion, bx, by, w, h)
+  const height = spec.profile === 'drape' ? drapeHeight(dist2, w, h) : poissonHeight(dist2, w, h)
+  // Gate painting to `region` only when co-shading over a larger field (otherwise `dist2 > 0` ⇔
+  // in-region, so no per-pixel membership test is needed).
+  const paintGate = fieldRegion === region ? null : region
   const bbox: BBox = region.bbox ?? b
   const L = spec.light
   // Blinn halfway vector between the toward-light direction and the viewer (straight out, +z).
@@ -1621,7 +1708,10 @@ export const formShade = (ctx: Context, region: Region, spec: FormSpec): void =>
       const gx = x - bx
       const gy = y - by
       if ((dist2[gy * w + gx] ?? 0) <= 0) {
-        continue // out of region (SDF 0)
+        continue // out of field region (SDF 0)
+      }
+      if (paintGate && !paintGate.has(x, y)) {
+        continue // in the shared field but outside this part's own paint mask (`over`)
       }
       const hL = height[gy * w + (gx - 1)] ?? 0
       const hR = height[gy * w + (gx + 1)] ?? 0

@@ -469,3 +469,111 @@ describe('shading v2 (ADR-0091): Poisson height field, specular, dither, spread'
     expect(a.buffer.data).toEqual(b.buffer.data)
   })
 })
+
+describe('shading v2 (ADR-0091 W2-1b): drape profile + over-union co-shading', () => {
+  const smooth = (w: number, h: number): Context => ({
+    buffer: new Framebuffer(w, h),
+    mask: null,
+    mode: 'smooth',
+  })
+  const clothBase = color(74, 63, 86) // #4a3f56
+  /** Mean luminance across the full width of a bar at row `y` (averages out the Bayer dither). */
+  const rowMean = (c: Context, x0: number, x1: number, y: number): number => {
+    let s = 0
+    let n = 0
+    for (let x = x0; x <= x1; x++) {
+      const p = c.buffer.get(x, y)
+      if (p.a > 0) {
+        s += relativeLuminance(p.r, p.g, p.b, p.a)
+        n++
+      }
+    }
+    return n > 0 ? s / n : 0
+  }
+
+  test('formSpecOf carries the profile (round by default, drape when the material sets it)', () => {
+    expect(formSpecOf(square, material(clothBase, 'cloth'), sun, null).profile).toBe('round')
+    expect(
+      formSpecOf(square, material(clothBase, 'cloth', { profile: 'drape' }), sun, null).profile,
+    ).toBe('drape')
+  })
+
+  test('drape has NO down-length intensity gradient (no turtle-shell); round darkens toward the far end', () => {
+    // A tall constant-width bar under a straight-DOWN light. The round 2D field pins its top and
+    // bottom to zero, so the far (bottom) end falls into shadow — the "turtle-shell". The drape
+    // per-row field never pins the length, so top and bottom read the same tone.
+    const dn = light({ dir: { x: 0, y: 1 }, color: warm, amb: { color: cool, amount: 0.15 } })
+    const bar: Region = rectRegion(20, 4, 27, 43) // 8 wide, 40 tall
+    const roundC = smooth(48, 48)
+    const drapeC = smooth(48, 48)
+    lowerMaterial(roundC, bar, material(clothBase, 'cloth'), dn)
+    lowerMaterial(drapeC, bar, material(clothBase, 'cloth', { profile: 'drape' }), dn)
+    // compare the top edge (y5) with the bottom edge (y42) — where the length-wise field difference
+    // shows: the round field pins both ends, dropping the shadow-side (bottom) toward black.
+    const roundGap = rowMean(roundC, 20, 27, 5) - rowMean(roundC, 20, 27, 42)
+    const drapeGap = rowMean(drapeC, 20, 27, 5) - rowMean(drapeC, 20, 27, 42)
+    // round: the top edge is clearly brighter than the bottom edge (a vertical gradient / turtle-shell)
+    expect(roundGap).toBeGreaterThan(0.03)
+    // drape: top and bottom edges read essentially the same — the length does not darken
+    expect(Math.abs(drapeGap)).toBeLessThan(0.015)
+    expect(roundGap).toBeGreaterThan(Math.abs(drapeGap) + 0.02)
+  })
+
+  test('drape still curves ACROSS its width — a side light lights one edge, shades the other', () => {
+    // straight-RIGHT light (source left) on the same bar: the drape half-tube must read a
+    // left-to-right value falloff (curvature across the row), proving it is not simply flat.
+    const rt = light({ dir: { x: 1, y: 0 }, color: warm, amb: { color: cool, amount: 0.15 } })
+    const bar: Region = rectRegion(20, 4, 27, 43)
+    const c = smooth(48, 48)
+    lowerMaterial(c, bar, material(clothBase, 'cloth', { profile: 'drape' }), rt)
+    // left column mean (over the length) brighter than the right column mean
+    const leftMean = [12, 20, 28, 36].reduce((s, y) => s + lumAt(c, 21, y), 0) / 4
+    const rightMean = [12, 20, 28, 36].reduce((s, y) => s + lumAt(c, 26, y), 0) / 4
+    expect(leftMean).toBeGreaterThan(rightMean + 0.03)
+  })
+
+  test('`over` union co-shades across a part seam — one continuous field, no restart terminator', () => {
+    // upper + lower halves of one tall bar, straight-DOWN light. Shading the lower half ALONE lets
+    // its own top edge (the seam) read as a lit boundary — a false terminator. Shading it `over` the
+    // union makes the seam row continue the interior field, so it matches the interior tone.
+    const dn = light({ dir: { x: 0, y: 1 }, color: warm, amb: { color: cool, amount: 0.15 } })
+    const seam = 24
+    const lower: Region = rectRegion(20, seam, 27, 43)
+    const union: Region = rectRegion(20, 4, 27, 43)
+    const alone = smooth(48, 48)
+    const over = smooth(48, 48)
+    lowerMaterial(alone, lower, material(clothBase, 'cloth'), dn)
+    lowerMaterial(over, lower, material(clothBase, 'cloth'), dn, union)
+    const interiorRow = 38
+    // alone: the lower part's own top edge (the seam) faces the up-light — a false lit terminator,
+    // brighter than the part interior.
+    const aloneSeamLift = rowMean(alone, 20, 27, seam) - rowMean(alone, 20, 27, interiorRow)
+    // over: the seam is deep interior of the union field — it continues the interior tone, no lift.
+    const overSeamLift = rowMean(over, 20, 27, seam) - rowMean(over, 20, 27, interiorRow)
+    expect(aloneSeamLift).toBeGreaterThan(0.008)
+    expect(Math.abs(overSeamLift)).toBeLessThan(aloneSeamLift)
+    // the seam row itself is brighter shaded alone than co-shaded (the visible seam the fix removes)
+    expect(rowMean(alone, 20, 27, seam)).toBeGreaterThan(rowMean(over, 20, 27, seam) + 0.008)
+    // `over` paints ONLY the lower region — the upper half stays untouched (transparent)
+    expect(over.buffer.get(23, 10).a).toBe(0)
+  })
+
+  test('planMaterial attaches the `over` field only when a field region is passed', () => {
+    const union: Region = rectRegion(20, 4, 27, 43)
+    const plain = planMaterial(square, material(clothBase, 'cloth'), sun)
+    const co = planMaterial(square, material(clothBase, 'cloth'), sun, union)
+    const plainForm = plain.find((o) => o.kind === 'form')
+    const coForm = co.find((o) => o.kind === 'form')
+    expect(plainForm?.kind === 'form' && plainForm.field).toBeUndefined()
+    expect(coForm?.kind === 'form' && coForm.field).toBe(union)
+  })
+
+  test('drape shading is deterministic — rendering twice is byte-identical', () => {
+    const bar: Region = rectRegion(20, 4, 27, 43)
+    const a = smooth(48, 48)
+    const b = smooth(48, 48)
+    lowerMaterial(a, bar, material(clothBase, 'cloth', { profile: 'drape' }), sun)
+    lowerMaterial(b, bar, material(clothBase, 'cloth', { profile: 'drape' }), sun)
+    expect(a.buffer.data).toEqual(b.buffer.data)
+  })
+})

@@ -6,7 +6,7 @@
 // (no per-file process spawn) so it stays fast enough for the unit run.
 
 import { describe, expect, test } from 'bun:test'
-import { readdirSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { main } from '../../src/cli.js'
 
@@ -59,5 +59,33 @@ describe('examples pass `critique --strict` (CI regression gate)', () => {
   test('every example exits 0 under its category profile', () => {
     const failures = files.filter((f) => critiqueStrict(f) !== 0)
     expect(failures).toEqual([])
+  })
+})
+
+// W2-1b: the RO characters must draw their C004 value spread from the material `spread`/form
+// shading, never from the retired hand corner-patch idiom (a `fill` of a lit/shadow tone clipped to
+// a rectangle). This guards the recipes against regressing to `fill hi(c) region.intersect(rect…)`.
+describe('characters-ro recipes are free of the manual value-spread corner-patch idiom (W2-1b)', () => {
+  /** A `fill` line clipping a *tone-shifted* colour to a sub-rect — the value-spread patch. */
+  const CLIPPED_FILL = /^\s*fill\b.*\.intersect\(/
+  const TONE_SHIFT = /litTone|shadowTone|\bhi\(|\blo\(|capeHi|capeDeep/
+  const FN_RAMP = /^\s*fn\s+(hi|lo)\s*\(/
+
+  const roFiles = (): string[] =>
+    readdirSync(join(EXAMPLES, 'characters-ro'), { encoding: 'utf8' })
+      .filter((f) => f.endsWith('.drw'))
+      .map((f) => join(EXAMPLES, 'characters-ro', f))
+
+  test('no `fill <tone>.intersect(rect)` patch and no `fn hi/lo` ramp survives', () => {
+    const offenders: string[] = []
+    for (const file of roFiles()) {
+      const lines = readFileSync(file, 'utf8').split('\n')
+      lines.forEach((line, i) => {
+        if (FN_RAMP.test(line) || (CLIPPED_FILL.test(line) && TONE_SHIFT.test(line))) {
+          offenders.push(`${file}:${i + 1}: ${line.trim()}`)
+        }
+      })
+    }
+    expect(offenders).toEqual([])
   })
 })

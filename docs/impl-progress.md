@@ -22,6 +22,20 @@ Archer 4/10, Wizard 4/10, Assassin 3/10. Ziel Messpunkt 2: ≥7/10 + Zensus-Krit
   praktisch unverändert** (Poisson-Loop ≈0 ggü. bestehender EDT-Kost, gemessen iters=1-Baseline ≈
   Voll-Poisson). Alle 4 characters-ro weiter `critique --as character --strict` `pass:true`/`failedCodes:[]`.
   ⏸ **MESSPUNKT 1 (Re-Render der 4 Charaktere UNVERÄNDERT → Human-Grading) folgt separat** (Orchestrator).
+- [x] **W2-1b Shading-Nachjustierung aus Messpunkt-1-Human-Grading** ([ADR-0091](decisions/0091-shading-v2.md)
+  §Amendment, W2-1b): (1) **`drape`-Profil** — kontextuelles Material-Keyword (`material cloak = C cloth drape`,
+  Slot wie `spec/puff/spread`) wählt ein anisotropes **per-Zeilen-1D-Höhenfeld** (`drapeHeight`, Halbzylinder
+  quer, flach längs, keine Top/Bottom-Dirichlet-Pins) + vertikale Neumann-Glättung gegen Zeilen-Diskretisierungs-
+  streifen → hängender Umhang liest als vertikales Halbrohr, **kein „Schildkrötenpanzer"** (dunkelt nicht nach
+  unten). (2) **`over UNIONREGION`** — Trailing-Klausel auf `model`/`cel` (`model R M over U`): Höhenfeld/Normalen
+  aus `U` (z.B. `leg.union(boot)`), getönt/gefüllt nur `R` → Bein+Schuh eine **kontinuierliche** Shading-Einheit,
+  kein Feld-Neustart an der Part-Grenze. (3) **ALLE manuellen Eck-Value-Patches** (`fill hi(c) R.intersect(rect…)`,
+  assassin ~13×; archer `fn hi/lo` ~20×; knight capeHi/capeDeep; wizard Boot-sheen + headBack lit-crown) entfernt →
+  Value-Spread jetzt aus Material-`spread`/Form-Shading. (4) Wizard-Gold-**Trim** (`trimM`) + Sleeves modelliert →
+  zeigen Form. drape auf assassin- + knight-Capes; `over` auf assassin- + archer-Beinen. tsc+biome clean,
+  **827 Tests grün** (+drape-kein-Längsgradient, +`over`-Feldkontinuität, +Eck-Patch-frei-Gate, +Determinismus).
+  Alle 4 `critique --as character --strict` `pass:true`. Sheets visuell verifiziert (Patches weg, Cape hängt,
+  Bein Einheit, Trim Form, Knight-Platte unverändert).
 - [ ] **W2-2 Okklusion/aim + Sprach-Diät** (ADR-0092, ADR-0094): zweiphasige Assembly
   (behind/front-Relationen, topologische Paint-Ordnung), `aim PIN PT` (1-Bone-Solve), C013
   occlusion-parity, `--explain` Paint-Ordnung+Winkel. Diät: `repeat`/`while`/`flood`/`lit:`-Block
@@ -55,6 +69,23 @@ Archer 4/10, Wizard 4/10, Assassin 3/10. Ziel Messpunkt 2: ≥7/10 + Zensus-Krit
   `spec>0`) fügt oberhalb s>0.5 einen harten Glint in der Spec-Farbe hinzu → `cel … N` liefert N Band-Töne
   **+ 1 Glint** = N+1 distinct. Cel-Band-Count-Tests nutzen daher `cloth`/`flat` (spec=0) für exakt N; ein
   eigener Test pinnt den metal-Glint (N+1). Kein Defekt — gewollter Pixel-Art-Metall-Look.
+- **W2-1b: naives per-Zeilen-Drape-Feld streift horizontal.** Ein unabhängiges 1D-Poisson je Zeile springt an
+  schrägen Silhouetten (Lauf-`start`/-Länge ändern sich ganzzahlig zwischen Zeilen) → sichtbare horizontale Bänder
+  (Probe visuell bestätigt). Fix: **vertikale-nur Neumann-Glättung** (Mittel mit In-Region-Nachbarn oben/unten,
+  Out-of-Region = self → freie Kante) nach dem 1D-Feld glättet die Stufen, OHNE Top/Bottom zu pinnen (Hem bleibt
+  hell). In `drapeHeight`-Doc dokumentiert.
+- **W2-1b: C004 auf dunklem/monochromem Stoff bleibt der harte Fall — `spread` braucht hohe Werte.** Der
+  Eck-Patch füllte einen **flachen** hellen Block (`>10 %` der Region → p90 springt); Form-Shading verteilt die
+  Helligkeit als sanften Gradienten, sodass p90 nur den Peak-Pixel erreicht. Dark-cloth-Parts brauchen daher
+  `spread 700–820 %` (assassin) bzw. Basisfarbe leicht aus dem Near-Black gehoben (`#2a2333`→`#37304a`), damit
+  C004 `p90−p10 ≥ 0.15` **aus dem Shading** kommt statt aus einem Patch — der Kompromiss ist eine etwas warme
+  Hood-Krone. `cel` (flache Bänder → hoher p90) käme günstiger an C004 als `model` (smooth); **W013-Vorgriff**:
+  das Eck-Patch-Idiom ist als Anti-Pattern markiert (Test + Craft-Guide), der kanonische Ersatz ist Material-
+  `spread`. Ambient-Absenken hilft nicht (shadowTone-Helligkeitsboden pinnt p10).
+- **W2-1b: Trim/Akzent flach zu modellieren kann C004 *senken*.** Ein flaches helles Gold-Band (Hut) lieferte den
+  p90 des Hut-Draws; es zu `model`n dunkelt seine Schattenseite → C004 fällt. Lösung: nur die *großen* Trim-
+  Flächen (Robe-Sash/Saum/Manschette) modellieren (dort ist Form sichtbar + genug Fläche), kleine Bright-Akzente
+  (Hut-Band, Stern-Gem) flach lassen; Trim-Material bekommt eigenes `spread`.
 
 
 Single Source of Truth für den autonomen Nacht-Dispatch. Spec-Quelle: der freigegebene Plan

@@ -115,6 +115,7 @@ import {
   type Grad,
   IDENTITY,
   invertMatrix,
+  isFormProfile,
   isMaterialResponse,
   type Light,
   light,
@@ -824,6 +825,8 @@ export type ExplainStep = {
   readonly ambient?: number
   readonly puff?: number
   readonly bands?: number
+  /** `form` op (ADR-0091): the height-field profile, serialized only when non-default (`drape`). */
+  readonly profile?: string
 }
 
 /** One recorded `model`/`cel` command expansion (ADR-0086 §6). */
@@ -878,6 +881,7 @@ const explainShadeOp = (op: ShadeOp): ExplainStep => {
         puff: round3(op.spec.puff),
         ...(op.spec.spec > 0 ? { spec: round3(op.spec.spec), specPow: op.spec.specPow } : {}),
         ...(op.spec.bands !== null ? { bands: op.spec.bands } : {}),
+        ...(op.spec.profile !== 'round' ? { profile: op.spec.profile } : {}),
       }
     case 'shade':
       return {
@@ -2133,6 +2137,15 @@ export class Engine {
         stmt.span,
       )
     }
+    const profile = stmt.profile ?? 'round'
+    if (!isFormProfile(profile)) {
+      throw error(
+        ERROR_CODE.typeError,
+        `unknown form profile '${profile}'`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
     // Trailing dose overrides (ADR-0091): each evaluates to a number (`0..1`/percent).
     const overrides: { [K in MaterialOverrideKey]?: number } = {}
     for (const key of MATERIAL_OVERRIDE_KEYS) {
@@ -2151,7 +2164,10 @@ export class Engine {
       }
       overrides[key] = n
     }
-    const value = material(col, response, overrides)
+    const value = material(col, response, {
+      ...overrides,
+      ...(profile !== 'round' ? { profile } : {}),
+    })
     this.#checkBindable(stmt.name, env, stmt.span, state)
     if (!env.assignLocal(stmt.name, value)) {
       env.declare(stmt.name, value)
@@ -4032,6 +4048,13 @@ export class Engine {
         // inline `COLOR [RESPONSE]` (bare colour ⇒ flat).
         const region = args.region()
         const mat = args.material()
+        // `over UNION` (ADR-0091): co-shade this region on a shared surface field (a union of the
+        // part and its neighbour) so a leg + boot read as one continuous limb, not two masses.
+        let field: Region | undefined
+        if (args.peekBareName() === 'over') {
+          args.rawName()
+          field = args.region()
+        }
         let explicit: Light | null = null
         if (args.peekBareName() === 'light') {
           args.rawName()
@@ -4039,7 +4062,7 @@ export class Engine {
         }
         args.done()
         const lt = this.#requireLight(explicit, draw, stmt, state)
-        const ops = lowerMaterial(ctx, region, mat, lt)
+        const ops = lowerMaterial(ctx, region, mat, lt, field)
         if (this.explain) {
           this.explain.push({
             command: 'model',
@@ -4057,6 +4080,11 @@ export class Engine {
         const region = args.region()
         const mat = args.material()
         const n = quantInt(args.num())
+        let field: Region | undefined
+        if (args.peekBareName() === 'over') {
+          args.rawName()
+          field = args.region()
+        }
         let explicit: Light | null = null
         if (args.peekBareName() === 'light') {
           args.rawName()
@@ -4064,7 +4092,7 @@ export class Engine {
         }
         args.done()
         const lt = this.#requireLight(explicit, draw, stmt, state)
-        const ops = lowerCel(ctx, region, mat, lt, n)
+        const ops = lowerCel(ctx, region, mat, lt, n, field)
         if (this.explain) {
           this.explain.push({
             command: 'cel',

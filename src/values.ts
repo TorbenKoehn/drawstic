@@ -138,6 +138,22 @@ export const isMaterialResponse = (s: string): s is MaterialResponse =>
   (MATERIAL_RESPONSES as readonly string[]).includes(s)
 
 /**
+ * Form-shading profiles (ADR-0091): how the Poisson height field inflates a region. `round` (the
+ * default) solves the isotropic 2D field — a disc becomes a hemisphere, a stripe a half-cylinder,
+ * darkening symmetrically toward every boundary. `drape` solves a **per-row 1D** field instead
+ * (curvature only *across* each horizontal row, flat along its length): a hanging cloak/drape reads
+ * as a vertical half-tube that does not darken toward its hem and whose lower edge stands off,
+ * instead of curling into a downward-darkening "turtle shell" the isotropic field produces on a long
+ * skirt. A contextual keyword in a `material` binding's trailing slot, like a response word.
+ */
+export const FORM_PROFILES = ['round', 'drape'] as const
+export type FormProfile = (typeof FORM_PROFILES)[number]
+
+/** Whether `s` names a form profile — the contextual keyword test used by parser and eval. */
+export const isFormProfile = (s: string): s is FormProfile =>
+  (FORM_PROFILES as readonly string[]).includes(s)
+
+/**
  * A first-class material (ADR-0086, ADR-0091): a base colour plus a `response` that selects a baked
  * shading dose profile — never the colour, which stays the author's choice. The optional
  * `shade`/`hi`/`rim`/`ao`/`spec` fields override individual doses of that profile when present;
@@ -156,6 +172,7 @@ export type Material = {
   spec?: number
   puff?: number
   spread?: number
+  profile?: FormProfile
 }
 
 export type Value =
@@ -223,6 +240,7 @@ export const material = (
     spec?: number
     puff?: number
     spread?: number
+    profile?: FormProfile
   } = {},
 ): Material => ({
   type: 'material',
@@ -235,6 +253,7 @@ export const material = (
   ...(overrides.spec !== undefined ? { spec: overrides.spec } : {}),
   ...(overrides.puff !== undefined ? { puff: overrides.puff } : {}),
   ...(overrides.spread !== undefined ? { spread: overrides.spread } : {}),
+  ...(overrides.profile !== undefined ? { profile: overrides.profile } : {}),
 })
 
 export const isObj = (v: Value): v is Exclude<Value, number | boolean | string> =>

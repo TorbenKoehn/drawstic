@@ -28,8 +28,6 @@ steelInk = #2b3346
 capeRed = #b23a34
 capeLite = #d0584a
 capeDark = #7c2521
-capeHi = capeRed.litTone(#ffe6b0, 34%)   # lit cape highlight (raises value spread → clears C004)
-capeDeep = capeRed.shadowTone(#2a3a5e, 42%)   # deep cape shadow (darkened, hue-capped)
 gold = #e8c15a
 goldDark = #a9822f
 ink = #16181f
@@ -40,6 +38,9 @@ chain = #2a3040
 # --- materials for form-following cel shading ---
 material plate = #8494ac metal
 material cloth = #b23a34 cloth
+# hanging cape: `drape` profile (per-row half-tube, no turtle-shell) + `spread` for the C004 value
+# range that the retired capeHi/capeDeep `.intersect` corner patches used to supply (W2-1b).
+material capeM = capeRed cloth drape spread 230%
 
 # ===================== FRONT PARTS =====================
 
@@ -130,10 +131,7 @@ draw sword 9x48:
 
 draw capeEdge 10x34:
   drape = poly(0:0, 9:2, 7:33, 2:31)
-  cel drape cloth 3
-  # value spread: lit upper-left + deep lower fold (clears C004)
-  fill capeHi drape.intersect(rect(0:1, 5:15))
-  fill capeDeep drape.intersect(rect(2:21, 9:33))
+  cel drape capeM 3
   line capeDark 4:4 5:32
   pin top 5:1
 
@@ -218,10 +216,7 @@ draw legSide 13x40:
 
 draw capeSide 26x64:
   drape = curvePoly(2:0, 10:2, 8:20, 14:38, 22:58, 12:62, 4:44, 1:22, 0:6)
-  cel drape cloth 3
-  # value spread: lit upper shoulder + deep lower folds (clears C004)
-  fill capeHi drape.intersect(rect(0:0, 12:22))
-  fill capeDeep drape.intersect(rect(6:40, 26:64))
+  cel drape capeM 3
   line capeDark 7:10 11:44
   line capeDark 12:30 17:54
   pin top 3:1
@@ -271,14 +266,11 @@ draw helmBack 30x36:
 
 draw capeBack 50x72:
   drape = curvePoly(15:1, 35:1, 41:16, 45:38, 47:70, 34:66, 25:71, 16:66, 3:70, 5:38, 9:16)
-  cel drape cloth 3
+  cel drape capeM 3
   # gold collar trim
   fill gold rect(16:1, 34:3)
   fill goldDark rect(16:3, 34:4)
-  # directional value spread with a diagonal terminator (lit up-left → deep down-right; clears C004)
-  fill capeHi drape.intersect(poly(4:4, 34:4, 4:52))
-  fill capeDeep drape.intersect(poly(47:18, 47:71, 16:71))
-  # center seam + fold shadows/highlight (spread as the hem flares)
+  # center seam + fold shadows/highlight (drape profile carries the value spread; folds add detail)
   line capeDark 25:4 25:69
   line capeDark 18:8 10:64
   line capeDark 32:8 40:64

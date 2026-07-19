@@ -203,9 +203,13 @@ draw sword 24x48:
   medial ridge; soft, always-dithered terminator; Blinn specular on `metal`/`glass`/`skin`; the
   default) · `cel REGION MAT N` = the **same form body as N crisp bands** (opt-in hard cel look, band
   edges dithered).
-  `MAT` = a `material` value **or** inline `COLOR [RESPONSE]`. A binding takes trailing dose overrides
-  `shade/hi/rim/ao/spec/puff/spread N%` — **`spread N%`** widens `hi`+`shade` symmetrically (the
-  value-spread knob; use it, not a hand tone patch, for a dark base's contrast). Resolution order: explicit `light L`
+  `MAT` = a `material` value **or** inline `COLOR [RESPONSE]`. A binding takes a trailing height-field
+  profile `round` (default) | **`drape`** and trailing dose overrides `shade/hi/rim/ao/spec/puff/spread N%`.
+  **`spread N%`** widens `hi`+`shade` symmetrically (the value-spread knob — use it, **never** a hand
+  `litTone(…).intersect(rect…)` corner patch, for a dark base's C004 contrast). **`drape`** shades a
+  *hanging* cloak/skirt as a per-row half-tube that doesn't darken toward its hem (no "turtle-shell").
+  **`model/cel R MAT over UNION`** builds the field from `UNION` (e.g. `leg.union(boot)`) but tones only
+  `R`, so stacked parts co-shade as **one continuous limb**, no seam break. Resolution order: explicit `light L`
   → `lit L:` block → **theme default** (a `light` in a `theme` body → shared by every view/variant,
   the cross-view fix). None in any tier = hard `E024` (never a silent default). `render … --explain`
   prints the exact primitive expansion. `dir/at/amb/gain` + the response words are keywords **only**

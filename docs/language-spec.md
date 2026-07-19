@@ -1321,6 +1321,12 @@ draw sword 24x48:
   only in this slot: `shade`/`hi`/`rim`/`ao`/`spec` replace one baked dose, `puff` the surface-curvature
   gain, and **`spread N%`** scales `hi`+`shade` symmetrically (the one knob for value spread — e.g.
   `material leather = #3a2a1e cloth spread 140%` widens a dark base's range without a hand tone patch).
+  A trailing **form-profile** keyword `round` (default) | `drape` (same slot, no value) picks the
+  height field: `round` is the isotropic 2D dome; **`drape`** inflates a **per-row 1D half-tube**
+  (curvature only across each row, flat down its length) so a *hanging* cloth reads as a vertical
+  half-cylinder that does **not** darken toward its hem — the fix for a long cloak curling into a
+  "turtle-shell" (`material cloak = #4a3f56 cloth drape spread 200%`). Use `drape` only for hanging
+  drapes; keep `round` for compact masses.
 - **`lit L: body`** is a lexical block that scopes light `L` over its body only (set/restored like
   `mask …:`, no global state).
 - **Resolution order** for a `model`/`cel` command, most-local first: an explicit `light L`
@@ -1329,7 +1335,8 @@ draw sword 24x48:
   always visible, never a silent default. The theme default is how a front/side view pair or a
   colour variant shares **one** light without re-authoring it per view — the structural fix for the
   "light mirrored per view" bug.
-- **`model REGION MATERIAL [light L]`** lowers `MATERIAL` under the scoped (or explicit `light L`)
+- **`model REGION MATERIAL [over UNION] [light L]`** lowers `MATERIAL` under the scoped (or explicit
+  `light L`)
   light onto a **form (normal-based) body shade → rim → ambientOcclusion → cast shadow**
   ([ADR-0089](decisions/0089-form-based-shading.md), [ADR-0091](decisions/0091-shading-v2.md)) — every
   direction/offset derived from the one light, zero-dose edge steps skipped. `MATERIAL` is a `material`
@@ -1346,8 +1353,12 @@ draw sword 24x48:
   pixel): within one draw body a later region's cast falls on an earlier-drawn opaque neighbour (draw
   ground/back-to-front, scene-craft §8), but it **never bakes onto empty canvas** — an isolated part
   casts nothing (no detached grey blob); grounding for assembled figures comes from `fit … shadow`
-  (§9), not a baked material cast.
-- **`cel REGION MATERIAL N`** renders the **same form body as `N` crisp bands** that follow the
+  (§9), not a baked material cast. **`over UNION`** (optional, ADR-0091) computes the height field and
+  normals from `UNION` (a region — typically `partA.union(partB)`) but tones/fills **only** `REGION`,
+  so two adjacent parts co-shade as **one continuous form** instead of restarting the field at their
+  seam — a leg and its boot read as a single limb (`model legReg pants over legReg.union(bootReg)` then
+  `model bootReg leather over legReg.union(bootReg)`). Each part keeps its own material and edge steps.
+- **`cel REGION MATERIAL N [over UNION] [light L]`** renders the **same form body as `N` crisp bands** that follow the
   surface normal (the intensity field quantized, band-centre tone-mapped) — the **opt-in** hard
   cel-shaded look, where `model` is the smooth default. Its bands wrap the form, unlike the old
   straight iso-distance ramp; a `flat` cel is deliberate flat styling. Band **boundaries are

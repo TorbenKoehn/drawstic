@@ -110,3 +110,48 @@ draw capeClothCel 48x56:                     # dithered cel band edges
 
 The programmatic equivalents (Poisson ridge-freeness, specular hotspot placement, always-on dither,
 cel-edge dither, symmetric spread, determinism) are pinned in `tests/unit/shading.test.ts`.
+
+## Amendment — W2-1b (2026-07-19): `drape` profile + `over` co-shading + patch-idiom retirement
+
+The Messpunkt-1 human grading kept two shading defects the isotropic field could not fix, plus a
+now-visible collision with the old hand value patches. This amendment adds two orthogonal knobs and
+retires the patch idiom across the four RO recipes. Engine surface, tests, and the golden defects:
+
+**6 — `drape` height-field profile (`drapeHeight`, `src/raster.ts`).** A material binding may carry a
+trailing **form-profile keyword** — `round` (default, the 2D Poisson field above) or `drape` —
+alongside the response and dose overrides (`material cloak = #4a3f56 cloth drape`, contextual keyword
+in that slot only, like `spec`/`puff`). `drape` inflates the region **row by row in 1D**: each
+horizontal run of `n` in-region cells becomes a half-cylinder `H[i] = sqrt(0.5·i·(n+1−i))` (the
+discrete `−P''=1`, `P=0` at the two **left/right** run ends only). The top and bottom edges are never
+pinned to zero, so a hanging cloak/skirt curves only left↔right (a vertical half-tube) and **does not
+accumulate the downward darkening** the isotropic 2D field bakes into a long region — the
+"turtle-shell" the assassin cape showed. Because independent per-row solves step by whole pixels
+wherever the silhouette slopes (a faint horizontal banding), a few **vertical-only Neumann smoothing
+passes** (average with in-region vertical neighbours; an out-of-region neighbour falls back to the
+cell itself → a free, un-pinned top/bottom edge) flatten the steps while keeping the hem lift.
+`FormSpec` gains `profile`; `Material`/`material()` gain `profile`; `FORM_PROFILES`/`isFormProfile`
+live in `values.ts` (single source, mirrors `MATERIAL_RESPONSES`). Deterministic (`+ − * /`, `sqrt`).
+
+**7 — `over UNIONREGION` co-shading (`formShade` field/paint split; `model`/`cel` trailing clause).**
+`model REGION MATERIAL over UNIONREGION` (and the same on `cel … N over U`) derives the height field
+and normals from `UNIONREGION` but tones/fills **only** `REGION`. Passing a union of two adjacent
+parts (`legReg.union(bootReg)`) makes them share **one continuous form** — a leg and its boot shade as
+a single limb instead of restarting the field (and its terminator) at the part seam — while each part
+keeps its own material and edge steps. `formShade` takes an optional `fieldRegion` (default: the paint
+region); the plan's `form` op carries an optional `field`; `planMaterial`/`lowerMaterial`/`lowerCel`
+thread it through. `render --explain` serialises `profile` when non-default.
+
+**8 — the manual value-spread corner patch is retired (anti-pattern).** The `fill hi(c)
+REGION.intersect(rect…)` idiom (and `fn hi/lo` ramps, `capeHi/capeDeep` fills) — needed pre-v2 to
+force a C004 value spread — collided with the form shading as visible rectangular blocks. All four RO
+recipes drop it; the C004 spread now comes from the material's own `spread` (dark near-black cloth was
+lifted slightly off the floor so `spread` reaches `p90−p10 ≥ 0.15` without a patch — this is a
+**W013-lint preview**: `litTone/shadowTone` clipped to a sub-rect on a modelled region is the
+anti-pattern, material `spread` the canonical replacement). A CI guard
+(`tests/unit/examples-critique.test.ts`) fails if the idiom reappears in `examples/characters-ro`.
+
+Known limit (recorded, not fixed here): reaching C004 on a **dark monochrome** part via *smooth*
+`model` needs a high `spread` (assassin `~780–820 %`) because the form gradient lifts only the peak
+pixel toward `p90`, where a flat patch lifted a whole block; `cel`'s flat top band reaches `p90`
+cheaper. The programmatic drape (no down-length gradient), `over` field continuity, `planMaterial`
+field attachment, and determinism are pinned in `tests/unit/shading.test.ts`.
