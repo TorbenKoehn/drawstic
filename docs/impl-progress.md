@@ -5,12 +5,23 @@
 Modus: autonom, sequenzielle Subagenten, Grading-Stopps. Human-Noten Runde 2: Knight 6/10,
 Archer 4/10, Wizard 4/10, Assassin 3/10. Ziel Messpunkt 2: ≥7/10 + Zensus-Kriterien grün.
 
-- [ ] **W2-1 Shading v2** (ADR-0091): Poisson-Inflation-Höhenfeld (statt EDT-Zelt; behebt
-  Toblerone-Grat + dünne-Teile-Flachheit, lokale Normalisierung), Blinn-Specular (`spec`/`specPow`
-  in DOSE + Material-Override; Cel-Glint bei s>0.5), `FORM_DITHER` 0.10 + entgatet (auch smooth),
-  Cel-Bandgrenzen ±0.5 Bayer-gedithert, `spread N%`-Override (ersetzt Hand-Patches),
-  per-Response-`puff` (cloth ×0.75), Golden-Tests + Probe-Renders (Kugel/Kapsel/Streifen).
-  DANACH ⏸ MESSPUNKT 1: 4 Charaktere UNVERÄNDERT re-rendern → Human-Grading (Stopp).
+- [x] **W2-1 Shading v2** ([ADR-0091](decisions/0091-shading-v2.md)): Poisson-Inflation-Höhenfeld
+  (`∇²P=−c`, Jacobi, EDT-**linear**-Warmstart, feste iters `round(0.6·maxDim)` clamp [8,48]; ersetzt
+  `H=sqrt(D/Dmax)` + globales Dmax; Scheibe→Hemisphäre, Streifen→Halbzylinder, kein Grat, dünne Teile
+  wölben sich eigenbreitig) · Blinn-Specular (`s=clamp(n·h)^specPow`, `spec`/`specPow` in DOSE + Override
+  `spec N%`; smooth = weicher Mix Richtung `litTone(base,warm,0.85)`, Cel = harter Glint bei s>0.5) ·
+  `FORM_DITHER` 0.06→0.10, pixel-Gate entfernt (smooth **immer** Bayer-gedithert) · Cel-Bandgrenzen
+  `floor(u·N+(bayer−0.5))` → ±0.5-Zone gedithert (Palette bleibt N Töne) · Material-Binding-Overrides
+  `shade/hi/rim/ao/spec/puff/spread N%` (order-free trailing, kontextuelle KW; `spread` skaliert hi+shade
+  symmetrisch; `puff` von globaler Konstante in DOSE, cloth ×0.75=1.125) · metal hi 0.22→0.30. tsc+biome
+  clean, **820 Tests grün** (Form-Tests auf neue Semantik konvertiert + neue: Streifen-kein-Grat,
+  Specular-Hotspot lichtzugewandt, cloth spec=0, smooth-Dither aktiv, Cel-Kante beide Töne, spread
+  symmetrisch, puff-Override, Determinismus 2×byte-gleich, Cel-Glint). Golden-Probes (`--png@8`,
+  Kugel/Kapsel/Streifen/Cape je Response) visuell verifiziert: Grat weg, weicher Terminator,
+  Metall/Glass-Hotspot sichtbar, Cloth-Treppen weg, Cel-Kanten gedithert (Wizard-Orb glänzt). **Render-Zeit
+  praktisch unverändert** (Poisson-Loop ≈0 ggü. bestehender EDT-Kost, gemessen iters=1-Baseline ≈
+  Voll-Poisson). Alle 4 characters-ro weiter `critique --as character --strict` `pass:true`/`failedCodes:[]`.
+  ⏸ **MESSPUNKT 1 (Re-Render der 4 Charaktere UNVERÄNDERT → Human-Grading) folgt separat** (Orchestrator).
 - [ ] **W2-2 Okklusion/aim + Sprach-Diät** (ADR-0092, ADR-0094): zweiphasige Assembly
   (behind/front-Relationen, topologische Paint-Ordnung), `aim PIN PT` (1-Bone-Solve), C013
   occlusion-parity, `--explain` Paint-Ordnung+Winkel. Diät: `repeat`/`while`/`flood`/`lit:`-Block
@@ -27,7 +38,23 @@ Archer 4/10, Wizard 4/10, Assassin 3/10. Ziel Messpunkt 2: ≥7/10 + Zensus-Krit
 
 ### Welle-2 emergente Punkte
 
-_(Findings hier anhängen.)_
+- **W2-1: EDT-Warmstart muss LINEAR sein, nicht quadratisch.** Der Plan sagte „EDT-Feld als
+  Warmstart". Der *quadratische* EDT (`dist2` direkt) warmstartet P als Kegel mit konstanter
+  Flankensteigung → unter-konvergierte Jacobi behält eine harte Terminator-Schulter (Probe: Kugel-Diagonale
+  `100 97 95 83 29 0`, Cliff). Der **lineare** EDT (`sqrt(dist2)`) warmstartet einen Kegel, den Jacobi in
+  wenigen Sweeps zur glatten Kuppel rundet (`99 79 65 56 44 32 19`, weich). Gewählt: linearer Warmstart +
+  iters `round(0.6·maxDim)` clamp [8,48]. Dokumentiert in `poissonHeight`-Doc.
+- **W2-1: Material-Overrides `shade/hi/rim/ao` waren im Typ/Factory vorhanden, aber NIE geparst.**
+  `Material.shade/hi/rim/ao` + `material(overrides)` existierten seit ADR-0086, doch kein Parser/Eval-Pfad
+  setzte sie je (nur programmatisch in Tests). W2-1 fügt den Trailing-Override-Loop im
+  `#parseMaterialBinding` hinzu (`MATERIAL_OVERRIDE_KEYS` in `ast.ts`) → jetzt erstmals aus Recipes nutzbar,
+  inkl. der neuen `spec/puff/spread`. Fehlermeldung bei unbekanntem Wort nach der Farbe änderte sich von
+  „unknown material response" zu „unexpected 'X' in a material binding (…response…, or an override…)"
+  (Test angepasst).
+- **W2-1: Specular-Glint erhöht die Cel-Palette um 1 Ton.** Ein glänzendes `cel`-Material (metal/glass/skin,
+  `spec>0`) fügt oberhalb s>0.5 einen harten Glint in der Spec-Farbe hinzu → `cel … N` liefert N Band-Töne
+  **+ 1 Glint** = N+1 distinct. Cel-Band-Count-Tests nutzen daher `cloth`/`flat` (spec=0) für exakt N; ein
+  eigener Test pinnt den metal-Glint (N+1). Kein Defekt — gewollter Pixel-Art-Metall-Look.
 
 
 Single Source of Truth für den autonomen Nacht-Dispatch. Spec-Quelle: der freigegebene Plan

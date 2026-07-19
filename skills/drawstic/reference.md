@@ -204,7 +204,7 @@ scope when they run.
 | String | `"…"`, `"""…"""` | text/style guides only; paths are bareword. |
 | Boolean | comparisons, `true`, `false` | logic `& \| !`. |
 | Light | `light NAME = dir DX:DY COLOR [amb COOL AMT] [gain N]` / `= at X:Y …` | first-class light source (§ Light & material, ADR-0086); drives `lit`/`model`/`cel`. |
-| Material | `material NAME = COLOR [RESPONSE]` | base colour + response dose profile; consumed by `model`/`cel`. |
+| Material | `material NAME = COLOR [RESPONSE] [shade/hi/rim/ao/spec/puff/spread N]` | base colour + response dose profile (+ optional trailing dose overrides, `spread N%` = value-spread knob); consumed by `model`/`cel`. |
 
 Indices must be integers (fractional = error). `xs.0` is an index; `xs.name` is a UFCS call.
 
@@ -716,23 +716,28 @@ draw sword 24x48:
   COOL AMT` = optional fill light (cool colour + `0..1` amount, lifts shadows off pure black);
   `gain N` scales every dose (default `1`). **No constructor parens.** `dir`/`at`/`amb`/`gain` are
   keywords **only** in this binding — ordinary names elsewhere (a recipe may still write `dir = …`).
-- **`material NAME = COLOR [RESPONSE]`**, `RESPONSE ∈ flat | metal | skin | cloth | glass | glow`.
-  The response selects a **baked dose profile** (shade depth, rim tightness, AO/cast) — never the
-  colour, which stays yours. Bare colour ⇒ `flat`. `glow` is self-illuminated (fill + inner light
-  only, no shade/rim/cast). The response word is a keyword **only** in this slot.
+- **`material NAME = COLOR [RESPONSE] [OVERRIDES…]`**, `RESPONSE ∈ flat | metal | skin | cloth | glass
+  | glow`. The response selects a **baked dose profile** (shade depth, rim tightness, AO/cast, specular
+  gloss, form roundness) — never the colour, which stays yours. Bare colour ⇒ `flat`. `glow` is
+  self-illuminated (fill + inner light only, no shade/rim/cast/spec). The response word is a keyword
+  **only** in this slot. **Overrides** (order-free trailing keywords, this slot only): `shade`/`hi`/
+  `rim`/`ao`/`spec` replace one dose, `puff` the curvature gain, **`spread N%`** scales `hi`+`shade`
+  symmetrically (the value-spread knob — `material robe = #3a2a1e cloth spread 140%`).
 - **`lit L: body`** scopes light `L` over its body (like `mask …:`). `L` must evaluate to a light.
 - **Resolution order** (most-local first): explicit `light L` arg → enclosing `lit L:` block →
   applied **theme default** (`light` in a `theme` body, § Themes). None in any tier = hard `E024`.
   The theme default is the cross-view fix: front + side + recolor variants applying one theme share
   **one** light, so shading is never mirrored per view.
 - **`model REGION MATERIAL [light L]`** lowers the material under the resolved light onto a **form
-  (normal-based) body shade → rim → AO → cast** (ADR-0089); `MATERIAL` is a `material` value **or**
-  inline `COLOR [RESPONSE]`. Zero-dose edge steps are skipped (so `flat` emits no rim/cast). **No
-  light in any tier = hard `E024`** — never a silent default. The **body follows the surface**: an
-  inner distance-to-boundary field is inflated to a dome, a per-pixel normal is dotted against the
-  light, and the intensity is tone-mapped `warm → base → cool` — **smooth and form-following by
-  default**, soft terminator (ordered-dithered in pixel mode), works at chibi scale; a dark base
-  never crushes to `#000000` (keeps ≥35 % lightness). The **cast is clipped to already-drawn content**
+  (normal-based) body shade → rim → AO → cast** (ADR-0089, ADR-0091); `MATERIAL` is a `material` value
+  **or** inline `COLOR [RESPONSE]`. Zero-dose edge steps are skipped (so `flat` emits no rim/cast).
+  **No light in any tier = hard `E024`** — never a silent default. The **body follows the surface**: an
+  inner distance-to-boundary field is **Poisson-inflated** to a smooth dome (disc → hemisphere, stripe
+  → half-cylinder, **no medial ridge**; thin limbs bulge by their own width), a per-pixel normal is
+  dotted against the light, and the intensity is tone-mapped `warm → base → cool` — **smooth and
+  form-following by default**, soft terminator, **always Bayer-dithered** (pixel-art stipple), works at
+  chibi scale; a **Blinn specular** hotspot lifts glossy `metal`/`glass`/`skin`; a dark base never
+  crushes to `#000000` (keeps ≥35 % lightness). The **cast is clipped to already-drawn content**
   (silhouette offset down-light, minus the region, minus every transparent pixel): within one draw it
   lands on an earlier-drawn opaque neighbour but never bakes onto empty canvas, so an isolated part
   casts nothing (no floating blob). Ground assembled figures with `fit … shadow`, not a baked
@@ -740,7 +745,8 @@ draw sword 24x48:
 - **`cel REGION MATERIAL N`** renders the **same form body as `N` crisp bands** that follow the
   surface normal (the intensity field quantized, band-centre tone-mapped) — the **opt-in** hard
   cel-shaded look (`model` is the smooth default). Bands wrap the form, not straight iso-distance
-  lines. `--explain` shows one `form` step carrying the band count.
+  lines; band **boundaries are Bayer-dithered** (a ±0.5-band dithered edge, not a hard line), and a
+  glossy response adds a **hard specular glint**. `--explain` shows one `form` step carrying the band count.
 - **`render <file>#<draw> --explain`** prints the exact primitive expansion of every `model`/`cel`
   (CLI § above) — predict the pixels, or copy the sequence to hand-tune with the raw primitives.
 - `light`/`material` bindings live at **module scope or drawing-local** (like `grad`/`mask`).

@@ -14,6 +14,7 @@ import type {
   Expression,
   FontDefinition,
   FontItem,
+  MaterialOverrideKey,
   Module,
   PathCommand,
   PathDefinition,
@@ -21,6 +22,7 @@ import type {
   ThemeDefinition,
   TilesetDefinition,
 } from './ast.js'
+import { MATERIAL_OVERRIDE_KEYS } from './ast.js'
 import {
   type Color,
   darken,
@@ -817,6 +819,8 @@ export type ExplainStep = {
   readonly elevation?: number
   readonly shade?: number
   readonly hi?: number
+  readonly spec?: number
+  readonly specPow?: number
   readonly ambient?: number
   readonly puff?: number
   readonly bands?: number
@@ -872,6 +876,7 @@ const explainShadeOp = (op: ShadeOp): ExplainStep => {
         hi: round3(op.spec.hi),
         ambient: round3(op.spec.ambient),
         puff: round3(op.spec.puff),
+        ...(op.spec.spec > 0 ? { spec: round3(op.spec.spec), specPow: op.spec.specPow } : {}),
         ...(op.spec.bands !== null ? { bands: op.spec.bands } : {}),
       }
     case 'shade':
@@ -2128,7 +2133,25 @@ export class Engine {
         stmt.span,
       )
     }
-    const value = material(col, response)
+    // Trailing dose overrides (ADR-0091): each evaluates to a number (`0..1`/percent).
+    const overrides: { [K in MaterialOverrideKey]?: number } = {}
+    for (const key of MATERIAL_OVERRIDE_KEYS) {
+      const expr = stmt.overrides[key]
+      if (expr === undefined) {
+        continue
+      }
+      const n = this.evalExpr(expr, env, state)
+      if (typeof n !== 'number') {
+        throw error(
+          ERROR_CODE.typeError,
+          `material ${key} override needs a number, got ${typeName(n)}`,
+          state.module.displayPath,
+          expr.span,
+        )
+      }
+      overrides[key] = n
+    }
+    const value = material(col, response, overrides)
     this.#checkBindable(stmt.name, env, stmt.span, state)
     if (!env.assignLocal(stmt.name, value)) {
       env.declare(stmt.name, value)

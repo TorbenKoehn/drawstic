@@ -1380,13 +1380,14 @@ export const celRegion = (
 export type Vec3 = { readonly x: number; readonly y: number; readonly z: number }
 
 /**
- * Fully-resolved parameters for {@link formShade} (ADR-0089), built from a `Material` + `Light` by
- * `shading.ts`. `base` is the material colour; `warm`/`cool` the highlight/shadow tint targets;
- * `light` the unit *toward-light* vector (in-plane direction + `z` elevation); `shade`/`hi` the max
- * shadow / highlight doses; `puff` the surface-curvature gain (higher ⇒ rounder, more form);
- * `ambient` the shadow floor in `[0,1]` (the lit fraction the darkest pixel keeps, so shadows never
- * crush to black); `bands` is `null` for the smooth default or `N` for a crisp `N`-band cel
- * quantization of the *same* intensity field.
+ * Fully-resolved parameters for {@link formShade} (ADR-0089, ADR-0091), built from a `Material` +
+ * `Light` by `shading.ts`. `base` is the material colour; `warm`/`cool` the highlight/shadow tint
+ * targets; `light` the unit *toward-light* vector (in-plane direction + `z` elevation); `shade`/`hi`
+ * the max shadow / highlight doses; `spec` the Blinn specular dose and `specPow` its exponent
+ * (higher ⇒ tighter hotspot); `puff` the surface-curvature gain of the Poisson height field
+ * (higher ⇒ rounder, more form); `ambient` the shadow floor in `[0,1]` (the lit fraction the darkest
+ * pixel keeps, so shadows never crush to black); `bands` is `null` for the smooth default or `N` for
+ * a crisp `N`-band cel quantization of the *same* intensity field.
  */
 export type FormSpec = {
   readonly base: Color
@@ -1395,6 +1396,8 @@ export type FormSpec = {
   readonly light: Vec3
   readonly shade: number
   readonly hi: number
+  readonly spec: number
+  readonly specPow: number
   readonly puff: number
   readonly ambient: number
   readonly bands: number | null
@@ -1402,8 +1405,21 @@ export type FormSpec = {
 
 /** Intensity at which the tone equals `base`; brighter lifts toward `warm`, darker toward `cool`. */
 const FORM_MID = 0.5
-/** Pixel-mode ordered-dither amplitude on the smooth intensity, softening 8-bit terminator banding. */
-const FORM_DITHER = 0.06
+/**
+ * Ordered-dither amplitude on the smooth intensity (ADR-0091: 0.06 → 0.10, and no longer pixel-mode
+ * gated — smooth shading is Bayer-dithered *always* so the terminator reads as clean pixel-art
+ * stipple rather than a soft-but-banded 8-bit gradient).
+ */
+const FORM_DITHER = 0.1
+/** How far a specular hotspot lifts toward the light colour (the tint target `mix`es toward). */
+const SPEC_TINT = 0.85
+/** The Poisson height-field source constant `c` in `∇²P = −c` (scales P linearly ⇒ absorbed by `puff`). */
+const POISSON_SOURCE = 1
+/** Per-pixel Jacobi cost gain: iterations ≈ `POISSON_ITER_GAIN · maxBoundsDim`, capped. */
+const POISSON_ITER_GAIN = 0.6
+/** Floor / ceiling on Jacobi iterations — keeps small parts cheap and bounds the worst case (O(iters·area)). */
+const POISSON_ITER_MIN = 8
+const POISSON_ITER_MAX = 48
 
 /**
  * Map a Lambert intensity `lit ∈ [0,1]` to a surface tone (ADR-0089): at {@link FORM_MID} it is
@@ -1509,16 +1525,73 @@ const innerDistance2 = (
 }
 
 /**
- * **Form (normal-based) shading** — the ADR-0089 default that replaces the old form-ignoring
+ * **Poisson-inflation height field** (ADR-0091) — the ridge-free replacement for the old
+ * `H = sqrt(D / Dmax)` inner-distance tent. Solves `∇²P = −c` on the region interior with a
+ * homogeneous Dirichlet boundary (`P = 0` on every out-of-region cell) by Jacobi relaxation, then
+ * returns `H = sqrt(P)`. This inflates a disc to an exact hemisphere and a stripe to a half-cylinder
+ * cross-section: the field is smooth (no medial-axis crease), and because the boundary condition is
+ * purely *local*, a thin limb bulges in proportion to its **own** width — no global `Dmax` flattens
+ * it. The **linear** inner-distance field (`sqrt(dist2)`, the EDT) seeds the solve as a warm start:
+ * it carries the per-part magnitude so thick masses reach full height in few sweeps, and — unlike the
+ * *squared* field, whose gradient is a constant-slope cone that Jacobi needs many sweeps to round off
+ * — its cone smooths into a dome within a handful of iterations (no hard terminator shoulder).
+ * Iterations are a fixed, deterministic function of the bounds size (capped), so cost is
+ * `O(iters · area)` with a bounded worst case. Deterministic: `+ − * /`, `Math.sqrt` of a
+ * non-negative field, no RNG, ping-pong buffers (order-independent Jacobi, not Gauss–Seidel).
+ */
+const poissonHeight = (dist2: Float64Array, w: number, h: number): Float64Array => {
+  const iters = Math.max(
+    POISSON_ITER_MIN,
+    Math.min(POISSON_ITER_MAX, Math.round(Math.max(w, h) * POISSON_ITER_GAIN)),
+  )
+  let cur = new Float64Array(w * h)
+  let next = new Float64Array(w * h)
+  // warm start: P₀ = the linear inner-distance field (0 on the boundary, per-part magnitude inside)
+  for (let i = 0; i < dist2.length; i++) {
+    const d2 = dist2[i] ?? 0
+    cur[i] = d2 > 0 ? Math.sqrt(d2) : 0
+  }
+  for (let it = 0; it < iters; it++) {
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x
+        if ((dist2[i] ?? 0) <= 0) {
+          next[i] = 0 // Dirichlet boundary (out-of-region / concavity cell held at 0)
+          continue
+        }
+        const l = cur[i - 1] ?? 0
+        const r = cur[i + 1] ?? 0
+        const u = cur[i - w] ?? 0
+        const d = cur[i + w] ?? 0
+        next[i] = (l + r + u + d + POISSON_SOURCE) / 4
+      }
+    }
+    const tmp = cur
+    cur = next
+    next = tmp
+  }
+  const height = new Float64Array(w * h)
+  for (let i = 0; i < height.length; i++) {
+    const p = cur[i] ?? 0
+    height[i] = p > 0 ? Math.sqrt(p) : 0
+  }
+  return height
+}
+
+/**
+ * **Form (normal-based) shading** — the ADR-0089/0091 default that replaces the old form-ignoring
  * distance-from-a-point veil in `model`. From the region's own geometry it derives an inner-distance
- * SDF ({@link innerDistance2}), inflates it to a spherical height field `H = sqrt(D / Dmax)` (steep
- * at the rim, flat over the spine), reads a per-pixel surface normal
+ * SDF ({@link innerDistance2}), inflates it to a **Poisson height field** ({@link poissonHeight};
+ * disc → hemisphere, stripe → half-cylinder, no medial ridge), reads a per-pixel surface normal
  * `n = normalize(−∂H/∂x·puff, −∂H/∂y·puff, 1)`, and shades each pixel by the Lambert term
  * `clamp(n · light, 0..1)` lifted by the `ambient` floor. The intensity is mapped to a tone by
  * {@link formTone}: brightest where the normal faces the light, softly terminating into a cool
- * shadow on the far side — so the shading **follows the form** instead of stepping linearly across
- * the bbox. `bands === null` renders the smooth default (ordered-dithered in pixel mode so the
- * terminator reads clean at 8-bit); `bands === N` snaps the identical field into `N` crisp cel bands.
+ * shadow on the far side. A **Blinn specular** hotspot `s = clamp(n · h)^specPow` (`h` the halfway
+ * vector between the light and the viewer) then lifts the tone toward the light colour by `s·spec` —
+ * a soft mix in smooth mode, a hard glint above `s > 0.5` in cel mode (the classic pixel-art metal
+ * look). `bands === null` renders the smooth default (Bayer-dithered **always**, ADR-0091, so the
+ * terminator stipples cleanly); `bands === N` snaps the field into `N` crisp cel bands whose
+ * boundaries are themselves Bayer-dithered across a ±0.5-band zone (dithered pixel-art band edges).
  * Only in-region pixels are written (through {@link putPixel}, so mask + budget are honoured);
  * deterministic throughout (dmath-only arithmetic, no RNG).
  */
@@ -1532,21 +1605,15 @@ export const formShade = (ctx: Context, region: Region, spec: FormSpec): void =>
   const w = b.x1 - b.x0 + 3
   const h = b.y1 - b.y0 + 3
   const dist2 = innerDistance2(region, bx, by, w, h)
-  let maxD2 = 1
-  for (let i = 0; i < dist2.length; i++) {
-    const v = dist2[i] ?? 0
-    if (v > maxD2) {
-      maxD2 = v
-    }
-  }
-  const dmax = Math.sqrt(maxD2)
-  const height = new Float64Array(w * h)
-  for (let i = 0; i < dist2.length; i++) {
-    const d2 = dist2[i] ?? 0
-    height[i] = d2 > 0 ? Math.sqrt(Math.sqrt(d2) / dmax) : 0
-  }
+  const height = poissonHeight(dist2, w, h)
   const bbox: BBox = region.bbox ?? b
   const L = spec.light
+  // Blinn halfway vector between the toward-light direction and the viewer (straight out, +z).
+  const hx = L.x
+  const hy = L.y
+  const hz = L.z + 1
+  const hlen = Math.sqrt(hx * hx + hy * hy + hz * hz)
+  const specColor = litTone(spec.base, spec.warm, SPEC_TINT)
   const amb = clamp01(spec.ambient)
   const bands = spec.bands
   for (let y = b.y0; y <= b.y1; y++) {
@@ -1564,19 +1631,27 @@ export const formShade = (ctx: Context, region: Region, spec: FormSpec): void =>
       const ny = -(hD - hU) * 0.5 * spec.puff
       const nlen = Math.sqrt(nx * nx + ny * ny + 1)
       const raw = (nx * L.x + ny * L.y + L.z) / nlen
-      let lit = amb + (1 - amb) * clamp01(raw)
+      const lit0 = amb + (1 - amb) * clamp01(raw)
+      // Blinn specular: normalized-normal · normalized-halfway, raised to the response's exponent.
+      const ndoth = clamp01((nx * hx + ny * hy + hz) / (nlen * hlen))
+      const s = spec.spec > 0 ? clamp01(ndoth ** spec.specPow) : 0
+      const bayer = ((BAYER4[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16
       let tone: Color
       if (bands !== null && bands >= 1) {
-        // snap the shared intensity field to a band centre, then tone-map that centre (crisp, no dither)
-        const u = amb >= 1 ? 0 : clamp01((lit - amb) / (1 - amb))
-        const band = Math.min(bands - 1, Math.floor(u * bands))
+        // snap to a band centre with a Bayer-dithered ±0.5-band boundary zone, then tone-map it
+        const u = amb >= 1 ? 0 : clamp01((lit0 - amb) / (1 - amb))
+        const band = Math.max(0, Math.min(bands - 1, Math.floor(u * bands + (bayer - 0.5))))
         tone = formTone(spec, amb + (1 - amb) * ((band + 0.5) / bands))
-      } else {
-        if (ctx.mode === 'pixel') {
-          const th = ((BAYER4[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16 - 0.5
-          lit = clamp01(lit + th * FORM_DITHER)
+        // cel specular: a hard glint in the spec colour above the threshold — no soft mix
+        if (spec.spec > 0 && s > 0.5) {
+          tone = specColor
         }
+      } else {
+        const lit = clamp01(lit0 + (bayer - 0.5) * FORM_DITHER)
         tone = formTone(spec, lit)
+        if (s > 0) {
+          tone = mix(tone, specColor, clamp01(s * spec.spec))
+        }
       }
       putPixel(ctx, x, y, tone, bbox)
     }

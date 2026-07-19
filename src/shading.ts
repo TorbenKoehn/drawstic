@@ -121,10 +121,13 @@ export const shadowOffsetFor = (
 // ── baked dose profiles (scene-craft §5 → material defaults) ─────────────────
 
 /**
- * A response's baked shading doses (ADR-0086 §1). `shade`/`hi` are veil amounts, `rim` scales
- * the rim colour's alpha, `ao` the seat-edge darkening, `cast` the cast-shadow alpha; `self`
- * marks a self-illuminated response (`glow`) that brightens only its own region and takes no
- * directional shade, rim, ao, or cast. Amounts are calibrated to scene-craft §5's dosage table.
+ * A response's baked shading doses (ADR-0086 §1, ADR-0091). `shade`/`hi` are veil amounts, `rim`
+ * scales the rim colour's alpha, `ao` the seat-edge darkening, `cast` the cast-shadow alpha; `spec`
+ * is the Blinn specular dose (how much a tight hotspot lifts toward the light colour) and `specPow`
+ * its exponent (higher ⇒ tighter, glossier); `puff` is the surface-curvature gain of the Poisson
+ * height field (higher ⇒ rounder form); `self` marks a self-illuminated response (`glow`) that
+ * brightens only its own region and takes no directional shade, rim, ao, cast, or specular. Amounts
+ * are calibrated to scene-craft §5's dosage table + the ADR-0091 golden-probe pass.
  */
 type Dose = {
   readonly shade: number
@@ -132,16 +135,69 @@ type Dose = {
   readonly rim: number
   readonly ao: number
   readonly cast: number
+  readonly spec: number
+  readonly specPow: number
+  readonly puff: number
   readonly self: boolean
 }
 
 const DOSE: Record<MaterialResponse, Dose> = {
-  flat: { shade: 0.35, hi: 0.08, rim: 0, ao: 0.15, cast: 0, self: false },
-  metal: { shade: 0.5, hi: 0.22, rim: 0.6, ao: 0.28, cast: 0.25, self: false },
-  skin: { shade: 0.4, hi: 0.16, rim: 0.32, ao: 0.22, cast: 0.2, self: false },
-  cloth: { shade: 0.45, hi: 0.1, rim: 0.18, ao: 0.3, cast: 0.2, self: false },
-  glass: { shade: 0.22, hi: 0.3, rim: 0.7, ao: 0.1, cast: 0.15, self: false },
-  glow: { shade: 0, hi: 0.45, rim: 0, ao: 0, cast: 0, self: true },
+  flat: {
+    shade: 0.35,
+    hi: 0.08,
+    rim: 0,
+    ao: 0.15,
+    cast: 0,
+    spec: 0,
+    specPow: 8,
+    puff: 1.5,
+    self: false,
+  },
+  metal: {
+    shade: 0.5,
+    hi: 0.3,
+    rim: 0.6,
+    ao: 0.28,
+    cast: 0.25,
+    spec: 0.5,
+    specPow: 16,
+    puff: 1.5,
+    self: false,
+  },
+  skin: {
+    shade: 0.4,
+    hi: 0.16,
+    rim: 0.32,
+    ao: 0.22,
+    cast: 0.2,
+    spec: 0.08,
+    specPow: 4,
+    puff: 1.5,
+    self: false,
+  },
+  cloth: {
+    shade: 0.45,
+    hi: 0.1,
+    rim: 0.18,
+    ao: 0.3,
+    cast: 0.2,
+    spec: 0,
+    specPow: 8,
+    puff: 1.125,
+    self: false,
+  },
+  glass: {
+    shade: 0.22,
+    hi: 0.3,
+    rim: 0.7,
+    ao: 0.1,
+    cast: 0.15,
+    spec: 0.6,
+    specPow: 24,
+    puff: 1.5,
+    self: false,
+  },
+  glow: { shade: 0, hi: 0.45, rim: 0, ao: 0, cast: 0, spec: 0, specPow: 8, puff: 1.5, self: true },
 }
 
 /** Tone depths for the edges/glow the doses paint (fixed; the dose controls *how much* reaches). */
@@ -164,12 +220,6 @@ const CAST_LEN_FRAC = 0.2
  * terminator, not a flat frontal wash.
  */
 const LIGHT_ELEVATION = 0.55
-/**
- * Surface-curvature gain for the reconstructed normal (`puff` in {@link FormSpec}). Higher ⇒ the
- * height field's slopes count more ⇒ rounder, more pronounced form; tuned so a filled blob reads as
- * a firm dome without the terminator collapsing to a hard edge.
- */
-const FORM_PUFF = 2.6
 /** Shadow floor when a light carries no `amb` — shadows keep this lit fraction, never pure black. */
 const DEFAULT_AMBIENT = 0.2
 
@@ -243,14 +293,19 @@ export const formSpecOf = (
 ): FormSpec => {
   const gain = lt.gain
   const dose = DOSE[mat.response]
+  // `spread` scales highlight + shadow symmetrically — the one-knob value-spread control (ADR-0091)
+  // that replaces the hand `.intersect(rect)+litTone/shadowTone` value patches.
+  const spread = mat.spread ?? 1
   return {
     base: mat.base,
     warm: lt.color,
     cool: lt.amb?.color ?? DEFAULT_COOL,
     light: lightVec3(lt, region),
-    shade: clamp01(doseOf(dose.shade, mat.shade, gain)),
-    hi: clamp01(doseOf(dose.hi, mat.hi, gain)),
-    puff: FORM_PUFF,
+    shade: clamp01(doseOf(dose.shade, mat.shade, gain) * spread),
+    hi: clamp01(doseOf(dose.hi, mat.hi, gain) * spread),
+    spec: clamp01(mat.spec ?? dose.spec),
+    specPow: Math.max(1, dose.specPow),
+    puff: Math.max(0, mat.puff ?? dose.puff),
     ambient: clamp01(lt.amb ? lt.amb.amount : DEFAULT_AMBIENT),
     bands,
   }

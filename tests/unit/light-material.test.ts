@@ -153,16 +153,17 @@ describe('model / cel command verbs', () => {
     const s = render(
       [
         'light sun = dir 1:1 #ffe6b0',
-        'material steel = #8a95a5 metal',
+        'material cloth = #8a7595 cloth',
         'draw x 16x16:',
         '  body = rect(2:2, 13:13)',
         '  lit sun:',
-        '    cel body steel 3',
+        '    cel body cloth 3',
       ].join('\n'),
       'x',
     )
     // exactly N=3 crisp band colours, and they wrap the form: the up-light corner is brighter than
     // the down-light corner (bands quantize the same normal-based intensity field `model` shades).
+    // cloth has no specular dose, so no glint colour is added on top of the 3 bands (ADR-0091).
     const colors = distinctColors(s, 2, 2, 13, 13)
     expect(colors.size).toBe(3)
     expect(lum(s, 3, 3)).toBeGreaterThan(lum(s, 12, 12))
@@ -284,7 +285,33 @@ describe('keyword discipline (new words stay contextual, D7)', () => {
 
   test('an unknown material response is a positioned parse error', () => {
     expect(() => render('material bad = #808080 shiny\ndraw x 2x2:\n  px #fff 0:0', 'x')).toThrow(
-      /unknown material response/,
+      /unexpected 'shiny' in a material binding/,
     )
+  })
+
+  test('material dose overrides (ADR-0091) parse and reshape the shade — spread widens the spread', () => {
+    const wide = render(
+      [
+        'light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%',
+        'material m = #8a95a5 metal spread 160% spec 0%',
+        'draw x 16x16:',
+        '  body = rect(2:2, 13:13)',
+        '  model body m light sun',
+      ].join('\n'),
+      'x',
+    )
+    const narrow = render(
+      [
+        'light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%',
+        'material m = #8a95a5 metal spec 0%',
+        'draw x 16x16:',
+        '  body = rect(2:2, 13:13)',
+        '  model body m light sun',
+      ].join('\n'),
+      'x',
+    )
+    // spread 160% scales hi+shade symmetrically → a wider value range (brighter highs, darker lows)
+    expect(lum(wide, 3, 3)).toBeGreaterThan(lum(narrow, 3, 3))
+    expect(lum(wide, 12, 12)).toBeLessThan(lum(narrow, 12, 12))
   })
 })

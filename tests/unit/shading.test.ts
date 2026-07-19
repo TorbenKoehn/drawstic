@@ -255,29 +255,35 @@ describe('form (normal-based) shading: the ADR-0089 model default', () => {
     expect(mid).toBeGreaterThan(far)
   })
 
-  test('the terminator is a soft gradient — many distinct tones, no single hard step', () => {
+  test('the terminator is a soft, form-following gradient — not a hard cel step (ADR-0091)', () => {
     const c = smooth(32, 32)
     lowerMaterial(c, disc, material(steelBase, 'skin'), sun)
-    // sample the lit→shadow diagonal through the centre — interior only (|i−16| ≤ 7 stays inside
-    // the r10 disc) and smooth mode, so neither the transparent rim nor dither confounds the run.
-    const lums: number[] = []
-    for (let i = 10; i <= 22; i++) {
+    // Sample the lit→shadow diagonal at a CONSTANT Bayer phase (step 4, the 4×4 period) so the
+    // now-always-on smooth dither (ADR-0091) does not confound the underlying form gradient.
+    const phase: number[] = []
+    for (let i = 10; i <= 22; i += 4) {
       const p = c.buffer.get(i, i)
       expect(p.a).toBeGreaterThan(0)
-      lums.push(p.r + p.g + p.b)
+      phase.push(p.r + p.g + p.b)
     }
-    const distinct = new Set(lums)
-    expect(distinct.size).toBeGreaterThanOrEqual(6) // a smooth ramp, not a 2-step linear cel
-    let maxJump = 0
-    for (let i = 1; i < lums.length; i++) {
-      maxJump = Math.max(maxJump, Math.abs((lums[i] ?? 0) - (lums[i - 1] ?? 0)))
+    // strictly decreasing near→far: the shade follows the surface normal (Poisson dome), brightest
+    // where it faces the light — and a genuine multi-step gradient, never a 2-band plateau+cliff.
+    for (let i = 1; i < phase.length; i++) {
+      expect(phase[i]).toBeLessThan(phase[i - 1] ?? 0)
     }
-    expect(maxJump).toBeLessThan(60) // no abrupt terminator cliff
+    expect(new Set(phase).size).toBeGreaterThanOrEqual(3)
+    // the full-resolution run still carries many tones — a smooth ramp, not the old 2-step cel
+    const lums: number[] = []
+    for (let i = 10; i <= 22; i++) {
+      lums.push(c.buffer.get(i, i).r + c.buffer.get(i, i).g + c.buffer.get(i, i).b)
+    }
+    expect(new Set(lums).size).toBeGreaterThanOrEqual(6)
   })
 
   test('cel quantizes the SAME field into exactly N form-following bands', () => {
     const c = ctx(32, 32)
-    lowerCel(c, disc, material(steelBase, 'skin'), sun, 4)
+    // cloth has spec 0, so no glint colour is added — exactly N band tones (ADR-0091).
+    lowerCel(c, disc, material(steelBase, 'cloth'), sun, 4)
     const seen = new Set<string>()
     for (let y = 6; y <= 25; y++) {
       for (let x = 6; x <= 25; x++) {
@@ -290,6 +296,23 @@ describe('form (normal-based) shading: the ADR-0089 model default', () => {
     expect(seen.size).toBe(4)
     // the brightest band sits up-light, the darkest down-light — the bands wrap the form.
     expect(lumAt(c, 9, 9)).toBeGreaterThan(lumAt(c, 23, 23))
+  })
+
+  test('cel adds a hard specular glint for a glossy response (ADR-0091)', () => {
+    const c = ctx(32, 32)
+    // metal has spec > 0: a hard glint in the spec colour appears above the s>0.5 threshold, so the
+    // palette is the 4 band tones PLUS one distinct glint colour = 5 (no soft mix, a crisp glint).
+    lowerCel(c, disc, material(steelBase, 'metal'), sun, 4)
+    const seen = new Set<string>()
+    for (let y = 6; y <= 25; y++) {
+      for (let x = 6; x <= 25; x++) {
+        const p = c.buffer.get(x, y)
+        if (p.a > 0) {
+          seen.add(`${p.r},${p.g},${p.b}`)
+        }
+      }
+    }
+    expect(seen.size).toBe(5)
   })
 
   test('a dark base shadows to a still-legible tone, never pure #000000', () => {
@@ -315,5 +338,134 @@ describe('form (normal-based) shading: the ADR-0089 model default', () => {
     expect(model.ambient).toBeCloseTo(0.15, 6) // from the sun's `amb … 15%`
     const cel = formSpecOf(disc, material(steelBase, 'metal'), sun, 5)
     expect(cel.bands).toBe(5)
+  })
+})
+
+describe('shading v2 (ADR-0091): Poisson height field, specular, dither, spread', () => {
+  const smooth = (w: number, h: number): Context => ({
+    buffer: new Framebuffer(w, h),
+    mask: null,
+    mode: 'smooth',
+  })
+  const disc: Region = circleRegion(16, 16, 10)
+  const sum = (c: Context, x: number, y: number): number => {
+    const p = c.buffer.get(x, y)
+    return p.r + p.g + p.b
+  }
+
+  test('an elongated stripe has NO medial-axis ridge — a smooth half-cylinder across its width', () => {
+    // horizontal stripe, light straight down ⇒ lit top edge, dark bottom. A Poisson half-cylinder
+    // gives a smooth cross-section gradient; the old EDT "tent" gave two flat faces + a hard crease.
+    const dn = light({ dir: { x: 0, y: 1 }, color: warm, amb: { color: cool, amount: 0.15 } })
+    const stripe: Region = rectRegion(4, 20, 43, 29) // 40×10 bar in a 48-wide canvas
+    const c = smooth(48, 48)
+    lowerMaterial(c, stripe, material(steelBase, 'skin'), dn)
+    const cross: number[] = []
+    for (let y = 20; y <= 29; y++) {
+      cross.push(sum(c, 24, y))
+    }
+    // many distinct levels across the 10px width — a gradient, never a 2-value tent (ridge signature)
+    expect(new Set(cross).size).toBeGreaterThanOrEqual(6)
+    // and the lit half is itself a gradient (adjacent rows differ), so there is no flat roof face
+    expect(cross[2]).not.toBe(cross[4])
+  })
+
+  test('the specular hotspot sits on the light-facing bulge (up-light), not the shadow side', () => {
+    const c = ctx(32, 32)
+    lowerMaterial(c, disc, material(steelBase, 'metal'), sun)
+    let best = -1
+    let bx = 0
+    let by = 0
+    for (let y = 6; y <= 25; y++) {
+      for (let x = 6; x <= 25; x++) {
+        const l = lumAt(c, x, y)
+        if (l > best) {
+          best = l
+          bx = x
+          by = y
+        }
+      }
+    }
+    // the sun travels down-right, so its hotspot lands up-left of the disc centre (16, 16)
+    expect(bx).toBeLessThan(16)
+    expect(by).toBeLessThan(16)
+  })
+
+  test('specular lifts a glossy metal but is exactly zero for cloth', () => {
+    expect(formSpecOf(disc, material(steelBase, 'cloth'), sun, null).spec).toBe(0)
+    expect(formSpecOf(disc, material(steelBase, 'metal'), sun, null).spec).toBeGreaterThan(0)
+    // a metal with its spec forced off renders differently from the default glossy metal
+    const glossy = ctx(32, 32)
+    const matte = ctx(32, 32)
+    lowerMaterial(glossy, disc, material(steelBase, 'metal'), sun)
+    lowerMaterial(matte, disc, material(steelBase, 'metal', { spec: 0 }), sun)
+    let diff = 0
+    for (let y = 6; y <= 25; y++) {
+      for (let x = 6; x <= 25; x++) {
+        const a = glossy.buffer.get(x, y)
+        const b = matte.buffer.get(x, y)
+        if (a.r !== b.r || a.g !== b.g || a.b !== b.b) {
+          diff++
+        }
+      }
+    }
+    expect(diff).toBeGreaterThan(20)
+  })
+
+  test('smooth shading is Bayer-dithered always (not only pixel mode) — a flat patch stipples', () => {
+    // a broad flat region in SMOOTH mode: without ADR-0091 dither its interior would be one tone;
+    // with the always-on Bayer dither a small interior patch carries several stipple tones.
+    const c = smooth(24, 24)
+    lowerMaterial(c, rectRegion(4, 4, 19, 19), material(steelBase, 'flat'), sun)
+    const patch = new Set<string>()
+    for (let y = 9; y <= 12; y++) {
+      for (let x = 9; x <= 12; x++) {
+        const p = c.buffer.get(x, y)
+        patch.add(`${p.r},${p.g},${p.b}`)
+      }
+    }
+    expect(patch.size).toBeGreaterThan(1)
+  })
+
+  test('cel band boundaries are Bayer-dithered — both adjacent band tones interleave at the seam', () => {
+    const c = ctx(32, 32)
+    lowerCel(c, disc, material(steelBase, 'cloth'), sun, 2)
+    // a scanline through the terminator: a hard cel edge flips tone once; a dithered edge flips
+    // back and forth several times across the ±0.5-band zone (both tones present in the seam).
+    let transitions = 0
+    let prev = ''
+    for (let x = 7; x <= 25; x++) {
+      const p = c.buffer.get(x, 16)
+      if (p.a === 0) {
+        continue
+      }
+      const key = `${p.r},${p.g},${p.b}`
+      if (prev !== '' && key !== prev) {
+        transitions++
+      }
+      prev = key
+    }
+    expect(transitions).toBeGreaterThan(1)
+  })
+
+  test('`spread` scales highlight and shadow symmetrically (the one-knob value-spread control)', () => {
+    const base = formSpecOf(disc, material(steelBase, 'skin'), sun, null)
+    const wide = formSpecOf(disc, material(steelBase, 'skin', { spread: 1.5 }), sun, null)
+    expect(wide.shade).toBeCloseTo(base.shade * 1.5, 6)
+    expect(wide.hi).toBeCloseTo(base.hi * 1.5, 6)
+  })
+
+  test('`puff` override replaces the response curvature gain', () => {
+    expect(formSpecOf(disc, material(steelBase, 'cloth'), sun, null).puff).toBeCloseTo(1.125, 6)
+    expect(formSpecOf(disc, material(steelBase, 'metal'), sun, null).puff).toBeCloseTo(1.5, 6)
+    expect(formSpecOf(disc, material(steelBase, 'metal', { puff: 2.4 }), sun, null).puff).toBe(2.4)
+  })
+
+  test('form shading is deterministic — rendering twice is byte-identical', () => {
+    const a = ctx(32, 32)
+    const b = ctx(32, 32)
+    lowerMaterial(a, disc, material(steelBase, 'metal'), sun)
+    lowerMaterial(b, disc, material(steelBase, 'metal'), sun)
+    expect(a.buffer.data).toEqual(b.buffer.data)
   })
 })

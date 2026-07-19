@@ -118,6 +118,12 @@ Scene closing stack (whole-frame hand veils — not covered by `model`; use a ha
 `warm`/`cool` constants from §1): `grain <ground>` → `lightRegion <all> <srcPt> <warm> 15–20%` →
 `shadeRegion <all> <srcPt> <cool> ≤12%`.
 
+**Material dose overrides** (ADR-0091 — prefer these over a hand tone patch): a `material` binding
+takes trailing `shade`/`hi`/`rim`/`ao`/`spec`/`puff`/`spread N%`. `spread N%` widens `hi`+`shade`
+symmetrically (the value-spread knob — use it instead of an `.intersect(rect)+shadowTone` patch for a
+dark base's C004 range); `spec N%` sets specular gloss; `puff N%` the form roundness. Glossy responses
+(`metal`/`glass`/`skin`) already carry a Blinn specular hotspot.
+
 ## 6. Soft glow (verified)
 
 Onion rings come from big alpha **contrast** between stacked bands — they appear at **every** size, so

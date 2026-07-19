@@ -11,6 +11,8 @@ import type {
   FontItem,
   FormatLine,
   MatchArm,
+  MaterialOverrideKey,
+  MaterialOverrides,
   Module,
   PaletteEntry,
   PathCommand,
@@ -19,6 +21,7 @@ import type {
   ThemeDefinition,
   TilesetDefinition,
 } from './ast.js'
+import { MATERIAL_OVERRIDE_KEYS } from './ast.js'
 import { ERROR_CODE, error, type TextSpan } from './diagnostic.js'
 import { lex, type Token } from './lexer.js'
 import { isMaterialResponse } from './values.js'
@@ -663,21 +666,29 @@ class Parser {
     const name = this.#next().text
     this.#next() // =
     const color = this.#parseExpr(true)
+    // Optional response word right after the colour (a keyword only in this slot).
     let response: string | undefined
-    if (!this.#at('nl') && !this.#at('eof') && !this.#at('dedent')) {
-      const r = this.#peek()
-      if (r.kind === 'name' && isMaterialResponse(r.text)) {
+    if (this.#peek().kind === 'name' && isMaterialResponse(this.#peek().text)) {
+      response = this.#next().text
+    }
+    // Optional order-free trailing dose overrides (ADR-0091): `shade`/`hi`/`rim`/`ao`/`spec`/`puff`/
+    // `spread`, each a value expression. Keywords only in this slot — bindable names elsewhere.
+    const overrides: MaterialOverrides = {}
+    while (!this.#at('nl') && !this.#at('eof') && !this.#at('dedent')) {
+      const kw = this.#peek()
+      if (kw.kind === 'name' && (MATERIAL_OVERRIDE_KEYS as readonly string[]).includes(kw.text)) {
         this.#next()
-        response = r.text
-      } else {
-        this.#fail(
-          `unknown material response '${r.text || r.kind}' (flat|metal|skin|cloth|glass|glow)`,
-          r,
-        )
+        overrides[kw.text as MaterialOverrideKey] = this.#parseExpr(true)
+        continue
       }
+      this.#fail(
+        `unexpected '${kw.text || kw.kind}' in a material binding (a response ` +
+          `flat|metal|skin|cloth|glass|glow, or an override shade|hi|rim|ao|spec|puff|spread N)`,
+        kw,
+      )
     }
     this.#expectNL()
-    return { kind: 'materialBinding', name, color, response, span: s }
+    return { kind: 'materialBinding', name, color, response, overrides, span: s }
   }
 
   /**

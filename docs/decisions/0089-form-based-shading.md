@@ -1,6 +1,10 @@
 # 89. Form-based (normal) shading as the `model` default
 
-- Status: Accepted
+- Status: Accepted; **amended in part by [ADR-0091](0091-shading-v2.md)** — the `H = sqrt(D / Dmax)`
+  inner-distance height field (Decision §1) is superseded by a Poisson-inflation field (no medial
+  ridge, local per-part bulge), and the pixel-mode-only terminator dither (Decision §2) by always-on
+  Bayer dither + a Blinn specular term. The normal→Lambert→tone pipeline, `formSpecOf`/`lightVec3`, and
+  the smooth-default / cel-opt-in split are unchanged.
 - Date: 2026-07-10
 - Deciders: t.koehn, Claude
 - Refines: [ADR-0086](0086-declarative-light-and-material.md) (replaces the `model` body's

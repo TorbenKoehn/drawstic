@@ -1253,6 +1253,15 @@ const formatExplain = (
       if (s.hi !== undefined) {
         parts.push(`hi ${s.hi}`)
       }
+      if (s.spec !== undefined) {
+        parts.push(`spec ${s.spec}`)
+      }
+      if (s.specPow !== undefined) {
+        parts.push(`specPow ${s.specPow}`)
+      }
+      if (s.puff !== undefined) {
+        parts.push(`puff ${s.puff}`)
+      }
       if (s.ambient !== undefined) {
         parts.push(`amb ${s.ambient}`)
       }

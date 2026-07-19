@@ -143,6 +143,20 @@ export type PaletteEntry =
  */
 export type PixelRow = { readonly text: string; readonly span: TextSpan }
 
+/** The dose-override keys a `material NAME = …` binding may carry (ADR-0091). */
+export const MATERIAL_OVERRIDE_KEYS = [
+  'shade',
+  'hi',
+  'rim',
+  'ao',
+  'spec',
+  'puff',
+  'spread',
+] as const
+export type MaterialOverrideKey = (typeof MATERIAL_OVERRIDE_KEYS)[number]
+/** A partial map of material dose overrides → their (percent/`0..1`) value expressions (ADR-0091). */
+export type MaterialOverrides = Partial<Record<MaterialOverrideKey, Expression>>
+
 /**
  * Statement grammar (spec §17.4 `draw-stmt` / `top-stmt`). Covers module-,
  * theme-, and drawing-level statements in one union; which kinds are legal
@@ -293,6 +307,12 @@ export type Statement =
       readonly name: string
       readonly color: Expression
       readonly response: string | undefined
+      /**
+       * Optional trailing dose overrides (ADR-0091), order-free keywords in this slot only:
+       * `shade`/`hi`/`rim`/`ao`/`spec` replace a response's baked dose; `puff` its curvature gain;
+       * `spread` scales `hi`+`shade` symmetrically. Each value is a `0..1`/percent expression.
+       */
+      readonly overrides: MaterialOverrides
       readonly span: TextSpan
     }
   | {

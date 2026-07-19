@@ -1312,11 +1312,15 @@ draw sword 24x48:
   colour + a `0..1` amount) that lifts shadows so they never go pure black; `gain N` scales every
   derived dose (default `1`). `dir`/`at`/`amb`/`gain` are keywords **only** in this binding — they
   stay ordinary bindable names everywhere else.
-- **`material NAME = COLOR [RESPONSE]`** binds a material: a base colour plus a `RESPONSE ∈
-  flat | metal | skin | cloth | glass | glow` that selects a **baked dose profile** (how far to
-  shade, how tight a rim, how much AO/cast), never the colour. A bare colour with no response is
-  `flat`. `glow` is self-illuminated (fill + inner light only — no shade/rim/cast). The response
-  word is a keyword **only** in this trailing slot.
+- **`material NAME = COLOR [RESPONSE] [OVERRIDES…]`** binds a material: a base colour plus a
+  `RESPONSE ∈ flat | metal | skin | cloth | glass | glow` that selects a **baked dose profile** (how
+  far to shade, how tight a rim, how much AO/cast, how glossy the specular, how round the form), never
+  the colour. A bare colour with no response is `flat`. `glow` is self-illuminated (fill + inner light
+  only — no shade/rim/cast/specular). The response word is a keyword **only** in this trailing slot.
+  **Dose overrides** (ADR-0091) are order-free trailing keywords, each a `0..1`/percent value, keywords
+  only in this slot: `shade`/`hi`/`rim`/`ao`/`spec` replace one baked dose, `puff` the surface-curvature
+  gain, and **`spread N%`** scales `hi`+`shade` symmetrically (the one knob for value spread — e.g.
+  `material leather = #3a2a1e cloth spread 140%` widens a dark base's range without a hand tone patch).
 - **`lit L: body`** is a lexical block that scopes light `L` over its body only (set/restored like
   `mask …:`, no global state).
 - **Resolution order** for a `model`/`cel` command, most-local first: an explicit `light L`
@@ -1327,13 +1331,17 @@ draw sword 24x48:
   "light mirrored per view" bug.
 - **`model REGION MATERIAL [light L]`** lowers `MATERIAL` under the scoped (or explicit `light L`)
   light onto a **form (normal-based) body shade → rim → ambientOcclusion → cast shadow**
-  ([ADR-0089](decisions/0089-form-based-shading.md)) — every direction/offset derived from the one
-  light, zero-dose edge steps skipped. `MATERIAL` is a `material` value **or** an inline `COLOR
-  [RESPONSE]`. The **body follows the surface**: an inner distance-to-boundary field is inflated to a
-  dome, a per-pixel surface normal is dotted against the light (Lambert), and the intensity is
-  tone-mapped `warm → base → cool` — so the shading is **smooth and form-following by default** with a
-  soft terminator (ordered-dithered in pixel mode), never the old form-ignoring linear ramp. A dark
-  base keeps ≥35 % of its lightness in shadow (never `#000000`). The **cast is clipped to
+  ([ADR-0089](decisions/0089-form-based-shading.md), [ADR-0091](decisions/0091-shading-v2.md)) — every
+  direction/offset derived from the one light, zero-dose edge steps skipped. `MATERIAL` is a `material`
+  value **or** an inline `COLOR [RESPONSE]`. The **body follows the surface**: an inner
+  distance-to-boundary field is **Poisson-inflated** to a smooth dome (a disc → hemisphere, a stripe →
+  half-cylinder — **no medial ridge**, and thin limbs bulge in proportion to their own width), a
+  per-pixel surface normal is dotted against the light (Lambert), and the intensity is tone-mapped
+  `warm → base → cool` — smooth and form-following by default with a soft terminator that is **always
+  Bayer-dithered** (clean pixel-art stipple, not an 8-bit band), never the old linear ramp. A **Blinn
+  specular** hotspot then lifts a glossy response (`metal`/`glass`/`skin`) toward the light colour (a
+  soft mix in smooth mode). A dark base keeps ≥35 % of its lightness in shadow (never `#000000`). The
+  **cast is clipped to
   already-drawn content** (silhouette offset down-light, minus the region, minus every transparent
   pixel): within one draw body a later region's cast falls on an earlier-drawn opaque neighbour (draw
   ground/back-to-front, scene-craft §8), but it **never bakes onto empty canvas** — an isolated part
@@ -1342,7 +1350,9 @@ draw sword 24x48:
 - **`cel REGION MATERIAL N`** renders the **same form body as `N` crisp bands** that follow the
   surface normal (the intensity field quantized, band-centre tone-mapped) — the **opt-in** hard
   cel-shaded look, where `model` is the smooth default. Its bands wrap the form, unlike the old
-  straight iso-distance ramp; a `flat` cel is deliberate flat styling.
+  straight iso-distance ramp; a `flat` cel is deliberate flat styling. Band **boundaries are
+  Bayer-dithered** across a ±0.5-band zone (a pixel-art dithered edge between the two adjacent tones,
+  not a hard line, ADR-0091), and a glossy response adds a **hard specular glint** in the spec colour.
 - **Predictability.** `drawstic render <file>#<draw> --explain` prints the exact primitive
   expansion of every `model`/`cel` — colours, amounts, points, offsets all resolved — so an agent
   can predict the pixels and, if a baked dose doesn't fit, copy the expansion down to the raw

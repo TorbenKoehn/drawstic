@@ -138,9 +138,11 @@ export const isMaterialResponse = (s: string): s is MaterialResponse =>
   (MATERIAL_RESPONSES as readonly string[]).includes(s)
 
 /**
- * A first-class material (ADR-0086): a base colour plus a `response` that selects a baked
+ * A first-class material (ADR-0086, ADR-0091): a base colour plus a `response` that selects a baked
  * shading dose profile — never the colour, which stays the author's choice. The optional
- * `shade`/`hi`/`rim`/`ao` fields override individual doses of that profile when present.
+ * `shade`/`hi`/`rim`/`ao`/`spec` fields override individual doses of that profile when present;
+ * `puff` overrides the response's surface-curvature gain, and `spread` scales `hi`+`shade`
+ * symmetrically (the one-knob value-spread control that replaces hand `.intersect` tone patches).
  * Constructed via {@link material}.
  */
 export type Material = {
@@ -151,6 +153,9 @@ export type Material = {
   hi?: number
   rim?: number
   ao?: number
+  spec?: number
+  puff?: number
+  spread?: number
 }
 
 export type Value =
@@ -210,7 +215,15 @@ export const light = (spec: {
 export const material = (
   base: Color,
   response: MaterialResponse = 'flat',
-  overrides: { shade?: number; hi?: number; rim?: number; ao?: number } = {},
+  overrides: {
+    shade?: number
+    hi?: number
+    rim?: number
+    ao?: number
+    spec?: number
+    puff?: number
+    spread?: number
+  } = {},
 ): Material => ({
   type: 'material',
   base,
@@ -219,6 +232,9 @@ export const material = (
   ...(overrides.hi !== undefined ? { hi: overrides.hi } : {}),
   ...(overrides.rim !== undefined ? { rim: overrides.rim } : {}),
   ...(overrides.ao !== undefined ? { ao: overrides.ao } : {}),
+  ...(overrides.spec !== undefined ? { spec: overrides.spec } : {}),
+  ...(overrides.puff !== undefined ? { puff: overrides.puff } : {}),
+  ...(overrides.spread !== undefined ? { spread: overrides.spread } : {}),
 })
 
 export const isObj = (v: Value): v is Exclude<Value, number | boolean | string> =>

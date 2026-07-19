@@ -199,10 +199,13 @@ draw sword 24x48:
   `gain` = intensity, `amb COOL AMT` = fill light). `material steel = #8a95a5 metal` (response ∈
   `flat|metal|skin|cloth|glass|glow`; bare colour ⇒ `flat`; `glow` = self-lit). Then `lit sun:`
   scopes the light over its body, and per object `model REGION MAT [light L]` lowers to a **smooth
-  form (normal-based) shade** → rim → AO → cast (all from the one light — follows the surface, soft
-  terminator, the default) · `cel REGION MAT N` = the **same form body as N crisp bands** (opt-in
-  hard cel look).
-  `MAT` = a `material` value **or** inline `COLOR [RESPONSE]`. Resolution order: explicit `light L`
+  form (normal-based) shade** → rim → AO → cast (all from the one light — a Poisson-inflated dome, no
+  medial ridge; soft, always-dithered terminator; Blinn specular on `metal`/`glass`/`skin`; the
+  default) · `cel REGION MAT N` = the **same form body as N crisp bands** (opt-in hard cel look, band
+  edges dithered).
+  `MAT` = a `material` value **or** inline `COLOR [RESPONSE]`. A binding takes trailing dose overrides
+  `shade/hi/rim/ao/spec/puff/spread N%` — **`spread N%`** widens `hi`+`shade` symmetrically (the
+  value-spread knob; use it, not a hand tone patch, for a dark base's contrast). Resolution order: explicit `light L`
   → `lit L:` block → **theme default** (a `light` in a `theme` body → shared by every view/variant,
   the cross-view fix). None in any tier = hard `E024` (never a silent default). `render … --explain`
   prints the exact primitive expansion. `dir/at/amb/gain` + the response words are keywords **only**
