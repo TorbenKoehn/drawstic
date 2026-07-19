@@ -9,7 +9,9 @@ failure below is silent to `check`; a render is the only judge.**
 
 Declare ONE named **`light`** before the first `draw` (ADR-0086). It is the single source of truth
 every object reads, so shade, highlight, rim, and cast can never drift apart — this replaces the old
-hand-typed `sun`-point + `warm`/`cool` triple as the default.
+hand-typed `sun`-point + `warm`/`cool` triple as the default. A `model`/`cel` reaches it either from
+a **theme default** (`light sun = …` inside a `theme` body → applied by `use`) or from an explicit
+**`light sun`** argument on the command (the `lit L:` block was removed — ADR-0094).
 
 ```drw
 light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%   # source up-left ⇒ up-left edge lit; amb = cool fill, never pure black
@@ -17,11 +19,11 @@ light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%   # source up-left ⇒ up-left edge 
 
 - `dir DX:DY` is the light's *travel* direction (`dir 1:1` moves down-right ⇒ source up-left). A
   point source (a lamp, a fire, the moon in-frame) is `light moon = at 48:14 #cfd6a8 gain 0.8`.
-- Per object, one `model REGION MATERIAL` under a `lit sun:` block lowers the whole
-  shade+light+rim+AO+cast pass from that one light (§4) — you never re-type the direction, so
-  coherence across independent objects is structural, not a review item.
-- A **secondary** light (moon, aurora, lava, planetshine ≤15%) is its **own** named `light`; scope it
-  with a nested `lit moon:` block over just the objects it touches, weaker and cooler.
+- Per object, one `model REGION MATERIAL` reads the theme's default `light` (or a per-command
+  `light sun` arg) and lowers the whole shade+light+rim+AO+cast pass from that one light (§4) — you
+  never re-type the direction, so coherence across independent objects is structural, not a review item.
+- A **secondary** light (moon, aurora, lava, planetshine ≤15%) is its **own** named `light`; apply it
+  with a `light moon` argument on just the `model`/`cel` commands it touches, weaker and cooler.
 - For tones you place **by hand** (sky/water gradient stops, `pixels:` bands, a sub-~24px object where
   `model` is too weak), bind `warm`/`cool` colour constants and derive with `litTone`/`shadowTone`,
   never bare `lighten`: `base.litTone(warm, 25%)` (warm highlight, not chalky) and
@@ -68,7 +70,8 @@ axis-aligned light box leaves a visible vertical seam across the scene.
 ## 4. Per-object shading — `model` is the default
 
 For a solid object mass, one `model REGION MATERIAL` (or `cel REGION MATERIAL N` for a crisp banded
-look) is the whole shading pass — under the `lit sun:` light it lowers to exactly:
+look) is the whole shading pass — under the theme's `sun` light (or an explicit `light sun` arg) it
+lowers to exactly:
 
 ```
 fill → shadeRegion (away from light) → lightRegion (toward light) → rim (lit edge) → AO (seat) → cast
@@ -79,9 +82,8 @@ every point/direction/offset derived from `sun`, every dose from the material `R
 expansion, so you can predict the pixels before committing.
 
 ```drw
-lit sun:
-  rock = curvePoly(2:20, 8:12, 16:14, 22:20)   # the mass as a Region binding
-  model rock #6b5a48 cloth                        # base + shade/light/rim/AO/cast, all from sun
+rock = curvePoly(2:20, 8:12, 16:14, 22:20)   # the mass as a Region binding
+model rock #6b5a48 cloth light sun            # base + shade/light/rim/AO/cast, all from sun
 ```
 
 - **Bright accents (windows, speculars, glints, nav lights) still come last, by hand** — after the

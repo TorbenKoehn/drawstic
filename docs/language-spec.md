@@ -401,7 +401,7 @@ N via 4-erosion), a function of the coverage set alone — never of how the regi
 
 | Command | Form | Effect |
 |---------|------|--------|
-| `bg`    | `bg <paint>` | flood the whole canvas |
+| `bg`    | `bg <paint>` | fill the whole canvas |
 | `px`    | `px <paint> <pt>` | set one pixel |
 | `line`  | `line <paint> <a> <b>` | explicit Bresenham segment from `a` to `b` |
 | `rect`  | `rect <paint> <a> <b> [fill]` | rectangle (corners `a`,`b`) |
@@ -418,7 +418,6 @@ N via 4-erosion), a function of the coverage set alone — never of how the regi
 | `fill`  | `fill <paint> <region>` | rasterize any region expression solid (§9, [ADR-0039](decisions/0039-region-algebra-constructors-combinators-eliminators.md)) |
 | `stroke`| `stroke <paint> <region> [w<N>]` | rasterize a region's inner boundary, width `N` (default 1) |
 | `text`  | `text <paint> <pt> <string> [font <name>]` | bitmap text, top-left at `<pt>` |
-| `flood` | `flood <paint> <pt>` | 4-connected bucket fill of the region at `<pt>` |
 
 The paint is **first** for every command, `poly` included — one rule, no exceptions
 ([ADR-0066](decisions/0066-paint-first-painting-commands.md); `poly`'s variadic point tail
@@ -543,14 +542,13 @@ draw dune 64x32:
 - Paint-less, `profile(span, fn [, baseline])` is a **Region** for masks/set-ops ("shade the dune"),
   like every shape; a paint-less `profile` *statement* is the "region value dropped" error.
 
-**Curves & flood determinism.** `arc`/`quad`/`bezier`/`curve`/`curvePoly` are flattened and
+**Curve determinism.** `arc`/`quad`/`bezier`/`curve`/`curvePoly` are flattened and
 rasterized by a *fixed* rule (each curve span → `clamp(ceil(chord), 4, 64)` segments for the
 Catmull-Rom curves, chord via the bundled `dhypot`), and `arc` uses the engine's **bundled
 deterministic trig** — never host `Math.*` — so results are pixel-identical everywhere (§14,
 [ADR-0027](decisions/0027-deterministic-numeric-and-colour-pipeline.md)). `profile` is
 deterministic too: integer x per column, `round f(x)` for the top row, and the dmath the `fn`
-body calls — no host `Math.*` on the pixel path. `flood` is
-4-connected and matches the seed pixel's exact colour; line endpoints are inclusive
+body calls — no host `Math.*` on the pixel path. Line endpoints are inclusive
 ([ADR-0028](decisions/0028-rasterization-semantics.md)).
 
 **Small curves rasterize blocky.** The flattener always emits several segments, but every
@@ -861,7 +859,7 @@ x += 10          # mutate: += -= *= /=
   **drawing-local** overrides inside a `draw` body (§9, §12). Unlike the module-scope-only
   definitions above, these are ordinary sequential statements, not order-independent
   definitions — each is visible from its line to the end of its enclosing block, and
-  a drawing-local one must be written before it is used. `for`/`if`/`repeat`/`match`/`while`/
+  a drawing-local one must be written before it is used. `for`/`if`/`match`/
   `mask`/`scatter`/`mirror` open a **child scope**: a binding *first introduced* inside the
   block (the loop variable, a block-private temporary) does **not** leak. A `name = expr` whose
   name is **already a mutable binding in the enclosing draw scope reassigns it** rather than
@@ -1007,13 +1005,14 @@ and deterministic (§14).
 ## 11. Loops & block constructs
 
 ```drw
-repeat <N>: <body>            # repeat N times, no index
-for <i> <a>..<b>: <body>      # i from a to b-1 (half-open); a..=b is inclusive; no `in`
-while <cond>: <body>          # allowed, but governed by the runtime budget (§15)
+for <i> <a>..<b>: <body>      # i from a to b-1 (half-open); a..=b is inclusive; no `in` — the ONE loop
 scatter <p> <n> <seed> <region>:  # <body> n times, <p> = a seeded point from <region> (§11.1)
 mirror x=<n>: <body>          # draw <body>, then its reflection across x=n (§11.2)
 mirror y=<n>: <body>          # …and across the horizontal line y=n
 ```
+
+`for` is the only loop. `repeat N:` (a duplicate of `for i 0..N:`) and `while cond:` (an unbounded
+loop, a budget hazard `for` never poses) were removed in [ADR-0094](decisions/0094-language-diet-and-canonical-lints.md).
 
 ```drw
 draw bands 32x32:
@@ -1026,8 +1025,8 @@ draw bands 32x32:
     poly cols[row // 8 mod 3] 0:row w:row # pick a band colour per row (floored //, §10)
 ```
 
-**Idiom: prefer bounded `for`/`repeat`.** `while` exists but cannot defeat termination —
-it is capped by the budget. See [ADR-0004](decisions/0004-total-not-turing-complete.md). The
+**Idiom: bounded `for` is the only loop.** Termination is guaranteed by construction (and the
+budget backstops recursion). See [ADR-0004](decisions/0004-total-not-turing-complete.md). The
 loop variable and any binding inside the body are **child-scoped** — they do not leak out (§10,
 [ADR-0033](decisions/0033-evaluation-and-scope-model.md)).
 
@@ -1071,7 +1070,7 @@ draw butterfly 32x24:
       px #ffe08a d
 ```
 
-- **What mirrors:** every paint/region command — shapes, fills, gradients, `flood`, and **stamps**
+- **What mirrors:** every paint/region command — shapes, fills, gradients, and **stamps**
   (a stamp comes out horizontally flipped, "mirror-with-flip"). **Text is the exception**: its
   *position* is reflected but its glyphs are **not** — no backwards text.
 - **Axis pixels paint exactly once.** A pixel on the axis maps to itself, so the reflected pass
@@ -1217,8 +1216,7 @@ commands:
 ```drw
 outline            # 1px silhouette outline, derived-dark ink  (colour+width optional; ADR-0090)
 outline k          # …explicit colour  (outline k 2 = 2px; outline 2 = derived ink, 2px)
-replace y r        # swap one colour for another
-tint r 0.3         # blend everything toward r by 0.3
+tint r 0.3         # blend everything toward r by 0.3  (recolor is parametric — draw params + `tint`)
 shadow 1:1 k       # whole-frame drop shadow, offset dx:dy, colour k (ADR-0070)
 castShadow r 2:3 k # local region shadow (region-first)
 shadow r 2:3 k     # equivalent local region shadow overload
@@ -1292,7 +1290,7 @@ Define a reusable pipeline with `filter` and run it with `apply`:
 
 ```drw
 filter retro:
-  replace y darken(y, 0.1)
+  tint #402010 0.15
   outline k
 
 draw gem 4x4:
@@ -1357,12 +1355,12 @@ draw sword 24x48:
   half-cylinder that does **not** darken toward its hem — the fix for a long cloak curling into a
   "turtle-shell" (`material cloak = #4a3f56 cloth drape spread 200%`). Use `drape` only for hanging
   drapes; keep `round` for compact masses.
-- **`lit L: body`** is a lexical block that scopes light `L` over its body only (set/restored like
-  `mask …:`, no global state).
 - **Resolution order** for a `model`/`cel` command, most-local first: an explicit `light L`
-  argument → the enclosing `lit L:` block → the applied theme's **default** light (`§ Themes`,
-  ADR-0086 tier 3). No light in **any** tier is a hard error (`E024`) — a light is always named and
-  always visible, never a silent default. The theme default is how a front/side view pair or a
+  argument → the applied theme's **default** light (`§ Themes`, ADR-0086 tier 2). No light in
+  **either** tier is a hard error (`E024`) — a light is always named and always visible, never a
+  silent default. (The `lit L: body` scoping block was removed in
+  [ADR-0094](decisions/0094-language-diet-and-canonical-lints.md): the two tiers cover both real
+  cases.) The theme default is how a front/side view pair or a
   colour variant shares **one** light without re-authoring it per view — the structural fix for the
   "light mirrored per view" bug.
 - **`model REGION MATERIAL [over UNION] [light L]`** lowers `MATERIAL` under the scoped (or explicit
@@ -1432,7 +1430,7 @@ A theme body holds only these forms — `pal:` / `grad NAME = …`, `size` / `mo
 `light`, `style`, `with`, and `filter` / `draw` definitions. A theme's `light NAME = …`
 ([ADR-0086](decisions/0086-declarative-light-and-material.md)) folds like `size`/`mode`/`font`
 (later wins) and becomes the drawing's **outermost** light — so every `model`/`cel` in every
-drawing applying the theme shares one source unless a nearer `lit L:` block or `light L` argument
+drawing applying the theme shares one source unless a `light L` argument
 overrides it (`§ Light & material`, resolution order). The bound name is decorative; the value is
 the default. A **free binding** written directly in the
 body (a plain `accent = #d8a53a`, outside `pal:`) has nowhere to fold and is a positioned
@@ -1591,7 +1589,7 @@ This is **engineered**, not assumed:
 - **Pinned colour pipeline & compositing.** Exact oklch↔sRGB, fixed gamut mapping, shorter-arc
   hue, 8-bit round-half-up commit, and integer source-over alpha
   ([ADR-0025](decisions/0025-alpha-compositing-model.md)).
-- **Pinned rasterization.** 4-connected `flood`, inclusive line endpoints, even-diameter
+- **Pinned rasterization.** Inclusive line endpoints, even-diameter
   `circle`/`ellipse` (`2r` per axis for `r > 0`, one corner-centred convention for both —
   [ADR-0056](decisions/0056-even-diameter-circle-rasterization.md),
   [ADR-0087](decisions/0087-anchored-assembly.md)), silent out-of-bounds clipping, and NN stamp
@@ -1621,8 +1619,9 @@ This is **engineered**, not assumed:
 
 Every render runs under a **budget**: a maximum number of evaluation steps and a
 maximum number of pixel writes. Exceeding it aborts with a clear, positioned error
-rather than hanging. This is what makes the language **total** even though `while` and
-recursion exist. The budget is configurable via the CLI with a sensible default.
+rather than hanging. This is what makes the language **total** even though recursion
+exists (`for` is the only loop; `while` was removed — ADR-0094). The budget is
+configurable via the CLI with a sensible default.
 
 ---
 
@@ -1775,6 +1774,17 @@ skipped rather than guessed at, so a lint pass never produces a false positive.
 | `W009` | a `pixels:` grid's **last row** is fully transparent (`.`) while a row above it has content — because stamps place by the sprite's top-left corner, that trailing empty row silently enlarges the footprint and seams a 1px gap below adjacently stamped parts. Scoped to the last row only (never the first row, never a column — side-padding and top-centring are legitimate) | trim the trailing row, or account for the offset |
 | `W010` | a `fit` part touches no other content in the **final composite** (a floating/seamed part — the same gap `critique` **C007** measures); checked after the whole `draw` body paints, so back-to-front layering never false-warns | move the pin onto solid pixels, overlap the seam 1–2px, or add the missing part |
 | `W011` | a `fit` target pin sits **>2 px off the part's own ink** (`ADR-0087`): the pins coincide but the join floats because the pin is in empty part space (a chin below the head). Contact-blind, so C007 misses it; inspect with `render --explain` | move the `pin` onto the part's real contact edge, or pick the pin that marks it |
+| `W012` | a raw `rim`/`shadeRegion`/`lightRegion` in a `model`/`cel`-shaded drawing (ADR-0094) — the material's own rim/AO dose already lights the form | drop the raw veil, or raise the material's `rim N%`/`spread N%` override |
+| `W013` | a `litTone`/`shadowTone` `fill` clipped by `.intersect(rect)` on a modeled region — the retired value-spread corner patch (ADR-0094) | use the material's `spread N%` override |
+| `W014` | a `stamp` of a part that declares attach `pin`s (unless it is a pin-seeded assembly root, ADR-0092/0094) — `stamp` is for pin-less decoration | place it with `fit <part>.<pin> <anchor>`, or drop the pins if it is decoration |
+| `W015` | a semi-transparent `fill … ellipse(…)` low in the foot zone of a drawing that uses `fit` — a hand contact-shadow (ADR-0094) | drop it; add the `shadow` flag to the root `fit … shadow` |
+
+**Construct census.** `critique --json` and `check --lint --json` carry a deterministic `census`
+(AST-only, [ADR-0094](decisions/0094-language-diet-and-canonical-lints.md)): every construct used in
+the module, each flagged `spec-only` (a floor construct the canonical path no longer surfaces) or
+`non-canonical` (a W012–W015 participant), plus four `antiPatterns` counts — `rawShade` (W012),
+`manualSpread` (W013), `stampWithPins` (W014), `handShadow` (W015). `check --lint --json` wraps its
+diagnostics as `{diagnostics, census}`.
 
 ---
 
@@ -1945,12 +1955,10 @@ draw-stmt      = pal-stmt | pixels-block | meta-stmt
                | seed-dir | font-dir                (* drawing-scoped directives (§8, §10) *)
                | grad-def | filter-def | mask-def   (* drawing-local overrides (§9, §12) *)
                | light-def | material-def           (* drawing-local light/material (§12, ADR-0086) *)
-               | binding | control-stmt | mask-block | lit-block | call-stmt ;
+               | binding | control-stmt | mask-block | call-stmt ;
 
 meta-stmt      = ( "title" | "desc" ) STRING NL ;   (* SVG metadata (§6, §13) *)
 mask-block     = "mask" expr ":" block ;            (* expr must evaluate to a Region (§9) *)
-lit-block      = "lit" NAME ":" block ;             (* NAME must evaluate to a Light (§12, ADR-0086);
-                                                       `lit` is contextual — a name elsewhere (D7) *)
 block          = NL INDENT draw-stmt { draw-stmt } DEDENT ;
 
 pal-stmt       = "pal" pal-entry { pal-entry } NL                 (* inline form (§7) *)
@@ -1986,7 +1994,6 @@ draw-cmd       = "bg"      paint                     (* paint first everywhere (
                | "fill"    paint ( path-value | region )             (* eliminators (§8) *)
                | "stroke"  paint ( path-value | region ) stroke-flags
                | "text"    paint point STRING [ "font" NAME ]
-               | "flood"   paint point
                | "stamp"   stampable point { stamp-flag }
                | "apply"   NAME ;                                   (* run a filter (§12) *)
 
@@ -2001,8 +2008,7 @@ stamp-flag     = "flipx" | "flipy" | ROT-FLAG | SCALE-FLAG          (* pinned su
                | "anchor" NAME | "shadow" point paint ;
 
 filter-cmd     = "outline" [ paint ] [ expr ]       (* built-in filter set (§12); paint+width optional, ADR-0090 *)
-               | "replace" paint paint              (* extensible — new filters   *)
-               | "tint"    paint expr               (* follow the same shape      *)
+               | "tint"    paint expr               (* extensible — new filters follow the same shape *)
                | "shadow"  point paint              (* whole-frame drop shadow: dx:dy (ADR-0070) *)
                | "shadow"  region point paint       (* local region shadow (ADR-0062) *)
                | "castShadow" region point paint
@@ -2020,17 +2026,15 @@ material       = NAME | paint [ RESPONSE ] ;        (* a `material` value, or in
 
 (* ───────────────────────────── control flow ───────────────────────────── *)
 
-control-stmt   = if-stmt | match-stmt | repeat-stmt | for-stmt | while-stmt
+control-stmt   = if-stmt | match-stmt | for-stmt
                | scatter-stmt | mirror-stmt ;
 if-stmt        = "if" expr ":" block [ "else" ":" block ] ;
 match-stmt     = "match" expr ":" NL INDENT match-arm { match-arm } DEDENT ;
 match-arm      = ( arm-label | "else" ) ":" arm-body ;
 arm-label      = expr ;                             (* colon-free at depth 0 (D3) *)
 arm-body       = call-stmt | binding | block ;      (* inline simple stmt, or block (D3) *)
-repeat-stmt    = "repeat" expr ":" block ;
-for-stmt       = "for" NAME range ":" block ;
+for-stmt       = "for" NAME range ":" block ;       (* the one loop; `repeat`/`while` removed (ADR-0094) *)
 range          = expr ( ".." | "..=" ) expr ;       (* half-open | inclusive (§11) *)
-while-stmt     = "while" expr ":" block ;           (* budget-governed (§15) *)
 scatter-stmt   = "scatter" NAME expr expr expr ":" block ;  (* NAME count seed region (§11.1, ADR-0077);
                                                        operand exprs are cmd-arg bounded (D2) *)
 mirror-stmt    = "mirror" ( "x" | "y" ) "=" expr ":" block ; (* axis symmetry (§11.2, ADR-0078) *)

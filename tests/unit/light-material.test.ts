@@ -1,6 +1,7 @@
-// Phase 2c: `light`/`material` bindings, the `lit L:` block, and `model`/`cel` command verbs
-// (ADR-0086). End-to-end where it matters (render → read pixels → assert) plus explain-trace
-// and contextual-keyword-discipline checks. The sword recipe from the plan is the shared fixture.
+// Phase 2c: `light`/`material` bindings and the `model`/`cel` command verbs (ADR-0086); the light
+// is supplied by the theme default or an explicit `light L` argument (the `lit L:` block was removed
+// in ADR-0094). End-to-end where it matters (render → read pixels → assert) plus explain-trace and
+// contextual-keyword-discipline checks. The sword recipe from the plan is the shared fixture.
 
 import { describe, expect, test } from 'bun:test'
 import { DrawsticError } from '../../src/diagnostic.js'
@@ -53,8 +54,8 @@ const distinctColors = (s: Sprite, x0: number, y0: number, x1: number, y1: numbe
   return seen
 }
 
-describe('light + material bindings and the lit block', () => {
-  test('one light drives shade + rim + cast coherently across a lit block', () => {
+describe('light + material bindings and explicit light args', () => {
+  test('one light drives shade + rim + cast coherently through a model', () => {
     // dir 1:0 → light travels right, so the source sits left: the left edge is lit (brighter),
     // the right side recedes into shade, and the cast falls right, onto a wall drawn there first.
     const s = render(
@@ -64,8 +65,7 @@ describe('light + material bindings and the lit block', () => {
         'draw blade 22x16:',
         '  fill #6a6a6a rect(15:3, 21:12)',
         '  body = rect(3:3, 14:12)',
-        '  lit sun:',
-        '    model body steel',
+        '  model body steel light sun',
       ].join('\n'),
       'blade',
     )
@@ -76,8 +76,8 @@ describe('light + material bindings and the lit block', () => {
     expect(lum(s, 15, 7)).toBeLessThan(lum(s, 20, 7))
   })
 
-  test('a lit block scopes the light to its body only (set/restore)', () => {
-    // A `model` after the block closes has no light → hard error, proving the block did not leak.
+  test('an explicit `light L` argument does not leak to the next statement', () => {
+    // The next `model` has no light of its own → hard E024, proving the arg is per-statement.
     expect(() =>
       render(
         [
@@ -86,13 +86,12 @@ describe('light + material bindings and the lit block', () => {
           'draw x 12x12:',
           '  a = rect(1:1, 5:5)',
           '  b = rect(6:6, 10:10)',
-          '  lit sun:',
-          '    model a steel',
+          '  model a steel light sun',
           '  model b steel',
         ].join('\n'),
         'x',
       ),
-    ).toThrow(/needs a light/)
+    ).toThrow(/E024|light/)
   })
 
   test('a point light (`at`) with gain renders and lights from its position', () => {
@@ -102,8 +101,7 @@ describe('light + material bindings and the lit block', () => {
         'material steel = #8a95a5 metal',
         'draw x 16x16:',
         '  body = rect(2:2, 13:13)',
-        '  lit torch:',
-        '    model body steel',
+        '  model body steel light torch',
       ].join('\n'),
       'x',
     )
@@ -124,8 +122,7 @@ describe('model / cel command verbs', () => {
         'material steel = #8a95a5 metal',
         'draw x 16x16:',
         '  body = rect(2:2, 13:13)',
-        '  lit sun:',
-        `    model body ${mat}`,
+        `  model body ${mat} light sun`,
       ].join('\n')
     const flat = renderWithExplain(src('#8a95a5'), 'x')[0]
     const metal = renderWithExplain(src('steel'), 'x')[0]
@@ -140,8 +137,7 @@ describe('model / cel command verbs', () => {
         'light sun = dir 1:1 #ffe6b0',
         'draw x 16x16:',
         '  body = rect(2:2, 13:13)',
-        '  lit sun:',
-        '    model body #b08040 metal',
+        '  model body #b08040 metal light sun',
       ].join('\n'),
       'x',
     )[0]
@@ -156,8 +152,7 @@ describe('model / cel command verbs', () => {
         'material cloth = #8a7595 cloth',
         'draw x 16x16:',
         '  body = rect(2:2, 13:13)',
-        '  lit sun:',
-        '    cel body cloth 3',
+        '  cel body cloth 3 light sun',
       ].join('\n'),
       'x',
     )
@@ -169,7 +164,7 @@ describe('model / cel command verbs', () => {
     expect(lum(s, 3, 3)).toBeGreaterThan(lum(s, 12, 12))
   })
 
-  test('an explicit `light L` argument works without any lit block', () => {
+  test('an explicit `light L` argument drives a model directly', () => {
     const rec = renderWithExplain(
       [
         'light sun = dir 0:1 #ffe6b0',
@@ -210,8 +205,7 @@ describe('model / cel command verbs', () => {
         'light sun = dir 1:1 #ffe6b0',
         'draw x 16x16:',
         '  orb = circle(8:8, 5)',
-        '  lit sun:',
-        '    model orb #ffcc40 glow',
+        '  model orb #ffcc40 glow light sun',
       ].join('\n'),
       'x',
     )[0]
@@ -230,11 +224,10 @@ describe('explain trace (render --explain guardrail)', () => {
         '  guard  = rect(7:31, 17:34)',
         '  grip   = rect(11:35, 13:44)',
         '  pommel = circle(12:46, 2)',
-        '  lit sun:',
-        '    model blade steel',
-        '    model guard #b08040 metal',
-        '    model grip  #3a2a1e',
-        '    cel   pommel steel 3',
+        '  model blade steel light sun',
+        '  model guard #b08040 metal light sun',
+        '  model grip  #3a2a1e light sun',
+        '  cel   pommel steel 3 light sun',
       ].join('\n'),
       'sword',
     )

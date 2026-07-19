@@ -120,12 +120,18 @@ describe('check', () => {
     })
   })
 
-  test('--lint folds in authoring warnings without failing the exit code', () => {
+  test('--lint folds in authoring warnings + a construct census without failing the exit code', () => {
     const r = runJson('check', 'examples/showcase/showcase.drw', '--json', '--lint')
     expect(r.exitCode).toBe(0)
-    const diags = r.json as { severity: string; code: string; message: string }[]
-    expect(diags.some((d) => d.code === 'W002' && d.message.includes('face'))).toBe(true)
-    expect(diags.every((d) => d.severity === 'warning')).toBe(true)
+    // --lint --json wraps the diagnostics alongside the ADR-0094 construct census.
+    const body = r.json as {
+      diagnostics: { severity: string; code: string; message: string }[]
+      census: { constructs: { construct: string; count: number }[]; antiPatterns: object }
+    }
+    expect(body.diagnostics.some((d) => d.code === 'W002' && d.message.includes('face'))).toBe(true)
+    expect(body.diagnostics.every((d) => d.severity === 'warning')).toBe(true)
+    expect(body.census.constructs.length).toBeGreaterThan(0)
+    expect(body.census.antiPatterns).toBeDefined()
   })
 
   test('--rows reports ragged pixel-row metadata and E002', () => {
@@ -697,8 +703,7 @@ describe('render', () => {
           'material steel = #8a95a5 metal',
           'draw blade 16x16:',
           '  body = rect(2:2, 13:13)',
-          '  lit sun:',
-          '    model body steel',
+          '  model body steel light sun',
           '',
         ].join('\n'),
       )

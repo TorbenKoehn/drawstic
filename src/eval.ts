@@ -76,12 +76,10 @@ import {
   filterDither,
   filterGrain,
   filterOutline,
-  filterReplace,
   filterRipple,
   filterShadow,
   filterSpeckle,
   filterTint,
-  flood,
   lightRegion,
   type Paint,
   PixelSink,
@@ -711,11 +709,9 @@ const BUILTIN_NAMES = new Set([
   'fill',
   'stroke',
   'text',
-  'flood',
   'stamp',
   'apply',
   'outline',
-  'replace',
   'tint',
   'shadow',
   'castShadow',
@@ -2540,43 +2536,6 @@ export class Engine {
   }
 
   /**
-   * Execute a `lit L: body` block (ADR-0086): resolve `L` to a light and scope it as
-   * `DrawState.light` for the body only (set/restore, like {@link #execMaskBlock}). No global
-   * mutable state — the light is visible to `model`/`cel` inside the body and nowhere else.
-   */
-  #execLitBlock(
-    stmt: Extract<Statement, { readonly kind: 'litBlock' }>,
-    env: Environment,
-    state: State,
-  ): void {
-    const value = this.evalExpr(stmt.expression, env, state)
-    if (typeof value !== 'object' || value?.type !== 'light') {
-      throw error(
-        ERROR_CODE.typeError,
-        `lit needs a light, got ${typeName(value)}`,
-        state.module.displayPath,
-        stmt.span,
-      )
-    }
-    const draw = state.draw
-    if (!draw) {
-      throw error(
-        ERROR_CODE.syntax,
-        'lit blocks belong in a drawing body',
-        state.module.displayPath,
-        stmt.span,
-      )
-    }
-    const prev = draw.light
-    draw.light = value
-    try {
-      this.#execBody(stmt.body, env, state)
-    } finally {
-      draw.light = prev
-    }
-  }
-
-  /**
    * Execute a `pin KEY PT` declaration (ADR-0087): evaluate the point in the current drawing's
    * coordinate space and register it in {@link DrawState.pins} under `KEY`. In a part draw the key
    * is a bare name (`shoulder`) exported on the rendered sprite; in an assembly the key is a dotted
@@ -3222,14 +3181,6 @@ export class Engine {
     }
   }
 
-  #execRepeat(stmt: Extract<Statement, { kind: 'repeat' }>, env: Environment, state: State): void {
-    const n = this.evalNumber(stmt.count, env, state)
-    for (let i = 0; i < n; i++) {
-      this.step(stmt.span, state.module.displayPath)
-      this.#execBody(stmt.body, env, state)
-    }
-  }
-
   #execFor(stmt: Extract<Statement, { kind: 'for' }>, env: Environment, state: State): void {
     const iterable = this.evalExpr(stmt.iterable, env, state)
     if (typeof iterable !== 'object' || iterable?.type !== 'list') {
@@ -3248,16 +3199,6 @@ export class Engine {
       for (const inner of stmt.body) {
         this.#execDrawStmt(inner, child, state)
       }
-    }
-  }
-
-  #execWhile(stmt: Extract<Statement, { kind: 'while' }>, env: Environment, state: State): void {
-    for (;;) {
-      this.step(stmt.span, state.module.displayPath)
-      if (!truthy(this.evalExpr(stmt.condition, env, state))) {
-        break
-      }
-      this.#execBody(stmt.body, env, state)
     }
   }
 
@@ -3517,9 +3458,6 @@ export class Engine {
       case 'maskBlock':
         this.#execMaskBlock(stmt, env, state)
         return
-      case 'litBlock':
-        this.#execLitBlock(stmt, env, state)
-        return
       case 'pinDeclaration':
         this.#execPinDeclaration(stmt, env, state)
         return
@@ -3532,14 +3470,8 @@ export class Engine {
       case 'match':
         this.#execMatch(stmt, env, state)
         return
-      case 'repeat':
-        this.#execRepeat(stmt, env, state)
-        return
       case 'for':
         this.#execFor(stmt, env, state)
-        return
-      case 'while':
-        this.#execWhile(stmt, env, state)
         return
       case 'scatter':
         this.#execScatter(stmt, env, state)
@@ -4299,15 +4231,6 @@ export class Engine {
         drawText(ctx, font, quantInt(p.x), quantInt(p.y), str, paint)
         return
       }
-      case 'flood': {
-        const paint = args.paint()
-        const p = args.point(draw)
-        args.done()
-        flood(ctx, quantInt(p.x), quantInt(p.y), paint, () =>
-          this.step(stmt.span, state.module.displayPath),
-        )
-        return
-      }
       case 'stamp':
         // `behind`/`front` clauses (ADR-0092) are honored by the two-phase assembly pass, not here;
         // strip them so a stamp reached through a block (barrier) doesn't choke on the extra args.
@@ -4332,13 +4255,6 @@ export class Engine {
         const width = args.empty() ? 1 : args.num()
         args.done()
         filterOutline(ctx, paint, quantInt(width))
-        return
-      }
-      case 'replace': {
-        const from = args.color()
-        const to = args.color()
-        args.done()
-        filterReplace(ctx, from, to)
         return
       }
       case 'tint': {

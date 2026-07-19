@@ -156,7 +156,7 @@ draw quiver 20x40:
   cel body leatherMat 3
   qmouth = ellipse(10:16, 8:3)
   cel qmouth leatherMat 3
-  pin top 10:16
+  # pin-less: the quiver is decoration placed at literal spots per view (stamp, not fit — ADR-0094 W014)
 
 # ============================= FRONT VIEW =============================
 draw archerFront 64x128:

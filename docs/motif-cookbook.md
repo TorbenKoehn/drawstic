@@ -126,8 +126,8 @@ draw waterShimmer 64x24:
 Moon as a radial-gradient halo + solid disc + darkened crater + a lit-rim `arc`, over a
 vertical night-sky `grad`. The lit hillside below pairs `shadeRegion` and `lightRegion` **by hand**
 aimed at the moon (`48:14`) — shown here as the raw floor so you can see each dose. The declarative
-default for the same hillside is `light moon = at 48:14 moonRim gain 0.8` + `lit moon: model hill
-hillLit` (ADR-0086), which lowers to exactly this quartet from the one light; drop to the hand form
+default for the same hillside is `light moon = at 48:14 moonRim gain 0.8` + `model hill hillLit
+light moon` (ADR-0086), which lowers to exactly this quartet from the one light; drop to the hand form
 below only to hand-tune a dose. `shadeRegion`'s `amount` is the veil **opacity** (deepest on the far,
 bottom-left corner) and it **composites over** the `fill` rather than repainting it, so an opaque
 shadow colour is fine; `lightRegion` then adds a cool moon glow, brightest on the hill nearest the moon.

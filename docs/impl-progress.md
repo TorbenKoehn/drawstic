@@ -36,7 +36,7 @@ Archer 4/10, Wizard 4/10, Assassin 3/10. Ziel Messpunkt 2: ≥7/10 + Zensus-Krit
   **827 Tests grün** (+drape-kein-Längsgradient, +`over`-Feldkontinuität, +Eck-Patch-frei-Gate, +Determinismus).
   Alle 4 `critique --as character --strict` `pass:true`. Sheets visuell verifiziert (Patches weg, Cape hängt,
   Bein Einheit, Trim Form, Knight-Platte unverändert).
-- [ ] **W2-2 Okklusion/aim + Sprach-Diät** (ADR-0092, ADR-0094): zweiphasige Assembly
+- [x] **W2-2 Okklusion/aim + Sprach-Diät** (ADR-0092, ADR-0094): zweiphasige Assembly
   (behind/front-Relationen, topologische Paint-Ordnung), `aim PIN PT` (1-Bone-Solve), C013
   occlusion-parity, `--explain` Paint-Ordnung+Winkel. Diät: `repeat`/`while`/`flood`/`lit:`-Block
   entfernen, `replace` vs `recolor` auf einen konsolidieren; betroffene Repo-Recipes umschreiben;
@@ -62,7 +62,30 @@ Archer 4/10, Wizard 4/10, Assassin 3/10. Ziel Messpunkt 2: ≥7/10 + Zensus-Krit
     `pass:true`. tsc+biome clean, **841 Tests grün** (+14: Topo-Ordnung/minimal-disruption via paintOrder,
     E025-Zyklus, unplatziertes Ziel, aim-Winkel exakt (up→right=90°, 0°), unknown aim-Pin, C013 clean/fires+
     strict-Promotion, Inline-Paint-Sequenz stabil, behind/front bindbar außerhalb, Determinismus byte-gleich).
-    **W2-2b Sprach-Diät bleibt offen → W2-2-Checkbox erst danach.**
+  - [x] **W2-2b Sprach-Diät + kanonische Lints + Konstrukt-Zensus** ([ADR-0094](decisions/0094-language-diet-and-canonical-lints.md)):
+    **Entfernt** (intrinsisches Kriterium): `repeat` (Duplikat von `for`) · `while` (Budget-Risiko) · `flood`
+    (Sonderfall, Region-`fill` deckt) · **`lit L:`-Block** (Theme-Licht + `light L`-Arg decken beide Fälle →
+    Auflösung kollabiert auf **explizit > Theme-Default**) · **`replace`-Recolor-Filter** (der Recolor-
+    Konsolidierungs-Verlierer: exakter RGBA-Swap ist nach Shading/AA spröde; **parametrischer Recolor +
+    `tint` gewinnt**, ADR-0024 „ein Recolor-Weg"). Parser/AST/Eval/Diagnostics sauber zurückgebaut; entfernte
+    Keywords werfen positionierten E004 mit Ersatz-Hinweis, bleiben als freie Namen bindbar (`flood`/`replace`
+    aus `BUILTIN_NAMES`); Raster-Primitive `flood`/`filterReplace` gelöscht. **Kanonische Lints W012–W015**
+    (`lint.ts`, konservativ): W012 rohes rim/shadeRegion/lightRegion neben model/cel · W013 litTone/shadowTone-
+    `.intersect`-Eck-Patch · W014 `stamp` eines pin-tragenden Parts (Ausnahme: pin-seeded Root) · W015 Hand-
+    Ellipse-Kontaktschatten in der Fuß-Zone eines fit-Draws. **Konstrukt-Zensus** (`censusModule`, deterministisch
+    aus AST) in `critique --json` + `check --lint --json` (Letzteres wrappt jetzt `{diagnostics, census}`): je
+    Konstrukt Count + `spec-only`/`non-canonical`-Flags + vier `antiPatterns`-Counts (rawShade/manualSpread/
+    stampWithPins/handShadow = die craft-eval-Erfolgskriterien, Ziel 0). **4 RO-Charaktere auf die kanonischen
+    Wege umgeschrieben** und census-clean (antiPatterns alle 0) + `critique --as character --strict` `pass:true`:
+    Assassin ~12 rohe `rim`→Material-`rim`/`spread` (clothMat spread 780→900 % für C004); Knight Root-Torso-Pins
+    dotted-seeded, vestigiale Deko-Pins entfernt, Fern-Bein ge`fit`tet, 3 Hand-Ellipsen-Schatten→`fit … shadow`;
+    Wizard Staff+Fern-Sleeve grip-ge`fit`tet statt gestampt (pixel-identisch); Archer vestigialer Köcher-Pin weg.
+    Wizard/Archer-Renders byte-identisch (`--diff`), Knight/Assassin-Änderungen sind die gewollten Shading-Edits.
+    Neues AST-Gate (`examples-critique.test.ts`) hält alle examples census-clean. tsc+biome clean, **845 Tests grün**
+    (Removed-Konstrukt-Tests → Fehler-Hinweis-Tests; ~15 `lit L:`-Fixtures → `light L`-Arg; +W012–W015 feuert/clean,
+    +Zensus-Zählung/Determinismus, +`check --lint --json` census-Wrap). Spec/reference/SKILL/craft-guides + ADR-Index
+    synchron; **globaler Skill-Rewrite bleibt W2-3** (Plan §D). C006-Model-Ramp-Punkt: bereits durch die export-target-
+    aware C006-Lösung (RGBA großzügig, Commit `a0bd7c0`) abgedeckt — nur dokumentiert, nicht doppelt gebaut.
 - [ ] **W2-3 Organik-Hybrid + Skill-Neustruktur** (ADR-0093): dome/lobe/crescent/band-Konstruktoren;
   Proportions-Oracle (`figure`-Block im Theme → Guide-Punkte/Pins je View); Archetyp-Scaffolds im
   Craft-Guide (KEIN std/chibi — Stil bleibt beim Projekt); `quantize(pal)`-Filter +
@@ -135,6 +158,27 @@ Archer 4/10, Wizard 4/10, Assassin 3/10. Ziel Messpunkt 2: ≥7/10 + Zensus-Krit
   `callee==='stamp'` als Keyword-Arg (arity 1) erkannt; `#execStamp` strippt sie via `stampRelations` (no-op
   in Blöcken), die Zweiphasen-Schleife liest sie fürs Top-Level. Test: `behind`/`front` bleiben außerhalb
   bindbar.
+- **W2-2b: `recolor` existierte gar nicht — die zwei Recolor-Wege sind `replace` vs. parametrisch/`tint`.** Der
+  Plan sagte „`replace` vs `recolor` konsolidieren", aber `recolor` ist kein implementiertes/dokumentiertes
+  Konstrukt (nur das Wort „faction recolor" in Kommentaren; eine Zeile in der Character-Eval-Tabelle). Die
+  tatsächliche Redundanz ist der **`replace`-Filter** (exakter Post-hoc-RGBA-Swap) gegen **parametrischen Recolor-
+  on-Stamp** (ADR-0024: `draw part(c)` + `tint`-Flag). `replace` ist der intrinsisch schlechtere: der exakte
+  RGBA, den er matchen muss, **existiert nach `model`/`cel`-Shading/AA nicht mehr**, er swappt nur eine flache
+  Farbe, und ADR-0024 forderte schon „ein Recolor-Weg". → `replace` fällt, parametrisch/`tint` bleibt.
+- **W2-2b: W014 „stamp eines pin-tragenden Parts" braucht die Root-Ausnahme, sonst feuert es auf den kanonischen
+  Assembly-Root.** Der Zwei-Phasen-Idiom (ADR-0092) **stampt** bewusst den Root-Torso und seedet dann seine Pins
+  in Canvas-Space. Ein naives „Part hat Pins → nicht stampen" flaggt genau diesen kanonischen Root. Lösung: W014
+  nimmt einen gestampten Part aus, wenn die Assembly seine Pins dotted seedet (`pin <part>.<name>`). Der Knight
+  nutzte stattdessen abstrakte `a.`-Anker → musste auf dotted Seeding umgeschrieben werden (pixel-identisch, da
+  die Anker ohnehin auf die Stamp-Landung berechnet waren), was die Recipes zugleich vereinheitlicht.
+- **W2-2b: rohes `rim` neben `model` entfernen senkt C004 — Material-`rim` erreicht die Kantenhelligkeit des
+  rohen warmen Rims nicht.** Der Material-Rim tönt via `litTone(base, warm)` desaturiert; der rohe
+  `rim … warm.alpha(55%)` malt reines Warm. Nach dem W012-Removal fiel der Assassin-Torso-p90 unter den C004-
+  Boden. Nicht der Rim, sondern das **`spread`** ist der Hebel: clothMat `spread 780→900 %` hebt den p90 aus dem
+  Form-Shading (nicht aus einer Kante) über den Boden.
+- **W2-2b: `check --lint --json` ändert die Form (bare Array → `{diagnostics, census}`).** Der Zensus muss
+  neben die Diagnostics; wie `--rows` es schon tut, wrappt `--lint` jetzt in ein Objekt. Bewusster Bruch (pre-1.0,
+  ADR-0088-Präzedenz); Test + reference/spec nachgezogen.
 
 
 Single Source of Truth für den autonomen Nacht-Dispatch. Spec-Quelle: der freigegebene Plan

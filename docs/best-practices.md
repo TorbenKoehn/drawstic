@@ -246,9 +246,11 @@ material steel = #8a95a5 metal
 
 draw blade 16x40:
   edge = rect(7:2, 9:34)
-  lit sun:
-    model edge steel                # base + shade/light/rim/AO/cast, all from sun
+  model edge steel light sun        # base + shade/light/rim/AO/cast, all from sun
 ```
+
+(A `theme` with a default `light` lets `model`/`cel` drop the per-command `light sun` arg; the `lit L:`
+block was removed — ADR-0094.)
 
 `render <file>#<draw> --explain` prints the exact primitive expansion of every `model`/`cel`, so you
 can predict the pixels — and, when a baked material dose genuinely doesn't fit, copy that expansion

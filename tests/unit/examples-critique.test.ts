@@ -9,6 +9,8 @@ import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { main } from '../../src/cli.js'
+import { Engine } from '../../src/eval.js'
+import { censusModule } from '../../src/lint.js'
 
 const EXAMPLES = join(process.cwd(), 'examples')
 
@@ -85,6 +87,29 @@ describe('characters-ro recipes are free of the manual value-spread corner-patch
           offenders.push(`${file}:${i + 1}: ${line.trim()}`)
         }
       })
+    }
+    expect(offenders).toEqual([])
+  })
+})
+
+// ADR-0094: every bundled example must be free of the four non-canonical anti-patterns the census
+// counts (raw rim/shadeRegion beside model, litTone/shadowTone corner patch, stamp of a pinned part,
+// hand contact-shadow ellipse). AST-based, so it catches what the W2-1b regex above cannot.
+describe('examples carry no W012–W015 anti-patterns (construct census clean)', () => {
+  test('every example has all census anti-pattern counts at 0', () => {
+    const offenders: string[] = []
+    for (const file of drwFiles()) {
+      const engine = new Engine(process.cwd())
+      const mod = engine.loadEntry(file)
+      const { antiPatterns } = censusModule(engine, mod)
+      const total =
+        antiPatterns.rawShade +
+        antiPatterns.manualSpread +
+        antiPatterns.stampWithPins +
+        antiPatterns.handShadow
+      if (total > 0) {
+        offenders.push(`${file}: ${JSON.stringify(antiPatterns)}`)
+      }
     }
     expect(offenders).toEqual([])
   })

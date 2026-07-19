@@ -642,10 +642,23 @@ draw d 2x2:
     expect(px(s, 0, 0)).toEqual([127, 127, 127, 255])
   })
 
-  test('flood fills 4-connected exact color', () => {
-    const s = render('draw d 4x4:\n  pal k=#000  r=#f00\n  line k 0:0 3:0\n  flood r 0:3\n', 'd')
-    expect(px(s, 0, 3)).toEqual([255, 0, 0, 255])
-    expect(px(s, 0, 0)).toEqual([0, 0, 0, 255]) // line pixel unchanged
+  test('flood was removed (ADR-0094) — points to region fill', () => {
+    expect(() => render('draw d 4x4:\n  flood #f00 0:3\n', 'd')).toThrow(/'flood' was removed/)
+  })
+
+  test('the replace recolor filter was removed (ADR-0094) — points to parametric recolor', () => {
+    expect(() =>
+      render('draw d 4x4:\n  fill #f00 rect(0:0, 3:3)\n  replace #f00 #0f0\n', 'd'),
+    ).toThrow(/'replace' was removed/)
+  })
+
+  test('the lit L: block was removed (ADR-0094) — points to the light argument', () => {
+    expect(() =>
+      render(
+        'light sun = dir 1:1 #ffe6b0\ndraw d 8x8:\n  lit sun:\n    model rect(1:1, 6:6) #8a95a5 metal\n',
+        'd',
+      ),
+    ).toThrow(/'lit L:' block was removed/)
   })
 
   test('text renders bundled small font', () => {
@@ -839,10 +852,10 @@ draw d 2x2:
     expect(px(lit, 7, 0)).toEqual([0, 0, 0, 255]) // far corner: untouched
   })
 
-  test('while is governed by the budget (E010)', () => {
+  test('while was removed (ADR-0094) — an unbounded loop is a budget hazard for never posed', () => {
     expect(() =>
       render('draw d 2x2:\n  x = 0\n  while true:\n    x += 1\n  bg #fff\n', 'd'),
-    ).toThrow(/budget/)
+    ).toThrow(/'while' was removed/)
   })
 
   test('tileset bakes a grid and members are addressable', () => {
@@ -1214,11 +1227,14 @@ draw d 12x12:
     expect([...s1.data]).not.toEqual([...s2.data])
   })
 
-  test('repeat executes its body a fixed number of times', () => {
-    const s = render(
-      'draw d 3x1:\n  pal k=#000000\n  x = 0\n  repeat 3:\n    px k x:0\n    x += 1\n',
-      'd',
+  test('repeat was removed (ADR-0094) — duplicated for; points to it', () => {
+    expect(() => render('draw d 3x1:\n  pal k=#000000\n  repeat 3:\n    px k 0:0\n', 'd')).toThrow(
+      /'repeat' was removed/,
     )
+  })
+
+  test('for still iterates a range as the sole loop', () => {
+    const s = render('draw d 3x1:\n  pal k=#000000\n  for x 0..3:\n    px k x:0\n', 'd')
     expect(px(s, 0, 0)[3]).toBe(255)
     expect(px(s, 1, 0)[3]).toBe(255)
     expect(px(s, 2, 0)[3]).toBe(255)

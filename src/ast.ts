@@ -214,21 +214,9 @@ export type Statement =
       readonly span: TextSpan
     }
   | {
-      readonly kind: 'repeat'
-      readonly count: Expression
-      readonly body: Statement[]
-      readonly span: TextSpan
-    }
-  | {
       readonly kind: 'for'
       readonly target: string
       readonly iterable: Expression
-      readonly body: Statement[]
-      readonly span: TextSpan
-    }
-  | {
-      readonly kind: 'while'
-      readonly condition: Expression
       readonly body: Statement[]
       readonly span: TextSpan
     }
@@ -265,17 +253,6 @@ export type Statement =
        * must evaluate to a Region, checked at eval time).
        */
       readonly kind: 'maskBlock'
-      readonly expression: Expression
-      readonly body: Statement[]
-      readonly span: TextSpan
-    }
-  | {
-      /**
-       * A `lit L: body` block (ADR-0086): scopes a named light over `body` only —
-       * `expression` must evaluate to a Light (checked at eval time), set/restored
-       * like `mask …:`. No global mutable light state.
-       */
-      readonly kind: 'litBlock'
       readonly expression: Expression
       readonly body: Statement[]
       readonly span: TextSpan

@@ -67,6 +67,7 @@ export const lintModule = (engine: Engine, mod: ModuleRecord): Diagnostic[] => {
     lintCoveredStamps(engine, mod, entry.definition, diagnostics)
     lintUnknownGlyphs(engine, mod, entry.definition, diagnostics, fontCache)
     lintTransparentLastRow(entry.definition, mod, diagnostics)
+    diagnostics.push(...canonicalPathChecks(engine, mod, entry.definition))
     if (!exported.has(name) && !used.has(name)) {
       diagnostics.push(
         warning(
@@ -441,7 +442,7 @@ const bgCoverageEvent = (
  * *later*, provably opaque paint in the same drawing — a silent, invisible
  * stamp (the "fox vanished under the igloo" evaluation case). Deliberately
  * narrow to stay conservative: only top-level statements of `def.body` are
- * tracked (nothing inside `if`/`for`/`while`/`match`/`repeat`/`mask …:` —
+ * tracked (nothing inside `if`/`for`/`match`/`mask …:` —
  * their execution order or visible area isn't statically certain), and only
  * the three event shapes in {@link stampCoverageEvent}/
  * {@link rectFillCoverageEvent}/{@link bgCoverageEvent} are recognised.
@@ -727,6 +728,402 @@ const lintTransparentLastRow = (
   })
 }
 
+// ── W012–W015: the one-canonical-way lints (ADR-0094) ───────────────────────
+//
+// Each pushes toward the single canonical path the declarative pipeline established, and each is
+// conservative (fires only on a statically certain misuse) like every other `W0xx`. They are the
+// machine-checkable half of the construct census: W012 = raw rim, W013 = manual value-spread patch,
+// W014 = stamp of a pinned part, W015 = hand contact-shadow ellipse.
+
+/** The raw form-shading escape-hatch commands that a `model`/`cel` material already covers. */
+const RAW_SHADE_COMMANDS = new Set(['rim', 'shadeRegion', 'lightRegion'])
+/** Colour helpers whose presence in a clipped `fill` marks the retired corner-patch idiom (W013). */
+const VALUE_SPREAD_FNS = new Set(['litTone', 'shadowTone'])
+/** Floor constructs the canonical task path no longer surfaces (flagged `spec-only` in the census). */
+const SPEC_ONLY_CONSTRUCTS = new Set([
+  'rim',
+  'shadeRegion',
+  'lightRegion',
+  'ambientOcclusion',
+  'scatter',
+  'mirror',
+  'pixels',
+])
+
+/** True iff `def` shades any region through the declarative `model`/`cel` pipeline. */
+const usesModelOrCel = (def: DrawDefinition): boolean => {
+  let found = false
+  walkStatements(def.body, (s) => {
+    if (s.kind === 'call' && (s.callee === 'model' || s.callee === 'cel')) {
+      found = true
+    }
+  })
+  return found
+}
+
+/** True iff any node of `expr` satisfies `pred` (recurses the whole subtree, args included). */
+const exprAny = (expr: Expression, pred: (e: Expression) => boolean): boolean => {
+  if (pred(expr)) {
+    return true
+  }
+  switch (expr.kind) {
+    case 'point':
+      return exprAny(expr.x, pred) || exprAny(expr.y, pred)
+    case 'list':
+      return expr.items.some((i) => exprAny(i, pred))
+    case 'range':
+      return exprAny(expr.from, pred) || exprAny(expr.to, pred)
+    case 'unary':
+      return exprAny(expr.operand, pred)
+    case 'binary':
+      return exprAny(expr.left, pred) || exprAny(expr.right, pred)
+    case 'ifExpression':
+      return (
+        exprAny(expr.condition, pred) ||
+        exprAny(expr.thenExpression, pred) ||
+        exprAny(expr.elseExpression, pred)
+      )
+    case 'call':
+      return exprAny(expr.callee, pred) || expr.args.some((a) => argAny(a, pred))
+    case 'index':
+      return exprAny(expr.target, pred) || exprAny(expr.index, pred)
+    case 'dotIndex':
+      return exprAny(expr.target, pred)
+    case 'method':
+      return exprAny(expr.target, pred) || (expr.args ?? []).some((a) => argAny(a, pred))
+    default:
+      return false
+  }
+}
+
+const argAny = (arg: Argument, pred: (e: Expression) => boolean): boolean =>
+  arg.kind === 'expression'
+    ? exprAny(arg.expression, pred)
+    : arg.parts.some((p) => exprAny(p, pred))
+
+/** A call `f(…)` or UFCS `x.f(…)` whose function name is in `names`. */
+const callsNamed =
+  (names: ReadonlySet<string>) =>
+  (e: Expression): boolean =>
+    (e.kind === 'call' && e.callee.kind === 'name' && names.has(e.callee.name)) ||
+    (e.kind === 'method' && names.has(e.name))
+
+/** A `<region>.intersect(<rect>)` method call — the corner-clip of the retired value patch. */
+const isIntersectMethod = (e: Expression): boolean => e.kind === 'method' && e.name === 'intersect'
+
+/**
+ * Lint `W012`: a raw `rim`/`shadeRegion`/`lightRegion` in the same drawing as a `model`/`cel`.
+ * The declarative pipeline already lights the form — a rim/AO dose bakes into every material
+ * (ADR-0091) — so a hand veil beside it is the pre-declarative floor leaking through (the assassin's
+ * `rim … next to model`). Canonical: raise the material's `rim N%`/`spread N%` override.
+ */
+const lintRawShadeWithModel = (
+  def: DrawDefinition,
+  mod: ModuleRecord,
+  diagnostics: Diagnostic[],
+): void => {
+  if (!usesModelOrCel(def)) {
+    return
+  }
+  walkStatements(def.body, (s) => {
+    if (s.kind === 'call' && RAW_SHADE_COMMANDS.has(s.callee)) {
+      diagnostics.push(
+        warning(
+          'W012',
+          `raw '${s.callee}' in a model/cel-shaded drawing`,
+          mod.displayPath,
+          s.span,
+          `model/cel already lights the form from the material dose — drop '${s.callee}', or raise the material's rim/spread override`,
+        ),
+      )
+    }
+  })
+}
+
+/**
+ * Lint `W013`: a `fill` whose paint uses `litTone`/`shadowTone` and whose region is a
+ * `.intersect(rect …)` clip, inside a `model`/`cel` drawing — the retired hand corner-patch that
+ * lifted a modeled region's value spread by hand (W2-1b). Canonical: the material's `spread N%`.
+ */
+const lintCornerPatch = (
+  def: DrawDefinition,
+  mod: ModuleRecord,
+  diagnostics: Diagnostic[],
+): void => {
+  if (!usesModelOrCel(def)) {
+    return
+  }
+  const tonePred = callsNamed(VALUE_SPREAD_FNS)
+  walkStatements(def.body, (s) => {
+    if (s.kind !== 'call' || s.callee !== 'fill') {
+      return
+    }
+    const hasTone = s.args.some((a) => argAny(a, tonePred))
+    const hasClip = s.args.some((a) => argAny(a, isIntersectMethod))
+    if (hasTone && hasClip) {
+      diagnostics.push(
+        warning(
+          'W013',
+          'litTone/shadowTone corner-patch fill on a modeled region',
+          mod.displayPath,
+          s.span,
+          "widen the value range with the material's 'spread N%' override, not a clipped litTone/shadowTone fill",
+        ),
+      )
+    }
+  })
+}
+
+/**
+ * Lint `W014`: a `stamp` of a part that declares its own attach `pin`s. A pinned part is meant to be
+ * *fitted* (contact-guaranteed) — the sole canonical placement — while `stamp` is for pin-less
+ * decoration. A pin-seeded assembly root (its canvas pins declared as `pin <part>.<name>`, ADR-0092)
+ * is exempt: stamping the root, then seeding its pins, is the two-phase assembly idiom.
+ */
+const lintStampWithPins = (
+  mod: ModuleRecord,
+  def: DrawDefinition,
+  diagnostics: Diagnostic[],
+): void => {
+  const seededRoots = new Set<string>()
+  walkStatements(def.body, (s) => {
+    if (s.kind === 'pinDeclaration') {
+      const dot = s.name.indexOf('.')
+      if (dot > 0) {
+        seededRoots.add(s.name.slice(0, dot))
+      }
+    }
+  })
+  walkStatements(def.body, (s) => {
+    if (s.kind !== 'call' || s.callee !== 'stamp') {
+      return
+    }
+    const name = stampTargetName(s.args[0])
+    if (!name || seededRoots.has(name)) {
+      return
+    }
+    const target = mod.definitions.get(name)
+    if (target?.kind !== 'draw') {
+      return
+    }
+    const hasPins = target.definition.body.some(
+      (st) => st.kind === 'pinDeclaration' && !st.name.includes('.'),
+    )
+    if (!hasPins) {
+      return
+    }
+    diagnostics.push(
+      warning(
+        'W014',
+        `stamp of '${name}', which declares attach pins`,
+        mod.displayPath,
+        s.span,
+        `place a pinned part with 'fit ${name}.<pin> <anchor>' for guaranteed contact, or drop its pins if it is decoration`,
+      ),
+    )
+  })
+}
+
+/** The literal centre-y of `ellipse(cx:cy, …)`; `null` for a computed/other expression. */
+const ellipseCenterY = (expr: Expression): number | null => {
+  if (expr.kind !== 'call' || expr.callee.kind !== 'name' || expr.callee.name !== 'ellipse') {
+    return null
+  }
+  const first = expr.args[0]
+  if (first?.kind !== 'expression' || first.expression.kind !== 'point') {
+    return null
+  }
+  return literalNumber(first.expression.y)
+}
+
+/**
+ * Lint `W015`: a semi-transparent `fill … ellipse(…)` low in the foot zone of a drawing that uses
+ * `fit` — a hand contact-shadow. Canonical: the root `fit … shadow` flag drops an auto contact-shadow
+ * correctly anchored to the footprint. Conservative: only fires on a statically low-alpha paint whose
+ * ellipse centre sits in the bottom fifth of the canvas.
+ */
+const lintHandContactShadow = (
+  engine: Engine,
+  mod: ModuleRecord,
+  def: DrawDefinition,
+  diagnostics: Diagnostic[],
+): void => {
+  let hasFit = false
+  walkStatements(def.body, (s) => {
+    if (s.kind === 'fit') {
+      hasFit = true
+    }
+  })
+  if (!hasFit) {
+    return
+  }
+  const size = def.size ?? mod.sizeDefault ?? mod.fileTheme?.size
+  const h = size?.height
+  if (!h) {
+    return
+  }
+  walkStatements(def.body, (s) => {
+    if (s.kind !== 'call' || s.callee !== 'fill') {
+      return
+    }
+    let cy: number | null = null
+    for (const a of s.args) {
+      if (a.kind === 'expression') {
+        const y = ellipseCenterY(a.expression)
+        if (y !== null) {
+          cy = y
+        }
+      }
+    }
+    if (cy === null || cy < h * 0.8) {
+      return
+    }
+    const paintArg = s.args.find(
+      (a) => a.kind === 'expression' && ellipseCenterY(a.expression) === null,
+    )
+    if (paintArg?.kind !== 'expression') {
+      return
+    }
+    const alpha = staticPaintAlpha(engine, mod, paintArg.expression)
+    if (alpha === null || alpha >= 153) {
+      return
+    }
+    diagnostics.push(
+      warning(
+        'W015',
+        'hand contact-shadow ellipse in the foot zone',
+        mod.displayPath,
+        s.span,
+        "drop it and add the 'shadow' flag to the root 'fit … shadow' (auto contact-shadow, anchored to the footprint)",
+      ),
+    )
+  })
+}
+
+/** Runs the four canonical-path lints (W012–W015) against one drawing. */
+const canonicalPathChecks = (
+  engine: Engine,
+  mod: ModuleRecord,
+  def: DrawDefinition,
+): Diagnostic[] => {
+  const out: Diagnostic[] = []
+  lintRawShadeWithModel(def, mod, out)
+  lintCornerPatch(def, mod, out)
+  lintStampWithPins(mod, def, out)
+  lintHandContactShadow(engine, mod, def, out)
+  return out
+}
+
+/** One construct's usage count plus its canonicality flags (ADR-0094 construct census). */
+export type CensusEntry = {
+  readonly construct: string
+  readonly count: number
+  /** A floor construct the canonical task path no longer surfaces. */
+  readonly specOnly?: boolean
+  /** This construct participated in a W012–W015 finding somewhere in the module. */
+  readonly nonCanonical?: boolean
+}
+
+/** The deterministic per-module construct census surfaced in `critique`/`check --lint` JSON. */
+export type ModuleCensus = {
+  readonly constructs: readonly CensusEntry[]
+  /** The four machine-checkable anti-pattern counts (craft-eval success criteria). */
+  readonly antiPatterns: {
+    /** W012 — raw rim/shadeRegion/lightRegion next to model/cel. */
+    readonly rawShade: number
+    /** W013 — litTone/shadowTone `.intersect` corner patch. */
+    readonly manualSpread: number
+    /** W014 — stamp of a part that owns pins. */
+    readonly stampWithPins: number
+    /** W015 — hand contact-shadow ellipse. */
+    readonly handShadow: number
+  }
+}
+
+/** The construct label a statement contributes to the census, or `null` when it isn't counted. */
+const constructLabel = (stmt: Statement): string | null => {
+  switch (stmt.kind) {
+    case 'call':
+      return stmt.callee
+    case 'pinDeclaration':
+      return 'pin'
+    case 'fit':
+      return 'fit'
+    case 'maskBlock':
+      return 'mask'
+    case 'materialBinding':
+      return 'material'
+    case 'lightBinding':
+      return 'light'
+    case 'for':
+    case 'if':
+    case 'match':
+    case 'scatter':
+    case 'mirror':
+    case 'pixels':
+    case 'use':
+      return stmt.kind === 'pixels' ? 'pixels' : stmt.kind
+    case 'palette':
+      return 'pal'
+    default:
+      return null
+  }
+}
+
+/**
+ * Count every language construct used across `mod`'s own drawings and flag each `spec-only`
+ * (floor) or `non-canonical` (a W012–W015 participant). Deterministic (AST-only, sorted by
+ * construct name); the four `antiPatterns` counts are the craft-eval success criteria
+ * (raw-rim / manual-spread / hand-ellipse-shadow all target 0).
+ */
+export const censusModule = (engine: Engine, mod: ModuleRecord): ModuleCensus => {
+  const counts = new Map<string, number>()
+  let rawShade = 0
+  let manualSpread = 0
+  let stampWithPins = 0
+  let handShadow = 0
+  for (const [, entry] of mod.definitions) {
+    if (entry.kind !== 'draw' || entry.module !== mod) {
+      continue
+    }
+    walkStatements(entry.definition.body, (s) => {
+      const label = constructLabel(s)
+      if (label) {
+        counts.set(label, (counts.get(label) ?? 0) + 1)
+      }
+    })
+    for (const d of canonicalPathChecks(engine, mod, entry.definition)) {
+      if (d.code === 'W012') {
+        rawShade++
+      } else if (d.code === 'W013') {
+        manualSpread++
+      } else if (d.code === 'W014') {
+        stampWithPins++
+      } else if (d.code === 'W015') {
+        handShadow++
+      }
+    }
+  }
+  const nonCanonical = new Set<string>()
+  if (rawShade > 0) {
+    for (const c of RAW_SHADE_COMMANDS) {
+      nonCanonical.add(c)
+    }
+  }
+  if (stampWithPins > 0) {
+    nonCanonical.add('stamp')
+  }
+  const constructs: CensusEntry[] = [...counts.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([construct, count]) => ({
+      construct,
+      count,
+      ...(SPEC_ONLY_CONSTRUCTS.has(construct) ? { specOnly: true } : {}),
+      ...(nonCanonical.has(construct) ? { nonCanonical: true } : {}),
+    }))
+  return { constructs, antiPatterns: { rawShade, manualSpread, stampWithPins, handShadow } }
+}
+
 /**
  * Collects every drawing name referenced as a `stamp` or `fit` target in `body`,
  * so `W002` doesn't flag drawings that are used only to assemble another drawing
@@ -795,7 +1192,7 @@ const literalNumber = (expr: Expression): number | null => {
 }
 
 // generic AST walkers shared by the checks above: `walkStatements` recurses
-// into every nested statement body (`if`/`match`/`repeat`/`for`/`while`/
+// into every nested statement body (`if`/`match`/`for`/`scatter`/`mirror`/
 // `maskBlock`); `walkStatementExprs`/`walkArg`/`walkExpr` recurse into every
 // expression subtree, collecting referenced names. `walkStatements` and
 // `stampTargetName` are exported — `sheet.ts` reuses them to detect a
@@ -820,9 +1217,7 @@ export const walkStatements = (
           walkStatements(arm.body, visit)
         }
         break
-      case 'repeat':
       case 'for':
-      case 'while':
       case 'scatter':
       case 'mirror':
       case 'maskBlock':
@@ -858,14 +1253,8 @@ const walkStatementExprs = (stmt: Statement, names: Set<string>): void => {
         }
       }
       break
-    case 'repeat':
-      walkExpr(stmt.count, names)
-      break
     case 'for':
       walkExpr(stmt.iterable, names)
-      break
-    case 'while':
-      walkExpr(stmt.condition, names)
       break
     case 'maskBlock':
       walkExpr(stmt.expression, names)

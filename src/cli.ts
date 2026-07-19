@@ -47,7 +47,7 @@ import {
 } from './eval.js'
 import { format, formatDiff } from './fmt.js'
 import { inspectSprite } from './inspect.js'
-import { lintModule } from './lint.js'
+import { censusModule, lintModule, type ModuleCensus } from './lint.js'
 import { type DecodedPng, decodePng, encodePngRgba } from './png.js'
 import {
   applyGridOverlay,
@@ -330,6 +330,7 @@ const runCheck = (cli: CliArguments): number => {
   const file = cli.target ?? ''
   const diags: Diagnostic[] = []
   let rows: RowMetadata[] = []
+  let census: ModuleCensus | undefined
   try {
     const engine = createEngine(cli)
     const mod = engine.loadEntry(file)
@@ -368,11 +369,18 @@ const runCheck = (cli: CliArguments): number => {
     }
     if (cli.lint) {
       diags.push(...lintModule(engine, mod))
+      census = censusModule(engine, mod)
     }
   } catch (e) {
     diags.push(toDiagnostic(e, file))
   }
-  return cli.rows ? emitObject(diags, cli.json, { rows }) : emit(diags, cli.json)
+  const payload = {
+    ...(cli.rows ? { rows } : {}),
+    ...(census ? { census } : {}),
+  }
+  return Object.keys(payload).length > 0
+    ? emitObject(diags, cli.json, payload)
+    : emit(diags, cli.json)
 }
 
 /**
@@ -1523,11 +1531,13 @@ const runCritique = (cli: CliArguments): number => {
   const profile = resolveProfile(cli.as)
   const rendered: { readonly name: string; readonly span: TextSpan; readonly sprite: Sprite }[] = []
   let familyMetrics: FamilyMetrics | undefined
+  let census: ModuleCensus | undefined
   let displayPath = file
   try {
     const engine = createEngine(cli)
     const mod = engine.loadEntry(file)
     displayPath = mod.displayPath
+    census = censusModule(engine, mod)
     for (const [, entry] of mod.definitions) {
       if (
         entry.kind !== 'draw' ||
@@ -1607,7 +1617,7 @@ const runCritique = (cli: CliArguments): number => {
     ...(familyMetrics === undefined ? {} : { familyMetrics }),
     rubric,
   }
-  return emitObject(diags, cli.json, { critique: report })
+  return emitObject(diags, cli.json, { critique: report, ...(census ? { census } : {}) })
 }
 
 // ── entry ───────────────────────────────────────────────────────────────────

@@ -34,6 +34,24 @@ No engine work was expected. The pre-check asked whether `pal` can produce clean
 
 Part composition and anchor discipline; palette-swap/recolor quality; small-grid proportion DX; two-view workflow and reuse strategy.
 
+## Construct-census success criteria (ADR-0094)
+
+`critique --json` (and `check --lint --json`) carry a deterministic `census` with four `antiPatterns`
+counts. A character build passes the census gate only when **all four are 0** across every recipe:
+
+- `rawShade` (**raw-rim = 0**) — no raw `rim`/`shadeRegion`/`lightRegion` beside a `model`/`cel`; the
+  lit edge is the material's own `rim`/`spread` dose (W012).
+- `manualSpread` (**manual-spread = 0**) — no `litTone`/`shadowTone` `.intersect(rect)` corner patch;
+  value spread comes from the material `spread N%` (W013).
+- `stampWithPins` (**stamp-of-pinned-part = 0**) — every pinned part is placed by `fit` (contact
+  guaranteed); `stamp` is for pin-less decoration only; the pin-seeded assembly root is exempt (W014).
+- `handShadow` (**hand-ellipse-shadow = 0**) — contact shadows come from the root `fit … shadow`, never
+  a hand `ellipse` in the foot zone (W015).
+
+Also watch the `spec-only`/`non-canonical` construct flags: a build leaning on floor constructs
+(`scatter`/`mirror`/`pixels:`/raw shading) where a canonical path exists is a craft signal. The
+Oracle-usage quote (proportions oracle) is added in W2-3.
+
 ## Definition of Done
 
 - [x] 7 character recipes in `examples/characters/`, all `check --json` = `[]`, fmt-clean.

@@ -15,12 +15,10 @@ import {
   filterDither,
   filterGrain,
   filterOutline,
-  filterReplace,
   filterRipple,
   filterShadow,
   filterSpeckle,
   filterTint,
-  flood,
   lightRegion,
   type Paint,
   PixelSink,
@@ -357,35 +355,6 @@ describe('strokePath', () => {
   })
 })
 
-describe('flood', () => {
-  test('no-ops when the seed is off-canvas', () => {
-    const c = ctx(4, 4)
-    flood(c, -1, -1, red, () => {})
-    expect(px(c, 0, 0)).toEqual([0, 0, 0, 0])
-  })
-
-  test('4-connected fill from a canvas corner, revisiting cells via the visited set', () => {
-    const c = ctx(5, 5)
-    let ticks = 0
-    flood(c, 0, 0, red, () => {
-      ticks++
-    })
-    expect(ticks).toBeGreaterThan(0)
-    expect(px(c, 0, 0)).toEqual([255, 0, 0, 255])
-    expect(px(c, 4, 4)).toEqual([255, 0, 0, 255])
-  })
-
-  test('stops at an exact-color boundary and leaves the boundary itself untouched', () => {
-    const c = ctx(6, 1)
-    c.buffer.set(3, 0, black)
-    flood(c, 0, 0, red, () => {})
-    expect(px(c, 0, 0)).toEqual([255, 0, 0, 255])
-    expect(px(c, 2, 0)).toEqual([255, 0, 0, 255])
-    expect(px(c, 3, 0)).toEqual([0, 0, 0, 255]) // boundary unchanged
-    expect(px(c, 5, 0)).toEqual([0, 0, 0, 0]) // beyond the boundary, untouched
-  })
-})
-
 describe('stampSprite', () => {
   const sprite: Sprite = {
     type: 'sprite',
@@ -515,17 +484,6 @@ describe('filters', () => {
     // near-black (L≈0.15): every channel well below the source's brightest
     expect(Math.max(ring[0], ring[1], ring[2])).toBeLessThan(90)
     expect(px(c, 2, 2)).toEqual([80, 200, 120, 255]) // figure pixel untouched
-  })
-
-  test('filterReplace swaps exact matches and respects the mask', () => {
-    const c = ctx(3, 1)
-    c.buffer.set(0, 0, black)
-    c.buffer.set(1, 0, black)
-    c.mask = rectRegion(1, 0, 1, 0)
-    filterReplace(c, black, red)
-    expect(px(c, 0, 0)).toEqual([0, 0, 0, 255]) // masked out, unchanged
-    expect(px(c, 1, 0)).toEqual([255, 0, 0, 255]) // replaced
-    expect(px(c, 2, 0)).toEqual([0, 0, 0, 0]) // no match, untouched
   })
 
   test('filterTint mixes into opaque pixels, skips transparent, and respects the mask', () => {

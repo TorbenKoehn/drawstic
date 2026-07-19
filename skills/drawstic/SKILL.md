@@ -143,11 +143,12 @@ draw sword 24x48:
   blade  = rect(11:2, 13:30)     # each mass is a Region binding
   guard  = rect(7:31, 17:34)
   pommel = circle(12:46, 2)
-  lit sun:                       # scopes the light over the block
-    model blade steel            # smooth form shade→rim→AO→cast, all from sun — can't drift
-    model guard #b08040 metal    # inline COLOR RESPONSE, no named material
-    cel   pommel steel 3         # opt-in: same form body as 3 crisp bands
+  model blade steel light sun    # smooth form shade→rim→AO→cast, all from sun — can't drift
+  model guard #b08040 metal light sun   # inline COLOR RESPONSE, no named material
+  cel   pommel steel 3 light sun # opt-in: same form body as 3 crisp bands
 ```
+
+(A `theme` default `light` lets every `model`/`cel` drop the `light sun` arg — see § Themes.)
 
 ## Core syntax
 
@@ -172,7 +173,7 @@ draw sword 24x48:
   `curve p pt1 pt2 pt3 … [w2]` (open spline **through** the points, ≥3) ·
   `curvePoly p pt1 pt2 pt3 … [fill]` (closed loop through the points; fillable organic mass; a Region without paint, ≥3) ·
   `profile p span fn [baseline] [fill]` (filled silhouette under `y=f(x)`, one sample/column; `fn` gets normalized x∈[0,1]; a Region without paint) ·
-  `text p pt "s" [font name]` · `flood p pt`.
+  `text p pt "s" [font name]`.
 - **Stamp** `stamp name[(args)] pt [anchor center|bottom|…] [flipx] [flipy] [rot45] [scale2]
   [transform t] [tint p 0.3] [shadow 1:1 #0006] [mask r]`.
 - **Anchored assembly** (default for modular composition, ADR-0087) — a part declares named attach
@@ -204,8 +205,8 @@ draw sword 24x48:
   everything, so encodings can't drift: `light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%` (travel dir;
   source up-left ⇒ up-left edge lit) or `light torch = at 12:8 #ffb060 gain 1.4` (point source;
   `gain` = intensity, `amb COOL AMT` = fill light). `material steel = #8a95a5 metal` (response ∈
-  `flat|metal|skin|cloth|glass|glow`; bare colour ⇒ `flat`; `glow` = self-lit). Then `lit sun:`
-  scopes the light over its body, and per object `model REGION MAT [light L]` lowers to a **smooth
+  `flat|metal|skin|cloth|glass|glow`; bare colour ⇒ `flat`; `glow` = self-lit). The light reaches a
+  command via a theme default or a `light L` arg, and per object `model REGION MAT [light L]` lowers to a **smooth
   form (normal-based) shade** → rim → AO → cast (all from the one light — a Poisson-inflated dome, no
   medial ridge; soft, always-dithered terminator; Blinn specular on `metal`/`glass`/`skin`; the
   default) · `cel REGION MAT N` = the **same form body as N crisp bands** (opt-in hard cel look, band
@@ -217,11 +218,11 @@ draw sword 24x48:
   *hanging* cloak/skirt as a per-row half-tube that doesn't darken toward its hem (no "turtle-shell").
   **`model/cel R MAT over UNION`** builds the field from `UNION` (e.g. `leg.union(boot)`) but tones only
   `R`, so stacked parts co-shade as **one continuous limb**, no seam break. Resolution order: explicit `light L`
-  → `lit L:` block → **theme default** (a `light` in a `theme` body → shared by every view/variant,
-  the cross-view fix). None in any tier = hard `E024` (never a silent default). `render … --explain`
+  → **theme default** (a `light` in a `theme` body → shared by every view/variant, the cross-view fix;
+  the `lit L:` block was removed — ADR-0094). Neither tier = hard `E024` (never a silent default). `render … --explain`
   prints the exact primitive expansion. `dir/at/amb/gain` + the response words are keywords **only**
   in their slot.
-- **Control flow:** `for i 0..8:` (half-open; `..=` inclusive) · `repeat n:` · `if c:`/`else:` ·
+- **Control flow:** `for i 0..8:` (the one loop — half-open; `..=` inclusive) · `if c:`/`else:` ·
   `match x:` · expression `if c then a else b` · `fn f(a, b) = expr`.
 - **Scatter** `scatter p n seed region:` → body n times, `p` = a seeded point drawn uniformly from
   `region`'s pixels (stars/bubbles/gravel/sparks; deterministic; empty region = no-op).
@@ -292,7 +293,7 @@ can't drift. Hand-placed tones (gradient stops, `pixels:` bands) derive from the
 **back-to-front**: sky → far layer → haze veil → midground → ground (shape gradient far-light→near-dark,
 growing sizes) → texture filters (depth-staggered) → **then** detail marks (≥2px, light/dark pair —
 grain eats 1px) → subjects (`fit … shadow` for contact + directional shadow + light edge) → foreground
-frame → vignette. (4) each object mass: `model REGION MAT` under `lit sun:` (lowers
+frame → vignette. (4) each object mass: `model REGION MAT` under the theme's `sun` light (lowers
 fill→shade→light→rim→AO→cast from the one light) → **then bright accents by hand**; the raw
 `shadeRegion`/`rim` quartet is the floor for hand-tuning past a material (`--explain`).
 
@@ -415,13 +416,13 @@ verifies grammar only — pair confusion, weak silhouettes, and mushy materials 
   Full table: reference.md § Definition scope.
 - A `theme` body holds **only** `pal:`/`grad NAME=…`/`size`/`mode`/`font`/`light`/`style`/`with`/
   `filter`/`draw`. A theme `light NAME=…` (ADR-0086) is the shared **default light** for every view/
-  variant — folds like `size`/`mode`/`font` (later wins), overridable by a nearer `lit L:`/`light L`.
+  variant — folds like `size`/`mode`/`font` (later wins), overridable by a `light L` argument.
   A free binding there (`accent = #d8a53a`) is `E004` **at the declaration** — put colours under
   `pal:`, other constants (radius/margin/alpha) at module scope above the theme.
 - Theme/host palettes **don't cross a `stamp` boundary** — a stamped `draw` resolves its own `pal`
   keys in its own scope (missing key = static `E007`, not a theme fall-through). Recolour a stamped
-  variant **parametrically** (`draw part(c)` + `pal a=c`, or derived `c.darken(…)`) or **post-hoc**
-  with a `replace old new` chain (exact colour match, one line per tone) — not by swapping the theme.
+  variant **parametrically** (`draw part(c)` + `pal a=c`, or derived `c.darken(…)`), or `tint` it on
+  `stamp`/`fit` — the one recolor path (`replace` was removed, ADR-0094) — not by swapping the theme.
 - `name = expr` **reassigns the nearest in-scope mutable binding** (loop-persistent, like `+=`),
   declaring a fresh local only when none is reachable — so `g = g.union(…)` inside a `for` now
   accumulates. The search stops at the draw body (blocks never mutate module scope; `const`/palette/
@@ -429,7 +430,7 @@ verifies grammar only — pair confusion, weak silhouettes, and mushy materials 
 - Reserved names as bindings: a **stdlib math name** (`min max abs clamp floor ceil round sign sqrt
   hypot dist sin cos tan atan2 pow exp log lerp len`), a constant (`pi`/`tau`), or a predefined like
   `rim` gives a clean `E007` (`'tan' is a predefined, unshadowable name` — caught by `check`), but a
-  **filter/directive** keyword (`shadow`, `tint`, `grain`, `dither`, `replace`, `outline`, `speckle`,
+  **filter/directive** keyword (`shadow`, `tint`, `grain`, `dither`, `outline`, `speckle`,
   `ripple`) parses as its directive — `shadow = …` then `shadow.alpha(…)` fails as `E004` at the
   **use** site, not the declaration. Also avoid `w`/`h`. Full stdlib list: reference.md § Expressions.
 - SVG export stays compact for flat or row-uniform fills; scanline-varying gradients, veils, texture,

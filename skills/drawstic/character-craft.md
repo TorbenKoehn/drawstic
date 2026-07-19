@@ -89,15 +89,10 @@ draw figureRed 24x60:               # thin wrapper — 1 literal = 1 faction
   stamp figure(#a83a36) 0:0
 ```
 
-**Post-hoc alternative** (verified pixel-identical to the parametric result): stamp one variant, then
-a `replace` chain, one line per tone — exact colour match required:
-
-```drw
-stamp torso(red) 0:0
-replace red blue
-replace lit(red) lit(blue)
-replace shd(red) shd(blue)
-```
+**Recolor is parametric only.** Thread the faction colour through the part's parameter — one literal
+per faction. The exact-swap `replace` filter was removed (ADR-0094): after `model`/`cel` shading the
+committed RGBA it matched no longer exists, so an exact swap is brittle. For a quick whole-figure tint
+use the `tint` flag on `stamp`/`fit`; for real faction variants, parametrize the part.
 
 ## 4. Seam contract — no floating limbs
 
@@ -267,9 +262,9 @@ draw torsoFront(c) 14x18: …           # `model body c metal` — no lit block;
 draw torsoSide(c)  14x18: …           # a DIFFERENT pose, same `sun`; lit edge stays world-left
 ```
 
-A `lit L:` block or a trailing `light L` on one `model`/`cel` still overrides it locally (resolution
-order: explicit `light L` > `lit L:` > theme default). Confirm cross-view coherence numerically: the
-lit third of the silhouette is the same world side in both `--inspect`ed views.
+A trailing `light L` on one `model`/`cel` still overrides it locally (resolution order: explicit
+`light L` > theme default — the `lit L:` block was removed, ADR-0094). Confirm cross-view coherence
+numerically: the lit third of the silhouette is the same world side in both `--inspect`ed views.
 
 **Shade volumes with `model` — it is the default now, even at ≤64px** (ADR-0089): the body shade
 follows the reconstructed surface normal, so a torso/limb reads as a rounded form with a **smooth,

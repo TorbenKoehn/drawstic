@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { ModuleRecord } from '../../src/eval.js'
 import { Engine } from '../../src/eval.js'
-import { lintModule } from '../../src/lint.js'
+import { censusModule, lintModule } from '../../src/lint.js'
 
 let n = 0
 const load = (src: string): { engine: Engine; mod: ModuleRecord } => {
@@ -266,7 +266,7 @@ describe('lintModule', () => {
 
   test('walks every statement and expression shape while collecting used palette names', () => {
     // Exercises the generic AST walkers (walkStatements/walkStatementExprs/walkArg/walkExpr)
-    // across if/else, match, for, while, repeat, maskBlock, compound assignment, and
+    // across if/else, match, for, maskBlock, compound assignment, and
     // list/range/binary/ifExpression/index/dotIndex/method/keyword-argument expressions —
     // all of it real, renderable code (nothing dead), plus one genuinely out-of-bounds
     // stamp (negative coordinates) to also hit literalNumber's unary-minus branch.
@@ -281,7 +281,7 @@ describe('lintModule', () => {
         '    kk',
         '',
         'draw richDraw 10x10:',
-        '  pal j=#111111 k=#222222 m=#333333 n=#444444 o=#555555',
+        '  pal k=#222222 m=#333333 n=#444444 o=#555555',
         '  pal p=#666666 q=#777777 s=#888888 t=#999999 u=#aaaaaa',
         '  pal v=#bbbbbb z=#cccccc',
         '  cols = k, m',
@@ -303,10 +303,6 @@ describe('lintModule', () => {
         '    else: px v 1:0',
         '  for row 0..3:',
         '    px z 2:0',
-        '  while false:',
-        '    px z 3:0',
-        '  repeat 2:',
-        '    px j 4:0',
         '  mask localMask:',
         '    bg m',
         '  stamp dot2 1:1 tint k 0.3',
@@ -664,5 +660,110 @@ describe('lintModule', () => {
       ].join('\n'),
     )
     expect(lintModule(engine, mod)).toEqual([])
+  })
+})
+
+describe('canonical-path lints + construct census (W012–W015, ADR-0094)', () => {
+  const codes = (src: string): string[] => {
+    const { engine, mod } = load(src)
+    return lintModule(engine, mod).map((d) => d.code)
+  }
+
+  test('W012 fires on a raw rim beside a model, silent without model', () => {
+    const withModel = [
+      'light sun = dir 1:1 #ffe6b0',
+      'material m = #8a95a5 metal',
+      'draw part 12x12:',
+      '  r = rect(1:1, 10:10)',
+      '  model r m light sun',
+      '  rim r 1:1 #ffffff 1',
+      '',
+      'export part p/part:',
+      '  png',
+      '',
+    ].join('\n')
+    expect(codes(withModel)).toContain('W012')
+    // the same raw rim without a model/cel in the drawing is the legitimate floor — no W012.
+    const rawOnly = [
+      'draw part 12x12:',
+      '  r = rect(1:1, 10:10)',
+      '  fill #8a95a5 r',
+      '  rim r 1:1 #ffffff 1',
+      '',
+      'export part p/part:',
+      '  png',
+      '',
+    ].join('\n')
+    expect(codes(rawOnly)).not.toContain('W012')
+  })
+
+  test('W013 fires on a litTone .intersect corner patch over a model', () => {
+    const src = [
+      'light sun = dir 1:1 #ffe6b0',
+      'material m = #8a95a5 cloth',
+      'draw part 12x12:',
+      '  r = rect(1:1, 10:10)',
+      '  model r m light sun',
+      '  fill litTone(#8a95a5, #ffe6b0, 30%) r.intersect(rect(1:1, 5:5))',
+      '',
+      'export part p/part:',
+      '  png',
+      '',
+    ].join('\n')
+    expect(codes(src)).toContain('W013')
+  })
+
+  test('W014 fires on a stamp of a pinned part, exempts a pin-seeded root', () => {
+    const parts = ['draw pinned 8x8:', '  fill #888888 rect(0:0, 7:7)', '  pin top 4:0', ''].join(
+      '\n',
+    )
+    const stampNoSeed = `${parts}draw asm 20x20:\n  stamp pinned 2:2\n\nexport asm a/asm:\n  png\n`
+    expect(codes(stampNoSeed)).toContain('W014')
+    // a pin-seeded root (its canvas pins declared) is the two-phase assembly idiom — no W014.
+    const seededRoot = `${parts}draw asm 20x20:\n  stamp pinned 2:2\n  pin pinned.top 6:2\n\nexport asm a/asm:\n  png\n`
+    expect(codes(seededRoot)).not.toContain('W014')
+  })
+
+  test('W015 fires on a hand contact-shadow ellipse in the foot zone of a fitted figure', () => {
+    const src = [
+      'draw child 8x40:',
+      '  fill #888888 rect(0:0, 7:39)',
+      '  pin hip 4:0',
+      'draw fig 32x64:',
+      '  fill #223344.alpha(45%) ellipse(16:60, 10:3)',
+      '  pin a.hip 16:10',
+      '  fit child.hip a.hip',
+      '',
+      'export fig f/fig:',
+      '  png',
+      '',
+    ].join('\n')
+    expect(codes(src)).toContain('W015')
+  })
+
+  test('census counts constructs and flags the anti-patterns deterministically', () => {
+    const src = [
+      'light sun = dir 1:1 #ffe6b0',
+      'material m = #8a95a5 metal',
+      'draw part 12x12:',
+      '  r = rect(1:1, 10:10)',
+      '  model r m light sun',
+      '  rim r 1:1 #ffffff 1',
+      '',
+      'export part p/part:',
+      '  png',
+      '',
+    ].join('\n')
+    const { engine, mod } = load(src)
+    const census = censusModule(engine, mod)
+    expect(census.antiPatterns.rawShade).toBe(1)
+    expect(census.antiPatterns.manualSpread).toBe(0)
+    const model = census.constructs.find((c) => c.construct === 'model')
+    expect(model?.count).toBe(1)
+    const rim = census.constructs.find((c) => c.construct === 'rim')
+    expect(rim?.specOnly).toBe(true)
+    expect(rim?.nonCanonical).toBe(true)
+    // deterministic: two runs give the identical census.
+    expect(censusModule(engine, mod)).toEqual(census)
   })
 })

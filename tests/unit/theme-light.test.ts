@@ -165,8 +165,7 @@ describe('theme carries `light` but not `material` (ADR-0086: materials live in 
           '  size 12x12',
           'use t',
           'draw x 12x12:',
-          '  lit sun:',
-          '    model rect(1:1, 10:10) steel',
+          '  model rect(1:1, 10:10) steel light sun',
         ].join('\n'),
         'x',
       ),
@@ -174,36 +173,29 @@ describe('theme carries `light` but not `material` (ADR-0086: materials live in 
   })
 })
 
-describe('light resolution order: explicit `light L` > `lit L:` block > theme default', () => {
+describe('light resolution order: explicit `light L` > theme default', () => {
   const src = (inner: string): string =>
     [
       'theme t:',
       '  light themeSun = dir 1:0 #ffe6b0', // source-left ⇒ shade point x < region
       'light moon = dir -1:0 #a0c0ff', // source-right ⇒ shade point x > region
-      'light rightSun = dir 1:0 #ffe6b0', // source-left (module scope, referenceable)
       'use t',
       'draw a 16x12:',
       '  body = rect(2:2, 13:9)',
       `  ${inner}`,
     ].join('\n')
 
-  // `|` splits a `lit L:` header from its body — the body indents one level deeper (4 spaces).
   const shadePointX = (inner: string): number =>
-    renderWithExplain(src(inner.replace('|', '\n    ')), 'a')[0]?.light?.x ?? Number.NaN
+    renderWithExplain(src(inner), 'a')[0]?.light?.x ?? Number.NaN
 
-  test('theme default applies when there is no lit block and no explicit light', () => {
+  test('theme default applies when there is no explicit light', () => {
     // sun travels right → synthetic source sits to the LEFT of the region → shade point x < 0.
     expect(shadePointX('model body #8a95a5 metal')).toBeLessThan(0)
   })
 
-  test('a lit block overrides the theme default', () => {
+  test('an explicit `light L` argument overrides the theme default', () => {
     // moon travels left → source to the RIGHT → shade point x beyond the 16px canvas.
-    expect(shadePointX('lit moon:|model body #8a95a5 metal')).toBeGreaterThan(16)
-  })
-
-  test('an explicit `light L` argument overrides even an enclosing lit block', () => {
-    // rightSun (source-left) wins over the `lit moon` (source-right) it sits inside.
-    expect(shadePointX('lit moon:|model body #8a95a5 metal light rightSun')).toBeLessThan(0)
+    expect(shadePointX('model body #8a95a5 metal light moon')).toBeGreaterThan(16)
   })
 })
 

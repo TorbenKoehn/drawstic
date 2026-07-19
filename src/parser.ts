@@ -370,24 +370,19 @@ class Parser {
         }
         break
       case 'lit':
-        // D7: `lit NAME:` → a lexical light block; `lit = …`, `lit(…)`, or `lit` as an
-        // argument all leave it an ordinary bindable/call name (contextual).
+        // The `lit L:` light-scoping block was removed (ADR-0094): the theme default light
+        // and an explicit `light L` argument on `model`/`cel` cover both real cases. `lit` as
+        // an ordinary bindable/call name (`lit = …`) is untouched — only the block shape errors.
         if (
           this.#peek(1).kind === 'name' &&
           this.#peek(2).kind === 'op' &&
           this.#peek(2).text === ':' &&
           this.#peek(2).blockColon
         ) {
-          this.#next() // lit
-          const nameTok = this.#next()
-          const expression: Expression = {
-            kind: 'name',
-            name: nameTok.text,
-            span: this.#span(nameTok),
-          }
-          this.#expect('op', ':', "':' to open the lit body")
-          const body = this.#parseBlock()
-          return { kind: 'litBlock', expression, body, span: s }
+          this.#fail(
+            "the 'lit L:' block was removed — pass 'light L' to each model/cel, or set the theme's default light",
+            t,
+          )
         }
         break
       case 'pin':
@@ -448,13 +443,13 @@ class Parser {
         return this.#parseIfStmt()
       case 'match':
         return this.#parseMatch()
-      case 'repeat': {
-        this.#next()
-        const count = this.#parseExpr()
-        this.#expect('op', ':', "':'")
-        const body = this.#parseBlock()
-        return { kind: 'repeat', count, body, span: s }
-      }
+      case 'repeat':
+        // `repeat N:` was removed (ADR-0094) — it duplicated `for`. `repeat = …` (name binding)
+        // still works; only the loop shape errors.
+        if (this.#peek(1).text !== '=') {
+          this.#fail("'repeat' was removed — use 'for i 0..N:' instead", t)
+        }
+        break
       case 'for': {
         this.#next()
         const varName = this.#expect('name', undefined, 'a loop variable').text
@@ -463,13 +458,31 @@ class Parser {
         const body = this.#parseBlock()
         return { kind: 'for', target: varName, iterable, body, span: s }
       }
-      case 'while': {
-        this.#next()
-        const cond = this.#parseExpr()
-        this.#expect('op', ':', "':'")
-        const body = this.#parseBlock()
-        return { kind: 'while', condition: cond, body, span: s }
-      }
+      case 'while':
+        // `while cond:` was removed (ADR-0094) — an unbounded loop is a budget hazard `for`
+        // never poses. `while = …` (name binding) still works; only the loop shape errors.
+        if (this.#peek(1).text !== '=') {
+          this.#fail("'while' was removed — iterate a bounded range with 'for i 0..N:'", t)
+        }
+        break
+      case 'flood':
+        // The `flood` fill command was removed (ADR-0094) — a special case with no distinct
+        // role; fill a Region instead. `flood = …` (name binding) still works.
+        if (this.#peek(1).text !== '=') {
+          this.#fail("'flood' was removed — fill a region: 'fill PAINT REGION'", t)
+        }
+        break
+      case 'replace':
+        // The `replace` recolor filter was removed (ADR-0094) — an exact-RGBA swap is brittle
+        // after shading/AA; recolor parametrically (draw params + `tint`) instead. `replace = …`
+        // (name binding) still works.
+        if (this.#peek(1).text !== '=') {
+          this.#fail(
+            "'replace' was removed — recolor parametrically (draw params + a 'tint' stamp flag), or 'tint' the whole frame",
+            t,
+          )
+        }
+        break
       case 'scatter':
         // D7: `scatter NAME count seed region:` is a block; a bare `scatter =`
         // or `scatter(` leaves it an ordinary bindable/call name (contextual).

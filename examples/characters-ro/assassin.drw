@@ -21,18 +21,18 @@ trimC    = #7a2634    # dark crimson accent, clasp/pommel
 eyeGlow  = #8fe0e6     # cool cyan eye glint under the hood
 warm     = #ffe6b0     # matches light sun's warm colour
 cool     = #2a3a5e     # matches light sun's amb colour
-rimC     = warm.alpha(55%)          # thin lit-edge stroke on the light-facing side
 
 # dark materials shade with smooth normal-based `model` (ADR-0089): a dark base keeps form
 # detail without crushing to black. The value spread these dark parts need for C004 comes from
 # each material's own `spread` (ADR-0091) — the canonical one-knob control — not from hand
-# `.intersect(rect)+litTone` corner patches (retired W2-1b). A dark cloth's smooth form terminator
-# is a gentle gradient, so `spread` runs high to lift the lit face's p90 to the C004 floor; the
-# cloak carries the `drape` profile so its hanging length reads as a vertical half-tube (no
-# turtle-shell). Silhouette closes with ONE bare `outline` per assembly (ADR-0090).
-material clothMat   = clothC cloth spread 780%
-material cloakMat   = cloakC cloth drape spread 820%
-material leatherMat = leatherC cloth spread 780%
+# `.intersect(rect)+litTone` corner patches (retired W2-1b). The lit edge is the material's own
+# `rim` dose (raised here), not a raw `rim` command beside the `model` (that was W012 — ADR-0094).
+# A dark cloth's smooth form terminator is a gentle gradient, so `spread` runs high to lift the lit
+# face's p90 to the C004 floor; the cloak carries the `drape` profile so its hanging length reads as
+# a vertical half-tube (no turtle-shell). Silhouette closes with ONE bare `outline` per assembly.
+material clothMat   = clothC cloth spread 900% rim 60%
+material cloakMat   = cloakC cloth drape spread 820% rim 60%
+material leatherMat = leatherC cloth spread 780% rim 60%
 material skinMat    = skinC skin
 material steelMat   = steelC metal
 
@@ -47,7 +47,6 @@ use roTheme
 draw headFront 22x26:
   hoodReg = curvePoly(11:0, 21:6, 19:18, 11:24, 3:18, 1:6)
   model hoodReg clothMat
-  rim hoodReg 1:1 rimC 1
   faceReg = ellipse(11:20, 5:5)
   model faceReg skinMat
   rect clothC.darken(12%) 5:13 17:16 fill              # hood casts a brow shadow band
@@ -65,7 +64,6 @@ draw headFront 22x26:
 draw headSide 20x28:
   hoodReg = curvePoly(9:0, 17:4, 18:12, 15:19, 10:25, 4:26, 1:15, 2:5)
   model hoodReg clothMat
-  rim hoodReg 1:1 rimC 1
   faceReg = ellipse(13:19, 4:4)
   model faceReg skinMat
   rect clothC.darken(12%) 9:14 17:16 fill               # brow shadow under the brim
@@ -79,7 +77,6 @@ draw headSide 20x28:
 draw headBack 22x27:
   hoodReg = curvePoly(11:0, 21:5, 20:18, 11:26, 2:18, 1:5)
   model hoodReg clothMat
-  rim hoodReg 1:1 rimC 1
   px leatherC 10:15                                     # nape hair (no face on the back)
   px leatherC 12:15
   rect leatherC 9:16 13:17 fill
@@ -90,7 +87,6 @@ draw headBack 22x27:
 draw torsoFront 26x32:
   bodyReg = poly(11:0, 15:0, 24:2, 26:9, 20:19, 23:31, 3:31, 6:19, 0:9, 2:2)
   model bodyReg clothMat
-  rim bodyReg 1:1 rimC 1
   rect leatherC 2:17 24:20 fill
   rect trimC 12:17 14:20 fill
   pin neck 13:0
@@ -106,7 +102,6 @@ draw torsoSide 30x32:
   fill #38323f farArmReg
   bodyReg = poly(14:0, 22:3, 25:12, 20:19, 22:29, 6:29, 5:19, 3:10, 6:2)
   model bodyReg clothMat
-  rim bodyReg 1:1 rimC 1
   rect leatherC 5:19 22:22 fill
   pin neck 14:0
   pin shoulder 21:4
@@ -118,7 +113,6 @@ draw torsoSide 30x32:
 draw torsoBack 26x32:
   bodyReg = poly(11:0, 15:0, 24:2, 26:9, 20:19, 23:31, 3:31, 6:19, 0:9, 2:2)
   model bodyReg clothMat
-  rim bodyReg 1:1 rimC 1
   strapA = poly(2:3, 4:3, 22:29, 20:29)
   strapB = poly(22:3, 24:3, 4:29, 2:29)
   fill leatherC strapA
@@ -137,7 +131,6 @@ draw torsoBack 26x32:
 draw arm 9x36:
   sleeveReg = rect(1:0, 8:24)
   model sleeveReg clothMat
-  rim sleeveReg 1:1 rimC 1
   strapReg = rect(1:15, 8:17)
   fill leatherC.darken(10%) strapReg
   gloveReg = rect(1:24, 8:34)
@@ -152,7 +145,6 @@ draw leg 14x60:
   bootReg = poly(2:48, 12:48, 13:53, 11:58, 3:58, 1:53)
   limbReg = thighReg.union(shinReg).union(bootReg)   # one shading unit → no seam break at the material joins
   model thighReg clothMat over limbReg
-  rim thighReg 1:1 rimC 1
   model shinReg leatherMat over limbReg
   model bootReg leatherMat over limbReg
 
@@ -172,7 +164,6 @@ draw legSideFront 16x60:
   bootReg = poly(2:46, 11:46, 13:51, 11:57, 2:57, 1:51)
   limbReg = thighReg.union(shinReg).union(bootReg)   # one continuous shading unit
   model thighReg clothMat over limbReg
-  rim thighReg 1:1 rimC 1
   model shinReg leatherMat over limbReg
   model bootReg leatherMat over limbReg
   pin hip 6:0
@@ -184,7 +175,6 @@ draw legSideBack 16x54:
   bootReg = poly(4:42, 12:42, 13:47, 11:52, 3:52, 2:47)
   limbReg = thighReg.union(shinReg).union(bootReg)   # one continuous shading unit
   model thighReg clothMat over limbReg
-  rim thighReg 1:1 rimC 1
   model shinReg leatherMat over limbReg
   model bootReg leatherMat over limbReg
   pin hip 8:0
@@ -198,13 +188,11 @@ draw cloakSide 20x56:
   raw      = curvePoly(17:1, 12:8, 4:24, 3:38, 9:53, 14:47, 16:30, 16:10)
   cloakReg = raw.intersect(rect(0:0, 17:h))    # keep only x <= attach (behind the body)
   model cloakReg cloakMat
-  rim cloakReg 1:1 rimC 1
   pin attach 17:1
 
 draw cloakBack 46x62:
   cloakReg = curvePoly(23:0, 41:10, 45:30, 36:52, 41:60, 27:54, 23:60, 19:54, 5:60, 10:52, 1:30, 5:10)
   model cloakReg cloakMat
-  rim cloakReg 1:1 rimC 1
   pin attach 23:0
 
 # ---------------------------------------------------------------- dagger (sheathed prop, pose-invariant)

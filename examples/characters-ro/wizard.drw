@@ -209,7 +209,7 @@ draw staff 16x78:
 
 # ============================ COMPOSERS ============================
 draw wizardFront 64x128:
-  stamp staff 41:24                        # held prop; shaft overlaps the near sleeve/hand
+  fit staff.grip 49:70                     # held prop, grip-fitted (behind: first placement); shaft overlaps the near sleeve
   fit torsoFront.neck cx:neckY             # root: seeds every torso pin at once
   fit headFront.chin torsoFront.neck
   fit hat.brimC headFront.crown
@@ -219,8 +219,8 @@ draw wizardFront 64x128:
   outline
 
 draw wizardSide 64x128:
-  stamp sleeve 22:66 tint #2b2b2b 45%      # far arm (behind, neutral-grey depth cue)
-  stamp staff 39:24
+  fit sleeve.shoulder 30:67 tint #2b2b2b 45%   # far arm (behind, neutral-grey depth cue)
+  fit staff.grip 47:70                         # held prop, grip-fitted
   fit torsoSide.neck cx:neckY              # root
   fit headSide.chin torsoSide.neck
   fit hatSide.brimC headSide.crown
@@ -229,7 +229,7 @@ draw wizardSide 64x128:
   outline
 
 draw wizardBack 64x128:
-  stamp staff 9:24                         # held hand appears on the left from behind
+  fit staff.grip 17:70                     # held prop, grip-fitted; held hand appears on the left from behind
   fit torsoBack.neck cx:neckY              # root
   fit headBack.chin torsoBack.neck
   fit sleeve.shoulder torsoBack.shoulderL

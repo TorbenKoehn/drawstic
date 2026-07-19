@@ -625,93 +625,6 @@ export const strokePath = (
   }
 }
 
-// ── flood fill (ADR-0028 §1) ────────────────────────────────────────────────
-
-/**
- * Push the in-bounds 4-connected neighbours of (px, py) onto the flood stack (N/E/S/W only, canvas-clipped).
- */
-const pushNeighbors = (
-  stack: number[],
-  idx: number,
-  px: number,
-  py: number,
-  w: number,
-  h: number,
-): void => {
-  if (px > 0) {
-    stack.push(idx - 1)
-  }
-  if (px < w - 1) {
-    stack.push(idx + 1)
-  }
-  if (py > 0) {
-    stack.push(idx - w)
-  }
-  if (py < h - 1) {
-    stack.push(idx + w)
-  }
-}
-
-// paint replaces the flooded area (set, not blend, so the seed color is
-// replaced even when the paint carries alpha over the same color)
-const paintFlood = (ctx: Context, sink: PixelSink, paint: Paint): void => {
-  if (sink.xs.length === 0) {
-    return
-  }
-  const bbox: BBox = { x0: sink.x0, y0: sink.y0, x1: sink.x1, y1: sink.y1 }
-  for (let i = 0; i < sink.xs.length; i++) {
-    const fx = sink.xs[i]
-    const fy = sink.ys[i]
-    if (fx === undefined || fy === undefined) {
-      continue
-    }
-    if (ctx.mask && !ctx.mask.has(fx, fy)) {
-      continue
-    }
-    ctx.buffer.set(fx, fy, paintAt(paint, fx, fy, bbox, ctx.mode))
-  }
-}
-
-/**
- * A 4-connected flood fill (ADR-0028 §1) from (x, y): spreads to every pixel exactly RGBA-equal to
- * the seed, never diagonally. The `budget()` hook is called once per stack pop — the evaluation-step
- * hook (throws DrawsticError E010 via the evaluator's step counter; independent of the pixel-write
- * budget). No-op when the seed point is off-canvas.
- */
-export const flood = (
-  ctx: Context,
-  x: number,
-  y: number,
-  paint: Paint,
-  budget: () => void,
-): void => {
-  if (!ctx.buffer.inBounds(x, y)) {
-    return
-  }
-  const seed = ctx.buffer.get(x, y)
-  const eq = (c: Color): boolean =>
-    c.r === seed.r && c.g === seed.g && c.b === seed.b && c.a === seed.a
-  const sink = new PixelSink()
-  const visited = new Set<number>()
-  const stack: number[] = [y * ctx.buffer.width + x]
-  while (stack.length > 0) {
-    budget()
-    const idx = stack.pop()
-    if (idx === undefined || visited.has(idx)) {
-      continue
-    }
-    visited.add(idx)
-    const px = idx % ctx.buffer.width
-    const py = Math.floor(idx / ctx.buffer.width)
-    if (!eq(ctx.buffer.get(px, py))) {
-      continue
-    }
-    sink.add(px, py)
-    pushNeighbors(stack, idx, px, py, ctx.buffer.width, ctx.buffer.height)
-  }
-  paintFlood(ctx, sink, paint)
-}
-
 // ── stamp (ADR-0043/0044) ───────────────────────────────────────────────────
 
 /** Optional uniform tint: mix in color at amount, applied to sampled pixels before compositing. */
@@ -986,24 +899,6 @@ export const filterOutline = (ctx: Context, paint: Paint | null, width: number):
     current = dilateStep(current, opaque, sink, buffer.width, buffer.height)
   }
   sink.paint(ctx, resolved)
-}
-
-/**
- * Replace every pixel whose committed RGBA exactly equals from with to (raw set, not blended); mask-respecting.
- */
-export const filterReplace = (ctx: Context, from: Color, to: Color): void => {
-  const buffer = ctx.buffer
-  for (let y = 0; y < buffer.height; y++) {
-    for (let x = 0; x < buffer.width; x++) {
-      if (ctx.mask && !ctx.mask.has(x, y)) {
-        continue
-      }
-      const color = buffer.get(x, y)
-      if (color.r === from.r && color.g === from.g && color.b === from.b && color.a === from.a) {
-        buffer.set(x, y, to)
-      }
-    }
-  }
 }
 
 /** Mix paint into every opaque pixel at OkLCh amount, preserving each pixel's original alpha. */

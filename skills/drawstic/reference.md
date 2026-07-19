@@ -136,8 +136,19 @@ tile's top-left in **unscaled** sheet coordinates (× `--png@N` for output pixel
 | W007 | stamp fully covered by a later, provably opaque stamp/fill |
 | W008 | `text` literal has char(s) with no glyph in the resolved font (renders as the unknown-glyph box) — static cases only |
 | W009 | a `pixels:` grid's **last** row is fully transparent (`.`) while a row above has content — stamps place by top-left, so the trailing empty row silently enlarges the footprint and seams a 1px gap below adjacently stamped parts. Last row only; a fully transparent first row or side column (top-centring / padding) stays legit |
+| W010 | a `fit` part touches nothing in the final composite (floating/seamed — the gap C007 measures) |
+| W011 | a `fit` target pin sits >2px off the part's own ink (the join floats) |
+| W012 | raw `rim`/`shadeRegion`/`lightRegion` in a `model`/`cel`-shaded drawing → raise the material's `rim`/`spread` (ADR-0094) |
+| W013 | a `litTone`/`shadowTone` `fill` clipped by `.intersect(rect)` on a modeled region → use `spread N%` (ADR-0094) |
+| W014 | a `stamp` of a part that declares attach `pin`s (not a pin-seeded root) → `fit` it, or drop the pins if decoration (ADR-0094) |
+| W015 | a semi-transparent `fill … ellipse(…)` in the foot zone of a `fit`-using drawing → use the root `fit … shadow` (ADR-0094) |
 
 Full detail: `docs/language-spec.md` § Lint warnings.
+
+**Construct census** (ADR-0094): `critique --json` and `check --lint --json` carry a deterministic
+`census` — every construct used, flagged `spec-only`/`non-canonical`, plus four `antiPatterns` counts
+(`rawShade`/`manualSpread`/`stampWithPins`/`handShadow` = W012–W015; target 0). `check --lint --json`
+wraps its output as `{diagnostics, census}`.
 
 ## Modules & imports
 
@@ -206,7 +217,7 @@ scope when they run.
 | List | `1, 2, 3` (bare; parens only group/nest) | `xs[expr]` any-expression index, `xs.0` literal index; destructure `r, g, b = rgb`; `len(xs)`; `xs.cycle(i)` auto-wraps (incl. negative `i`) — sugar for `xs[i mod len(xs)]`; empty list is E015. |
 | String | `"…"`, `"""…"""` | text/style guides only; paths are bareword. |
 | Boolean | comparisons, `true`, `false` | logic `& \| !`. |
-| Light | `light NAME = dir DX:DY COLOR [amb COOL AMT] [gain N]` / `= at X:Y …` | first-class light source (§ Light & material, ADR-0086); drives `lit`/`model`/`cel`. |
+| Light | `light NAME = dir DX:DY COLOR [amb COOL AMT] [gain N]` / `= at X:Y …` | first-class light source (§ Light & material, ADR-0086); drives `model`/`cel` (theme default or `light L` arg). |
 | Material | `material NAME = COLOR [RESPONSE] [round\|drape] [shade/hi/rim/ao/spec/puff/spread N]` | base colour + response dose profile (+ optional `round`/`drape` height-field profile + trailing dose overrides, `spread N%` = value-spread knob); consumed by `model`/`cel`. |
 
 Indices must be integers (fractional = error). `xs.0` is an index; `xs.name` is a UFCS call.
@@ -253,7 +264,7 @@ on every stroking command **except `poly`** (see its row).
 
 | Command | Form |
 |---|---|
-| `bg` | `bg <paint>` — flood the canvas |
+| `bg` | `bg <paint>` — fill the canvas |
 | `px` | `px <paint> <pt>` |
 | `line` | `line <paint> <a> <b>` — inclusive Bresenham |
 | `rect` | `rect <paint> <a> <b> [fill]` — corners a, b |
@@ -270,7 +281,6 @@ on every stroking command **except `poly`** (see its row).
 | `fill` | `fill <paint> <region>` — rasterize any region solid |
 | `stroke` | `stroke <paint> <region> [w<N>]` — inner boundary, width N; on a region whose **short axis is ≤2N px** the border spans the whole region and the fill shows 0 % (an 8×2 bar stroked `w1` is 100 % stroke colour) — fill thin bars/bones/blades, don't stroke them |
 | `text` | `text <paint> <pt> <string> [font <name>]` — top-left at pt |
-| `flood` | `flood <paint> <pt>` — 4-connected, exact seed color |
 
 `quad`/`bezier`/`arc`/`curve`/`curvePoly` flatten by a fixed rule (Catmull-Rom curves: each span →
 `clamp(ceil(chord), 4, 64)` segments) but round every point to the pixel grid — below roughly 12px
@@ -472,9 +482,8 @@ match x:
   0: bg k
   10: bg y
   else: bg r
-repeat 4: …               # no index
-for i 0..8: …             # half-open; 0..=8 inclusive; loop var child-scoped
-while cond: …             # allowed; budget-capped
+for i 0..8: …             # the ONE loop — half-open; 0..=8 inclusive; loop var child-scoped
+                          # (repeat/while removed — ADR-0094)
 scatter p 40 7 rect(0:0, w-1:h-1): …   # body n times; p = seeded point from region (§ Scatter)
 mirror x=8: …             # draw body + its reflection across x=8 (§ Mirror)
 ```
@@ -494,7 +503,7 @@ matching `+=`). The search stops at the draw body: a block never mutates module-
 `const`/palette/canvas-`w`/`h` are never reassignment targets (there `=` shadow-declares as before).
 Reserved/directive keywords are unavailable as binding or `pal`-key names — a stdlib name or
 predefined like `rim` is a clean `E007`, but a **filter/directive** keyword (`shadow`, `tint`,
-`grain`, `dither`, `replace`, `outline`, `speckle`, `ripple`) parses as its directive, so
+`grain`, `dither`, `outline`, `speckle`, `ripple`) parses as its directive, so
 `shadow = …` then `shadow.alpha(…)` fails as `E004` at the **use** site, not the declaration; also
 avoid `pi`/`tau`/`w`/`h`.
 UFCS: `x.f(a)` ≡ `f(x, a)`; zero-arg may drop parens (`c.grayscale`).
@@ -641,7 +650,7 @@ pixel-mode ramp reads as soft — accept a crisp core or hand-pixel it.
 Filter commands (post-process framebuffer; `r` = a region where shown). All four shadow
 surfaces share one `[region] dx:dy paint` shape (ADR-0070); the four texture filters take an
 optional leading region scope (ADR-0071):
-`outline [k] [2]` (silhouette outline; colour+width both optional — bare `outline` = 1px derived-dark ink; builds the silhouette from ≥50%-alpha pixels, so it ignores soft shadows/AA and never eats thin features — ADR-0090) · `replace a b` · `tint p 0.3` · `shadow dx:dy p` (whole-frame drop) ·
+`outline [k] [2]` (silhouette outline; colour+width both optional — bare `outline` = 1px derived-dark ink; builds the silhouette from ≥50%-alpha pixels, so it ignores soft shadows/AA and never eats thin features — ADR-0090) · `tint p 0.3` · `shadow dx:dy p` (whole-frame drop) ·
 `castShadow r 2:3 p` / `shadow r 2:3 p` (local, region-first) · `grain [r] amount seed p` ·
 `speckle [r] density seed p` · `ripple [r] strength seed p` · `dither [r] a b threshold` ·
 `shadeRegion r lightPt base amount` · `lightRegion r lightPt paint amount` ·
@@ -701,7 +710,7 @@ optional leading region scope (ADR-0071):
 
 ```drw
 filter retro:            # reusable pipeline
-  replace y darken(y, 0.1)
+  tint #402010 0.15
   outline k
 draw gem: …
   apply retro
@@ -720,12 +729,14 @@ light torch    = at 12:8 #ffb060 gain 1.4          # point source at 12:8, 1.4×
 material steel = #8a95a5 metal                      # base colour + response
 
 draw sword 24x48:
-  lit sun:                 # scopes `sun` over the block body only (set/restore, no global state)
-    model blade steel      # smooth form shade → rim → AO → cast, all from `sun`
-    model guard #b08040 metal   # inline COLOR RESPONSE — no named material needed
-    model grip  #3a2a1e     # bare colour ⇒ response `flat`
-    cel  pommel steel 3     # opt-in: the same form body as 3 crisp bands
+  model blade steel light sun      # smooth form shade → rim → AO → cast, all from `sun`
+  model guard #b08040 metal light sun   # inline COLOR RESPONSE — no named material needed
+  model grip  #3a2a1e light sun    # bare colour ⇒ response `flat`
+  cel  pommel steel 3 light sun    # opt-in: the same form body as 3 crisp bands
 ```
+
+(A `theme` with a default `light` lets you drop the per-command `light sun` — every `model`/`cel`
+then reads the theme light; the explicit arg is for overriding it on one command.)
 
 - **`light NAME = dir DX:DY COLOR [amb COOL AMT] [gain N]`** (directional) / **`light NAME = at X:Y
   COLOR …`** (point source). `dir` = the light's *travel* direction (`dir 1:1` moves down-right ⇒
@@ -744,11 +755,10 @@ draw sword 24x48:
   half-tube (curves across, flat down its length) so a *hanging* cloak/skirt does **not** darken toward
   its hem (`material cloak = #4a3f56 cloth drape spread 200%`) — the fix for a "turtle-shell" cape; keep
   `round` for compact masses.
-- **`lit L: body`** scopes light `L` over its body (like `mask …:`). `L` must evaluate to a light.
-- **Resolution order** (most-local first): explicit `light L` arg → enclosing `lit L:` block →
-  applied **theme default** (`light` in a `theme` body, § Themes). None in any tier = hard `E024`.
-  The theme default is the cross-view fix: front + side + recolor variants applying one theme share
-  **one** light, so shading is never mirrored per view.
+- **Resolution order** (most-local first): explicit `light L` arg → applied **theme default**
+  (`light` in a `theme` body, § Themes). Neither tier = hard `E024`. (The `lit L:` scoping block was
+  removed — ADR-0094; the two tiers cover both cases.) The theme default is the cross-view fix: front
+  + side + recolor variants applying one theme share **one** light, so shading is never mirrored per view.
 - **`model REGION MATERIAL [over UNION] [light L]`** lowers the material under the resolved light onto a **form
   (normal-based) body shade → rim → AO → cast** (ADR-0089, ADR-0091); `MATERIAL` is a `material` value
   **or** inline `COLOR [RESPONSE]`. Zero-dose edge steps are skipped (so `flat` emits no rim/cast).
@@ -773,7 +783,7 @@ draw sword 24x48:
 - **`render <file>#<draw> --explain`** prints the exact primitive expansion of every `model`/`cel`
   (CLI § above) — predict the pixels, or copy the sequence to hand-tune with the raw primitives.
 - `light`/`material` bindings live at **module scope or drawing-local** (like `grad`/`mask`).
-  `model`/`cel` are command verbs; `light`/`material`/`lit`/`model`/`cel` all stay ordinary bindable
+  `model`/`cel` are command verbs; `light`/`material`/`model`/`cel` all stay ordinary bindable
   names outside these shapes.
 
 ## Themes
@@ -804,8 +814,8 @@ Style guides concatenate (sectioned by source, deduplicated).
 **A theme palette does not cross a `stamp` boundary.** A stamped `draw` resolves its own `pal` keys
 in its own scope (keys never cross stamp scopes, § Palettes) — a key that is not defined there is a
 static `E007`, not a fall-through to the host theme. Recolour a stamped variant **parametrically**
-(`draw part(c)` + `pal a=c`, or derived shades `c.darken(…)`) or **post-hoc** with a `replace old new`
-chain on the host (exact colour match, one line per tone) — never by swapping the applied theme.
+(`draw part(c)` + `pal a=c`, or derived shades `c.darken(…)`), or `tint` it on `stamp`/`fit` — the one
+recolor path (the `replace` exact-swap filter was removed, ADR-0094) — never by swapping the applied theme.
 
 ## Text & fonts
 
@@ -879,4 +889,4 @@ files are NOT guaranteed —
 compare pixels, not bytes. Bundled deterministic math (never host `Math.*`), pinned color pipeline
 and rasterization, integer source-over alpha (straight RGBA8; pixel mode adds alpha only
 from explicit alpha colors, never edge AA). Every render runs under a step/pixel budget —
-runaway `while`/recursion aborts with a positioned error; raise via `--budget N`.
+runaway recursion aborts with a positioned error; raise via `--budget N`.

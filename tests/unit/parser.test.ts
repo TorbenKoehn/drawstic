@@ -466,7 +466,7 @@ describe('parser', () => {
   })
 
   test('filter definition parses call-only bodies and rejects other statement kinds (E004)', () => {
-    const s = one('filter retro:\n  outline k\n  replace y r\n')
+    const s = one('filter retro:\n  outline k\n  tint r 0.3\n')
     expect(s.kind).toBe('filterDefinition')
     if (s.kind === 'filterDefinition') {
       expect(s.name).toBe('retro')

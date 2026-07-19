@@ -32,7 +32,6 @@ gold = #e8c15a
 goldDark = #a9822f
 ink = #16181f
 slit = #10121a
-shadowCol = #212c47
 chain = #2a3040
 
 # --- materials for form-following cel shading ---
@@ -93,7 +92,7 @@ draw pauldron 16x13:
   fill steelDark rect(0:10, 15:12)
   px gold 7:4
   px steelSpec 4:3
-  pin inner 8:11
+  # pin-less: a pauldron is stamped as decoration over the arm/torso seam (stamp, not fit — ADR-0094 W014)
 
 draw armFront 9x27:
   upper = poly(1:0, 7:0, 8:11, 7:16, 8:26, 1:26, 2:16, 1:11)
@@ -134,34 +133,32 @@ draw capeEdge 10x34:
   drape = poly(0:0, 9:2, 7:33, 2:31)
   cel drape capeM 3
   line capeDark 4:4 5:32
-  pin top 5:1
 
 draw knightFront 64x128:
-  # contact shadow first (feet cover it; below the 50% floor so `outline` skips it)
-  fill shadowCol.alpha(38%) ellipse(32:123, 15:3)
   # cape peeks behind each shoulder
   stamp capeEdge 12:44
   stamp capeEdge 42:44 flipx
   # chainmail between the legs (fills the inter-leg gap; legs stamp over the sides)
   fill chain rect(29:88, 34:119)
-  # legs (back-to-front: legs, torso/faulds cover the tops)
+  # legs (back-to-front: legs, torso/faulds cover the tops); the `shadow` flag drops the
+  # auto contact-shadow under each foot (ADR-0094 W015 — no hand ellipse)
   pin a.hipL 26:84
   pin a.hipR 38:84
-  fit legFront.hip a.hipL
-  fit legFront.hip a.hipR
-  # torso root
+  fit legFront.hip a.hipL shadow
+  fit legFront.hip a.hipR shadow
+  # torso root: stamped, then its pins seeded in canvas space (pin-seeded root — ADR-0092/0094)
   stamp torsoFront 14:43
-  pin a.neck 32:44
-  pin a.shoulderL 20:48
-  pin a.shoulderR 44:48
+  pin torsoFront.neck 32:44
+  pin torsoFront.shoulderL 20:48
+  pin torsoFront.shoulderR 44:48
   # arms
-  fit armFront.shoulder a.shoulderL
-  fit armFront.shoulder a.shoulderR
-  # pauldrons over the arm/torso seams
+  fit armFront.shoulder torsoFront.shoulderL
+  fit armFront.shoulder torsoFront.shoulderR
+  # pauldrons over the arm/torso seams (pin-less decoration)
   stamp pauldron 12:44
   stamp pauldron 36:44 flipx
   # head
-  fit helmFront.chin a.neck
+  fit helmFront.chin torsoFront.neck
   # sword: grip in the figure's left fist (viewer right), blade up — grip-pinned, never flipped
   pin a.grip 45:70
   fit sword.grip a.grip
@@ -220,30 +217,27 @@ draw capeSide 26x64:
   cel drape capeM 3
   line capeDark 7:10 11:44
   line capeDark 12:30 17:54
-  pin top 3:1
 
 draw knightSide 64x128:
-  # contact shadow
-  fill shadowCol.alpha(38%) ellipse(30:123, 15:3)
   # cape flows behind, from the back shoulder
   stamp capeSide 33:44
   # seal the inter-leg slot (matches the front/back crotch fill; legs stamp over it)
   fill chain rect(31:87, 34:119)
-  # back leg (far): neutral-grey tint for depth, pushed back
-  stamp legSide 33:85 tint #2b2b2b 42%
-  # front leg
+  # back leg (far): grip-fitted at the same landing, neutral-grey tint for depth, pushed back
+  fit legSide.hip 39:86 tint #2b2b2b 42%
+  # front leg — `shadow` flag drops the auto contact-shadow (ADR-0094 W015)
   pin a.hip 26:86
-  fit legSide.hip a.hip
-  # torso root
+  fit legSide.hip a.hip shadow
+  # torso root: stamped, then its pins seeded in canvas space (pin-seeded root)
   stamp torsoSide 17:43
-  pin a.neck 31:44
-  pin a.shoulder 30:49
+  pin torsoSide.neck 31:44
+  pin torsoSide.shoulder 30:49
   # near arm (forward)
-  fit armSide.shoulder a.shoulder
-  # pauldron over the shoulder seam
+  fit armSide.shoulder torsoSide.shoulder
+  # pauldron over the shoulder seam (pin-less decoration)
   stamp pauldron 22:45
   # head profile
-  fit helmSide.chin a.neck
+  fit helmSide.chin torsoSide.neck
   # sword: grip in the near (forward) fist; `aim` cants the blade up-forward so it lies across the
   # front of the body instead of stabbing straight up into the head (ADR-0092)
   pin a.grip 23:74
@@ -280,14 +274,13 @@ draw capeBack 50x72:
   pin top 25:1
 
 draw knightBack 64x128:
-  # contact shadow
-  fill shadowCol.alpha(38%) ellipse(32:123, 15:3)
   # chainmail + back of legs (lower legs peek below the cape)
   fill chain rect(29:88, 34:119)
+  # legs — `shadow` flag drops the auto contact-shadow under each foot (ADR-0094 W015)
   pin a.hipL 26:84
   pin a.hipR 38:84
-  fit legFront.hip a.hipL
-  fit legFront.hip a.hipR
+  fit legFront.hip a.hipL shadow
+  fit legFront.hip a.hipR shadow
   # cape drapes over the whole back (mounted prop: fits AFTER the body, z-inverted vs front/side)
   pin a.capeTop 32:42
   fit capeBack.top a.capeTop

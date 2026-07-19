@@ -280,8 +280,7 @@ describe('material cast is clipped to drawn content (ADR-0086/0087)', () => {
   const PART = [
     'light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%',
     'draw blockA 20x20:', // region smaller than the canvas, so the cast band would have margin
-    '  lit sun:',
-    '    model rect(2:2, 11:11) #8a95a5 metal',
+    '  model rect(2:2, 11:11) #8a95a5 metal light sun',
     '  pin corner 11:11',
   ].join('\n')
 
@@ -300,8 +299,7 @@ describe('material cast is clipped to drawn content (ADR-0086/0087)', () => {
       'light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%',
       'draw scene 24x24:',
       '  fill #6a6a6a rect(16:2, 21:21)', // a wall down-light of the block, drawn FIRST (opaque)
-      '  lit sun:',
-      '    model rect(2:2, 15:15) #8a95a5 metal',
+      '  model rect(2:2, 15:15) #8a95a5 metal light sun',
     ].join('\n')
     const a = render(src, 'scene')
     // the block's cast band (offset down-right) lands on the wall and darkens its near column,
@@ -313,8 +311,7 @@ describe('material cast is clipped to drawn content (ADR-0086/0087)', () => {
     const asm = [
       PART,
       'draw blockB 20x20:',
-      '  lit sun:',
-      '    model rect(2:2, 11:11) #b04040 metal',
+      '  model rect(2:2, 11:11) #b04040 metal light sun',
       '  pin top 2:2',
       'draw fig 40x40:',
       '  stamp blockA 2:2', // blockA region → canvas 4..13
