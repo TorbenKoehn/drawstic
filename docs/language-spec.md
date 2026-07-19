@@ -1337,12 +1337,13 @@ light torch    = at 12:8 #ffb060 gain 1.4          # point source at 12:8, 1.4×
 material steel = #8a95a5 metal                      # base colour + response (dose profile)
 
 draw sword 24x48:
-  lit sun:                 # scopes `sun` over the block body only
-    model blade steel      # smooth form shade → rim → AO → cast, all from `sun`
-    model guard #b08040 metal   # inline COLOR RESPONSE (no named material needed)
-    model grip  #3a2a1e     # bare colour ⇒ response `flat`
-    cel  pommel steel 3     # opt-in: the same form body as 3 crisp bands
+  model blade steel light sun      # smooth form shade → rim → AO → cast, all from `sun`
+  model guard #b08040 metal light sun   # inline COLOR RESPONSE (no named material needed)
+  model grip  #3a2a1e light sun    # bare colour ⇒ response `flat`
+  cel  pommel steel 3 light sun    # opt-in: the same form body as 3 crisp bands
 ```
+
+(A `theme` default `light` lets every `model`/`cel` drop the per-command `light sun` arg — § Themes.)
 
 - **`light NAME = dir DX:DY COLOR [amb COOL AMT] [gain N]`** (directional) or **`light NAME = at
   X:Y COLOR …`** (point source) binds a first-class light — **no constructor parentheses**, the
@@ -1375,9 +1376,9 @@ draw sword 24x48:
   cases.) The theme default is how a front/side view pair or a
   colour variant shares **one** light without re-authoring it per view — the structural fix for the
   "light mirrored per view" bug.
-- **`model REGION MATERIAL [over UNION] [light L]`** lowers `MATERIAL` under the scoped (or explicit
-  `light L`)
-  light onto a **form (normal-based) body shade → rim → ambientOcclusion → cast shadow**
+- **`model REGION MATERIAL [over UNION] [light L]`** lowers `MATERIAL` under the resolved light (the
+  explicit `light L` arg or the theme default)
+  onto a **form (normal-based) body shade → rim → ambientOcclusion → cast shadow**
   ([ADR-0089](decisions/0089-form-based-shading.md), [ADR-0091](decisions/0091-shading-v2.md)) — every
   direction/offset derived from the one light, zero-dose edge steps skipped. `MATERIAL` is a `material`
   value **or** an inline `COLOR [RESPONSE]`. The **body follows the surface**: an inner

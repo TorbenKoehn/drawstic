@@ -86,7 +86,7 @@ Archer 4/10, Wizard 4/10, Assassin 3/10. Ziel Messpunkt 2: ≥7/10 + Zensus-Krit
     +Zensus-Zählung/Determinismus, +`check --lint --json` census-Wrap). Spec/reference/SKILL/craft-guides + ADR-Index
     synchron; **globaler Skill-Rewrite bleibt W2-3** (Plan §D). C006-Model-Ramp-Punkt: bereits durch die export-target-
     aware C006-Lösung (RGBA großzügig, Commit `a0bd7c0`) abgedeckt — nur dokumentiert, nicht doppelt gebaut.
-- [ ] **W2-3 Organik-Hybrid + Skill-Neustruktur** (ADR-0093): dome/lobe/crescent/band-Konstruktoren;
+- [x] **W2-3 Organik-Hybrid + Skill-Neustruktur** (ADR-0093): dome/lobe/crescent/band-Konstruktoren;
   Proportions-Oracle (`figure`-Block im Theme → Guide-Punkte/Pins je View); Archetyp-Scaffolds im
   Craft-Guide (KEIN std/chibi — Stil bleibt beim Projekt); `quantize(pal)`-Filter +
   Import-Assist-Workflow; danach kompletter Product-Skill-Rewrite (kanonischer Pfad je Kategorie,
@@ -121,6 +121,36 @@ Archer 4/10, Wizard 4/10, Assassin 3/10. Ziel Messpunkt 2: ≥7/10 + Zensus-Krit
     Präzedenz): `dome`→`skull`/`mound`, `crescent`→`moon`/`moonCut`, `band`→`rowBand`/`strip` in
     betroffenen examples/tests umgeschrieben. Spec (§Regions/§Themes/§Filters) + reference.md synchron;
     SKILL/character-craft minimal ergänzt (großer Rewrite bleibt **W2-3b**). W2-3-Checkbox bleibt offen.
+  - [x] **W2-3b Archetyp-Scaffolds + globaler Product-Skill-Rewrite** (ADR-0093, Plan §C2/§C3/§D):
+    **Archetyp-Scaffolds** (`character-craft.md §3`) — 3 Gesichts-Archetypen (chibi-rund · schlank/
+    realistisch · kantig-mech) + Turban-Kopfbedeckung, jeder als **vollständiges lauffähiges .drw**
+    aus den C1-Primitiven (`dome`/`lobe`/`crescent`/`band`) + `fig`-Oracle-Punkten, das LLM **kopiert
+    und mutiert** (kein std-Import, Stil beim Projekt). **Probe-verifiziert** (`--png@6`, Read PNG,
+    Front+Side aller vier): chibi liest sauber (runder Schädel, Tropfen-Ohren, Augen auf
+    `fig.eyeL/R`+Catch-light, Fransen via `crescent`, Profil-Auge vorn via `fig.side.eye`); slim liest
+    als schmales Gesicht (`dome`-Kranium + `curvePoly`-Kiefer, klare Brauen/Augen, Profil-Nase als
+    `lobe`); mech liest als Helm (harte `dome`-Krone + `poly`-Faceplate, `band`-Visor, glühender Optik-
+    Bar); Turban aus 3 gestapelten `band`s über `dome` liest **als Turban, nicht Helm**. **Head-Part-
+    Kniff:** eine Kopf-Part-Zeichnung ist EINE Kopfhöhe → eigenes Mini-Theme `figure: heads 1`, damit
+    `fig` einen Kopf über die Part-Canvas legt (Body-Draw behält das echte `heads`). **Globaler
+    SKILL.md-Rewrite** (Plan §D): aufgaben-orientierte Progressive Disclosure — neue **§ The canonical
+    path** (Theme→Materialien→Parts→Assembly→Shade→outline→critique→build als 1 Bogen), Recipe-Anatomy
+    führt jetzt das **deklarative Objekt** (Hand-Pixel = Floor mit reference-Zeiger), die alte
+    „Idioms"-Sektion (rohe Floor-Schicht) ist **weg** → nur noch ein `§ Core syntax`-Bullet **Floor
+    constructs** (scatter/mirror/rohes shadeRegion/rim/lightRegion/quantize/pixels: → reference.md,
+    dort als Escape-Hatch gerahmt); Organik-Konstruktoren als eigenes Core-syntax-Bullet; per-Kategorie
+    „Canonical order" gestrafft. Neuer **§ Import-assist**-Abschnitt (wann Primitive = Default/Views-
+    Konsistenz, wann `import…sha256`→`quantize`→`outline`→`critique`, ehrlich zu Nicht-Determinismus
+    der Erzeugung + Stil-Risiko). **character-craft.md** komplett auf Oracle+Scaffolds+behind/front/aim
+    umgeschrieben (Oracle = Hauptweg statt „preferred"-Notiz, Hand-Konstanten = Floor; Scaffolds §3;
+    Seam/Recolor/Views/Material gestrafft, W013-`spread`- + `drape`- + `over`-Wege kanonisch).
+    scene/icon/item-craft konsistenzgeprüft (bereits kanonisch, keine toten Konstrukte). **Stale-
+    `lit sun:`-Codebeispiel in `docs/language-spec.md` §Light&Material korrigiert** (W2-2b-Versäumnis:
+    Prosa sagte „removed", das Beispiel nutzte den Block noch → auf `light sun`-Arg-Form gezogen +
+    „scoped"-Wording bereinigt). **Gates:** Skill↔CLI-Sync-Test grün; jedes vollständige .drw-Snippet
+    im Skill `check`-clean probe-verifiziert (Scaffolds, Sword-Anatomy, quantize+outline); keine
+    Erwähnung entfernter Konstrukte mehr in skills/ + best-practices + motif-cookbook (nur legitime
+    „was removed"-Notizen). tsc+biome clean, **864 Tests grün** (reine Doku/Skill — kein Engine-Δ).
 - [ ] **W2-4 Skeleton** (ADR-0095): `skeleton`-Block (Joints/Parent/Rest-Winkel/Constraints, FK),
   `pose`-Blöcke, Auto-Z aus Bone-Tiefe je View (behind/front als Lowering), 4 Charaktere auf
   Skeleton-Posen. DANACH ⏸ MESSPUNKT 2: Blind-Rebuild (craft-eval) + Human-Grading + Zensus (Stopp).
@@ -238,6 +268,31 @@ Archer 4/10, Wizard 4/10, Assassin 3/10. Ziel Messpunkt 2: ≥7/10 + Zensus-Krit
 - **W2-2b: `check --lint --json` ändert die Form (bare Array → `{diagnostics, census}`).** Der Zensus muss
   neben die Diagnostics; wie `--rows` es schon tut, wrappt `--lint` jetzt in ein Objekt. Bewusster Bruch (pre-1.0,
   ADR-0088-Präzedenz); Test + reference/spec nachgezogen.
+- **W2-3b: `fig` legt die Proportionen über die GANZE Draw-Canvas, nicht über einen Kopf — eine Kopf-Part-
+  Zeichnung braucht ein eigenes Mini-Theme `figure: heads 1`.** `fig.chin = h/heads`, also gibt ein Head-Part-
+  Draw (z.B. 30×34) mit dem echten `heads 3.5` einen 10px-Kopf zurück — unbrauchbar. Lösung im Scaffold-
+  Muster: der Kopf-Part ist EINE Kopfhöhe, sein Theme setzt `heads 1` (die ganze Part-Canvas = ein Kopf, alle
+  `fig.eyeL/earL/…` fallen sauber), der Full-Body-Draw behält das Projekt-`heads` fürs Body-Placement. Im
+  Craft-Guide (§2/§3) explizit dokumentiert, damit das Kopieren der Scaffolds nicht in Mini-Köpfe läuft.
+- **W2-3b: `cap` (und jeder andere KW-Arg-Name) darf keine lokale Binding sein — er kapert das nächste
+  Kommando-Argument.** `turbCap = dome(…)` hieß zuerst `cap`; ein späteres `model cap turbM` parste als
+  `model (cap turbM)` (cap ∈ `KW_ARG_ARITY`, arity 1, für `stroke … cap round`) → ein Argument, fehlendes
+  Material → E011 am `model`. Die Diagnose lag nicht am `dome`, sondern am reservierten KW-Arg-Wort in
+  Kommando-Position. Scaffold nutzt `turbCap`; SKILL-§Gotchas nennt `cap` jetzt explizit neben `w`/`h`/
+  `shadow`/`tint`/`rim` als zu meidenden Bindungsnamen (der Grund ist die KW-Arg-Kaperung, nicht E007).
+- **W2-3b: `band`/`dome`/… als DRAW-Kommando brauchen eine Farbe, kein Material.** `band visorM 4:20 …` (visorM
+  = Material) fiel auf E013 „region value dropped" — die Draw-Command-Form eines Shape-Konstruktors nimmt eine
+  Farbe/Gradient als Paint; für Material-Shading einer Organik-Region muss man `model band(…) visorM 3` (Expr-
+  Form → Region → `model`/`cel`) schreiben. Scaffolds nutzen durchweg `model REGION MAT` bzw. `cel band(…) MAT N`.
+- **W2-3b: Scaffold-Head als eine union-te Region `model`n, nicht Teil-für-Teil.** Schädel + Ohren (`.union`
+  zweier `lobe`) einmal `model`n gibt ein zusammenhängendes Form-Shading ohne Ohr-Naht; erst danach die
+  Gesichtsmarken drauf. Das erste (naive) Muster malte Ohren separat und re-`model`te den Kopf mehrfach zum
+  Übermalen → Nähte. Das union-then-model-Muster ist der kanonische Weg im Guide.
+- **W2-3b: Skill-Rewrite ist reine Doku — die Gates sind Skill↔CLI-Sync + `check` je vollständigem Snippet, nicht
+  `bun test`-Δ.** 864 Tests unverändert grün (kein Engine-Code berührt). Die echte Verifikation war: jedes
+  self-contained .drw im Skill probe-rendern (Scaffolds Front+Side @6, Sword-Anatomy, quantize+outline) und der
+  Sync-Test (dokumentierte Verben/Flags ↔ `src/cli.ts`). Ein stale `lit sun:`-Beispiel in `language-spec.md`
+  (W2-2b-Rest) fiel dabei auf — die Prosa sagte längst „removed", nur der Codeblock nicht → korrigiert.
 
 
 Single Source of Truth für den autonomen Nacht-Dispatch. Spec-Quelle: der freigegebene Plan
