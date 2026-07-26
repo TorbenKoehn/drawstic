@@ -358,8 +358,8 @@ accepts `--json` and reports positioned diagnostics, never a silent failure.
 3. **Parts** — each mass is a `Region` (a primitive or an organic constructor: `dome`/`lobe`/`crescent`/`ribbon`); a modular part declares `pin`s.
 4. **Assembly** — `fit` for contact-guaranteed placement (`behind`/`front`, `aim`, `ground`); for multi-view figures, one `skeleton` + one `pose` per view.
 5. **Shade** — `model REGION MAT` (smooth default) or `cel REGION MAT N` (N crisp bands).
-6. **`outline`** — one bare pass, last statement, closes the silhouette.
-7. **`critique --as <cat> --strict`** until `pass:true`, then answer the rubric it prints by looking.
+6. **`outline`** — one bare pass, last statement; it rings the sprite against transparency, so a full-bleed scene skips it.
+7. **`critique --as <cat> --strict`** until it exits 0, then answer the rubric it prints by looking.
 8. **`build`** — writes every `export` artifact next to the recipe.
 
 **Verification loop** — run in this order, fix, repeat:
@@ -372,10 +372,11 @@ drawstic critique file.drw --as icon|scene|character|item --strict --json   # pi
 drawstic build file.drw --json                           # writes every export artifact
 ```
 
-`critique --as <cat>` `pass:true` is necessary, not sufficient — it also prints a `rubric`
-of ordered renders (silhouette → ascii → png@4 → sheet) with prompts you answer by
-looking; `check` verifies grammar, `critique --strict` verifies structure, neither
-verifies craft on its own.
+Exit 0 means the must-fix subset is clean. Codes outside it are advisory by design — each has a
+real exception — so they are meant to be read and either fixed or justified, not driven to zero:
+17 of the 29 recipes bundled here ship with one standing. `critique` also prints a `rubric` of
+ordered renders (silhouette → ascii → png@4 → sheet) with prompts you answer by looking.
+`check` verifies grammar, `critique --strict` verifies structure, neither verifies craft on its own.
 
 **Full skill** (ships in the npm package): start at
 `node_modules/drawstic/skills/drawstic/SKILL.md` — it routes you to the rest in its first
