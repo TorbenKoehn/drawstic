@@ -1453,8 +1453,9 @@ draw sword 24x48:
   distance-to-boundary field is **Poisson-inflated** to a smooth dome (a disc → hemisphere, a stripe →
   half-cylinder — **no medial ridge**, and thin limbs bulge in proportion to their own width), a
   per-pixel surface normal is dotted against the light (Lambert), and the intensity is tone-mapped
-  `warm → base → cool` — smooth and form-following by default with a soft terminator that is **always
-  Bayer-dithered** (clean pixel-art stipple, not an 8-bit band), never the old linear ramp. A **Blinn
+  `warm → base → cool` — smooth and form-following by default with a soft, **undithered** terminator
+  (the tone map is continuous, so a dither would only add speckle; deliberate stipple is `cel N` or
+  the `dither` filter), never the old linear ramp. A **Blinn
   specular** hotspot then lifts a glossy response (`metal`/`glass`/`skin`) toward the light colour (a
   soft mix in smooth mode). A dark base keeps ≥35 % of its lightness in shadow (never `#000000`). The
   **cast is clipped to
@@ -1470,9 +1471,9 @@ draw sword 24x48:
 - **`cel REGION MATERIAL N [over UNION] [light L]`** renders the **same form body as `N` crisp bands** that follow the
   surface normal (the intensity field quantized, band-centre tone-mapped) — the **opt-in** hard
   cel-shaded look, where `model` is the smooth default. Its bands wrap the form, unlike the old
-  straight iso-distance ramp; a `flat` cel is deliberate flat styling. Band **boundaries are
-  Bayer-dithered** across a ±0.5-band zone (a pixel-art dithered edge between the two adjacent tones,
-  not a hard line, ADR-0091), and a glossy response adds a **hard specular glint** in the spec colour.
+  straight iso-distance ramp; a `flat` cel is deliberate flat styling. Band **boundaries are crisp**
+  (exactly `N` tones, no dither — soften a step with more bands or with `model`), and a glossy
+  response adds a **hard specular glint** in the spec colour.
 - **Predictability.** `drawstic render <file>#<draw> --explain` prints the exact primitive
   expansion of every `model`/`cel` — colours, amounts, points, offsets all resolved — so an agent
   can predict the pixels and, if a baked dose doesn't fit, copy the expansion down to the raw

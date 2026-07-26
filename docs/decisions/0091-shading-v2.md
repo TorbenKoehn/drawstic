@@ -155,3 +155,31 @@ Known limit (recorded, not fixed here): reaching C004 on a **dark monochrome** p
 pixel toward `p90`, where a flat patch lifted a whole block; `cel`'s flat top band reaches `p90`
 cheaper. The programmatic drape (no down-length gradient), `over` field continuity, `planMaterial`
 field attachment, and determinism are pinned in `tests/unit/shading.test.ts`.
+
+## Amendment — W3-0 (2026-07-26): the smooth path carries **no** dither; the cel seam is thin
+
+Human review of the Messpunkt-2 sheets: *"die Abstufungen gehen sehr stark ineinander … als hätten
+sie ein Rauschen drin"* — the shading **physics** read as correct, but the surfaces were speckled.
+
+Root cause: decision **3** above dithered the wrong signal. `formTone` is **continuous** — the smooth
+path has no quantization steps to break up, so `lit + (bayer − 0.5)·0.10` was not anti-banding, it was
+additive noise (±0.05 of the full intensity range on every pixel, i.e. a visible stipple on a gradient
+that was already clean). The original "stairs" complaint that motivated it came from the pre-v2 tent
+field and the hard cel edges, both of which decisions 1 and 4 had already removed.
+
+Therefore:
+
+- **`FORM_DITHER` is deleted.** Smooth `model` renders the continuous tone directly.
+- **Cel band edges are crisp again** (decision 4 is reverted): `floor(u·N)`, no jitter. Dithering the
+  band *index* jitters in **intensity** space, and wherever the form gradient is slow — a cloak, a
+  torso, most of a chibi — a third of a band's intensity range covers a third of its **spatial**
+  width, so the "thin dithered seam" was in practice an all-over stipple that dissolved the very
+  N-colour crispness `cel` exists to provide. Softer steps come from more bands or from `model`.
+
+Deliberate stipple stays available and explicit: the `dither` filter, `grain`/`speckle`, `quantize`,
+or a pixel-mode gradient — all author-controlled, none baked into the shading verbs.
+
+Verification: engine-only change, all `examples/` re-rendered unchanged; the knight sheet's speckle and
+the assassin cloak's all-over checker are both gone at @4/@6. `tests/unit/shading.test.ts` pins the
+inverse contracts — a smooth scanline has at most one luminance turning point, and a 2-band cel
+scanline changes tone at most once (a dither would zigzag on nearly every pixel).

@@ -812,7 +812,8 @@ then reads the theme light; the explicit arg is for overriding it on one command
   inner distance-to-boundary field is **Poisson-inflated** to a smooth dome (disc → hemisphere, stripe
   → half-cylinder, **no medial ridge**; thin limbs bulge by their own width), a per-pixel normal is
   dotted against the light, and the intensity is tone-mapped `warm → base → cool` — **smooth and
-  form-following by default**, soft terminator, **always Bayer-dithered** (pixel-art stipple), works at
+  form-following by default**, soft **undithered** terminator (the tone map is continuous — for
+  deliberate stipple use `cel N` or the `dither` filter), works at
   chibi scale; a **Blinn specular** hotspot lifts glossy `metal`/`glass`/`skin`; a dark base never
   crushes to `#000000` (keeps ≥35 % lightness). The **cast is clipped to already-drawn content**
   (silhouette offset down-light, minus the region, minus every transparent pixel): within one draw it
@@ -824,7 +825,7 @@ then reads the theme light; the explicit arg is for overriding it on one command
 - **`cel REGION MATERIAL N [over UNION]`** renders the **same form body as `N` crisp bands** that follow the
   surface normal (the intensity field quantized, band-centre tone-mapped) — the **opt-in** hard
   cel-shaded look (`model` is the smooth default). Bands wrap the form, not straight iso-distance
-  lines; band **boundaries are Bayer-dithered** (a ±0.5-band dithered edge, not a hard line), and a
+  lines; band **boundaries are crisp** (exactly N tones, no dither — soften with more bands or `model`), and a
   glossy response adds a **hard specular glint**. `--explain` shows one `form` step carrying the band count.
 - **`render <file>#<draw> --explain`** prints the exact primitive expansion of every `model`/`cel`
   (CLI § above) — predict the pixels, or copy the sequence to hand-tune with the raw primitives.

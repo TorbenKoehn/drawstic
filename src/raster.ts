@@ -1343,11 +1343,18 @@ export type FormSpec = {
 /** Intensity at which the tone equals `base`; brighter lifts toward `warm`, darker toward `cool`. */
 const FORM_MID = 0.5
 /**
- * Ordered-dither amplitude on the smooth intensity (ADR-0091: 0.06 → 0.10, and no longer pixel-mode
- * gated — smooth shading is Bayer-dithered *always* so the terminator reads as clean pixel-art
- * stipple rather than a soft-but-banded 8-bit gradient).
+ * **Dither policy** (ADR-0091 amendment). Neither shading path dithers:
+ *
+ * - smooth (`bands === null`): `formTone` is continuous, so there are no quantization steps to break
+ *   up — jittering its input only adds speckle ("noise in the shadows").
+ * - `cel N`: the whole point is `N` crisp bands. Jittering the band index in *intensity* space
+ *   widens into a large *spatial* stipple zone wherever the form gradient is slow (a cloak's whole
+ *   surface), which is the same noise defect wearing a different hat. Softer steps come from more
+ *   bands, or from `model`.
+ *
+ * Deliberate stipple stays explicit and controllable: the `dither` filter, `grain`/`speckle`,
+ * `quantize`, or a pixel-mode gradient.
  */
-const FORM_DITHER = 0.1
 /** How far a specular hotspot lifts toward the light colour (the tint target `mix`es toward). */
 const SPEC_TINT = 0.85
 /** The Poisson height-field source constant `c` in `∇²P = −c` (scales P linearly ⇒ absorbed by `puff`). */
@@ -1654,20 +1661,20 @@ export const formShade = (
       // Blinn specular: normalized-normal · normalized-halfway, raised to the response's exponent.
       const ndoth = clamp01((nx * hx + ny * hy + hz) / (nlen * hlen))
       const s = spec.spec > 0 ? clamp01(ndoth ** spec.specPow) : 0
-      const bayer = ((BAYER4[(y & 3) * 4 + (x & 3)] ?? 0) + 0.5) / 16
       let tone: Color
       if (bands !== null && bands >= 1) {
-        // snap to a band centre with a Bayer-dithered ±0.5-band boundary zone, then tone-map it
+        // snap to a band centre — crisp, undithered edges (that is what `cel N` means)
         const u = amb >= 1 ? 0 : clamp01((lit0 - amb) / (1 - amb))
-        const band = Math.max(0, Math.min(bands - 1, Math.floor(u * bands + (bayer - 0.5))))
+        const band = Math.max(0, Math.min(bands - 1, Math.floor(u * bands)))
         tone = formTone(spec, amb + (1 - amb) * ((band + 0.5) / bands))
         // cel specular: a hard glint in the spec colour above the threshold — no soft mix
         if (spec.spec > 0 && s > 0.5) {
           tone = specColor
         }
       } else {
-        const lit = clamp01(lit0 + (bayer - 0.5) * FORM_DITHER)
-        tone = formTone(spec, lit)
+        // smooth: `formTone` is continuous, so there is nothing to break up — dithering here would
+        // only add speckle (the "noise in the shadows" defect). Deliberate stipple is `cel N`.
+        tone = formTone(spec, lit0)
         if (s > 0) {
           tone = mix(tone, specColor, clamp01(s * spec.spec))
         }

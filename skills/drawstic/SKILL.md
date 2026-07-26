@@ -204,7 +204,7 @@ be a `pixels:` grid with a `pal` (palette keys = one ASCII letter, `.` = transpa
   COOL AMT` = fill light). `material steel = #8a95a5 metal` (response ∈ `flat|metal|skin|cloth|glass|
   glow`; bare colour ⇒ `flat`; `glow` = self-lit). The light reaches a command via a theme default or a
   `light L` arg; per object `model REGION MAT [over UNION] [light L]` lowers to a **smooth form
-  (normal-based) shade** → rim → AO → cast (Poisson-inflated dome, no medial ridge; soft always-dithered
+  (normal-based) shade** → rim → AO → cast (Poisson-inflated dome, no medial ridge; soft undithered
   terminator; Blinn specular on `metal`/`glass`/`skin`; the default) · `cel REGION MAT N` = the **same
   form body as N crisp bands**. `MAT` = a `material` value **or** inline `COLOR [RESPONSE]`. A binding
   takes a trailing height-field profile `round` (default) | **`drape`** and trailing dose overrides

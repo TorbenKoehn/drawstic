@@ -412,26 +412,37 @@ describe('shading v2 (ADR-0091): Poisson height field, specular, dither, spread'
     expect(diff).toBeGreaterThan(20)
   })
 
-  test('smooth shading is Bayer-dithered always (not only pixel mode) — a flat patch stipples', () => {
-    // a broad flat region in SMOOTH mode: without ADR-0091 dither its interior would be one tone;
-    // with the always-on Bayer dither a small interior patch carries several stipple tones.
+  test('smooth shading carries no dither — a scanline is a clean gradient, not stipple', () => {
+    // ADR-0091 amendment: `formTone` is continuous, so there are no quantization steps to break up
+    // and an ordered dither only adds speckle. A scanline across the form must therefore be
+    // (piecewise) monotone: at most one turning point where the height field peaks. A ±0.05 dither
+    // would zigzag on almost every pixel.
     const c = smooth(24, 24)
     lowerMaterial(c, rectRegion(4, 4, 19, 19), material(steelBase, 'flat'), sun)
-    const patch = new Set<string>()
-    for (let y = 9; y <= 12; y++) {
-      for (let x = 9; x <= 12; x++) {
-        const p = c.buffer.get(x, y)
-        patch.add(`${p.r},${p.g},${p.b}`)
+    let reversals = 0
+    let dir = 0
+    let prev: number | null = null
+    for (let x = 5; x <= 18; x++) {
+      const p = c.buffer.get(x, 12)
+      const lum = p.r + p.g + p.b
+      if (prev !== null && lum !== prev) {
+        const d = lum > prev ? 1 : -1
+        if (dir !== 0 && d !== dir) {
+          reversals++
+        }
+        dir = d
       }
+      prev = lum
     }
-    expect(patch.size).toBeGreaterThan(1)
+    expect(reversals).toBeLessThanOrEqual(1)
   })
 
-  test('cel band boundaries are Bayer-dithered — both adjacent band tones interleave at the seam', () => {
+  test('cel band boundaries are crisp — a scanline flips tone once per boundary, never stipples', () => {
+    // ADR-0091 amendment: `cel N` means N crisp bands. Jittering the band index in *intensity*
+    // space smears into a wide *spatial* stipple wherever the form gradient is slow, which is the
+    // noise defect again. A 2-band scanline must therefore show at most one tone change.
     const c = ctx(32, 32)
     lowerCel(c, disc, material(steelBase, 'cloth'), sun, 2)
-    // a scanline through the terminator: a hard cel edge flips tone once; a dithered edge flips
-    // back and forth several times across the ±0.5-band zone (both tones present in the seam).
     let transitions = 0
     let prev = ''
     for (let x = 7; x <= 25; x++) {
@@ -445,7 +456,7 @@ describe('shading v2 (ADR-0091): Poisson height field, specular, dither, spread'
       }
       prev = key
     }
-    expect(transitions).toBeGreaterThan(1)
+    expect(transitions).toBeLessThanOrEqual(1)
   })
 
   test('`spread` scales highlight and shadow symmetrically (the one-knob value-spread control)', () => {

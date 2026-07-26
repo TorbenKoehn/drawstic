@@ -58,10 +58,12 @@ describe('examples pass `critique --strict` (CI regression gate)', () => {
     expect(files.length).toBeGreaterThan(20)
   })
 
+  // Renders and critiques the whole corpus in-process — a few seconds on a warm machine, so the
+  // default 5 s budget sits right on the edge (it has flaked at 5.09 s). 60 s keeps it a real gate.
   test('every example exits 0 under its category profile', () => {
     const failures = files.filter((f) => critiqueStrict(f) !== 0)
     expect(failures).toEqual([])
-  })
+  }, 60_000)
 })
 
 // W2-1b: the RO characters must draw their C004 value spread from the material `spread`/form

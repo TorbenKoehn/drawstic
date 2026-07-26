@@ -1,14 +1,14 @@
 {
  "columns": 6,
  "image": "swordsTiles.png",
- "imageheight": 32,
- "imagewidth": 192,
+ "imageheight": 64,
+ "imagewidth": 384,
  "margin": 0,
  "name": "swordsTiles",
  "spacing": 0,
  "tilecount": 6,
- "tileheight": 32,
- "tilewidth": 32,
+ "tileheight": 64,
+ "tilewidth": 64,
  "type": "tileset",
  "version": "1.10"
 }
