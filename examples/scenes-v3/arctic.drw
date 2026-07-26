@@ -1,10 +1,19 @@
-# Polarnacht — arctic night: aurora, snow, ice. One point light (moonPt) drives
-# every shadeRegion/lightRegion/rim call so the whole scene shares one light source.
+# Polarnacht — arctic night: aurora, snow, ice. Two point lights: the moon (moonPt) is
+# the key, the aurora band (auroraPt) the cool fill. Every wash below is derived from one
+# of them, so the whole scene shares one lighting story.
 
 moonPt = 195:26
+auroraPt = 120:20
 rimDir = -1:1
 heroShadowOffset = -16:9
 aoColor = oklch(0.05, 0, 0).alpha(45%)
+# rock contact edge — aoColor dimmed to 45% of itself again
+aoEdge = aoColor.alpha(20.4%)
+
+# A gradient always spans the bbox of the region it paints. A point-light wash is therefore
+# a `radial` fill over a span centred on the light that reaches exactly the target region's
+# farthest corner (d = the largest distance in x and in y).
+fn washSpan(p, d) = rect((p - d), (p + d))
 
 skyTop = oklch(0.07, 0.03, 260)
 skyHorizon = oklch(0.24, 0.07, 285)
@@ -50,6 +59,11 @@ mask mountainCapZone = mountainSilhouette.subtract(profile(0..240, capBottomY, h
 mask snowGround = profile(0..240, duneY, 159)
 mask lakeSurface = rect(0:horizonY, 239:159).subtract(snowGround)
 mask mountainReflection = mountainSilhouette.transform(flipy().about(0:horizonY)).intersect(lakeSurface)
+mask moonMountainWash = washSpan(moonPt, 195:82)
+mask moonSnowWash = washSpan(moonPt, 195:133)
+mask moonRockWash = washSpan(moonPt, 195:132)
+mask auroraCapWash = washSpan(auroraPt, 120:88)
+mask auroraLakeWash = washSpan(auroraPt, 120:139)
 mask shard1 = poly(103:124, 111:97, 118:124)
 mask shard2 = poly(116:124, 124:106, 132:124)
 mask shard3 = poly(94:124, 100:112, 106:124)
@@ -120,9 +134,11 @@ draw arctic 240x160:
 
   fill mountainDark mountainSilhouette
   fill mountainCap mountainCapZone
-  shadeRegion mountainSilhouette moonPt mountainDark.darken(20%) 40%
-  lightRegion mountainSilhouette moonPt mountainCap 15%
-  lightRegion mountainCapZone 120:20 auroraGreen 10%
+  mask mountainSilhouette:
+    fill radial(mountainDark.darken(20%).alpha(0%), mountainDark.darken(20%).alpha(40%)) moonMountainWash
+    fill radial(mountainCap.alpha(15%), mountainCap.alpha(0%)) moonMountainWash
+  mask mountainCapZone:
+    fill radial(auroraGreen.alpha(10%), auroraGreen.alpha(0%)) auroraCapWash
 
   for i 0..20:
     bx = i * 12 + round(5 * noise(21, i * 0.7, 3))
@@ -132,16 +148,17 @@ draw arctic 240x160:
   fill lakeGrad lakeSurface
   fill mountainDark.alpha(35%) mountainReflection
   ripple mountainReflection 0.5 5 iceLite.alpha(30%)
-  lightRegion lakeSurface 120:20 auroraGreen 10%
+  mask lakeSurface:
+    fill radial(auroraGreen.alpha(10%), auroraGreen.alpha(0%)) auroraLakeWash
   fill moonColor.alpha(10%) moonGlint
   scatter mg 34 21 moonGlint:
     line moonColor.alpha(25% + rand(23, mg.x + mg.y * 3) * 30%) (mg.x - 2):mg.y (mg.x + 2):mg.y
   stroke iceLite.alpha(55%) crack1 w1
   stroke iceLite.alpha(45%) crack2 w1
   fill iceLite floe1
-  rim floe1 rimDir moonColor.alpha(50%) 1
+  fill moonColor.alpha(50%) floe1.edge(rimDir)
   fill iceLite floe2
-  rim floe2 rimDir moonColor.alpha(50%) 1
+  fill moonColor.alpha(50%) floe2.edge(rimDir)
 
   fill iceLite.alpha(20%) shards.transform(flipy().about(0:124)).intersect(lakeSurface)
   fill iceLite.lighten(8%) shards
@@ -157,9 +174,10 @@ draw arctic 240x160:
   ellipse shadowBlue 125:125 8:2 fill
 
   fill snowTones.2 snowGround
-  shadeRegion snowGround moonPt snowShadowC 45%
-  lightRegion snowGround moonPt snowLit 22%
-  lightRegion snowGround 120:20 auroraTeal 6%
+  mask snowGround:
+    fill radial(snowShadowC.alpha(0%), snowShadowC.alpha(45%)) moonSnowWash
+    fill radial(snowLit.alpha(22%), snowLit.alpha(0%)) moonSnowWash
+    fill radial(auroraTeal.alpha(6%), auroraTeal.alpha(0%)) auroraLakeWash
   grain snowGround 0.08 9 snowTones.1
   speckle snowGround 0.05 13 starLite.alpha(50%)
 
@@ -222,8 +240,9 @@ draw arctic 240x160:
 
   shadow rockBody heroShadowOffset aoColor
   fill rockLit rockBody
-  shadeRegion rockBody moonPt rockShadow 55%
-  lightRegion rockBody moonPt snowLit 18%
+  mask rockBody:
+    fill radial(rockShadow.alpha(0%), rockShadow.alpha(55%)) moonRockWash
+    fill radial(snowLit.alpha(18%), snowLit.alpha(0%)) moonRockWash
   fill rockLit.lighten(22%) rockCrown
   line rockShadow 14:139 10:157
   line rockShadow 24:137 30:152
@@ -232,7 +251,7 @@ draw arctic 240x160:
   line snowShadowC.alpha(70%) 2:151 12:142
   line snowShadowC.alpha(70%) 12:142 25:140
   ellipse aoColor 20:157 16:2 fill
-  ao rockBody aoColor 45%
+  stroke aoEdge rockBody
 
   scatter spk 18 6 snowGround:
     px starLite.alpha(0.3 + rand(15, spk.x * 3 + spk.y) * 0.5) spk

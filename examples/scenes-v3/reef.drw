@@ -36,6 +36,14 @@ gradient shaft = linear(90, surfaceGlow.alpha(22%), surfaceGlow.alpha(0%))
 gradient hazeBand = linear(90, haze.alpha(0%), haze.alpha(40%), haze.alpha(0%))
 gradient vign = radial(abyss.alpha(0%), abyss.alpha(58%))
 
+# A gradient always spans the bbox of the region it paints. A point-light wash is therefore
+# a `radial` fill over a span centred on the light that reaches exactly the target region's
+# farthest corner (d = the largest distance in x and in y).
+fn washSpan(p, d) = rect((p - d), (p + d))
+
+# Every body below is lit from the surface — a point light directly above it at y = 0 — and is
+# veiled through a `mask BODY:` block so the span never paints outside the body.
+
 # ---- coral components (light from top) ---------------------------------------
 # brain coral: shaded mound with wavy grooves
 draw brainCoral(c) 46x34:
@@ -48,8 +56,10 @@ draw brainCoral(c) 46x34:
     for i 0..6:
       gy = 10 + i * 4
       curve c.lighten(14%) 2:(gy - 1) 12:(gy + 2) 23:(gy - 3) 34:(gy + 2) 44:(gy - 1)
-  shadeRegion mound 23:0 abyss.alpha(70%) 0.7
-  rim mound.intersect(rect(0:0, 45:20)) 0:1 c.lighten(30%) 1
+  # depth veil over the grooves — a `model` repaint would erase them
+  mask mound:
+    fill radial(abyss.alpha(0%), abyss.alpha(49.1%)) washSpan(23:0, 21:39)
+  fill c.lighten(30%) mound.edge(0:1).intersect(rect(0:0, 45:20))
 
 # staghorn: branching coral, brighter toward the tips
 draw staghorn(c) 42x50:
@@ -70,8 +80,9 @@ draw tubeSponge(c) 32x42:
     tx = t.x
     top = t.y
     rrect c (tx - 4):top (tx + 4):41 3 fill
-    shadeRegion rect((tx - 4):top, (tx + 4):41) tx:0 abyss.alpha(65%) 0.65
-    rim rect((tx - 4):top, (tx + 4):41).intersect(rect((tx - 4):top, (tx - 2):41)) 1:0 c.lighten(26%) 1
+    mask rect((tx - 4):top, (tx + 4):41):
+      fill radial(abyss.alpha(0%), abyss.alpha(42.3%)) washSpan((tx):0, 4:41)
+    fill c.lighten(26%) rect((tx - 4):top, (tx + 4):41).edge(1:0)
     ellipse c.lighten(18%) tx:top 4:2 fill
     ellipse abyss tx:top 2:1 fill
 
@@ -105,7 +116,8 @@ draw seagrass(c) 18x56:
 # anemone: soft column crowned with a mound of waving tentacles
 draw anemone(c) 28x24:
   ellipse c.darken(16%) 14:20 8:5 fill
-  shadeRegion ellipse(14:20, 8:5) 14:0 abyss.alpha(60%) 0.55
+  mask ellipse(14:20, 8:5):
+    fill radial(abyss.alpha(0%), abyss.alpha(33%)) washSpan(14:0, 8:25)
   for i 0..17:
     fr = i / 16
     tipX = round(lerp(2, 26, fr))
@@ -122,8 +134,9 @@ draw rock(c) 54x30:
     line c.darken(30%) 18:12 24:26 w1
     line c.darken(30%) 38:10 33:24 w1
     speckle 0.12 4 c.darken(18%)
-  shadeRegion body 27:0 abyss.alpha(72%) 0.72
-  rim body.intersect(rect(0:0, 53:15)) 0:1 c.lighten(24%) 1
+  mask body:
+    fill radial(abyss.alpha(0%), abyss.alpha(51.9%)) washSpan(27:0, 26:29)
+  fill c.lighten(24%) body.edge(0:1).intersect(rect(0:0, 53:15))
 
 # ---- fauna --------------------------------------------------------------------
 # small school fish: faces left (head at low x)
@@ -144,8 +157,9 @@ draw angel(c) 32x24:
   mask body:
     line c.darken(28%) 9:2 12:22 w2
     line c.darken(28%) 15:2 18:22 w2
-  shadeRegion body 14:0 abyss.alpha(45%) 0.42
-  rim body.intersect(rect(0:0, 31:9)) 0:1 c.lighten(26%) 1
+  mask body:
+    fill radial(abyss.alpha(0%), abyss.alpha(18.9%)) washSpan(14:0, 12:22)
+  fill c.lighten(26%) body.edge(0:1).intersect(rect(0:0, 31:9))
   circle #f4f4f0 6:10 2 fill
   circle #0e1c26 6:10 1 fill
 
@@ -163,8 +177,9 @@ draw clownfish 30x18:
     poly w 8:1 12:1 10:17 6:17 fill
     poly w 16:1 20:1 18:17 14:17 fill
     stroke k body.intersect(rect(6:8, 8:11)) w1
-  shadeRegion body 13:0 k.alpha(40%) 0.38
-  rim body.intersect(rect(0:0, 29:7)) 0:1 #fff3d0 1
+  mask body:
+    fill radial(k.alpha(0%), k.alpha(15.2%)) washSpan(13:0, 12:16)
+  fill #fff3d0 body.edge(0:1).intersect(rect(0:0, 29:7))
   circle #f4f4f0 5:8 2 fill
   circle k 5:8 1 fill
 
