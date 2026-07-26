@@ -1,11 +1,12 @@
 // The Drawstic CLI (spec §16, ADR-0008/0030/0031):
-//   drawstic check <file> [--json]
+//   drawstic check <file> [--rows] [--lint] [--json]
 //   drawstic fmt <file> [--check] [--json]
 //   drawstic context <file> [--json]
 //   drawstic build <file> [--out <dir>] [--json]
 //   drawstic render <file>#<drawing>[(args)] [--png@N] [--out <path>] [--stdout]
 //                   [--ascii] [--preview] [--silhouette] [--inspect] [--explain]
-//                   [--grid N] [--diff <png>] [--mode pixel|smooth] [--json]
+//                   [--grid N] [--diff <png>] [--mode pixel|smooth] [--crop x:y WxH]
+//                   [--fit WxH] [--json]
 // A parametric drawing takes literal arguments in the fragment (ADR-0067):
 //   drawstic render parts.drw#house(#c04040, 3)
 // `--grid`/`--diff` are debug-only PNG-output aids (P3 drawing aids): `--grid`
@@ -1703,13 +1704,14 @@ const packageVersion = (): string => {
 const HELP = `drawstic — deterministic drawing engine
 
 usage:
-  drawstic check <file> [--json]
+  drawstic check <file> [--rows] [--lint] [--json]
   drawstic fmt <file> [--check] [--json]
   drawstic context <file> [--json]
   drawstic build <file> [--out <dir>] [--json]   # --out defaults to the recipe's own directory
   drawstic render <file>#<drawing>[(args)] [--png@N] [--out <path>] [--stdout]
                   [--ascii] [--preview] [--silhouette] [--inspect] [--explain]
-                  [--grid N] [--diff <png>] [--mode pixel|smooth] [--json]
+                  [--grid N] [--diff <png>] [--mode pixel|smooth] [--crop x:y WxH]
+                  [--fit WxH] [--json]
   drawstic sheet <file> [--all] [--cols N] [--png@N] [--out <path>]
                   [--stdout] [--ascii] [--preview] [--json]
   drawstic critique <file> [--as icon|scene|character|item] [--family a,b,c]

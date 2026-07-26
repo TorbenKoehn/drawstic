@@ -81,3 +81,53 @@ describe('skill/CLI sync (docs/impl-progress.md 4-finding)', () => {
     }
   })
 })
+
+// `drawstic help` (the `HELP` usage block) is the tool's own self-description, and `E026`'s hint
+// ("run 'drawstic help' for the flags '<command>' accepts") sends the user straight to it — so a
+// flag the parser accepts but `HELP` never mentions is worse than an ordinary doc gap: the one
+// place an agent is told to look has no answer. `--lint`, `--crop`, `--fit`, `--rows` were exactly
+// this (wired and working — `check <file> --lint --json` is the product skill's own condition 1 of
+// "done" — but absent from `HELP`). Closed here, and made hard to regress: the accepted set below
+// is *derived from `parseArguments`'s own source*, not a second hand-maintained list, so a future
+// flag added to the `else if (a === '--…')` chain fails this test until `HELP` documents it too.
+const parseArgumentsBlock = cliSource.slice(
+  cliSource.indexOf('const parseArguments = ('),
+  cliSource.indexOf('cli.unknownFlags = unknown'),
+)
+const recognizedFlags = [
+  ...new Set([...parseArgumentsBlock.matchAll(/a === '(--[\w-]+)'/g)].map((m) => m[1] ?? '')),
+]
+
+describe('drawstic help documents every flag parseArguments recognizes', () => {
+  test('the extraction itself finds the known chain (sanity, not vacuous)', () => {
+    // Pins the count too: a flag silently dropped from the parser (not just one silently added)
+    // should also fail loudly rather than making every other assertion in this block vacuous.
+    expect(recognizedFlags.length).toBe(22)
+  })
+
+  test('parseArguments also recognizes the --png@N pattern (checked separately, not literal `a === `)', () => {
+    expect(parseArgumentsBlock).toContain('--png@')
+  })
+
+  for (const flag of recognizedFlags) {
+    test(`HELP documents "${flag}"`, () => {
+      expect(helpBlock).toContain(flag)
+    })
+  }
+
+  test('HELP documents --png@N', () => {
+    expect(helpBlock).toContain('--png@N')
+  })
+
+  // Reverse direction: every flag-shaped token in HELP must be either one `parseArguments`
+  // actually recognizes, the `--png@N` pattern, or `--help`/`--version` (recognized via
+  // `HELP_FLAGS`/`VERSION_FLAGS`, a command alias rather than a `parseArguments` flag branch) —
+  // never a phantom flag HELP promises but the CLI doesn't accept.
+  test('HELP names no flag parseArguments does not also accept', () => {
+    const helpTokens = new Set([...helpBlock.matchAll(/--[\w@-]+/g)].map((m) => m[0]))
+    const accepted = new Set([...recognizedFlags, '--png@N', '--help', '--version'])
+    for (const token of helpTokens) {
+      expect(accepted.has(token)).toBe(true)
+    }
+  })
+})
