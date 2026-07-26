@@ -71,7 +71,7 @@ draw controller64 64x64:
   circle a 52:33 4 fill
   circle a 40:33 4 fill
   circle a 46:39 4 fill
-  castShadow circle(46:27,4).union(circle(52:33,4)).union(circle(40:33,4)).union(circle(46:39,4)) 1:1 k.alpha(35%)
+  shadow circle(46:27,4).union(circle(52:33,4)).union(circle(40:33,4)).union(circle(46:39,4)) 1:1 k.alpha(35%)
   grain body 0.12 5 k
 
 draw dice 32x32:

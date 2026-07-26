@@ -195,7 +195,7 @@ describe('e2e', () => {
     try {
       const engine = new Engine(process.cwd())
       const mod = engine.loadSource(
-        'draw ramp:\n  pal:\n    a, b, c = #777.tones(-10%, 0%, 10%)\n  pixels:\n    abc\n\nexport ramp out/ramp:\n  png indexed\n',
+        'draw swatch:\n  pal:\n    a, b, c = #777.tones(-10%, 0%, 10%)\n  pixels:\n    abc\n\nexport swatch out/ramp:\n  png indexed\n',
         join(process.cwd(), 'mem-indexed-ramp.drw'),
         'mem-indexed-ramp.drw',
       )

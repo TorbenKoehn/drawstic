@@ -40,7 +40,7 @@ draw tileBg64 64x64:
 draw wallet 32x32:
   stamp tileBg32 0:0
   mask walletBody = rrect(5:10, 26:23, 3)
-  castShadow walletBody 1:1 shade.alpha(30%)
+  shadow walletBody 1:1 shade.alpha(30%)
   fill ink walletBody
   rim walletBody 1:1 tileLight 1
   line inkDim 5:15 26:15
@@ -95,7 +95,7 @@ export cart finance/cart:
 draw tag 32x32:
   stamp tileBg32 0:0
   mask tagShape = poly(6:16, 13:8, 26:8, 26:24, 13:24)
-  castShadow tagShape 1:1 shade.alpha(30%)
+  shadow tagShape 1:1 shade.alpha(30%)
   fill ink tagShape
   rim tagShape 1:1 tileLight 1
   circle tile 12:16 2 fill
@@ -125,7 +125,7 @@ export chart finance/chart:
 draw invoice 32x32:
   stamp tileBg32 0:0
   mask paperShape = poly(7:5, 25:5, 25:20, 22:23, 19:20, 16:23, 13:20, 10:23, 7:20)
-  castShadow paperShape 1:1 shade.alpha(30%)
+  shadow paperShape 1:1 shade.alpha(30%)
   fill ink paperShape
   rim paperShape 1:1 tileLight 1
   line tile 10:9 22:9

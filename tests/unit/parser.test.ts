@@ -19,9 +19,15 @@ const bindingExpr = (src: string): Expression => {
 }
 
 describe('parser', () => {
-  test('version pragma', () => {
-    const m = parse('drawstic 1\nx = 1\n', 't.drw')
-    expect(m.pragma).toBe(1)
+  test('the drawstic N version pragma was removed (ADR-0096) — inert since ADR-0088', () => {
+    expect(() => parse('drawstic 1\nx = 1\n', 't.drw')).toThrow(
+      /'drawstic N' version pragma was removed/,
+    )
+  })
+
+  test('a plain `drawstic` binding elsewhere in the file is unaffected (contextual, not reserved)', () => {
+    const s = one('drawstic = 1\n')
+    expect(s.kind).toBe('binding')
   })
 
   test('binding and destructuring', () => {
@@ -305,7 +311,7 @@ describe('parser', () => {
 
   test('export with format flags', () => {
     const s = one(
-      'export gem icons/gem:\n  png @1 @2 @3 z9\n  svg ids classes\n  jpeg 512 q80 mode smooth\n  path\n',
+      'export gem icons/gem:\n  png @1 @2 @3 z9\n  svg ids classes\n  jpeg 512x512 q80 mode smooth\n  path\n',
     )
     expect(s.kind).toBe('exportDefinition')
     if (s.kind === 'exportDefinition') {
@@ -316,7 +322,7 @@ describe('parser', () => {
       const jpeg = s.def.formats[2]
       expect(jpeg?.quality).toBe(80)
       expect(jpeg?.mode).toBe('smooth')
-      expect(jpeg?.sizes).toEqual([{ width: 512, height: undefined }])
+      expect(jpeg?.sizes).toEqual([{ width: 512, height: 512 }])
       expect(s.def.formats[3]?.format).toBe('path')
     }
   })
@@ -402,7 +408,7 @@ describe('parser', () => {
   })
 
   test('UFCS chain and dot-index', () => {
-    const s = one('c = #235.grayscale.hue(30).lighten(10%)\n')
+    const s = one('c = #235.desaturate(30%).hue(30).lighten(10%)\n')
     if (s.kind === 'binding') {
       expect(s.expression.kind).toBe('method')
     }

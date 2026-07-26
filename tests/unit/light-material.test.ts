@@ -246,9 +246,10 @@ describe('explain trace (render --explain guardrail)', () => {
 })
 
 describe('keyword discipline (new words stay contextual, D7)', () => {
-  test('light/material/lit/model/cel/dir/glow remain ordinary bindable names', () => {
+  test('light/material/lit/dir/glow remain ordinary bindable names', () => {
     // Every new keyword used as a plain binding + a command argument; `lit`/`dir`/`glow` as
-    // names, `light`/`material`/`model`/`cel` as names — none may be globally reserved.
+    // names, `light`/`material` as names — none of these is in the builtin catalogue, so none
+    // is reserved. `model`/`cel` are commands (ADR-0096 §5) — see the next test.
     const s = render(
       [
         'draw x 4x4:',
@@ -257,14 +258,10 @@ describe('keyword discipline (new words stay contextual, D7)', () => {
         '  lit = #0000ff',
         '  dir = 1:2',
         '  glow = #ffff00',
-        '  model = #ff00ff',
-        '  cel = #00ffff',
         '  fill light rect(0:0, 0:0)',
         '  fill material rect(1:0, 1:0)',
         '  fill lit rect(2:0, 2:0)',
         '  fill glow rect(3:0, 3:0)',
-        '  fill model rect(0:1, 0:1)',
-        '  fill cel rect(1:1, 1:1)',
       ].join('\n'),
       'x',
     )
@@ -272,8 +269,15 @@ describe('keyword discipline (new words stay contextual, D7)', () => {
     expect(px(s, 1, 0)).toEqual([0, 255, 0, 255])
     expect(px(s, 2, 0)).toEqual([0, 0, 255, 255])
     expect(px(s, 3, 0)).toEqual([255, 255, 0, 255])
-    expect(px(s, 0, 1)).toEqual([255, 0, 255, 255])
-    expect(px(s, 1, 1)).toEqual([0, 255, 255, 255])
+  })
+
+  test('model/cel are reserved builtin commands, unlike light/material/lit/dir/glow (ADR-0096 §5)', () => {
+    expect(() => render('draw x 2x2:\n  model = #ff00ff\n  bg #fff\n', 'x')).toThrow(
+      /'model' is a predefined, unshadowable name/,
+    )
+    expect(() => render('draw x 2x2:\n  cel = #00ffff\n  bg #fff\n', 'x')).toThrow(
+      /'cel' is a predefined, unshadowable name/,
+    )
   })
 
   test('an unknown material response is a positioned parse error', () => {

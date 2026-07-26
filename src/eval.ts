@@ -27,7 +27,6 @@ import {
   type Color,
   darken,
   desaturate,
-  grayscale,
   hsl,
   lighten,
   litTone,
@@ -381,7 +380,6 @@ export type ModuleRecord = {
   readonly exports: ExportDefinition[]
   fileTheme: FoldedTheme | undefined
   sizeDefault: { readonly width: number; readonly height: number } | undefined
-  seed: number | undefined
   fontDefault: string | undefined
 }
 
@@ -684,7 +682,8 @@ type State = {
 /**
  * Every predefined name — builtins, commands, filters — reserved and
  * unshadowable (E007) regardless of scope; checked by {@link Engine.#checkBindable}
- * and at definition-collection time.
+ * and at definition-collection time. The reservation rule is uniform (ADR-0096 §5): every
+ * catalogue name is here, with no shadowable exceptions.
  */
 const BUILTIN_NAMES = new Set([
   // math (ADR-0034)
@@ -721,12 +720,15 @@ const BUILTIN_NAMES = new Set([
   'darken',
   'saturate',
   'desaturate',
-  'grayscale',
   'hue',
   'alpha',
   'mix',
   'tones',
   'mixes',
+  // ADR-0086 §5 shading helpers; reserved uniformly with everything else (ADR-0096 §5)
+  'ramp',
+  'litTone',
+  'shadowTone',
   // gradients
   'linear',
   'radial',
@@ -778,12 +780,14 @@ const BUILTIN_NAMES = new Set([
   'outline',
   'tint',
   'shadow',
-  'castShadow',
   'grain',
   'speckle',
   'ripple',
   'dither',
   'quantize',
+  // ADR-0086 declarative light/material; reserved uniformly with everything else (ADR-0096 §5)
+  'model',
+  'cel',
   'shadeRegion',
   'lightRegion',
   'rim',
@@ -1216,7 +1220,6 @@ export class Engine {
       env: new Environment(null),
       fileTheme: undefined,
       sizeDefault: undefined,
-      seed: undefined,
       fontDefault: undefined,
       exports: [],
     }
@@ -1416,9 +1419,6 @@ export class Engine {
         }
         case 'sizeDirective':
           rec.sizeDefault = { width: s.width, height: s.height }
-          break
-        case 'seedDirective':
-          rec.seed = s.seed
           break
         case 'fontDirective':
           rec.fontDefault = s.name
@@ -2975,11 +2975,13 @@ export class Engine {
     }
 
     // 4 — compile the trailing flags (same grammar as `stamp`) into one part-local transform matrix
-    // about the footprint centre; `anchor` is meaningless for `fit` (the pin IS the anchor).
+    // about the footprint centre; `anchor` was removed on `fit` (ADR-0096 §1) — the pin IS the
+    // anchor, so `#parseStampFlags` now errors on it instead of silently ignoring it.
     const flags = this.#parseStampFlags(
       new Args(this, stmt.flags, env, state, stmt.span),
       state,
       stmt.span,
+      false,
     )
     let matrix = this.#buildStampMatrix(sprite, flags)
     // 4a — bone orientation (ADR-0095): a `bone JOINT` source rotates the part about its fit pin by
@@ -3722,8 +3724,6 @@ export class Engine {
           }
         }
         return
-      case 'seedDirective':
-        return // stored for sugar helpers (none in v1); core fns take seeds explicitly
       case 'fontDirective':
         if (draw) {
           draw.fontName = stmt.name
@@ -4311,21 +4311,22 @@ export class Engine {
 
   /**
    * Disambiguate an unrecognized statement-position callee: a user
-   * `filter` name is run as `apply` sugar; a `fn`/builtin name used as a
-   * bare statement means its value was silently dropped, which is almost
-   * always a missing paint (E013); anything else is genuinely unknown
-   * (E001).
+   * `filter` name run bare (no `apply`) is a removed dispatch path
+   * (ADR-0096 §1 — a third way beside the `apply` statement and `apply`
+   * command); a `fn`/builtin name used as a bare statement means its value
+   * was silently dropped, which is almost always a missing paint (E013);
+   * anything else is genuinely unknown (E001).
    */
-  #execCommandFallback(
-    stmt: Extract<Statement, { readonly kind: 'call' }>,
-    env: Environment,
-    state: State,
-  ): void {
-    // a user filter name used as a command? a fn call whose value drops?
+  #execCommandFallback(stmt: Extract<Statement, { readonly kind: 'call' }>, state: State): void {
+    // a user filter name used bare as a command? a fn call whose value drops?
     const entry = state.module.definitions.get(stmt.callee)
     if (entry?.kind === 'filter') {
-      this.#runFilter(stmt.callee, env, state, stmt.span)
-      return
+      throw error(
+        ERROR_CODE.syntax,
+        `a bare filter name as a statement was removed — use 'apply ${stmt.callee}'`,
+        state.module.displayPath,
+        stmt.span,
+      )
     }
     if (entry?.kind === 'function' || BUILTIN_NAMES.has(stmt.callee)) {
       throw error(
@@ -4718,16 +4719,14 @@ export class Engine {
           stmt.span,
         )
       }
-      case 'castShadow': {
-        const region = args.region()
-        const offset = args.pair()
-        const paint = args.paint()
-        args.done()
-        const dx = quantInt(offset.x)
-        const dy = quantInt(offset.y)
-        fillRegion(ctx, regionTransform(region, translation(dx, dy), translation(-dx, -dy)), paint)
-        return
-      }
+      case 'castShadow':
+        // Removed (ADR-0096 §1) — byte-identical implementation to `shadow r dx:dy p`.
+        throw error(
+          ERROR_CODE.syntax,
+          "'castShadow' was removed — use 'shadow r dx:dy p' instead",
+          state.module.displayPath,
+          stmt.span,
+        )
       // Texture filters take an optional leading region scope (ADR-0071): the first argument is a
       // region → confine to it; otherwise it is the filter's first real argument (a number for
       // grain/speckle/ripple, a paint for dither), and the whole-frame form runs unchanged.
@@ -4881,7 +4880,7 @@ export class Engine {
         return
       }
       default: {
-        this.#execCommandFallback(stmt, env, state)
+        this.#execCommandFallback(stmt, state)
         return
       }
     }
@@ -4960,9 +4959,17 @@ export class Engine {
    * Parse one keyword-form `stamp` modifier (`transform:`, `tint:`,
    * `mask:`, `anchor:`, `shadow:`) into `f`, mutating it in place. Returns
    * `false` (without consuming input) if the next arg isn't a recognized
-   * keyword, so callers can loop until no more modifiers match.
+   * keyword, so callers can loop until no more modifiers match. `allowAnchor` is `false` for a
+   * `fit` (ADR-0096 §1): `anchor` on `fit` was parsed and silently ignored — the pin already is
+   * the anchor — so it now errors instead of the old silent no-op.
    */
-  #parseStampKeyword(args: Args, state: State, span: TextSpan, f: StampFlags): boolean {
+  #parseStampKeyword(
+    args: Args,
+    state: State,
+    span: TextSpan,
+    f: StampFlags,
+    allowAnchor: boolean,
+  ): boolean {
     const keyword = args.peekKeyword()
     if (keyword === 'transform') {
       const t = args.keywordExpression()
@@ -4999,6 +5006,14 @@ export class Engine {
       return true
     }
     if (keyword === 'anchor') {
+      if (!allowAnchor) {
+        throw error(
+          ERROR_CODE.syntax,
+          "'anchor' on 'fit' was removed — fit solves contact from the pins, drop the flag",
+          state.module.displayPath,
+          span,
+        )
+      }
       const anchor = args.keywordName('anchor')
       if (!isStampAnchor(anchor)) {
         throw error(
@@ -5040,7 +5055,13 @@ export class Engine {
    * `scaleN`) or delegate to {@link #parseStampKeyword}; `false` means no
    * more flags to consume.
    */
-  #parseOneStampFlag(args: Args, st: State, span: TextSpan, f: StampFlags): boolean {
+  #parseOneStampFlag(
+    args: Args,
+    st: State,
+    span: TextSpan,
+    f: StampFlags,
+    allowAnchor: boolean,
+  ): boolean {
     const flag = args.peekFlag()
     if (flag === 'flipx') {
       args.takeFlag()
@@ -5062,10 +5083,14 @@ export class Engine {
       f.scale = Number.parseInt(flag.slice(5), 10)
       return true
     }
-    return this.#parseStampKeyword(args, st, span, f)
+    return this.#parseStampKeyword(args, st, span, f, allowAnchor)
   }
 
-  #parseStampFlags(args: Args, state: State, span: TextSpan): StampFlags {
+  /**
+   * `allowAnchor` is `false` only for `fit` (ADR-0096 §1) — every other caller (`stamp`) keeps
+   * the flag.
+   */
+  #parseStampFlags(args: Args, state: State, span: TextSpan, allowAnchor = true): StampFlags {
     const f: StampFlags = {
       flipx: false,
       flipy: false,
@@ -5077,7 +5102,7 @@ export class Engine {
       anchor: 'topLeft',
       shadow: undefined,
     }
-    while (this.#parseOneStampFlag(args, state, span, f)) {
+    while (this.#parseOneStampFlag(args, state, span, f, allowAnchor)) {
       // consume flags until none match
     }
     return f
@@ -6318,15 +6343,15 @@ export class Engine {
 
   /**
    * Resolve a bare name reference, in order: a scoped binding (env
-   * chain), the `pi`/`tau` constants, a module-level definition
-   * (instantiating non-parametric drawings/paths and building
-   * tilesets/atlases/images on the fly), then a theme base drawing
-   * (a drawing folded in via `use` but not locally redefined). Unresolved
-   * names throw E001 with a did-you-mean suggestion ({@link suggest}) —
-   * except `w`/`h` outside a draw body, which get a scope hint instead
-   * (they're declared straight into the draw's environment, ADR-0021, so
-   * a module-level `mask`/`path`/`fn` reaching for them is the single most
-   * common shape of this error).
+   * chain), the `pi`/`tau` constants, the `rgb`/`hsl`/`oklch` colour-space
+   * keywords (ADR-0096 §7), a module-level definition (instantiating
+   * non-parametric drawings/paths and building tilesets/atlases/images on
+   * the fly), then a theme base drawing (a drawing folded in via `use` but
+   * not locally redefined). Unresolved names throw E001 with a did-you-mean
+   * suggestion ({@link suggest}) — except `w`/`h` outside a draw body,
+   * which get a scope hint instead (they're declared straight into the
+   * draw's environment, ADR-0021, so a module-level `mask`/`path`/`fn`
+   * reaching for them is the single most common shape of this error).
    */
   #resolveName(name: string, env: Environment, state: State, span: TextSpan): Value {
     const binding = env.lookup(name)
@@ -6338,6 +6363,13 @@ export class Engine {
     }
     if (name === 'tau') {
       return TAU
+    }
+    // `mix`'s (and `tones`/`mixes`') colour-space argument is a bare contextual keyword
+    // (ADR-0096 §7), same shape as every other enum in the language — `mix(a, b, t, rgb)`, not a
+    // quoted `"rgb"`. Reserved uniformly (§5), so this can never shadow a real binding; a bare
+    // reference evaluates to its own name, the sentinel string the mixSpace builtin checks for.
+    if (name === 'rgb' || name === 'hsl' || name === 'oklch') {
+      return name
     }
     // theme gradients visible in draw scope handled via env; fall through to defs
     const entry = state.module.definitions.get(name)
@@ -6814,8 +6846,13 @@ export class Engine {
         arity(2)
         return desaturate(col(0), num(1))
       case 'grayscale':
-        arity(1)
-        return grayscale(col(0))
+        // Removed (ADR-0096 §1) — exactly `desaturate(c, 100%)`.
+        throw error(
+          ERROR_CODE.syntax,
+          "'grayscale' was removed — use 'desaturate(c, 100%)' instead",
+          ctx.file,
+          ctx.span,
+        )
       case 'hue': {
         arity(2)
         const a1 = args[1]
@@ -6835,11 +6872,8 @@ export class Engine {
         arity(3)
         return mix(col(0), col(1), num(2))
       }
-      // ADR-0086 §5 shading helpers. Intentionally NOT in BUILTIN_NAMES:
-      // unlike `tones`/`mixes` they stay shadowable, because `ramp` is a
-      // long-standing user binding name (ADR-0060/0079, many examples) and
-      // reserving it would break existing recipes. UFCS/call dispatch reaches
-      // them here via callBuiltinOrFn's builtin fallback regardless.
+      // ADR-0086 §5 shading helpers. Reserved in BUILTIN_NAMES like every other builtin
+      // (ADR-0096 §5) — no longer shadowable by a user `ramp`/`litTone`/`shadowTone` binding.
       case 'litTone':
         arity(3)
         return litTone(col(0), col(1), num(2))
@@ -7809,7 +7843,26 @@ class Args {
     )
   }
 
-  /** Trailing draw flags after paint+geometry: [fill] [wN] [cap …] [join …] (§8). */
+  /**
+   * `cap X`/`join X` were removed (ADR-0096 §1): parsed and discarded since ADR-0053
+   * indefinitely deferred the line-geometry work, so nothing they named was ever rendered.
+   * Throws a positioned error naming that instead of the old silent accept-and-discard; called
+   * by {@link drawFlags}/{@link strokeFlags} once no other flag matches.
+   */
+  #rejectCapJoin(): void {
+    const kw = this.peekKeyword()
+    if (kw === 'cap' || kw === 'join') {
+      const arg = this.#items[this.#index] as Extract<Argument, { kind: 'keyword' }>
+      throw error(
+        ERROR_CODE.syntax,
+        `'${kw}' was removed — it was parsed but never rendered (drop it)`,
+        this.#state.module.displayPath,
+        arg.span,
+      )
+    }
+  }
+
+  /** Trailing draw flags after paint+geometry: [fill] [wN] (§8). */
   drawFlags(): { fill: boolean; width: number } {
     let fill = false
     let width = 1
@@ -7825,10 +7878,7 @@ class Args {
         width = Number.parseInt(flag.slice(1), 10)
         continue
       }
-      if (this.peekKeyword() === 'cap' || this.peekKeyword() === 'join') {
-        this.#index++ // accepted; round brush is the v1 behaviour in both modes
-        continue
-      }
+      this.#rejectCapJoin()
       break
     }
     return { fill, width }
@@ -7843,10 +7893,7 @@ class Args {
         width = Number.parseInt(flag.slice(1), 10)
         continue
       }
-      if (this.peekKeyword() === 'cap' || this.peekKeyword() === 'join') {
-        this.#index++
-        continue
-      }
+      this.#rejectCapJoin()
       break
     }
     return { width }

@@ -4,7 +4,6 @@ import {
   colorToOklch,
   darken,
   desaturate,
-  grayscale,
   hsl,
   lighten,
   litTone,
@@ -200,15 +199,6 @@ describe('saturate() / desaturate()', () => {
 
   test('desaturate clamps to 0 chroma when amt >= 1', () => {
     expect(colorToOklch(desaturate(red, 2)).c).toBeLessThan(1e-6)
-  })
-})
-
-describe('grayscale()', () => {
-  test('zeros chroma, preserving lightness', () => {
-    const red = color(200, 60, 60)
-    const gray = grayscale(red)
-    expect(gray).toEqual({ type: 'color', r: 117, g: 117, b: 117, a: 255 })
-    expect(colorToOklch(gray).c).toBeLessThan(1e-6)
   })
 })
 

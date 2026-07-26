@@ -364,10 +364,12 @@ then native **`--png@1`**, then **`--silhouette --png@4`** on the weakest pair. 
 - Theme/host palettes **don't cross a `stamp`/`fit` boundary** — recolour a stamped variant
   **parametrically** (`draw part(c)`) or `tint` it (`replace` was removed, ADR-0094), not by swapping
   the theme.
-- **Don't bind a directive/keyword name** (`cap`, `shadow`, `tint`, `grain`, `dither`, `outline`,
-  `rim`, `w`, `h`): `cap` is a stroke keyword-arg and **hijacks the next command's argument**; a
-  stdlib name (`min`/`sqrt`/…) or predefined gives a clean `E007`; `shadow = …` then `shadow.alpha(…)`
-  fails as `E004` at the **use** site. Full stdlib list: reference.md § Expressions.
+- **Don't bind a builtin/command/filter name** (`shadow`, `tint`, `grain`, `dither`, `outline`,
+  `rim`, `model`, `cel`, `ramp`, `litTone`, `shadowTone`, a stdlib name like `min`/`sqrt`, `w`, `h`,
+  …): every one is reserved uniformly (ADR-0096 §5) — a clean `E007` at the **declaration**, no
+  later use-site surprise. `cap`/`join` are gone outright (ADR-0096 §1) — a stroke's trailing
+  `cap X`/`join X` is now a positioned error, not a silent argument-hijack. Full stdlib list:
+  reference.md § Expressions.
 - `name = expr` **reassigns the nearest in-scope mutable binding** (loop-persistent, like `+=`),
   declaring a fresh local only when none is reachable — so `g = g.union(…)` inside a `for` accumulates.
   The search stops at the draw body.
@@ -379,9 +381,11 @@ then native **`--png@1`**, then **`--silhouette --png@4`** on the weakest pair. 
 - `quad`/`bezier`/`arc` below ~12px rasterize blocky — use `pixels:` or the organic constructors
   (exact at any size). `noise(seed, x, 0)` at integer `x` is high-frequency spikes — sample fractional
   steps, or use `profile` (its `fn` gets normalized x).
-- Stamp anchors are visual (name a spot on the post-transform footprint). A leading `drawstic <N>`
-  pragma is parsed but inert; omit it. Out-of-bounds drawing is silently clipped. Imports resolve
-  relative to the recipe file but may not escape the **project root = the CLI's working directory**.
+- Stamp anchors are visual (name a spot on the post-transform footprint); `anchor` is not valid
+  on `fit` (the pin is already the anchor — ADR-0096 §1). There is no version pragma — a leading
+  `drawstic <N>` line is now a positioned error; delete it. Out-of-bounds drawing is silently
+  clipped. Imports resolve relative to the recipe file but may not escape the **project root =
+  the CLI's working directory**.
 
 ---
 *Maintenance (Drawstic developers): this skill ships with the package and mirrors

@@ -220,7 +220,7 @@ draw arctic 240x160:
   mirror x=120:
     curvePoly snowTones.3.alpha(70%) 4:159 2:148 10:146 14:156 fill
 
-  castShadow rockBody heroShadowOffset aoColor
+  shadow rockBody heroShadowOffset aoColor
   fill rockLit rockBody
   shadeRegion rockBody moonPt rockShadow 55%
   lightRegion rockBody moonPt snowLit 18%

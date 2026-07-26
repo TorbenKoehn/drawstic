@@ -148,16 +148,18 @@ tile's top-left in **unscaled** sheet coordinates (× `--png@N` for output pixel
 Full detail: `docs/language-spec.md` § Lint warnings.
 
 **Construct census** (ADR-0094): `critique --json` and `check --lint --json` carry a deterministic
-`census` — every construct used, flagged `spec-only`/`non-canonical`, plus four `antiPatterns` counts
-(`rawShade`/`manualSpread`/`stampWithPins`/`handShadow` = W012–W015; target 0). `check --lint --json`
-wraps its output as `{diagnostics, census}`.
+`census` — every construct used, flagged `spec-only`/`non-canonical`/`retired`, plus four
+`antiPatterns` counts (`rawShade`/`manualSpread`/`stampWithPins`/`handShadow` = W012–W015; target
+0). `retired` (ADR-0096) marks a removed name (`castShadow`, `grayscale`) that still loads —
+rendering it errors; the other removals fail to parse/load at all, so they never reach the
+census. `check --lint --json` wraps its output as `{diagnostics, census}`.
 
 ## Modules & imports
 
-A `.drw` file is a module; every top-level definition is public.
+A `.drw` file is a module; every top-level definition is public. There is no version pragma —
+a leading `drawstic <N>` line is a positioned error (ADR-0096); delete it from any old file.
 
 ```drw
-drawstic 1                       # optional legacy first line: parsed but inert (omit it)
 from creatures gem, slime        # ./creatures.drw; type inferred
 from gems gem as ruby            # alias on collision
 from ../shared/parts eye         # parent dir ok; never escapes project root
@@ -261,8 +263,9 @@ binding in that draw — ADR-0073).
 
 `<paint>` = color or gradient. **The paint is the first argument of every command** — paint
 first, geometry after, flags last. Trailing `fill` = solid; default outlined. Stroke width:
-trailing `w<N>` (default 1; smooth mode adds `cap butt|round|square`, `join miter|round|bevel`) —
-on every stroking command **except `poly`** (see its row).
+trailing `w<N>` (default 1; a uniform round-cap/round-join brush in both modes — that's the only
+brush the engine renders, so trailing `cap`/`join` flags were removed, ADR-0096) — on every
+stroking command **except `poly`** (see its row).
 
 | Command | Form |
 |---|---|
@@ -548,19 +551,19 @@ gradient, an outer `let`) — the palette wins.
 `for`/`if`/`mask`/`scatter`/… body persists to the draw (`g = g.union(…)` in a loop now accumulates,
 matching `+=`). The search stops at the draw body: a block never mutates module-scope state, and
 `const`/palette/canvas-`w`/`h` are never reassignment targets (there `=` shadow-declares as before).
-Reserved/directive keywords are unavailable as binding or `pal`-key names — a stdlib name or
-predefined like `rim` is a clean `E007`, but a **filter/directive** keyword (`shadow`, `tint`,
-`grain`, `dither`, `outline`, `speckle`, `ripple`) parses as its directive, so
-`shadow = …` then `shadow.alpha(…)` fails as `E004` at the **use** site, not the declaration; also
-avoid `pi`/`tau`/`w`/`h`.
-UFCS: `x.f(a)` ≡ `f(x, a)`; zero-arg may drop parens (`c.grayscale`).
+Every builtin/command/filter name is reserved and unshadowable, uniformly (ADR-0096 §5) — binding
+or `pal`-keying any of them (`rim`, `shadow`, `tint`, `grain`, `dither`, `outline`, `speckle`,
+`ripple`, `model`, `cel`, `ramp`, `litTone`, `shadowTone`, …) is a clean `E007` at the
+**declaration**, not a later use-site surprise; also avoid `pi`/`tau`/`w`/`h`.
+UFCS: `x.f(a)` ≡ `f(x, a)`; zero-arg may drop parens (`n.floor`).
 
 Stdlib (fixed, unshadowable, deterministic): `min max abs clamp floor ceil round sign sqrt
 hypot dist sin cos tan atan2 pow exp log lerp len`; constants `pi tau`.
 **`sin`/`cos`/`tan`/`atan2` work in radians** (`sin(pi/2) == 1`; use `x * pi / 180` to convert) —
 **unlike `arc`, whose `a0`/`a1` are degrees.**
 `rand(seed[, i])` → [0,1), `noise(seed, x, y)` → [0,1) (2D value noise) — always with
-explicit seeds (a `seed <N>` directive is accepted but reserved; no effect).
+explicit seeds; there is no `seed <N>` directive (removed, ADR-0096 §1 — it was stored but
+never read).
 No I/O, clock, or ambient randomness.
 `xs.cycle(i)` (ADR-0079): auto-wrapping list index, sugar for `xs[i mod len(xs)]` — negative
 `i` wraps positively (Euclidean/floored mod, same direction as `mod`/`//`); empty list is E015.
@@ -628,7 +631,8 @@ draw butterfly 32x24:
 
 ## Color
 
-Ops (call- or method-style): `lighten darken saturate desaturate hue alpha mix grayscale`.
+Ops (call- or method-style): `lighten darken saturate desaturate hue alpha mix`. (`grayscale(c)`
+was removed — ADR-0096 §1 — it was exactly `desaturate(c, 100%)`; say that instead.)
 Ramps: `tones(base, …amounts)` and `mixes(a, b, count[, space])` return color lists —
 `pal: a, b, c = #ccc.tones(-12%, 0%, 12%)`.
 Shading (ADR-0086, call- or method-style): `base.litTone(light, amt)` mixes toward the light
@@ -637,10 +641,11 @@ colour (warm highlight — not chalky `lighten`); `base.shadowTone(cool, amt[, d
 visible detail, never crushes to `#000000`**) + nudges hue toward `cool` capped ≤20° along the
 short arc (never cross-hue → **no magenta shadow on warm bases** — `shadowTone` bakes both traps) +
 slight desaturate; `base.ramp(n)` → even n-step light→dark tone list (hue-stable, for
-`pixels:`/cel banding). Unlike other ops these three are **not reserved** — a recipe may still bind
-`ramp`/`litTone`/`shadowTone` (a local binding wins; `.ramp(n)` on a colour still hits the builtin).
-Mixing/gradients interpolate in OkLCh by
-default (pass `rgb`/`hsl` to override); pipeline (oklch↔sRGB, gamut map, shorter-arc hue,
+`pixels:`/cel banding). Reserved like every other builtin (ADR-0096 §5) — a recipe may not bind
+`ramp`/`litTone`/`shadowTone`.
+Mixing/gradients interpolate in OkLCh by default (pass the bare colour-space keyword
+`rgb`/`hsl`/`oklch` as `mix`'s 4th argument to override, e.g. `mix(a, b, t, rgb)` —
+ADR-0096 §7); pipeline (oklch↔sRGB, gamut map, shorter-arc hue,
 8-bit round-half-up) is pinned — pixel-identical everywhere.
 
 **Cross-hue `mix`/`tint` rotates hue along the short OkLCh arc (silent).** Blending toward a
@@ -694,11 +699,12 @@ or the `radial(c.alpha(x), c.alpha(0%))` gradient itself with its radius pushed 
 falloff (so the boundary alpha is ~0, else a faint disc edge shows), or `mode smooth`. Below ~24px no
 pixel-mode ramp reads as soft — accept a crisp core or hand-pixel it.
 
-Filter commands (post-process framebuffer; `r` = a region where shown). All four shadow
-surfaces share one `[region] dx:dy paint` shape (ADR-0070); the four texture filters take an
-optional leading region scope (ADR-0071):
+Filter commands (post-process framebuffer; `r` = a region where shown). All three shadow
+surfaces share one `[region] dx:dy paint` shape (ADR-0070; a fourth, `castShadow`, was a
+byte-identical duplicate of the region form and was removed — ADR-0096 §1, say `shadow r dx:dy p`);
+the four texture filters take an optional leading region scope (ADR-0071):
 `outline [k] [2]` (silhouette outline; colour+width both optional — bare `outline` = 1px derived-dark ink; builds the silhouette from ≥50%-alpha pixels, so it ignores soft shadows/AA and never eats thin features — ADR-0090) · `tint p 0.3` · `shadow dx:dy p` (whole-frame drop) ·
-`castShadow r 2:3 p` / `shadow r 2:3 p` (local, region-first) · `grain [r] amount seed p` ·
+`shadow r 2:3 p` (local, region-first) · `grain [r] amount seed p` ·
 `speckle [r] density seed p` · `ripple [r] strength seed p` · `dither [r] a b threshold` ·
 `quantize [r] palette` (remap opaque pixels to the nearest palette colour — OkLab, first-declared wins ties; `palette` is a colour list; import-assist: `import … sha256` → `quantize` → `outline` → `critique`, ADR-0093) ·
 `shadeRegion r lightPt base amount` · `lightRegion r lightPt paint amount` ·
@@ -753,8 +759,10 @@ optional leading region scope (ADR-0071):
   `dx:dy` point — the old two-bare-number `shadow dx dy p` spelling was removed.
 - **Confine a filter** by giving it a leading region (grain/speckle/ripple/dither) or by
   wrapping the call in a `mask …:` block — which also confines the frame `shadow`. The
-  component-`draw` + `stamp` detour is no longer needed. `castShadow`/region-form `shadow` take
-  an explicit region and need no confinement idiom.
+  component-`draw` + `stamp` detour is no longer needed. The region-form `shadow` takes
+  an explicit region and needs no confinement idiom.
+- **Always run a user `filter` through `apply`** — a bare filter name as a statement (no
+  `apply`) is a removed third dispatch path and now a positioned error (ADR-0096 §1).
 
 ```drw
 filter retro:            # reusable pipeline
@@ -942,8 +950,8 @@ pixel count.
 Pixel mode guarantees pixel-identical output across platforms. There is **one** engine
 semantics: `shadeRegion`'s `amount` is the veil opacity (with `lightRegion` its additive
 mirror, § Gradients & filters), the whole-frame `shadow` respects an enclosing `mask …:` block,
-and the eight offset stamp anchors are visual (§ Transforms & stamp). The `drawstic <N>` pragma
-is parsed but inert — kept only so old files still open; omit it in new recipes. Byte-identical
+and the eight offset stamp anchors are visual (§ Transforms & stamp). There is no version pragma
+— `drawstic <N>` was removed (ADR-0096 §1); delete the line from any old file. Byte-identical
 files are NOT guaranteed —
 compare pixels, not bytes. Bundled deterministic math (never host `Math.*`), pinned color pipeline
 and rasterization, integer source-over alpha (straight RGBA8; pixel mode adds alpha only

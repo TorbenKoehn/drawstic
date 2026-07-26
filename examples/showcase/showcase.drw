@@ -1,5 +1,4 @@
 # showcase.drw — exercises the full language surface end-to-end.
-drawstic 1
 
 from parts gem, eye
 from themes softShadow

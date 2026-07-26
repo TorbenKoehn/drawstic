@@ -717,6 +717,20 @@ const SPEC_ONLY_CONSTRUCTS = new Set([
   'pixels',
 ])
 
+/**
+ * Removed builtin/command names (ADR-0096 §1) that still keep a positioned removal error at
+ * eval time rather than a parse-time one — so a stale recipe using them loads fine and only
+ * fails when the drawing that uses them is rendered. Flagged `retired` in the census so
+ * `check --lint`/`critique` can diagnose the recipe statically, before that render happens.
+ * `castShadow` is a call statement (picked up by {@link constructLabel} like any other
+ * command); `grayscale` has no statement shape of its own — it's only ever reached as a
+ * call/UFCS expression, so the census walks expressions for it separately (see
+ * {@link callsRetiredExpr}). The parse-time removals (`cap`/`join`, `seed N`, the `drawstic N`
+ * pragma, a bare-int export size, `anchor` on `fit`, a bare filter name as a statement) never
+ * reach the census at all — the module fails to load before `censusModule` runs.
+ */
+const RETIRED_CONSTRUCTS = new Set(['castShadow', 'grayscale'])
+
 /** True iff `def` shades any region through the declarative `model`/`cel` pipeline. */
 const usesModelOrCel = (def: DrawDefinition): boolean => {
   let found = false
@@ -774,6 +788,35 @@ const callsNamed =
   (e: Expression): boolean =>
     (e.kind === 'call' && e.callee.kind === 'name' && names.has(e.callee.name)) ||
     (e.kind === 'method' && names.has(e.name))
+
+/**
+ * True iff any of `stmt`'s own expressions (not nested statement bodies — {@link walkStatements}
+ * already recurses those) call or UFCS-call a {@link RETIRED_CONSTRUCTS} name — covers
+ * `grayscale`, which (unlike `castShadow`) has no Statement shape of its own, only ever reached
+ * as a value expression. Same statement-shape enumeration as `walkStatementExprs` below.
+ */
+const callsRetiredExpr = (stmt: Statement): boolean => {
+  const pred = callsNamed(RETIRED_CONSTRUCTS)
+  switch (stmt.kind) {
+    case 'binding':
+    case 'compound':
+    case 'maskBlock':
+      return exprAny(stmt.expression, pred)
+    case 'call':
+      return stmt.args.some((a) => argAny(a, pred))
+    case 'if':
+      return exprAny(stmt.condition, pred)
+    case 'match':
+      return (
+        exprAny(stmt.subject, pred) ||
+        stmt.arms.some((arm) => arm.label !== undefined && exprAny(arm.label, pred))
+      )
+    case 'for':
+      return exprAny(stmt.iterable, pred)
+    default:
+      return false
+  }
+}
 
 /** A `<region>.intersect(<rect>)` method call — the corner-clip of the retired value patch. */
 const isIntersectMethod = (e: Expression): boolean => e.kind === 'method' && e.name === 'intersect'
@@ -989,6 +1032,8 @@ export type CensusEntry = {
   readonly specOnly?: boolean
   /** This construct participated in a W012–W015 finding somewhere in the module. */
   readonly nonCanonical?: boolean
+  /** A removed construct (ADR-0096 §1) — still parses/loads, but errors when the drawing renders. */
+  readonly retired?: boolean
 }
 
 /** The deterministic per-module construct census surfaced in `critique`/`check --lint` JSON. */
@@ -1058,6 +1103,14 @@ export const censusModule = (engine: Engine, mod: ModuleRecord): ModuleCensus =>
       if (label) {
         counts.set(label, (counts.get(label) ?? 0) + 1)
       }
+      // `grayscale` (ADR-0096 §1) has no statement shape of its own — it's only ever reached as
+      // a call/UFCS expression, so `constructLabel` above can't see it; check separately. A
+      // retired construct with a real statement shape (`castShadow`) is already counted by
+      // `constructLabel` and can never itself appear in expression position, so this can only
+      // ever add a `grayscale` count, never double-count `castShadow`.
+      if (callsRetiredExpr(s)) {
+        counts.set('grayscale', (counts.get('grayscale') ?? 0) + 1)
+      }
     })
     for (const d of canonicalPathChecks(engine, mod, entry.definition)) {
       if (d.code === 'W012') {
@@ -1087,6 +1140,7 @@ export const censusModule = (engine: Engine, mod: ModuleRecord): ModuleCensus =>
       count,
       ...(SPEC_ONLY_CONSTRUCTS.has(construct) ? { specOnly: true } : {}),
       ...(nonCanonical.has(construct) ? { nonCanonical: true } : {}),
+      ...(RETIRED_CONSTRUCTS.has(construct) ? { retired: true } : {}),
     }))
   return { constructs, antiPatterns: { rawShade, manualSpread, stampWithPins, handShadow } }
 }

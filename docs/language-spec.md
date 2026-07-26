@@ -121,13 +121,12 @@ use themes dusk                        # apply a theme to this file (§12)
   (mismatch = positioned error). JPEG is rejected on import: its decoding is not bit-exact
   across platforms ([ADR-0045](decisions/0045-import-external-images-as-drawings.md)).
 
-**Language version.** An optional first line `drawstic <N>` is still accepted for backward
-compatibility but is **inert** — it is parsed and otherwise ignored. The language has exactly
-one semantics (there is nothing to select), so any `N` is legal and changes nothing; a value
-newer than the engine is no longer an error. The directive is kept only so existing files that
-open with it keep parsing; new recipes should omit it
-([ADR-0088](decisions/0088-in-place-v1-break.md), superseding
-[ADR-0029](decisions/0029-language-version-pragma.md)).
+**Language version.** There is no version pragma. The `drawstic <N>` first-line directive
+([ADR-0029](decisions/0029-language-version-pragma.md)) was inert since
+[ADR-0088](decisions/0088-in-place-v1-break.md) — the language has exactly one semantics, so
+no `N` ever selected anything — and was removed outright in
+[ADR-0096](decisions/0096-language-freeze-for-1-0.md): a leading `drawstic <N>` line is now a
+positioned error naming the removal. Delete the line from any file that still opens with it.
 
 ---
 
@@ -503,10 +502,13 @@ an unmapped character renders the missing-glyph box. Glyph drawings must be
 non-parametric. Inline glyph bodies bind `k` to the `text` command's paint.
 
 **Stroke width.** Any stroking command takes an optional trailing `w<N>` token (default 1):
-`line k 0:0 10:0 w2`, `circle k 8:8 6 w2` — mirroring `scale<N>` (§9). In pixel mode a
-width-`N` stroke stamps a disk brush along the path (round cap/join); in smooth mode it is a
-true stroked path with `cap butt|round|square` / `join miter|round|bevel` flags (defaults
-butt/miter). See [ADR-0023](decisions/0023-curve-and-shape-primitives.md).
+`line k 0:0 10:0 w2`, `circle k 8:8 6 w2` — mirroring `scale<N>` (§9). A width-`N` stroke stamps
+a uniform round-cap/round-join disk brush along the path in both modes — the only brush the
+engine has ever rendered. `cap butt|round|square` / `join miter|round|bevel` trailing flags
+were removed: they parsed (and `cap` additionally swallowed the next argument) but the geometry
+behind them was deferred indefinitely and never rendered, so they are now a positioned error
+naming the removal ([ADR-0096](decisions/0096-language-freeze-for-1-0.md) §1). See
+[ADR-0023](decisions/0023-curve-and-shape-primitives.md).
 
 **Through-point splines — `curve` / `curvePoly`**
 ([ADR-0074](decisions/0074-curve-through-points-spline.md),
@@ -663,8 +665,11 @@ a bbox overlap is not pixel contact — a part **declares named attach points** 
   (`fit hand.wrist arm.wrist`). When each side has one pin of the same name, the shorter
   `fit partB partA` **auto-matches** it. A named pin absent on one side is a positioned error.
 - **Transform flags — the pin rides the transform.** `fit` takes the same modifiers as `stamp`
-  (`flipx`/`flipy`/`rotN`/`scaleN`/`transform t`/`tint c p%`/`mask r`), applied to the part about
-  its footprint centre. The pin still lands *exactly* on the target (the engine solves
+  (`flipx`/`flipy`/`rotN`/`scaleN`/`transform t`/`tint c p%`/`mask r`) **except `anchor`** — the
+  pin already *is* the anchor, so an `anchor` flag on `fit` is a positioned error
+  ([ADR-0096](decisions/0096-language-freeze-for-1-0.md) §1; it used to parse and be silently
+  ignored). Flags apply to the part about its footprint centre. The pin still lands *exactly* on
+  the target (the engine solves
   `origin = target − M(pin)`) and the part's **other** pins are registered through the same `M`, so
   a pin on the left shoulder becomes the correctly-located right shoulder after `flipx`. This makes
   the depth-tint far-limb idiom (`fit armFar.shoulder a.shoulder tint #2b2b2b 45%`) and mirrored
@@ -1032,11 +1037,11 @@ Any function can be called **method-style on its first argument**: `x.f(a)` is e
 pipelines read **left-to-right, subject first**, instead of inside-out:
 
 ```drw
-lighten(hue(grayscale(#235), red), 10%)   # nested — read inside-out
-#235.grayscale.hue(red).lighten(10%)      # UFCS — reads in order
+lighten(hue(desaturate(#235, 100%), red), 10%)   # nested — read inside-out
+#235.desaturate(100%).hue(red).lighten(10%)      # UFCS — reads in order
 ```
 
-- A **zero-argument** call may drop its parens: `c.grayscale` ≡ `grayscale(c)`.
+- A **zero-argument** call may drop its parens: `n.floor` ≡ `floor(n)`.
 - The dot is shared with indexing, disambiguated by what follows: **`.0` (a number) is an
   index**, **`.name` (an identifier) is a call** — e.g. `cols[i].lighten(10%)`.
 - It is only sugar: `c.lighten(10%)` and `lighten(c, 10%)` are identical; use whichever
@@ -1058,10 +1063,10 @@ shadow it. See [ADR-0034](decisions/0034-standard-library.md).
   empty list is E015 ([ADR-0079](decisions/0079-ramp-cycling.md)). Indexing/destructuring are
   in the language (§4).
 - **Randomness (seeded):** `rand(seed[, i])` → `[0, 1)`, `noise(seed, x, y)` → `[0, 1)`
-  (2D value noise, smooth in `x`/`y`) — pure, never ambient; an optional `seed <N>`
-  directive (module/draw scope, like `size`) sets a base seed for sugar helpers, but the
-  core functions always take their seed explicitly
-  ([ADR-0026](decisions/0026-seeded-randomness-and-noise.md)).
+  (2D value noise, smooth in `x`/`y`) — pure, never ambient; every core function takes its
+  seed explicitly ([ADR-0026](decisions/0026-seeded-randomness-and-noise.md)). (A `seed <N>`
+  module/draw directive once stored a base seed for sugar helpers that were never built; it
+  was removed — ADR-0096 §1 — since it was stored but never read.)
   **`noise` only smooths *between* integer lattice points** — sampling at integer steps
   (`noise(seed, x, 0)` for integer `x`) lands exactly *on* a lattice point every time, so
   interpolation contributes nothing and consecutive samples are uncorrelated (high-frequency,
@@ -1178,15 +1183,17 @@ A colour is a **first-class value**. Produce one with:
   nudges the hue toward `cool` by at most ~20° along the shorter arc (never cross-hue, so warm
   bases do not drift through magenta), desaturating slightly; `ramp(base, n)` returns an even
   n-step light→dark tone list for `pixels:`/cel banding — distinct from `tones` (arbitrary
-  amounts). Unlike the other builtins these three are **not reserved**: a recipe may still bind
-  `ramp`/`litTone`/`shadowTone` (a user binding takes precedence; `base.ramp(n)` on a colour
-  still reaches the builtin);
+  amounts). Reserved like every other builtin (§17.2,
+  [ADR-0096](decisions/0096-language-freeze-for-1-0.md)) — a recipe may not bind `ramp`,
+  `litTone`, or `shadowTone`;
 - the keyword `transparent`;
 - a **palette entry by name** (below).
 
 Operations chain left-to-right via UFCS: `oklch(0.5, 0.12, 30).lighten(20%).alpha(80%)`.
-Mixing and gradient interpolation default to **OkLCh** (perceptually even); pass
-`rgb`/`hsl` to override.
+Mixing and gradient interpolation default to **OkLCh** (perceptually even); pass the bare
+colour-space keyword `rgb`/`hsl`/`oklch` as `mix`'s fourth argument to override
+(`mix(a, b, t, rgb)` — same bare-contextual-keyword shape as every other enum in the language,
+[ADR-0096](decisions/0096-language-freeze-for-1-0.md) §7).
 
 **Pinned colour pipeline.** `oklch↔sRGB` conversion, gamut mapping (chroma reduced toward the
 achromatic axis until in-gamut), the **shorter-arc** hue interpolation, and 8-bit
@@ -1290,8 +1297,7 @@ outline            # 1px silhouette outline, derived-dark ink  (colour+width opt
 outline k          # …explicit colour  (outline k 2 = 2px; outline 2 = derived ink, 2px)
 tint r 0.3         # blend everything toward r by 0.3  (recolor is parametric — draw params + `tint`)
 shadow 1:1 k       # whole-frame drop shadow, offset dx:dy, colour k (ADR-0070)
-castShadow r 2:3 k # local region shadow (region-first)
-shadow r 2:3 k     # equivalent local region shadow overload
+shadow r 2:3 k     # local region shadow overload (region-first; `castShadow`, byte-identical, removed — ADR-0096 §1)
 grain 0.2 11 k     # texture over opaque pixels — amount then seed (ADR-0080)
 grain sand 0.2 11 k # …confined to a region — optional leading region, likewise speckle/ripple/dither (ADR-0071)
 speckle 0.1 17 k   # sparse marks over opaque pixels — density then seed
@@ -1338,17 +1344,19 @@ alone (`check` cannot catch a wrong filter argument; it stays semantically silen
   pipeline half of the **import-assist workflow** — external PNG → `import … sha256` → `quantize`
   → `outline` → `critique`: determinism holds from the `sha256` pin onward, the PNG's generation
   stays outside the engine ([ADR-0093](decisions/0093-organic-region-constructors-figure-oracle-quantize.md)).
-- **All four shadow surfaces share one `[region] dx:dy paint` shape**
+- **All three shadow surfaces share one `[region] dx:dy paint` shape**
   ([ADR-0070](decisions/0070-unified-shadow-argument-shape.md)): the stamp flag
-  `shadow dx:dy p` (§9), the whole-frame filter `shadow dx:dy p`, the local region form
-  `shadow r dx:dy p`, and `castShadow r dx:dy p` — one `dx:dy paint` tail everywhere, a region
-  leading when present. The offset is always an `dx:dy` **point**; the older whole-frame
-  two-bare-number spelling `shadow dx dy p` was removed
-  ([ADR-0088](decisions/0088-in-place-v1-break.md)) — use `dx:dy` everywhere.
+  `shadow dx:dy p` (§9), the whole-frame filter `shadow dx:dy p`, and the local region form
+  `shadow r dx:dy p` — one `dx:dy paint` tail everywhere, a region leading when present. The
+  offset is always an `dx:dy` **point**; the older whole-frame two-bare-number spelling
+  `shadow dx dy p` was removed ([ADR-0088](decisions/0088-in-place-v1-break.md)) — use `dx:dy`
+  everywhere. (A fourth surface, `castShadow r dx:dy p`, was a byte-identical duplicate of the
+  local region form and was removed — [ADR-0096](decisions/0096-language-freeze-for-1-0.md) §1;
+  say `shadow r dx:dy p`.)
 - **`grain`/`speckle`/`ripple`/`dither` take an optional leading region**
   ([ADR-0071](decisions/0071-region-scoped-texture-filters.md)): `grain [r] amount seed p`,
   `speckle [r] density seed p`, `ripple [r] strength seed p`, `dither [r] a b t` — region-first
-  like `castShadow`. The two numeric scalars are uniformly ordered **magnitude then seed**
+  like `shadow`. The two numeric scalars are uniformly ordered **magnitude then seed**
   ([ADR-0080](decisions/0080-unified-texture-filter-argument-order.md)). With a region the effect is confined to it (intersected with any active
   mask and the opaque pixels); **without** a region each filter processes **every opaque pixel
   of the current framebuffer**, unchanged, and still respects an enclosing `mask …:` block. The
@@ -1362,9 +1370,8 @@ alone (`check` cannot catch a wrong filter argument; it stays semantically silen
 - **Confining a filter to part of a scene** therefore has a simple path: give the filter a
   leading region (grain/speckle/ripple/dither), or wrap the call in a `mask …:` block — which
   works for the frame `shadow` too, not only the texture filters. The
-  component-`draw` + `stamp` detour is no longer required for any of them. `castShadow r dx:dy p`
-  and the region-form `shadow r dx:dy p` take an explicit region and need no confinement idiom
-  at all.
+  component-`draw` + `stamp` detour is no longer required for any of them. The region-form
+  `shadow r dx:dy p` takes an explicit region and needs no confinement idiom at all.
 
 Define a reusable pipeline with `filter` and run it with `apply`:
 
@@ -1381,6 +1388,10 @@ draw gem 4x4:
     .yy.
   apply retro
 ```
+
+Always run a user `filter` through `apply` — a bare filter name as a statement (`retro` alone,
+without `apply`) is a positioned error, a removed third dispatch path beside the `apply`
+statement and the `apply` command ([ADR-0096](decisions/0096-language-freeze-for-1-0.md) §1).
 
 The built-in filter set is intentionally extensible — new filters are added as commands. Texture
 filters and local lighting helpers are explicit, deterministic framebuffer operations
@@ -1621,7 +1632,7 @@ export gem icons/gem:
   png  @1 @2 @3  z9          # gem.png, gem@2x.png, gem@3x.png; zlib level 9
   svg  ids classes           # element ids + CSS classes
   path                       # for path definitions: geometry SVG
-  jpeg 512  q80  mode smooth # explicit 512px, quality 80, anti-aliased (override theme)
+  jpeg 512x512  q80  mode smooth # explicit 512x512, quality 80, anti-aliased (override theme)
 ```
 
 - `export <content> <base-path>:` then one line per output format. Source-first, then the
@@ -1629,7 +1640,8 @@ export gem icons/gem:
   extension is appended (`png` → `<base>.png`)
   ([ADR-0019](decisions/0019-source-first-module-references.md)).
 - **Scale / size:** `@N` = integer scale factor (nearest-neighbor for pixel mode);
-  `512` or `512x512` = explicit pixel size.
+  `512x512` = explicit pixel size. (A bare-int size, `512`, was a third spelling — removed,
+  ADR-0096 §1.)
 - **HDPI:** `@1 @2 @3` emits `name.png`, `name@2x.png`, `name@3x.png`.
 - **png:** `z0`..`z9` compression level; `indexed` writes an **indexed-colour PNG** whose
   palette contains every distinct rendered RGBA8 colour; a `pal` is not required. The
@@ -1715,8 +1727,8 @@ This is **engineered**, not assumed:
   `mirror` (§11.2) re-executes its body with reflected pixel writes, so a seeded pass mirrors
   exactly ([ADR-0078](decisions/0078-mirror-block.md)).
 - **One semantics.** There is a single, frozen engine semantics — the pipeline above is fixed,
-  so nothing selects a variant. The `drawstic <N>` pragma is parsed but inert (§2,
-  [ADR-0088](decisions/0088-in-place-v1-break.md)): `shadeRegion`'s `amount` is always the veil
+  so nothing ever selected a variant, which is why the `drawstic <N>` pragma was removed outright
+  (§2, [ADR-0096](decisions/0096-language-freeze-for-1-0.md)): `shadeRegion`'s `amount` is always the veil
   opacity (§12, [ADR-0068](decisions/0068-shaderegion-veil-opacity-signature.md)), the whole-frame
   `shadow` filter always honours an enclosing `mask …:` block (§12,
   [ADR-0070](decisions/0070-unified-shadow-argument-shape.md)), and the eight offset stamp anchors
@@ -1984,14 +1996,14 @@ lexer keywords.
   **depth-0 whitespace**, where depth counts unclosed `(` and `[` — whitespace inside
   brackets never splits (`poly cols[row // 8 mod 3] 0:row w:row` has three arguments).
   The keyword-prefixed sequences in the phrase grammar (`transform t`,
-  `tint k 0.3`, `mask m`, `font small`, `cap round`, `join bevel`, `mode smooth`,
-  `sha256 hex`) each form one argument.
+  `tint k 0.3`, `mask m`, `font small`, `sha256 hex`) each form one argument.
 - **D3 — Match arms.** An arm's label ends at the *first* depth-0 `:` of the line, so a
   label is colon-free at depth 0 (parenthesize a point label: `(0:0): …`). The body is an
   inline simple statement or an indented block.
-- **D4 — Contextual tokens.** The numeric-suffix flags, the path tokens, and the
-  `drawstic` pragma word are recognized only in their grammar positions; elsewhere the
-  same spellings are ordinary `NAME`s (`w2` may be a binding).
+- **D4 — Contextual tokens.** The numeric-suffix flags and the path tokens are recognized
+  only in their grammar positions; elsewhere the same spellings are ordinary `NAME`s (`w2`
+  may be a binding). `drawstic` at the very start of a file is sniffed only to raise the
+  removed-pragma error (§2); elsewhere it is an ordinary `NAME`.
 - **D5 — Hyphens live in paths, not names.** A `NAME` never contains `-`, so `-` is
   always the minus operator and needs no whitespace: `x-1` subtracts. Multi-word names
   are **camelCase** (`pixelBase`; snake_case is legal, camelCase preferred). Path
@@ -2011,10 +2023,9 @@ lexer keywords.
 ```ebnf
 (* ───────────────────────── module structure ───────────────────────── *)
 
-module         = [ version-pragma ] { top-stmt } EOF ;
-version-pragma = "drawstic" INT NL ;                (* first line; pins semantics (§2, §14) *)
+module         = { top-stmt } EOF ;                 (* no version pragma — removed (§2, ADR-0096 §1) *)
 
-top-stmt       = from-stmt | use-stmt | size-dir | seed-dir | font-dir
+top-stmt       = from-stmt | use-stmt | size-dir | font-dir
                | binding | definition ;
 definition     = draw-def | path-def | theme-def | fn-def | grad-def | filter-def | mask-def
                | light-def | material-def                              (* §12, ADR-0086 *)
@@ -2026,7 +2037,7 @@ import-item    = NAME [ "as" NAME ] ;
 use-stmt       = "use" [ MODULE-PATH ] NAME NL ;    (* 2 tokens = imported, 1 = local (§12) *)
 
 size-dir       = "size" SIZE NL ;                   (* module- or theme-scope (§6) *)
-seed-dir       = "seed" INT NL ;                    (* module- or draw-scope (§10) *)
+                                                     (* `seed N` removed — stored, never read (ADR-0096 §1) *)
 font-dir       = "font" NAME NL ;                   (* module-, draw- or theme-scope (§8); D7 *)
 mode-flag      = "mode" ( "pixel" | "smooth" ) ;
 mode-dir       = mode-flag NL ;                     (* theme-scope (§12) *)
@@ -2072,7 +2083,7 @@ draw-def       = "draw" NAME [ "(" [ name-list ] ")" ] [ SIZE ] ":" NL
                  INDENT { use-stmt } { draw-stmt } DEDENT ;  (* `use` must lead (§6, §12) *)
 
 draw-stmt      = pal-stmt | pixels-block | meta-stmt
-               | seed-dir | font-dir                (* drawing-scoped directives (§8, §10) *)
+               | font-dir                            (* drawing-scoped directive (§8) *)
                | grad-def | filter-def | mask-def   (* drawing-local overrides (§9, §12) *)
                | light-def | material-def           (* drawing-local light/material (§12, ADR-0086) *)
                | pose-apply                          (* apply a pose (§9, ADR-0095) *)
@@ -2120,8 +2131,8 @@ draw-cmd       = "bg"      paint                     (* paint first everywhere (
                | "apply"   NAME ;                                   (* run a filter (§12) *)
 
 draw-flags     = [ "fill" ] stroke-flags ;          (* trailing sugar for fill/stroke (§8, ADR-0039, ADR-0066) *)
-stroke-flags   = [ W-FLAG ] [ "cap" ( "butt" | "round" | "square" ) ]
-                 [ "join" ( "miter" | "round" | "bevel" ) ] ;  (* cap/join: smooth mode (§8) *)
+stroke-flags   = [ W-FLAG ] ;                       (* `cap`/`join` removed — parsed but never
+                                                        rendered (§8, ADR-0096 §1) *)
 
 stampable      = NAME [ "(" [ expr-seq ] ")" ]      (* plain or parametric drawing (§6) *)
                | NAME "." INT ;                     (* tileset member by index (§9) *)
@@ -2132,8 +2143,8 @@ stamp-flag     = "flipx" | "flipy" | ROT-FLAG | SCALE-FLAG          (* pinned su
 filter-cmd     = "outline" [ paint ] [ expr ]       (* built-in filter set (§12); paint+width optional, ADR-0090 *)
                | "tint"    paint expr               (* extensible — new filters follow the same shape *)
                | "shadow"  point paint              (* whole-frame drop shadow: dx:dy (ADR-0070) *)
-               | "shadow"  region point paint       (* local region shadow (ADR-0062) *)
-               | "castShadow" region point paint
+               | "shadow"  region point paint       (* local region shadow (ADR-0062);
+                                                        `castShadow` (byte-identical) removed, ADR-0096 §1 *)
                | "grain" [ region ] expr expr paint (* optional leading region scope (ADR-0071) *)
                | "speckle" [ region ] expr expr paint
                | "ripple" [ region ] expr expr paint
@@ -2201,7 +2212,9 @@ format-line    = "png"  { out-size | Z-FLAG | "indexed" | mode-flag } NL
                | "tiled" [ "xml" ] NL               (* tileset sidecar: .tsj / .tsx (§13) *)
                | "atlasJson" NL
                | "aseprite" NL ;
-out-size       = AT-SCALE | INT | SIZE ;            (* @N | 512 | 512x512 (§13) *)
+out-size       = AT-SCALE | SIZE ;                  (* @N | 512x512 (§13); a bare-int size
+                                                        (`512`) was removed — third spelling of
+                                                        a size, ADR-0096 §1 *)
 
 (* ───────────────────────────── expressions ───────────────────────────── *)
 

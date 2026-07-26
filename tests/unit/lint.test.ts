@@ -262,7 +262,7 @@ describe('lintModule', () => {
         '  idx = cols[0]',
         '  dx = cols.0',
         '  lighter = n.lighten(10%)',
-        '  plain = o.grayscale',
+        '  plain = o.desaturate(100%)',
         '  px p 5:0',
         '  bexp = 1 == 2',
         '  iexp = if 1 == 2 then q else s',
@@ -739,5 +739,30 @@ describe('canonical-path lints + construct census (W012–W015, ADR-0094)', () =
     expect(rim?.nonCanonical).toBe(true)
     // deterministic: two runs give the identical census.
     expect(censusModule(engine, mod)).toEqual(census)
+  })
+
+  test('census flags a retired construct so a stale recipe is diagnosed without rendering it (ADR-0096 §1)', () => {
+    // `castShadow` has its own statement shape (a call); `grayscale` (call- and UFCS-form) has
+    // none of its own — both still load and census fine even though rendering either would now
+    // throw the ADR-0096 §1 removal error.
+    const src = [
+      'draw part 6x4:',
+      '  r = rect(1:1, 2:2)',
+      '  castShadow r 2:0 #ff0000',
+      '  bg #ff0000.grayscale',
+      '  fill #00ff00.grayscale.hue(30) r',
+      '',
+      'export part p/part:',
+      '  png',
+      '',
+    ].join('\n')
+    const { engine, mod } = load(src)
+    const census = censusModule(engine, mod)
+    const castShadow = census.constructs.find((c) => c.construct === 'castShadow')
+    expect(castShadow?.count).toBe(1)
+    expect(castShadow?.retired).toBe(true)
+    const grayscale = census.constructs.find((c) => c.construct === 'grayscale')
+    expect(grayscale?.count).toBe(2) // the bare call and the UFCS chain, one statement each
+    expect(grayscale?.retired).toBe(true)
   })
 })

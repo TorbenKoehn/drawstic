@@ -440,11 +440,11 @@ describe('context', () => {
   test('export formats report explicit out-sizes alongside scales', () => {
     withTmpDir((dir) => {
       const file = join(dir, 'outsize.drw')
-      writeFileSync(file, 'draw a 4x4:\n  bg #fff\n\nexport a out/a:\n  png 8 8x8\n')
+      writeFileSync(file, 'draw a 4x4:\n  bg #fff\n\nexport a out/a:\n  png 8x8 16x16\n')
       const r = runJson('context', file, '--json')
       expect(r.exitCode).toBe(0)
       const body = r.json as { context: { exports: { formats: { sizes: string[] }[] }[] } }
-      expect(body.context.exports[0]?.formats[0]?.sizes).toEqual(['8', '8x8'])
+      expect(body.context.exports[0]?.formats[0]?.sizes).toEqual(['8x8', '16x16'])
     })
   })
 

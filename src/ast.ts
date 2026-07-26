@@ -91,9 +91,9 @@ export type Expression =
       /**
        * A `target.name` or `target.name(args)` expression — UFCS call, `x.f(a)` sugar
        * for `f(x, a)` (ADR-0010, D8). `args` is `undefined` for the bare,
-       * parenless zero-argument form (`c.grayscale`) and an array
+       * parenless zero-argument form (`n.floor`) and an array
        * (possibly empty) for an explicit parenthesized call
-       * (`c.grayscale()`); both mean the same thing to the evaluator.
+       * (`n.floor()`); both mean the same thing to the evaluator.
        */
       readonly kind: 'method'
       readonly target: Expression
@@ -428,7 +428,6 @@ export type Statement =
       readonly height: number
       readonly span: TextSpan
     }
-  | { readonly kind: 'seedDirective'; readonly seed: number; readonly span: TextSpan }
   | { readonly kind: 'fontDirective'; readonly name: string; readonly span: TextSpan }
   | { readonly kind: 'modeDirective'; readonly mode: 'pixel' | 'smooth'; readonly span: TextSpan }
   | { readonly kind: 'with'; readonly names: string[]; readonly span: TextSpan }
@@ -685,13 +684,11 @@ export type ExportDefinition = {
 }
 
 /**
- * The parsed form of one `.drw` file. `pragma` is the optional leading
- * `drawstic N` version pin (ADR-0029); `undefined` means "engine's current
- * version". `file` is the display path used in diagnostics, not
- * necessarily a filesystem path.
+ * The parsed form of one `.drw` file. The `drawstic N` version pin (ADR-0029) was removed
+ * (ADR-0096 §1) — inert since ADR-0088, one engine semantics only. `file` is the display path
+ * used in diagnostics, not necessarily a filesystem path.
  */
 export type Module = {
-  readonly pragma: number | undefined
   readonly statements: Statement[]
   readonly file: string
 }

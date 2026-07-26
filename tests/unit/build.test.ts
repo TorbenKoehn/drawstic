@@ -91,7 +91,7 @@ draw partial 4x4:
   px rgb(10, 20, 30) 0:0
   px rgb(40, 50, 60) 1:1
 
-draw ramp 3x1:
+draw swatch 3x1:
   pal:
     a, b, c = #777.tones(-10%, 0%, 10%)
   pixels:
@@ -132,7 +132,7 @@ export solid out/solid-bare:
 export solid out/solid-svg-plain:
   svg
 
-export ramp out/ramp-svg-flags:
+export swatch out/ramp-svg-flags:
   svg ids classes inlineStyles
 
 export solid out/solid-svg-mode:
@@ -148,7 +148,7 @@ export solid out/solid-jpeg-scale:
   jpeg @2
 
 export wide out/wide-size-w:
-  png 8
+  png @2
 
 export wide out/wide-size-wh-indexed:
   png 8x8 indexed
@@ -159,7 +159,7 @@ export wide out/wide-scale-indexed:
 export partial out/partial-indexed:
   png indexed
 
-export ramp out/ramp-indexed:
+export swatch out/ramp-indexed:
   png indexed
 
 export tiny out/tiny:
@@ -224,14 +224,14 @@ describe('buildModule — png scale/size × indexed combinations', () => {
     }
   })
 
-  test('explicit width-only size: auto-computed height preserves aspect ratio', () => {
+  test('@N scale factor on a non-square drawing preserves aspect ratio', () => {
     const { engine, mod } = load(CONTENT_SRC)
     const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
     try {
       buildModule(engine, mod, out)
-      const p = decodePng(new Uint8Array(readFileSync(join(out, 'out', 'wide-size-w.png'))))
+      const p = decodePng(new Uint8Array(readFileSync(join(out, 'out', 'wide-size-w@2x.png'))))
       expect(p.w).toBe(8)
-      expect(p.h).toBe(4) // wide is 4x2 -> aspect 2:1 -> height = round(2*8/4)
+      expect(p.h).toBe(4) // wide is 4x2; @2 scales both dims 2x -> 8x4
       expect(px(p.data, 8, 0, 0)).toEqual([80, 80, 200, 255])
     } finally {
       rmSync(out, { recursive: true, force: true })

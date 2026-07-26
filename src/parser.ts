@@ -37,9 +37,12 @@ const KW_ARG_ARITY: Record<string, number> = {
   tint: 2,
   mask: 1,
   font: 1,
+  // `cap`/`join` parse here so a draw command's trailing `cap X`/`join X` still forms one
+  // argument unit; eval.ts's Args.drawFlags/strokeFlags then raise the ADR-0096 §1 removal
+  // error instead of the old silent accept-and-discard. `mode` had no consumer anywhere
+  // (ADR-0096 §1 dead code) and is deleted outright, not replaced by an error.
   cap: 1,
   join: 1,
-  mode: 1,
   sha256: 1,
   anchor: 1,
   shadow: 2,
@@ -144,18 +147,16 @@ class Parser {
   // ── module ────────────────────────────────────────────────────────────
 
   /**
-   * Entry rule: `module = [version-pragma] { top-stmt } EOF` (§17.4). The
-   * optional `drawstic N` pragma (ADR-0029) is only recognized as the
-   * file's first line, sniffed by 3-token lookahead so a plain `drawstic`
-   * binding elsewhere in the file is unaffected.
+   * Entry rule: `module = { top-stmt } EOF` (§17.4). The `drawstic N` version pragma
+   * (ADR-0029) was removed (ADR-0096 §1): inert since ADR-0088 (one engine semantics,
+   * nothing ever branched on `N`). Still sniffed by the same 3-token lookahead, as the
+   * file's first line only, so a plain `drawstic` binding elsewhere in the file is
+   * unaffected — only the pragma shape at line 1 errors.
    */
   parseModule = (): Module => {
-    let pragma: number | undefined
     this.#skipNLs()
     if (this.#atName('drawstic') && this.#peek(1).kind === 'int' && this.#peek(2).kind === 'nl') {
-      this.#next()
-      pragma = this.#next().num
-      this.#next()
+      this.#fail("the 'drawstic N' version pragma was removed — delete the line", this.#peek())
     }
     const stmts: Statement[] = []
     this.#skipNLs()
@@ -163,7 +164,7 @@ class Parser {
       stmts.push(this.#parseStmt(true))
       this.#skipNLs()
     }
-    return { pragma, statements: stmts, file: this.#file }
+    return { statements: stmts, file: this.#file }
   }
 
   /**
@@ -243,11 +244,10 @@ class Parser {
         }
         break
       case 'seed':
+        // `seed N` was removed (ADR-0096 §1) — stored, never read. `seed = …` (name binding)
+        // still works; only the directive shape errors.
         if (this.#peek(1).kind === 'int') {
-          this.#next()
-          const n = this.#next().num
-          this.#expectNL()
-          return { kind: 'seedDirective', seed: n, span: s }
+          this.#fail("'seed' was removed — it was stored but never read; delete the line", t)
         }
         break
       case 'font': {
@@ -1659,9 +1659,12 @@ class Parser {
         continue
       }
       if (f.kind === 'int') {
-        this.#next()
-        line.sizes.push({ width: f.num, height: undefined })
-        continue
+        // A bare-int export size (`png 512`) was removed (ADR-0096 §1) — a third spelling
+        // next to `WxH` and `@N`.
+        this.#fail(
+          `bare-int export size was removed — use '${f.num}x${f.num}' (WxH) or an '@N' scale factor`,
+          f,
+        )
       }
       if (f.kind === 'size') {
         this.#next()
@@ -1966,7 +1969,7 @@ class Parser {
    * A `KW_ARG_ARITY` name is read as a plain value expression (not the
    * keyword form) when the token right after it is a continuation
    * operator (`( , ) . [`) — i.e. when it's being *used*, not applied —
-   * so `f(mask)` and `f(mask.grayscale)` pass `mask` through as a value.
+   * so `f(mask)` and `f(mask.len)` pass `mask` through as a value.
    */
   readonly #parseParenArg = (): Argument => {
     const f = this.#peek()

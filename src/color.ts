@@ -281,12 +281,6 @@ export const desaturate = (c: Color, amt: number): Color => {
   return oklchToColor({ ...o, c: o.c * Math.max(0, 1 - amt) })
 }
 
-/** Zero the OkLCh chroma, preserving lightness and hue. */
-export const grayscale = (c: Color): Color => {
-  const o = colorToOklch(c)
-  return oklchToColor({ ...o, c: 0 })
-}
-
 /** Hue rotation by degrees, or set the hue to another color's hue. */
 export const rotateHue = (c: Color, arg: number | Color): Color => {
   const o = colorToOklch(c)
