@@ -158,6 +158,46 @@ der Skill jedem Agenten zum Kopieren gibt, statt nur der Beispiel-Korpus:
   `small`, kein Umbau von `small`). Umgangen wurde es nur im README-Hero: dort steht jetzt die
   `productivity`-Familie, deren Namen keine Unterlängen-Buchstaben enthalten.
 
-### W3-5 — Verifikation
-- [ ] 3 Blind-Builds (Charakter / Icon-Familie / Szene) durch frische Agenten gegen den neuen Skill.
-- [ ] Befunde daraus fixen; danach Version stampfen und Release-Workflow scharf schalten.
+### W3-5 — Blind-Verifikation `[~]`
+
+Drei frische Agenten, die **nur** `skills/drawstic/**` lesen durften (kein `docs/`, kein `examples/`,
+kein `src/`), in Scratch-Verzeichnissen, mit dem Auftrag, den Skill zu prüfen statt zu loben. Einer
+bewusst auf einem schwachen Modell, weil ein Skill, der nur mit dem stärksten Modell funktioniert,
+nicht gut genug ist.
+
+- [x] **Icon-Familie (schwaches Modell)** — acht Wetter-Icons, alle vier Done-Bedingungen grün, kein
+      einziger Fehler unterwegs. Formal tadellos, inhaltlich nicht: die „Sonne" ist ein Achteck mit
+      vier Balken bis an den Plattenrand und liest als Blenden-/Rettungsring-Symbol. Der Agent setzte
+      seinen eigenen Fehllese-Test darauf auf „✅ clearly = sun" und behauptete zusätzlich 2px Rand
+      für alle Glyphen, den die Strahlen sichtbar verletzen.
+- [x] **Szene** — Dämmerungshafen, alle vier Bedingungen grün, Tiefe und Lichtstimmung überzeugend.
+      Auch hier ein geschönter Bericht: das große Boot habe „a cabin and mast" — einen Mast gibt es
+      nicht, und der Rumpf liest als Schote, nicht als Kutter (das hat der Agent immerhin selbst
+      relativiert).
+- [ ] **Charakter** — läuft.
+
+**Verifizierte Befunde** (jeder selbst nachgestellt, nicht aus dem Bericht übernommen):
+
+| # | Befund | Status |
+|---|---|---|
+| 1 | `--silhouette` liefert bei jedem Icon auf undurchsichtiger Platte ein schwarzes Quadrat — der Fehllese-Test, den `icon-craft.md` für genau diese Kategorie vorschreibt, ist dort prinzipiell blind. Beim Charakter liefert dasselbe Kommando ein brauchbares Bild. | delegiert |
+| 2 | `drawstic help` listet vier akzeptierte Flags nicht, darunter `--lint` — Bedingung 1 des Done-Gates. Die `E026`-Meldung schickt einen ausdrücklich zu `help`, wo die Antwort fehlt. | delegiert |
+| 3 | Die ältesten Kernfehler tragen **gar keinen `hint`** (E006, E007, E011), die diesen Release neu gebauten (E024, E026) präzise. `E011 missing argument` nennt weder Kommando noch Argumentplatz — genau der Fehler, vor dem `character-craft.md` als „confusing … far from the real cause" warnt. | delegiert |
+| 4 | **`outline`-Widerspruch aufgelöst.** SKILL.md führt es als Schritt 6 mit „do not invent a different order", der ausgelieferte Szenen-Starter enthält null `outline`-Aufrufe. Gemessen: auf einer randlos gefüllten Szene ist `outline` ein **No-op** (byte-identisches PNG), weil es gegen Transparenz umrandet. Keine Seite ist falsch — SKILL.md nennt die Bedingung nicht. | offen |
+| 5 | Ein `material` ist keine Farbe: `material m = #8a5a3c cloth` und dann `m.alpha(30%)` → `E006`. Der Szenen-Builder tappte **zweimal hintereinander** hinein. Nirgends dokumentiert. | offen (Teil von #3) |
+| 6 | `drawing.region` liegt im **eigenen** Raum des Parts, nicht dort, wo `fit` ihn gesetzt hat — nachgestellt: der Overlay landet im Ursprung, der Part woanders. Die Doku sagt nur „any drawing's silhouette", nicht in welchem Raum. Deshalb musste der Builder die Verschiebung von Hand ausrechnen. | offen |
+| 7 | Kein Wort zu schwimmenden Objekten: „boat", „float", „moor" kommen in `scene-craft.md` nicht vor; `ground` ist nur für festen Boden dokumentiert. Reflexion und Wasserlinien-Kontakt musste der Builder per Analogie selbst herleiten. | offen |
+| 8 | Die Reserved-Word-Liste ist eine flache Wortwolke ohne Kategorien — `rim` ist das natürlichste Wort für eine Bootskante, und der Builder kollidierte damit, **obwohl er die Liste gelesen hatte**. | offen (Teil von #3) |
+
+**Durchgehendes Muster, in zwei unabhängigen Läufen bestätigt:** Ein sauberes Gate plus die
+Selbstauskunft des Modells ist **kein** Craft-Nachweis. Beide Agenten beantworteten „schau es dir an"
+-Rubrikpunkte großzügig zu ihren Gunsten. Konsequenz: den Fehllese-Test von einer **Urteilsfrage**
+(„liest das richtig?") auf eine **Erzeugungsfrage** umstellen („nenne die zwei wahrscheinlichsten
+Fehldeutungen, bevor du den Namen liest") — ein Ja/Nein lässt sich schönreden, eine erzwungene
+Aufzählung nicht.
+
+### W3-6 — Release scharf schalten
+- Der Workflow ist bereits tag-getrieben und vollständig (`NODE_AUTH_TOKEN`, `--provenance`,
+  npm-pack-Smoke-Test unter Node). `package.json` bleibt auf `0.0.0`; die Version stempelt der
+  Workflow aus dem Tag. Es bleibt: `feature/exp` → `develop` → `main`, dann `v1.0.0` taggen und
+  pushen — beides ausdrücklich Sache des Nutzers.
