@@ -10,9 +10,9 @@ same recipe, pixel-identical output on every platform. Recipes are token-optimiz
 self-verifiable text: you can read one and predict the pixels.
 
 This file teaches the **one canonical path** and the language on it. The **floor / escape hatch**
-(raw `shadeRegion`/`rim`/`lightRegion`, `scatter`, `mirror`, hand `pixels:`/`palette:` work, filter
-internals) lives in [reference.md](reference.md) — load it when the canonical path doesn't cover a
-need, or for any construct not shown here.
+(`scatter`, `mirror`, hand `pixels:`/`palette:` work, filter internals) lives in
+[reference.md](reference.md) — load it when the canonical path doesn't cover a need, or for any
+construct not shown here. Lighting has **no** floor: `model`/`cel` is the only way (ADR-0097).
 
 ## Runner
 
@@ -89,8 +89,8 @@ Each step is engine-verifiable: `render … --explain` prints the exact primitiv
    `failedCodes`/`checks[]` for what's outstanding. Then **do what `critique.rubric` says**: run its
    ordered `renders` (silhouette@6 → ascii → png@4 → sheet) and answer every `items[]` prompt by
    looking. `pass:true` is necessary, **not** sufficient. `critique --json` also carries a **construct
-   census** (every construct used, `spec-only`/`non-canonical` flags, and four `antiPatterns` counts
-   `rawShade`/`manualSpread`/`stampWithPins`/`handShadow` = W012–W015, **target 0**).
+   census** (every construct used, `spec-only`/`non-canonical`/`retired` flags, and three
+   `antiPatterns` counts `manualSpread`/`stampWithPins`/`handShadow` = W013–W015, **target 0**).
 7. **Build** `bunx drawstic build file.drw --json` → writes every `export`
    artifact next to the recipe file (ADR-0096 §6; `--out dir` overrides), returns
    `{diagnostics, artifacts: [{path, bytes}]}`.
@@ -171,6 +171,13 @@ be a `pixels:` grid with a `palette` (palette keys = one ASCII letter, `.` = tra
   strand/plume/tassel) · `crescent p c rx:ry thick dir [fill]` (tapering band — fringe/brim/eyelid) ·
   `ribbon p p0 p1 p2 w [fill]` (width-`w` ribbon through 3 points; **stacked = turban wraps**). Paintless
   call = a `Region` (`dome(c, rx:ry)`) for `.union`/`model`/`mask`.
+- **Region algebra:** `.union` `.intersect` `.subtract` `.xor` · `.shift(pt)` `.scale(n)`
+  `.transform(t)` · **`.edge(dx:dy [, n])`** = the one-sided edge band, `n` px (default 1), uniform
+  coverage — `fill #ffffff.alpha(50%) face.edge(0:1)` is a top bevel, `fill k.alpha(35%)
+  face.edge(0:-1, 2)` a 2px bottom one (ADR-0097). Direction = where the light **travels**, so `0:1`
+  is the **top** edge; `0:0` is empty. Any paint, including dark — this is the bevel/contour tool the
+  material `rim` dose (always toward the light colour) cannot replace. Clip it **after**:
+  `r.edge(d).intersect(c)`, never `r.intersect(c).edge(d)` (which bands the clip rect instead).
 - **Stamp** `stamp name[(args)] pt [anchor center|bottom|…] [flipx] [flipy] [rot45] [scale2]
   [transform t] [tint p 0.3] [shadow 1:1 #0006] [mask r]`.
 - **Anchored assembly** (default for modular composition, ADR-0087) — a part declares named attach
@@ -218,9 +225,9 @@ be a `pixels:` grid with a `palette` (palette keys = one ASCII letter, `.` = tra
 - **Control flow:** `for i 0..8:` (the one loop — half-open; `..=` inclusive) · `if c:`/`else:` ·
   `match x:` · expression `if c then a else b` · `fn f(a, b) = expr`.
 - **Floor constructs** (reach past the canonical path — reference.md): `scatter` (seeded points from a
-  region — stars/gravel), `mirror x=n:` (a whole passage + its reflection), raw `shadeRegion`/`rim`/
-  `lightRegion`/`ao` (the hand shading quartet `model` replaces), `quantize` (palette
-  snap — § Import-assist), hand `pixels:`/`palette:` work.
+  region — stars/gravel), `mirror x=n:` (a whole passage + its reflection), `quantize` (palette
+  snap — § Import-assist), hand `pixels:`/`palette:` work. The hand shading quartet
+  (`shadeRegion`/`lightRegion`/`rim`/`ao`) is **not** among them — it was removed (ADR-0097).
 - **Export formats:** `png [@N] [z0-9] [indexed]` · `svg [ids] [classes] [inlineStyles]` ·
   `jpeg [512] [q80]` · `path` · `tiled`/`atlasJson`/`aseprite` (sheets) · `mode pixel|smooth`.
 

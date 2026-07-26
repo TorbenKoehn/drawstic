@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { color, relativeLuminance } from '../../src/color.js'
 import { Framebuffer } from '../../src/framebuffer.js'
-import { type Context, celRegion, fillRegion } from '../../src/raster.js'
+import { type Context, fillRegion } from '../../src/raster.js'
 import {
   formSpecOf,
   lightDirOf,
@@ -189,41 +189,6 @@ describe('lowerMaterial: rendered tone structure', () => {
     expect(c.buffer.get(18, 21).a).toBe(0)
     // nothing sticks out on the light-facing side either.
     expect(c.buffer.get(2, 2).a).toBe(0)
-  })
-})
-
-describe('celRegion: crisp N-band distance fill', () => {
-  const bands = [color(255, 0, 0), color(0, 255, 0), color(0, 0, 255)]
-
-  test('produces exactly N distinct hard-edged bands (no alpha stacking)', () => {
-    const c = ctx(24, 24)
-    celRegion(c, square, lightPointFor(square, sun), bands)
-    const seen = new Set<string>()
-    for (let y = 4; y <= 19; y++) {
-      for (let x = 4; x <= 19; x++) {
-        const p = c.buffer.get(x, y)
-        if (p.a > 0) {
-          seen.add(`${p.r},${p.g},${p.b},${p.a}`)
-        }
-      }
-    }
-    // every filled pixel is exactly one of the three opaque band colours — crisp, no intermediates.
-    expect(seen).toEqual(new Set(['255,0,0,255', '0,255,0,255', '0,0,255,255']))
-  })
-
-  test('band 0 sits nearest the light, the last band farthest', () => {
-    const c = ctx(24, 24)
-    celRegion(c, square, lightPointFor(square, sun), bands)
-    const near = c.buffer.get(5, 5) // up-light corner
-    const far = c.buffer.get(18, 18) // down-light corner
-    expect([near.r, near.g, near.b]).toEqual([255, 0, 0])
-    expect([far.r, far.g, far.b]).toEqual([0, 0, 255])
-  })
-
-  test('an empty colour list is a no-op', () => {
-    const c = ctx(24, 24)
-    celRegion(c, square, lightPointFor(square, sun), [])
-    expect(c.buffer.get(11, 11).a).toBe(0)
   })
 })
 

@@ -140,7 +140,7 @@ tile's top-left in **unscaled** sheet coordinates (× `--png@N` for output pixel
 | W009 | a `pixels:` grid's **last** row is fully transparent (`.`) while a row above has content — stamps place by top-left, so the trailing empty row silently enlarges the footprint and seams a 1px gap below adjacently stamped parts. Last row only; a fully transparent first row or side column (top-centring / padding) stays legit |
 | W010 | a `fit` part touches nothing in the final composite (floating/seamed — the gap C007 measures) |
 | W011 | a `fit` target pin sits >2px off the part's own ink (the join floats) |
-| W012 | raw `rim`/`shadeRegion`/`lightRegion` in a `model`/`cel`-shaded drawing → raise the material's `rim`/`spread` (ADR-0094) |
+| W012 | *retired, never reused* — its three commands were removed (ADR-0097); a stale recipe shows up as a `retired` census entry instead |
 | W013 | a `litTone`/`shadowTone` `fill` clipped by `.intersect(rect)` on a modeled region → use `spread N%` (ADR-0094) |
 | W014 | a `stamp` of a part that declares attach `pin`s (not a pin-seeded root) → `fit` it, or drop the pins if decoration (ADR-0094) |
 | W015 | a semi-transparent `fill … ellipse(…)` in the foot zone of a `fit`-using drawing → use the root `fit … ground` (ADR-0094) |
@@ -149,11 +149,11 @@ tile's top-left in **unscaled** sheet coordinates (× `--png@N` for output pixel
 Full detail: `docs/language-spec.md` § Lint warnings.
 
 **Construct census** (ADR-0094): `critique --json` and `check --lint --json` carry a deterministic
-`census` — every construct used, flagged `spec-only`/`non-canonical`/`retired`, plus four
-`antiPatterns` counts (`rawShade`/`manualSpread`/`stampWithPins`/`handShadow` = W012–W015; target
-0). `retired` (ADR-0096) marks a removed name (`castShadow`, `grayscale`) that still loads —
-rendering it errors; the other removals fail to parse/load at all, so they never reach the
-census. `check --lint --json` wraps its output as `{diagnostics, census}`.
+`census` — every construct used, flagged `spec-only`/`non-canonical`/`retired`, plus three
+`antiPatterns` counts (`manualSpread`/`stampWithPins`/`handShadow` = W013–W015; target 0).
+`retired` (ADR-0096/0097) marks a removed name that still loads — `castShadow`, `grayscale`,
+`rim`, `shadeRegion`, `lightRegion`, `ao` — rendering it errors; the other removals fail to
+parse/load at all, so they never reach the census. `check --lint --json` wraps its output as `{diagnostics, census}`.
 
 ## Modules & imports
 
@@ -323,7 +323,7 @@ construction:
 ```drw
 fn ridgeY(nx) = 16 + round(noise(3, nx * 4, 0) * 10)   # ~4 smooth undulations
 profile #c9a06b 0..w ridgeY fill                       # dune filled to the bottom
-mask dune = profile(0..w, ridgeY)                      # paintless → Region, for shadeRegion/grain
+mask dune = profile(0..w, ridgeY)                      # paintless → Region, for model/grain
 ```
 
 Both lines above are **draw-body** statements: `w`/`h` are the canvas size and exist only inside a
@@ -371,10 +371,21 @@ mask keyhole:            # block: statements inside clip to the region
 stamp crest 4:4 mask keyhole                            # inline on a stamp
 fn ring(c, r) = circle(c, r).subtract(circle(c, r - 2)) # fns compose regions
 mask m = gem.region.scale(2).shift(4:4)                 # any drawing's silhouette (alpha>0)
+fill #ffffff.alpha(50%) face.edge(0:1)                  # 1px band on the TOP edge
+fill #0a1220.alpha(35%) face.edge(0:-1, 2)              # 2px dark bevel on the bottom
 ```
 
 Set-ops: `.union` `.intersect` `.subtract` `.xor`. Placement: `.shift(pt)`, `.scale(n)`,
 `.transform(t)`. Paths convert explicitly: `mask badge.fill():`, `slash.stroke(2)`.
+
+**`r.edge(dx:dy [, n])`** (ADR-0097) = the one-sided edge band, `r.subtract(r.shift(sign(dx)·n :
+sign(dy)·n))`. `n` defaults to 1; only the direction's **sign** matters; `0:0` (or `n = 0`) is
+empty. Read the direction as **where the light travels**, so `0:1` (down) = the **top** edge,
+`1:0` (right) = the **left** edge. One region ⇒ one fill ⇒ a translucent paint lands at its own
+alpha, no stacking. It takes **any** paint — this is how you get a *dark* contour edge, which a
+material `rim` dose (always toward the light colour) cannot make.
+**Order matters:** `r.edge(d).intersect(c)` clips the silhouette band (right);
+`r.intersect(c).edge(d)` bands the clip rectangle and lays a bar across the middle of the mass.
 Parametric silhouettes: `region(key(r))`. Only the **top-level** form
 (`mask keyhole = …` above the `draw`) shows up in `render --inspect --json`'s
 `namedMasks` — a drawing-local `mask NAME = …` is invisible to `--inspect` since it
@@ -707,32 +718,23 @@ the four texture filters take an optional leading region scope (ADR-0071):
 `outline [k] [2]` (silhouette outline; colour+width both optional — bare `outline` = 1px derived-dark ink; builds the silhouette from ≥50%-alpha pixels, so it ignores soft shadows/AA and never eats thin features — ADR-0090) · `tint p 0.3` · `shadow dx:dy p` (whole-frame drop) ·
 `shadow r 2:3 p` (local, region-first) · `grain [r] amount seed p` ·
 `speckle [r] density seed p` · `ripple [r] strength seed p` · `dither [r] a b threshold` ·
-`quantize [r] palette` (remap opaque pixels to the nearest palette colour — OkLab, first-declared wins ties; `palette` is a colour list; import-assist: `image … sha256` → `quantize` → `outline` → `critique`, ADR-0093) ·
-`shadeRegion r lightPt base amount` · `lightRegion r lightPt paint amount` ·
-`rim r dir p width` · `ao r p amount`.
+`quantize [r] palette` (remap opaque pixels to the nearest palette colour — OkLab, first-declared wins ties; `palette` is a colour list; import-assist: `image … sha256` → `quantize` → `outline` → `critique`, ADR-0093).
+
+**There is no raw lighting filter** (ADR-0097). `shadeRegion`/`lightRegion`/`rim`/`ao` are removed;
+each still parses, so a stale recipe gets a positioned error naming its replacement:
+
+| you want | write |
+|---|---|
+| shade a **solid body** | `model r mat` / `cel r mat n` (below) |
+| veil **already-drawn** pixels | `fill linear(deg, transparent, c.alpha(a)) r` — lighten: `fill linear(deg, c.alpha(a), transparent) r` |
+| a one-sided **edge band** | `fill p r.edge(dx:dy[, n])` |
+| **contact darkening** | `stroke p.alpha(a) r`, or the material's `ao N%` dose |
+
+Pick the veil row, not `model`, whenever the region already carries hand-drawn detail: `model` is a
+**repaint** (it writes opaque tones), so it erases grooves/marks; a gradient `fill` darkens them.
 
 **Compositing semantics (silent — `check` never flags a wrong effect here):**
 
-- `shadeRegion r light base amount` — blends `base` as a shadow **veil**
-  over `r` with opacity **`base.a × amount × t`** (`t` = normalized distance from `light`):
-  untouched at `light`, up to `base.a × amount` at the far corner. **`amount` is the veil
-  opacity** and it composites over detail, so an opaque `base` does not repaint `r`.
-- `lightRegion r light paint amount` — additive mirror of `shadeRegion`: a light **veil** with
-  opacity **`paint.a × amount × (1 − t)`**, **brightest nearest `light`**, fading to untouched at
-  the far corner. Reach for it for warm/cool local light instead of a masked gradient. It washes the
-  **whole region** (a distance falloff, not an edge), so keep `amount` low or it flattens the form.
-- `rim r dir p w` lights the edge **facing away from `dir`**: `rim r 0:1 p` (dir points down)
-  lights the **top** edge; `rim r 1:0 p` (dir points right) lights the **left** edge. On a **filled**
-  silhouette this strokes the *whole* facing contour (both slopes of a peak = a neon wireframe), not
-  one chosen edge — confine it with `.intersect(rect(…))` to the target edge. **Any edge with a
-  normal component opposing `dir` lights — including the straight cut edge that `.intersect(rect(…))`
-  itself introduces and the canvas border where the silhouette meets it, giving a stray glow bar.**
-  So for a top edge use `dir 0:1` (no x-component) → only the true top lights, not the vertical cut;
-  if you need a side edge lit, cut the region larger than the visible edge or apply `rim` before the
-  clip. The band is 1px per `w`, so on a ~20px sprite it barely registers, and on a ~300px region it
-  is nearly invisible even at high `w` (raise `w`, or skip it and rely on a lit cap zone).
-- `ao r p amount` = a 1px **inner-boundary stroke** of `r` at `p`'s alpha ×
-  `amount` — not a soft gradient.
 - `outline [k] [w]` rings the **outer silhouette** of everything painted so far (dilate `w`px,
   paint the outside ring). Run it **once as the last statement of the assembly draw**, over the
   composited figure — not per part, or every part-to-part seam gets its own dark ring. Colour+width
@@ -775,10 +777,9 @@ draw gem: …
 
 ## Light & material (ADR-0086)
 
-The **default** shading path — one named light drives every dose, so shade, rim, and cast can't
-drift apart, and one `model`/`cel` per object replaces the hand-dosed
-`shadeRegion`+`lightRegion`+`rim`+`ao`+`shadow` quartet above (which stays the
-**floor / escape hatch**).
+The **only** shading path (ADR-0097) — one named light drives every dose, so shade, rim, and cast
+can't drift apart. One `model`/`cel` per object; there is no second, hand-dosed way to light
+anything any more.
 
 ```drw
 light sun      = dir 1:1 #ffe6b0 amb #2a3a5e 15%   # directional; source up-left ⇒ up-left edge lit
@@ -947,7 +948,7 @@ always redundant (lint `W016`).
 
 **SVG size — pixel mode merges *horizontal* same-color runs into `<rect width=run height=1>`, so
 colour that varies along a scanline explodes the file.** A horizontal or radial gradient, a
-`shadeRegion`/`lightRegion` veil (distance-based, so it varies in both axes), `grain`/`speckle`, or
+`model` form shade (it follows the surface, so it varies in both axes), `grain`/`speckle`, or
 `dither` paints (nearly) every pixel a distinct colour → ~1 `<rect>` per pixel (measured: a flat
 32×32 tile 28 rects / 1.8 KB vs. the same tile + `grain` 369 rects / 22 KB — ~12×; icon runs saw
 5–25× and a 64px `camera` 1928 rects / 115 KB). A purely **vertical** (row-uniform) gradient stays
@@ -959,8 +960,7 @@ pixel count.
 ## Determinism & budget
 
 Pixel mode guarantees pixel-identical output across platforms. There is **one** engine
-semantics: `shadeRegion`'s `amount` is the veil opacity (with `lightRegion` its additive
-mirror, § Gradients & filters), the whole-frame `shadow` respects an enclosing `mask …:` block,
+semantics: the whole-frame `shadow` respects an enclosing `mask …:` block,
 and the eight offset stamp anchors are visual (§ Transforms & stamp). There is no version pragma
 — `drawstic <N>` was removed (ADR-0096 §1); delete the line from any old file. Byte-identical
 files are NOT guaranteed —

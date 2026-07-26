@@ -639,13 +639,16 @@ describe('lintModule', () => {
   })
 })
 
-describe('canonical-path lints + construct census (W012–W015, ADR-0094)', () => {
+describe('canonical-path lints + construct census (W013–W015, ADR-0094/0097)', () => {
   const codes = (src: string): string[] => {
     const { engine, mod } = load(src)
     return lintModule(engine, mod).map((d) => d.code)
   }
 
-  test('W012 fires on a raw rim beside a model, silent without model', () => {
+  test('W012 is retired and unfireable — a raw rim beside a model now only reports `retired`', () => {
+    // ADR-0097 removed `rim`/`shadeRegion`/`lightRegion`, so the lint that flagged them beside a
+    // `model` can never fire again. The code stays reserved; the recipe is caught *earlier*, by the
+    // census `retired` flag, which does not need a `model` in the same drawing to notice.
     const withModel = [
       'light sun = dir 1:1 #ffe6b0',
       'material m = #8a95a5 metal',
@@ -658,19 +661,11 @@ describe('canonical-path lints + construct census (W012–W015, ADR-0094)', () =
       '  png',
       '',
     ].join('\n')
-    expect(codes(withModel)).toContain('W012')
-    // the same raw rim without a model/cel in the drawing is the legitimate floor — no W012.
-    const rawOnly = [
-      'draw part 12x12:',
-      '  r = rect(1:1, 10:10)',
-      '  fill #8a95a5 r',
-      '  rim r 1:1 #ffffff 1',
-      '',
-      'export part p/part:',
-      '  png',
-      '',
-    ].join('\n')
-    expect(codes(rawOnly)).not.toContain('W012')
+    expect(codes(withModel)).not.toContain('W012')
+    const { engine, mod } = load(withModel)
+    const rim = censusModule(engine, mod).constructs.find((c) => c.construct === 'rim')
+    expect(rim?.retired).toBe(true)
+    expect(rim?.specOnly).toBeUndefined()
   })
 
   test('W013 fires on a litTone .intersect corner patch over a model', () => {
@@ -719,12 +714,11 @@ describe('canonical-path lints + construct census (W012–W015, ADR-0094)', () =
 
   test('census counts constructs and flags the anti-patterns deterministically', () => {
     const src = [
-      'light sun = dir 1:1 #ffe6b0',
-      'material m = #8a95a5 metal',
-      'draw part 12x12:',
-      '  r = rect(1:1, 10:10)',
-      '  model r m light sun',
-      '  rim r 1:1 #ffffff 1',
+      'draw pinned 8x8:',
+      '  fill #888888 rect(0:0, 7:7)',
+      '  pin top 4:0',
+      'draw part 20x20:',
+      '  stamp pinned 2:2',
       '',
       'export part p/part:',
       '  png',
@@ -732,25 +726,33 @@ describe('canonical-path lints + construct census (W012–W015, ADR-0094)', () =
     ].join('\n')
     const { engine, mod } = load(src)
     const census = censusModule(engine, mod)
-    expect(census.antiPatterns.rawShade).toBe(1)
-    expect(census.antiPatterns.manualSpread).toBe(0)
-    const model = census.constructs.find((c) => c.construct === 'model')
-    expect(model?.count).toBe(1)
-    const rim = census.constructs.find((c) => c.construct === 'rim')
-    expect(rim?.specOnly).toBe(true)
-    expect(rim?.nonCanonical).toBe(true)
+    expect(census.antiPatterns).toEqual({ manualSpread: 0, stampWithPins: 1, handShadow: 0 })
+    const stamp = census.constructs.find((c) => c.construct === 'stamp')
+    expect(stamp?.count).toBe(1)
+    expect(stamp?.nonCanonical).toBe(true)
+    const pixels = census.constructs.find((c) => c.construct === 'pixels')
+    expect(pixels).toBeUndefined()
     // deterministic: two runs give the identical census.
     expect(censusModule(engine, mod)).toEqual(census)
   })
 
-  test('census flags `ao` (was `ambientOcclusion`, ADR-0096 §2) as spec-only, like its raw-shade siblings', () => {
-    const { engine, mod } = load(
-      'draw part 12x12:\n  r = rect(1:1, 10:10)\n  fill #808080 r\n  ao r #000000 0.3\n\nexport part p/part:\n  png\n',
-    )
-    const census = censusModule(engine, mod)
-    const ao = census.constructs.find((c) => c.construct === 'ao')
-    expect(ao?.count).toBe(1)
-    expect(ao?.specOnly).toBe(true)
+  test('census flags the whole removed hand-light quartet as retired (ADR-0097)', () => {
+    // All four still parse and load — they only fail at render — so the census is the *static*
+    // diagnosis a stale recipe gets from `check --lint`/`critique` before it is ever rendered.
+    for (const [construct, stmt] of [
+      ['rim', 'rim r 1:1 #ffffff 1'],
+      ['shadeRegion', 'shadeRegion r -4:-4 #000000 0.3'],
+      ['lightRegion', 'lightRegion r -4:-4 #ffffff 0.2'],
+      ['ao', 'ao r #000000 0.3'],
+    ] as const) {
+      const { engine, mod } = load(
+        `draw part 12x12:\n  r = rect(1:1, 10:10)\n  fill #808080 r\n  ${stmt}\n\nexport part p/part:\n  png\n`,
+      )
+      const entry = censusModule(engine, mod).constructs.find((c) => c.construct === construct)
+      expect(entry?.count).toBe(1)
+      expect(entry?.retired).toBe(true)
+      expect(entry?.specOnly).toBeUndefined()
+    }
   })
 
   test('census counts the `palette` construct under its current name (was `pal`, ADR-0096 §2)', () => {

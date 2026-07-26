@@ -94,23 +94,35 @@ describe('characters-ro2 recipes are free of the manual value-spread corner-patc
   })
 })
 
-// ADR-0094: every bundled example must be free of the four non-canonical anti-patterns the census
-// counts (raw rim/shadeRegion beside model, litTone/shadowTone corner patch, stamp of a pinned part,
-// hand contact-shadow ellipse). AST-based, so it catches what the W2-1b regex above cannot.
-describe('examples carry no W012–W015 anti-patterns (construct census clean)', () => {
+// ADR-0094/0097: every bundled example must be free of the non-canonical anti-patterns the census
+// counts (litTone/shadowTone corner patch, stamp of a pinned part, hand contact-shadow ellipse) —
+// and must not reach for any *retired* construct. AST-based, so it catches what the W2-1b regex
+// above cannot: a retired command still loads and only fails at render time.
+describe('examples carry no W013–W015 anti-patterns and no retired constructs (census clean)', () => {
   test('every example has all census anti-pattern counts at 0', () => {
     const offenders: string[] = []
     for (const file of drwFiles()) {
       const engine = new Engine(process.cwd())
       const mod = engine.loadEntry(file)
       const { antiPatterns } = censusModule(engine, mod)
-      const total =
-        antiPatterns.rawShade +
-        antiPatterns.manualSpread +
-        antiPatterns.stampWithPins +
-        antiPatterns.handShadow
+      const total = antiPatterns.manualSpread + antiPatterns.stampWithPins + antiPatterns.handShadow
       if (total > 0) {
         offenders.push(`${file}: ${JSON.stringify(antiPatterns)}`)
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  test('no example uses a retired construct', () => {
+    const offenders: string[] = []
+    for (const file of drwFiles()) {
+      const engine = new Engine(process.cwd())
+      const mod = engine.loadEntry(file)
+      const retired = censusModule(engine, mod)
+        .constructs.filter((c) => c.retired)
+        .map((c) => c.construct)
+      if (retired.length > 0) {
+        offenders.push(`${file}: ${retired.join(', ')}`)
       }
     }
     expect(offenders).toEqual([])

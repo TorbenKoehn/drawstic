@@ -31,20 +31,20 @@ use productivity
 draw plate(c):
   face = rrect(1:1, 30:30, 6)
   fill linear(90, c.mix(#ffffff, 18%), c.mix(#182230, 26%)) face
-  rim face 0:1 #ffffff.alpha(50%) 1
-  rim face 0:-1 #0a1220.alpha(35%) 1
+  fill #ffffff.alpha(50%) face.edge(0:1)
+  fill #0a1220.alpha(35%) face.edge(0:-1)
 
 draw plate16(c) 16x16:
   face = rrect(1:1, 14:14, 3)
   fill linear(90, c.mix(#ffffff, 18%), c.mix(#182230, 26%)) face
-  rim face 0:1 #ffffff.alpha(50%) 1
-  rim face 0:-1 #0a1220.alpha(35%) 1
+  fill #ffffff.alpha(50%) face.edge(0:1)
+  fill #0a1220.alpha(35%) face.edge(0:-1)
 
 draw plate64(c) 64x64:
   face = rrect(2:2, 61:61, 12)
   fill linear(90, c.mix(#ffffff, 18%), c.mix(#182230, 26%)) face
-  rim face 0:1 #ffffff.alpha(50%) 1
-  rim face 0:-1 #0a1220.alpha(35%) 1
+  fill #ffffff.alpha(50%) face.edge(0:1)
+  fill #0a1220.alpha(35%) face.edge(0:-1)
 
 # --- glyphs (paper + ink artwork, stamped with a drop shadow) -------------
 
@@ -166,7 +166,7 @@ draw clock64 64x64:
   face = circle(32:32, 22)
   fill p face
   stroke t.mix(k, 45%) face w2
-  rim face 0:-1 #0a1220.alpha(25%) 2
+  fill #0a1220.alpha(25%) face.edge(0:-1, 2)
   for i 0..12:
     d = i * 30
     major = i mod 3 == 0

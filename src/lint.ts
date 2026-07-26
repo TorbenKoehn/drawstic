@@ -723,41 +723,53 @@ const lintExportPathRepeatsDir = (mod: ModuleRecord, diagnostics: Diagnostic[]):
   }
 }
 
-// ── W012–W015: the one-canonical-way lints (ADR-0094) ───────────────────────
+// ── W013–W015: the one-canonical-way lints (ADR-0094) ───────────────────────
 //
 // Each pushes toward the single canonical path the declarative pipeline established, and each is
 // conservative (fires only on a statically certain misuse) like every other `W0xx`. They are the
-// machine-checkable half of the construct census: W012 = raw rim, W013 = manual value-spread patch,
-// W014 = stamp of a pinned part, W015 = hand contact-shadow ellipse.
+// machine-checkable half of the construct census: W013 = manual value-spread patch, W014 = stamp of
+// a pinned part, W015 = hand contact-shadow ellipse.
+//
+// **`W012` is retired** (ADR-0097). It flagged a raw `rim`/`shadeRegion`/`lightRegion` beside a
+// `model`/`cel`; all three commands are now removed, so it can never fire again. The code is
+// reserved and must never be reused — a diagnostic code is part of the public surface, and a
+// recycled one would make an old recipe's saved report mean something new. Removing four constructs
+// removed a lint instead of adding one; the three names now surface as `retired` in the census
+// (see {@link RETIRED_CONSTRUCTS}), which is strictly earlier and stronger than the old warning.
 
-/** The raw form-shading escape-hatch commands that a `model`/`cel` material already covers. */
-const RAW_SHADE_COMMANDS = new Set(['rim', 'shadeRegion', 'lightRegion'])
 /** Colour helpers whose presence in a clipped `fill` marks the retired corner-patch idiom (W013). */
 const VALUE_SPREAD_FNS = new Set(['litTone', 'shadowTone'])
 /** Floor constructs the canonical task path no longer surfaces (flagged `spec-only` in the census). */
-const SPEC_ONLY_CONSTRUCTS = new Set([
+const SPEC_ONLY_CONSTRUCTS = new Set(['scatter', 'mirror', 'pixels'])
+
+/**
+ * Removed builtin/command names (ADR-0096 §1, ADR-0097 §1) that still keep a positioned removal
+ * error at eval time rather than a parse-time one — so a stale recipe using them loads fine and only
+ * fails when the drawing that uses them is rendered. Flagged `retired` in the census so
+ * `check --lint`/`critique` can diagnose the recipe statically, before that render happens.
+ * `castShadow` and the removed hand-light quartet are call statements (picked up by
+ * {@link constructLabel} like any other command); `grayscale` has no statement shape of its own —
+ * it's only ever reached as a call/UFCS expression, so the census walks expressions for it
+ * separately (see {@link callsRetiredExpr}). The parse-time removals (`cap`/`join`, `seed N`, the
+ * `drawstic N` pragma, a bare-int export size, `anchor` on `fit`, a bare filter name as a statement)
+ * never reach the census at all — the module fails to load before `censusModule` runs.
+ */
+const RETIRED_CONSTRUCTS = new Set([
+  'castShadow',
+  'grayscale',
   'rim',
   'shadeRegion',
   'lightRegion',
   'ao',
-  'scatter',
-  'mirror',
-  'pixels',
 ])
 
 /**
- * Removed builtin/command names (ADR-0096 §1) that still keep a positioned removal error at
- * eval time rather than a parse-time one — so a stale recipe using them loads fine and only
- * fails when the drawing that uses them is rendered. Flagged `retired` in the census so
- * `check --lint`/`critique` can diagnose the recipe statically, before that render happens.
- * `castShadow` is a call statement (picked up by {@link constructLabel} like any other
- * command); `grayscale` has no statement shape of its own — it's only ever reached as a
- * call/UFCS expression, so the census walks expressions for it separately (see
- * {@link callsRetiredExpr}). The parse-time removals (`cap`/`join`, `seed N`, the `drawstic N`
- * pragma, a bare-int export size, `anchor` on `fit`, a bare filter name as a statement) never
- * reach the census at all — the module fails to load before `censusModule` runs.
+ * The subset of {@link RETIRED_CONSTRUCTS} the census may only discover in *expression* position.
+ * `grayscale(c)` is a colour function; every other retired name is a command statement, already
+ * counted by {@link constructLabel}. Keeping the expression walk narrow is what stops a retired
+ * command from being counted twice.
  */
-const RETIRED_CONSTRUCTS = new Set(['castShadow', 'grayscale'])
+const RETIRED_EXPR_ONLY = new Set(['grayscale'])
 
 /** True iff `def` shades any region through the declarative `model`/`cel` pipeline. */
 const usesModelOrCel = (def: DrawDefinition): boolean => {
@@ -819,12 +831,12 @@ const callsNamed =
 
 /**
  * True iff any of `stmt`'s own expressions (not nested statement bodies — {@link walkStatements}
- * already recurses those) call or UFCS-call a {@link RETIRED_CONSTRUCTS} name — covers
- * `grayscale`, which (unlike `castShadow`) has no Statement shape of its own, only ever reached
- * as a value expression. Same statement-shape enumeration as `walkStatementExprs` below.
+ * already recurses those) call or UFCS-call a {@link RETIRED_EXPR_ONLY} name — covers `grayscale`,
+ * which (unlike the retired commands) has no Statement shape of its own, only ever reached as a
+ * value expression. Same statement-shape enumeration as `walkStatementExprs` below.
  */
 const callsRetiredExpr = (stmt: Statement): boolean => {
-  const pred = callsNamed(RETIRED_CONSTRUCTS)
+  const pred = callsNamed(RETIRED_EXPR_ONLY)
   switch (stmt.kind) {
     case 'binding':
     case 'compound':
@@ -848,35 +860,6 @@ const callsRetiredExpr = (stmt: Statement): boolean => {
 
 /** A `<region>.intersect(<rect>)` method call — the corner-clip of the retired value patch. */
 const isIntersectMethod = (e: Expression): boolean => e.kind === 'method' && e.name === 'intersect'
-
-/**
- * Lint `W012`: a raw `rim`/`shadeRegion`/`lightRegion` in the same drawing as a `model`/`cel`.
- * The declarative pipeline already lights the form — a rim/AO dose bakes into every material
- * (ADR-0091) — so a hand veil beside it is the pre-declarative floor leaking through (the assassin's
- * `rim … next to model`). Canonical: raise the material's `rim N%`/`spread N%` override.
- */
-const lintRawShadeWithModel = (
-  def: DrawDefinition,
-  mod: ModuleRecord,
-  diagnostics: Diagnostic[],
-): void => {
-  if (!usesModelOrCel(def)) {
-    return
-  }
-  walkStatements(def.body, (s) => {
-    if (s.kind === 'call' && RAW_SHADE_COMMANDS.has(s.callee)) {
-      diagnostics.push(
-        warning(
-          'W012',
-          `raw '${s.callee}' in a model/cel-shaded drawing`,
-          mod.displayPath,
-          s.span,
-          `model/cel already lights the form from the material dose — drop '${s.callee}', or raise the material's rim/spread override`,
-        ),
-      )
-    }
-  })
-}
 
 /**
  * Lint `W013`: a `fill` whose paint uses `litTone`/`shadowTone` and whose region is a
@@ -1038,14 +1021,13 @@ const lintHandContactShadow = (
   })
 }
 
-/** Runs the four canonical-path lints (W012–W015) against one drawing. */
+/** Runs the three canonical-path lints (W013–W015) against one drawing. */
 const canonicalPathChecks = (
   engine: Engine,
   mod: ModuleRecord,
   def: DrawDefinition,
 ): Diagnostic[] => {
   const out: Diagnostic[] = []
-  lintRawShadeWithModel(def, mod, out)
   lintCornerPatch(def, mod, out)
   lintStampWithPins(mod, def, out)
   lintHandContactShadow(engine, mod, def, out)
@@ -1058,19 +1040,25 @@ export type CensusEntry = {
   readonly count: number
   /** A floor construct the canonical task path no longer surfaces. */
   readonly specOnly?: boolean
-  /** This construct participated in a W012–W015 finding somewhere in the module. */
+  /** This construct participated in a W013–W015 finding somewhere in the module. */
   readonly nonCanonical?: boolean
-  /** A removed construct (ADR-0096 §1) — still parses/loads, but errors when the drawing renders. */
+  /**
+   * A removed construct (ADR-0096 §1, ADR-0097 §1) — still parses/loads, but errors when the
+   * drawing renders.
+   */
   readonly retired?: boolean
 }
 
 /** The deterministic per-module construct census surfaced in `critique`/`check --lint` JSON. */
 export type ModuleCensus = {
   readonly constructs: readonly CensusEntry[]
-  /** The four machine-checkable anti-pattern counts (craft-eval success criteria). */
+  /**
+   * The machine-checkable anti-pattern counts (craft-eval success criteria). ADR-0094's fourth
+   * count, `rawShade` (W012), is gone: its three commands were removed by ADR-0097, so the number
+   * could only ever be 0 — a metric that cannot move is noise in every report that carries it.
+   * Those recipes are now caught earlier, as `retired` construct entries.
+   */
   readonly antiPatterns: {
-    /** W012 — raw rim/shadeRegion/lightRegion next to model/cel. */
-    readonly rawShade: number
     /** W013 — litTone/shadowTone `.intersect` corner patch. */
     readonly manualSpread: number
     /** W014 — stamp of a part that owns pins. */
@@ -1112,13 +1100,12 @@ const constructLabel = (stmt: Statement): string | null => {
 
 /**
  * Count every language construct used across `mod`'s own drawings and flag each `spec-only`
- * (floor) or `non-canonical` (a W012–W015 participant). Deterministic (AST-only, sorted by
- * construct name); the four `antiPatterns` counts are the craft-eval success criteria
- * (raw-rim / manual-spread / hand-ellipse-shadow all target 0).
+ * (floor), `non-canonical` (a W013–W015 participant) or `retired` (removed, still loads).
+ * Deterministic (AST-only, sorted by construct name); the three `antiPatterns` counts are the
+ * craft-eval success criteria (manual-spread / stamp-with-pins / hand-ellipse-shadow all target 0).
  */
 export const censusModule = (engine: Engine, mod: ModuleRecord): ModuleCensus => {
   const counts = new Map<string, number>()
-  let rawShade = 0
   let manualSpread = 0
   let stampWithPins = 0
   let handShadow = 0
@@ -1132,18 +1119,16 @@ export const censusModule = (engine: Engine, mod: ModuleRecord): ModuleCensus =>
         counts.set(label, (counts.get(label) ?? 0) + 1)
       }
       // `grayscale` (ADR-0096 §1) has no statement shape of its own — it's only ever reached as
-      // a call/UFCS expression, so `constructLabel` above can't see it; check separately. A
-      // retired construct with a real statement shape (`castShadow`) is already counted by
-      // `constructLabel` and can never itself appear in expression position, so this can only
-      // ever add a `grayscale` count, never double-count `castShadow`.
+      // a call/UFCS expression, so `constructLabel` above can't see it; check separately. Every
+      // retired construct with a real statement shape (`castShadow`, the ADR-0097 hand-light
+      // quartet) is already counted by `constructLabel` and can never itself appear in expression
+      // position, so this can only ever add a `grayscale` count, never double-count those.
       if (callsRetiredExpr(s)) {
         counts.set('grayscale', (counts.get('grayscale') ?? 0) + 1)
       }
     })
     for (const d of canonicalPathChecks(engine, mod, entry.definition)) {
-      if (d.code === 'W012') {
-        rawShade++
-      } else if (d.code === 'W013') {
+      if (d.code === 'W013') {
         manualSpread++
       } else if (d.code === 'W014') {
         stampWithPins++
@@ -1153,11 +1138,6 @@ export const censusModule = (engine: Engine, mod: ModuleRecord): ModuleCensus =>
     }
   }
   const nonCanonical = new Set<string>()
-  if (rawShade > 0) {
-    for (const c of RAW_SHADE_COMMANDS) {
-      nonCanonical.add(c)
-    }
-  }
   if (stampWithPins > 0) {
     nonCanonical.add('stamp')
   }
@@ -1170,7 +1150,7 @@ export const censusModule = (engine: Engine, mod: ModuleRecord): ModuleCensus =>
       ...(nonCanonical.has(construct) ? { nonCanonical: true } : {}),
       ...(RETIRED_CONSTRUCTS.has(construct) ? { retired: true } : {}),
     }))
-  return { constructs, antiPatterns: { rawShade, manualSpread, stampWithPins, handShadow } }
+  return { constructs, antiPatterns: { manualSpread, stampWithPins, handShadow } }
 }
 
 /**

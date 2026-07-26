@@ -849,6 +849,24 @@ draw badge 16x16:
   3D — with an explicit anchor via `.about(pt)`. `.shift(p)` ≡ `.transform(shift(p))` and
   `.scale(N)` ≡ `.transform(scale(N))` remain the terse sugar
   ([ADR-0039](decisions/0039-region-algebra-constructors-combinators-eliminators.md)).
+- **`r.edge(dx:dy [, n])`** is the **one-sided edge band**: `r` minus `r` shifted `n` px along
+  `sign(dx):sign(dy)`, i.e. `r.subtract(r.shift(sign(dx)·n : sign(dy)·n))`
+  ([ADR-0097](decisions/0097-canonical-shading-floor.md)). `n` defaults to `1`; only the *sign* of
+  the direction matters. Read the direction as **the way the light travels**, so `0:1` (down) is the
+  **top** edge and `1:0` (right) is the **left** edge. `0:0` (or `n = 0`) is the empty region. The
+  whole band is one region, so a translucent paint lands at its own alpha — no stacking.
+
+  ```drw
+  fill #ffffff.alpha(50%) face.edge(0:1)        # 1px light band on the top edge
+  fill #0a1220.alpha(25%) face.edge(0:-1, 2)    # 2px dark bevel on the bottom edge
+  fill lavaDark ground.edge(0:1).intersect(c)   # …clipped — note the ORDER
+  ```
+
+  It is pure geometry: no light, no paint, any colour (the removed `rim` command could only ever
+  paint *toward* the light colour, so dark contour edges were out of reach). Because the
+  constructor is separate from the `fill` eliminator, the clip can come **last**:
+  `r.edge(d).intersect(c)` clips the silhouette band, while `r.intersect(c).edge(d)` bands the clip
+  rectangle — a straight bar across the middle of the mass.
 - **Any drawing is a reusable shape**: `region(d)` / `d.region` is its **silhouette** as a
   Region (alpha > 0 in pixel mode, alpha coverage in smooth mode); parametric
   instantiations work like in `stamp` (`region(key(r))`):
@@ -1305,34 +1323,26 @@ ripple 0.4 23 k    # horizontal bands over opaque pixels — strength then seed
 dither k y 0.5     # Bayer-select two paints over opaque pixels
 quantize pal8      # remap opaque pixels to the nearest palette colour (OkLab, first-declared wins ties; ADR-0093)
 quantize face pal8 # …confined to a region (optional leading region, like grain/speckle/ripple/dither)
-shadeRegion r sun #0c1830 0.6   # shadow veil: amount = opacity, deepest away from the light
-lightRegion r sun #ffd08a 0.8   # additive light veil: brightest nearest the light
-rim r 1:0 #ffffff80 1
-ao r #000000 0.4
 ```
+
+There is **no raw lighting filter**. `shadeRegion`, `lightRegion`, `rim` and `ao` were removed
+([ADR-0097](decisions/0097-canonical-shading-floor.md)) — lighting is `model`/`cel` (next section),
+and the jobs those four also did are ordinary region + paint work:
+
+| instead of | write |
+|---|---|
+| shading a **solid body** | `model r mat` (or `cel r mat n`) — form-following, one light |
+| veiling **already-drawn** pixels | `fill linear(deg, transparent, c.alpha(a)) r` (`fill linear(deg, c.alpha(a), transparent) r` to lighten) |
+| a one-sided **edge band** | `fill p r.edge(dx:dy[, n])` (§9 region methods) |
+| **contact darkening** | `stroke p.alpha(a) r`, or the material's own `ao N%` dose |
+
+The two veil rows are **not interchangeable**: `model` is a *repaint* — it writes opaque tones, so
+modelling a region that already carries hand-drawn detail erases it. Over drawn pixels, veil with a
+gradient `fill`.
 
 **Compositing semantics — read this before relying on a filter's pixel effect from syntax
 alone (`check` cannot catch a wrong filter argument; it stays semantically silent):**
 
-- **`shadeRegion r light base amount`** blends `base` as a shadow **veil** over `r`, with
-  opacity **`base.a × amount × t`** where `t` = the pixel's distance from `light` normalized to
-  the region's farthest corner. The pixel **at** the light (`t = 0`) is untouched; the far
-  corner reaches `base.a × amount`. **`amount` is the veil opacity**, and it is a source-over
-  blend, not a repaint — an **opaque `base` no longer erases detail** underneath, it just lets
-  the far side reach the full `base` colour. `base`'s own alpha still multiplies (so `.alpha(…)`
-  softens the veil further) ([ADR-0068](decisions/0068-shaderegion-veil-opacity-signature.md)).
-- **`lightRegion r light paint amount`** is the additive mirror of `shadeRegion` ([ADR-0069](decisions/0069-additive-local-light-helper.md)):
-  it blends `paint` as a light **veil** with opacity **`paint.a × amount × (1 − t)`** — **brightest
-  nearest `light`** (up to `paint.a × amount`), fading to untouched at the far corner. `shadeRegion`
-  darkens by `t`, `lightRegion` brightens by `1 − t`, so a shade/light pair aimed at the same
-  point stay mirror-consistent.
-- **`rim r dir p w`** lights the edge of `r` **facing away from `dir`** — e.g. `rim r 0:1 p`
-  (direction pointing down, +y) lights the region's **top** edge; `rim r 1:0 p` (pointing
-  right, +x) lights the **left** edge. Read `dir` as "the direction the light travels", not
-  "the side that lights up".
-- **`ao r p amount`** is a convenience for a **1px inner-boundary stroke** of
-  `r` (§9's `stroke`, extensional 4-erosion) at `p`'s alpha × `amount` — not a soft occlusion
-  gradient. Widen it by stacking calls at different `amount`s if a softer falloff is wanted.
 - **`dither a b t`** is a **raw set, not a blend**: every opaque pixel of the target is
   overwritten with `a` or `b` (Bayer-selected by `t`), replacing whatever alpha was already
   there. A partner paint at `alpha(0%)` therefore punches a **transparency hole**, not a
@@ -1394,19 +1404,21 @@ without `apply`) is a positioned error, a removed third dispatch path beside the
 statement and the `apply` command ([ADR-0096](decisions/0096-language-freeze-for-1-0.md) §1).
 
 The built-in filter set is intentionally extensible — new filters are added as commands. Texture
-filters and local lighting helpers are explicit, deterministic framebuffer operations
-([ADR-0062](decisions/0062-scoped-shadow-and-texture-filters.md),
-[ADR-0063](decisions/0063-explicit-local-lighting-helpers.md)); the shadow surfaces share one
+filters are explicit, deterministic framebuffer operations
+([ADR-0062](decisions/0062-scoped-shadow-and-texture-filters.md)); the shadow surfaces share one
 argument shape and the frame `shadow` respects a `mask` block
 ([ADR-0070](decisions/0070-unified-shadow-argument-shape.md)), and the texture filters take an
 optional leading region ([ADR-0071](decisions/0071-region-scoped-texture-filters.md)).
 
 ### Light & material
 
-The `shadeRegion`/`lightRegion`/`rim`/`ao`/`shadow` primitives above are the
-**floor**, but re-typing one light source as a point here, an inverted direction there, and a
-`dx:dy` offset elsewhere lets the encodings drift. The **declarative** layer
-([ADR-0086](decisions/0086-declarative-light-and-material.md)) is the default shading path: one
+Lighting has exactly **one** path. There used to be a raw floor as well
+([ADR-0063](decisions/0063-explicit-local-lighting-helpers.md)'s `shadeRegion`/`lightRegion`/
+`rim`/`ao`), but re-typing one light source as a point here, an inverted direction there, and a
+`dx:dy` offset elsewhere let the encodings drift — and 7 of 7 audited authors read `shadeRegion`'s
+`amount` as opacity when it is a distance scalar. All four are removed
+([ADR-0097](decisions/0097-canonical-shading-floor.md)). The **declarative** layer
+([ADR-0086](decisions/0086-declarative-light-and-material.md)) is the shading path: one
 named **light** drives everything; a named **material** picks the *physics* (never the colour);
 one `model`/`cel` command per object lowers to the primitives, coherently, and cannot drift.
 
@@ -1737,8 +1749,7 @@ This is **engineered**, not assumed:
   exactly ([ADR-0078](decisions/0078-mirror-block.md)).
 - **One semantics.** There is a single, frozen engine semantics — the pipeline above is fixed,
   so nothing ever selected a variant, which is why the `drawstic <N>` pragma was removed outright
-  (§2, [ADR-0096](decisions/0096-language-freeze-for-1-0.md)): `shadeRegion`'s `amount` is always the veil
-  opacity (§12, [ADR-0068](decisions/0068-shaderegion-veil-opacity-signature.md)), the whole-frame
+  (§2, [ADR-0096](decisions/0096-language-freeze-for-1-0.md)): the whole-frame
   `shadow` filter always honours an enclosing `mask …:` block (§12,
   [ADR-0070](decisions/0070-unified-shadow-argument-shape.md)), and the eight offset stamp anchors
   are always *visual* (resolved against the transformed footprint bbox, §9,
@@ -1905,7 +1916,7 @@ skipped rather than guessed at, so a lint pass never produces a false positive.
 | `W009` | a `pixels:` grid's **last row** is fully transparent (`.`) while a row above it has content — because stamps place by the sprite's top-left corner, that trailing empty row silently enlarges the footprint and seams a 1px gap below adjacently stamped parts. Scoped to the last row only (never the first row, never a column — side-padding and top-centring are legitimate) | trim the trailing row, or account for the offset |
 | `W010` | a `fit` part touches no other content in the **final composite** (a floating/seamed part — the same gap `critique` **C007** measures); checked after the whole `draw` body paints, so back-to-front layering never false-warns | move the pin onto solid pixels, overlap the seam 1–2px, or add the missing part |
 | `W011` | a `fit` target pin sits **>2 px off the part's own ink** (`ADR-0087`): the pins coincide but the join floats because the pin is in empty part space (a chin below the head). Contact-blind, so C007 misses it; inspect with `render --explain` | move the `pin` onto the part's real contact edge, or pick the pin that marks it |
-| `W012` | a raw `rim`/`shadeRegion`/`lightRegion` in a `model`/`cel`-shaded drawing (ADR-0094) — the material's own rim/AO dose already lights the form | drop the raw veil, or raise the material's `rim N%`/`spread N%` override |
+| `W012` | *retired* (code never reused) — it fired on a raw `rim`/`shadeRegion`/`lightRegion` beside a `model`/`cel`, and all three were removed by [ADR-0097](decisions/0097-canonical-shading-floor.md); a stale recipe now surfaces as a `retired` census entry instead, which needs no `model` nearby to notice | — |
 | `W013` | a `litTone`/`shadowTone` `fill` clipped by `.intersect(rect)` on a modeled region — the retired value-spread corner patch (ADR-0094) | use the material's `spread N%` override |
 | `W014` | a `stamp` of a part that declares attach `pin`s (unless it is a pin-seeded assembly root, ADR-0092/0094) — `stamp` is for pin-less decoration | place it with `fit <part>.<pin> <anchor>`, or drop the pins if it is decoration |
 | `W015` | a semi-transparent `fill … ellipse(…)` low in the foot zone of a drawing that uses `fit` — a hand contact-shadow (ADR-0094) | drop it; add the `ground` flag to the root `fit … ground` |
@@ -1913,10 +1924,11 @@ skipped rather than guessed at, so a lint pass never produces a false positive.
 
 **Construct census.** `critique --json` and `check --lint --json` carry a deterministic `census`
 (AST-only, [ADR-0094](decisions/0094-language-diet-and-canonical-lints.md)): every construct used in
-the module, each flagged `spec-only` (a floor construct the canonical path no longer surfaces) or
-`non-canonical` (a W012–W015 participant), plus four `antiPatterns` counts — `rawShade` (W012),
-`manualSpread` (W013), `stampWithPins` (W014), `handShadow` (W015). `check --lint --json` wraps its
-diagnostics as `{diagnostics, census}`.
+the module, each flagged `spec-only` (a floor construct the canonical path no longer surfaces),
+`non-canonical` (a W013–W015 participant) or **`retired`** (a removed construct that still parses
+and loads but errors at render — `castShadow`, `grayscale`, `rim`, `shadeRegion`, `lightRegion`,
+`ao`), plus three `antiPatterns` counts — `manualSpread` (W013), `stampWithPins` (W014),
+`handShadow` (W015). `check --lint --json` wraps its diagnostics as `{diagnostics, census}`.
 
 ---
 
@@ -2159,10 +2171,9 @@ filter-cmd     = "outline" [ paint ] [ expr ]       (* built-in filter set (§12
                | "speckle" [ region ] expr expr paint
                | "ripple" [ region ] expr expr paint
                | "dither" [ region ] paint paint expr
-               | "shadeRegion" region point paint expr
-               | "lightRegion" region point paint expr
-               | "rim" region point paint [ expr ]
-               | "ao" region paint expr
+               | "quantize" [ region ] expr        (* palette remap (ADR-0093); the raw light quartet
+                                                      `shadeRegion`/`lightRegion`/`rim`/`ao` was
+                                                      removed, ADR-0097 §1 *)
                | "model" region material [ "light" NAME ]      (* declarative shading (§12, ADR-0086) *)
                | "cel" region material expr [ "light" NAME ] ; (* N-band cel fill; expr = band count *)
 material       = NAME | paint [ RESPONSE ] ;        (* a `material` value, or inline COLOR [RESPONSE] *)

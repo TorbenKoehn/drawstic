@@ -65,7 +65,8 @@ axis-aligned light box leaves a visible vertical seam across the scene.
 10. Subjects back-to-front, each: contact-AO ellipse → directional cast shadow → body → **then**
     bright accents → light edge (§4, §8).
 11. Foreground framing element (darker, larger, low detail) for depth and scale.
-12. Atmosphere last: flakes/dust/spray, then a global vignette (`shadeRegion` whole frame ≤12%).
+12. Atmosphere last: flakes/dust/spray, then a global vignette — one
+    `fill linear(deg, warm.alpha(a), cool.alpha(b)) rect(0:0, w:h)` over the finished frame, ≤12%.
 
 ## 4. Per-object shading — `model` is the default
 
@@ -74,7 +75,7 @@ look) is the whole shading pass — under the theme's `sun` light (or an explici
 lowers to exactly:
 
 ```
-fill → shadeRegion (away from light) → lightRegion (toward light) → rim (lit edge) → AO (seat) → cast
+form body shade (follows the surface normal) → rim (lit edge) → AO (seat) → cast
 ```
 
 every point/direction/offset derived from `sun`, every dose from the material `RESPONSE`
@@ -89,25 +90,27 @@ model rock #6b5a48 cloth light sun            # base + shade/light/rim/AO/cast, 
 - **Bright accents (windows, speculars, glints, nav lights) still come last, by hand** — after the
   `model` pass so the shade veil never dims them. Grain to break a flat fill (§3 step 8) likewise runs
   by hand before the accents.
-- **The hand quartet is the floor / escape hatch**, not the first move: when a baked material dose
-  doesn't fit (an over-bright metal, a custom two-source rim, a sub-~24px object), copy the
-  `--explain` expansion and hand-tune the raw `shadeRegion`/`lightRegion`/`rim`/`ao`/cast
-  calls (§5 doses; reference.md § Light & material).
+- **There is no hand quartet to fall back on** (ADR-0097): `shadeRegion`/`lightRegion`/`rim`/`ao`
+  are removed. When a baked dose doesn't fit, tune the **material** — `shade`/`hi`/`rim`/`ao`/
+  `spec`/`puff`/`spread N%` (§5, end) — and read `--explain` to see what changed. What the quartet
+  did *besides* lighting is ordinary region + paint work: an edge band is
+  `fill p r.edge(dx:dy[, n])`, a veil over already-drawn pixels is
+  `fill linear(deg, transparent, cool.alpha(a)) r`, a seat is `stroke p.alpha(a) r`.
 
-## 5. Filter dosage (baked into the material responses; this table is for hand-tuning past them)
+## 5. Dosage (baked into the material responses; this table calibrates the overrides)
 
-The per-object `shadeRegion`/`lightRegion`/`rim`/AO/cast doses below are what each material `RESPONSE`
-bakes in (ADR-0086) — a plain `model REGION MAT` gives them to you for free. Reach for the raw numbers
-only when hand-tuning **past** a material via `--explain` (§4), or for the scene-level filters
-(`grain`/`speckle`/`ripple`, the global closing veil) that `model` does not cover. Tune the first
+The per-object shade/light/rim/AO/cast doses below are what each material `RESPONSE`
+bakes in (ADR-0086) — a plain `model REGION MAT` gives them to you for free. The numbers are the
+calibration for a **dose override** on the material binding (§5, end), and for the scene-level work
+`model` does not cover (`grain`/`speckle`/`ripple`, the closing gradient veil). Tune the first
 number for *how much*, the second only reshuffles the noise.
 
 | Filter | Value | Note |
 |---|---|---|
-| `shadeRegion` modelling a form | 40–50% | on the object; deepest away from light |
-| `shadeRegion` global veil / vignette | ≤10–12% | whole frame; 20% already turns afternoon into dusk |
-| `lightRegion` | 15–20% | areal falloff, not an edge; keep low or it flattens the form |
-| `rim` width | 1px per `w` | needs ≥~1% of region width to register — invisible on a 300px region; dim + desaturate + `.alpha`, else neon |
+| `shade N%` dose on a form | 40–50% | on the object; deepest away from light |
+| global gradient veil / vignette | ≤10–12% | whole frame; 20% already turns afternoon into dusk |
+| `hi N%` dose | 15–20% | areal falloff, not an edge; keep low or it flattens the form |
+| `r.edge(d, n)` band width | 1px per `n` | needs ≥~1% of region width to register — invisible on a 300px region; dim + desaturate + `.alpha`, else neon |
 | `grain` | 0.04–0.06 subtle … ~0.15 heavy | breaks a flat fill into surface; eats 1px marks |
 | `speckle` | density **0.03–0.06** + `alpha(50–60%)` paint | first number is **DENSITY of opaque dots**, not blend strength; 0.14 = harsh static |
 | `ripple` | ≤0.25 on non-water | reads as water above that; 0.4–0.6 for actual water |
@@ -116,9 +119,10 @@ number for *how much*, the second only reshuffles the noise.
 | contact-AO ellipse | 25–35% alpha | §8 |
 | cast-shadow fill | ~25%, cool colour | §8 |
 
-Scene closing stack (whole-frame hand veils — not covered by `model`; use a hand source point +
-`warm`/`cool` constants from §1): `grain <ground>` → `lightRegion <all> <srcPt> <warm> 15–20%` →
-`shadeRegion <all> <srcPt> <cool> ≤12%`.
+Scene closing stack (whole-frame veils — not covered by `model`, and they run over already-drawn
+pixels, so they are gradient `fill`s, never a `model`, which would repaint the scene): `grain
+<ground>` → one `fill linear(DEG, warm.alpha(15–20%), cool.alpha(≤12%)) rect(0:0, w:h)`, `DEG` aimed
+down-light. One statement replaces the old light+shade pair.
 
 **Material dose overrides** (ADR-0091 — prefer these over a hand tone patch): a `material` binding
 takes trailing `shade`/`hi`/`rim`/`ao`/`spec`/`puff`/`spread N%`. `spread N%` widens `hi`+`shade`

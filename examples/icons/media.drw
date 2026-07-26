@@ -36,19 +36,19 @@ draw tile32(a) 32x32:
   gradient tg = linear(135, a.lighten(16%), a.darken(20%))
   mask t = rrect(1:1, 30:30, 7)
   fill tg t
-  rim t 0:1 a.lighten(40%) 1
+  fill a.lighten(40%) t.edge(0:1)
 
 draw tile16(a) 16x16:
   gradient tg = linear(135, a.lighten(16%), a.darken(20%))
   mask t = rrect(1:1, 14:14, 3)
   fill tg t
-  rim t 0:1 a.lighten(40%) 1
+  fill a.lighten(40%) t.edge(0:1)
 
 draw tile64(a) 64x64:
   gradient tg = linear(135, a.lighten(16%), a.darken(20%))
   mask t = rrect(2:2, 61:61, 14)
   fill tg t
-  rim t 0:1 a.lighten(40%) 1
+  fill a.lighten(40%) t.edge(0:1)
 
 # ── Glyph silhouettes (white on transparent; stamped with a drop shadow) ──
 draw gMusic 32x32:                       # beamed eighth notes

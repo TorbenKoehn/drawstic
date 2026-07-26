@@ -226,6 +226,111 @@ describe('evaluator', () => {
     expect(px(s, 1, 12)[3]).toBe(0) // outside
   })
 
+  // ADR-0097 §2 — `R.edge(DX:DY [, N])` ≡ `R.subtract(R.shift(sign(DX)·N : sign(DY)·N))`.
+  // Region algebra, not a light: it takes an arbitrary paint (the corpus uses it with *dark*
+  // colours, which a material rim dose — always toward the light colour — can never produce).
+  describe('region method .edge() (ADR-0097)', () => {
+    const strip = (body: string): ReturnType<typeof render> =>
+      render(`draw d 8x8:\n  r = rect(2:2, 5:5)\n${body}`, 'd')
+
+    test('direction picks the side, and reads like the removed rim (0:1 = the TOP edge)', () => {
+      // `0:1` means the light travels DOWN, so the lit band is the top row of the region.
+      const top = strip('  fill #ff0000 r.edge(0:1)\n')
+      expect(px(top, 3, 2)).toEqual([255, 0, 0, 255]) // top row painted
+      expect(px(top, 3, 5)[3]).toBe(0) // bottom row untouched
+      expect(px(top, 3, 3)[3]).toBe(0) // interior untouched
+
+      const left = strip('  fill #ff0000 r.edge(1:0)\n')
+      expect(px(left, 2, 3)).toEqual([255, 0, 0, 255]) // left column painted
+      expect(px(left, 5, 3)[3]).toBe(0) // right column untouched
+
+      const bottomRight = strip('  fill #ff0000 r.edge(-1:-1)\n')
+      expect(px(bottomRight, 5, 5)).toEqual([255, 0, 0, 255]) // the bottom-right corner band
+      expect(px(bottomRight, 2, 2)[3]).toBe(0)
+    })
+
+    test('only the sign of the direction matters — magnitude is not a width', () => {
+      const one = strip('  fill #ff0000 r.edge(0:1)\n')
+      const nine = strip('  fill #ff0000 r.edge(0:9)\n')
+      for (let x = 0; x < 8; x++) {
+        for (let y = 0; y < 8; y++) {
+          expect(px(nine, x, y)).toEqual(px(one, x, y))
+        }
+      }
+    })
+
+    test('N widens the band with uniform coverage — a translucent paint never stacks', () => {
+      const wide = strip('  fill #ff0000 r.edge(0:1, 2)\n')
+      expect(px(wide, 3, 2)[3]).toBe(255)
+      expect(px(wide, 3, 3)[3]).toBe(255) // 2px deep
+      expect(px(wide, 3, 4)[3]).toBe(0) // and no deeper
+
+      // the whole band is ONE fill, so both rows land at exactly the paint's own alpha — the
+      // retired `rim … 2` painted N overlapping bands and stacked alpha on the outermost row.
+      const soft = strip('  fill #ff0000.alpha(50%) r.edge(0:1, 2)\n')
+      expect(px(soft, 3, 2)[3]).toBe(px(soft, 3, 3)[3])
+      expect(px(soft, 3, 2)[3]).toBe(128)
+    })
+
+    test('a zero direction (or a zero width) is the empty region', () => {
+      expect(px(strip('  fill #ff0000 r.edge(0:0)\n'), 3, 2)[3]).toBe(0)
+      expect(px(strip('  fill #ff0000 r.edge(0:1, 0)\n'), 3, 2)[3]).toBe(0)
+    })
+
+    test('it is exactly subtract(shift) — the identity the ADR defines it by', () => {
+      const sugar = strip('  fill #ff0000 r.edge(-1:1, 2)\n')
+      const spelled = strip('  fill #ff0000 r.subtract(r.shift(-2:2))\n')
+      for (let x = 0; x < 8; x++) {
+        for (let y = 0; y < 8; y++) {
+          expect(px(sugar, x, y)).toEqual(px(spelled, x, y))
+        }
+      }
+    })
+
+    test('composing with .intersect() clips the EDGE, which is what `rim` could not express', () => {
+      // The defect ADR-0097 §2 names. `rim` fused constructor and eliminator, so the clip could
+      // only ever go on the *region*: `rim R.intersect(C) 0:1 P` rims the clip rect, laying a
+      // straight bar across the middle of the mass. Splitting them lets the clip come last.
+      const clip = 'rect(0:4, 7:7)' // a lower half-plane that cuts the region in two
+
+      // wrong order (all `rim` could say): the clipped region's own top edge — a bar at y=4,
+      // inside the mass, nowhere near the silhouette.
+      const wrongOrder = strip(`  fill #ff0000 r.intersect(${clip}).edge(0:1)\n`)
+      expect(px(wrongOrder, 3, 4)).toEqual([255, 0, 0, 255]) // the artifact bar
+      expect(px(wrongOrder, 3, 2)[3]).toBe(0) // the real top edge is missed entirely
+
+      // right order: the silhouette's top edge, then clipped away — correctly paints nothing.
+      const clipped = strip(`  fill #ff0000 r.edge(0:1).intersect(${clip})\n`)
+      for (let x = 0; x < 8; x++) {
+        for (let y = 0; y < 8; y++) {
+          expect(px(clipped, x, y)[3]).toBe(0)
+        }
+      }
+
+      // and a clip that does overlap the edge keeps exactly that stretch of it
+      const partial = strip('  fill #ff0000 r.edge(0:1).intersect(rect(4:0, 7:7))\n')
+      expect(px(partial, 5, 2)).toEqual([255, 0, 0, 255]) // top edge, inside the clip
+      expect(px(partial, 3, 2)[3]).toBe(0) // top edge, outside the clip
+
+      // it composes the other way too: the edge of a union follows the union's own silhouette,
+      // not the seam between its operands.
+      const unioned = render(
+        'draw d 12x8:\n  a = rect(1:2, 5:5)\n  b = rect(5:2, 10:5)\n  fill #ff0000 a.union(b).edge(0:1)\n',
+        'd',
+      )
+      expect(px(unioned, 7, 2)).toEqual([255, 0, 0, 255])
+      expect(px(unioned, 7, 3)[3]).toBe(0)
+    })
+
+    test('arity and type errors are positioned', () => {
+      expect(() => strip('  fill #ff0000 r.edge()\n')).toThrow(/edge takes 2 or 3 argument/)
+      expect(() => strip('  fill #ff0000 r.edge(0:1, 2, 3)\n')).toThrow(
+        /edge takes 2 or 3 argument/,
+      )
+      expect(() => strip('  fill #ff0000 r.edge(3)\n')).toThrow(/must be a point/)
+    })
+  })
+
   test('fn-built region + stroke w2', () => {
     const s = render(
       'fn ring(c, r) = circle(c, r).subtract(circle(c, r - 2))\n\ndraw m 16x16:\n  stroke #1a1a1a ring(8:8, 7) w2\n',
@@ -728,7 +833,7 @@ draw d 2x2:
     expect(px(w2, 2, 4)[3]).toBe(255) // 2px ring reaches two out
   })
 
-  test('local shadows, texture filters, and lighting helpers', () => {
+  test('local shadows and texture filters', () => {
     const shadowed = render(
       'draw d 6x4:\n  r = rect(1:1, 2:2)\n  shadow r 2:0 #ff0000\n  fill #000000 r\n',
       'd',
@@ -742,13 +847,6 @@ draw d 2x2:
     )
     expect(px(textured, 0, 0)).toEqual([0, 0, 0, 255])
     expect(px(textured, 3, 3)).toEqual([0, 0, 0, 255])
-
-    const lit = render(
-      'draw d 6x4:\n  r = rect(1:1, 4:2)\n  fill #808080 r\n  shadeRegion r 0:0 #808080 1\n  rim r 1:0 #ffffff 1\n  ao r #000000 0.5\n',
-      'd',
-    )
-    expect(px(lit, 4, 1)[3]).toBe(255)
-    expect(px(lit, 1, 1)[3]).toBe(255)
   })
 
   test('unified frame shadow shape: dx:dy point form; two-number alias is rejected (ADR-0088)', () => {
@@ -803,22 +901,56 @@ draw d 2x2:
     expect(px(whole, 3, 0)).toEqual([0, 0, 0, 255])
   })
 
-  test('shadeRegion is a veil; lightRegion brightens (ADR-0068/0069)', () => {
-    // amount is the veil opacity; an opaque base does NOT repaint the near side
-    const veil = render(
-      'draw d 8x1:\n  r = rect(0:0, 7:0)\n  fill #ffffff r\n  shadeRegion r 0:0 #ff0000 1\n',
-      'd',
-    )
-    expect(px(veil, 0, 0)).toEqual([255, 255, 255, 255]) // near the light: untouched
-    expect(px(veil, 7, 0)).toEqual([255, 0, 0, 255]) // far corner: full red veil
+  // ADR-0097: the raw hand-light quartet is gone — `model`/`cel` are the only lighting verbs, and
+  // every other job the quartet did is ordinary region + paint work. Each hint has to name the
+  // *canonical* replacement, and for the two distance veils that means naming both branches: which
+  // one is right depends on whether the region already carries drawn detail (`model` repaints).
+  test.each([
+    ['shadeRegion', 'shadeRegion r 0:0 #ff0000 1', /'shadeRegion' was removed.*model r mat/s],
+    ['lightRegion', 'lightRegion r 0:0 #ffffff 1', /'lightRegion' was removed.*model r mat/s],
+    ['rim', 'rim r 1:0 #ffffff 1', /'rim' was removed.*r\.edge\(dx:dy/s],
+    ['ao', 'ao r #000000 0.5', /'ao' was removed.*stroke p\.alpha\(a\) r/s],
+    // renamed by ADR-0096 §2, then removed outright with the rest of the quartet
+    [
+      'ambientOcclusion',
+      'ambientOcclusion r #000000 0.5',
+      /'ambientOcclusion' was removed.*stroke p\.alpha\(a\) r/s,
+    ],
+  ])('%s was removed (ADR-0097) and its error names the canonical replacement', (_n, stmt, re) => {
+    expect(() =>
+      render(`draw d 8x1:\n  r = rect(0:0, 7:0)\n  fill #ffffff r\n  ${stmt}\n`, 'd'),
+    ).toThrow(re)
+  })
 
-    // lightRegion: additive brightening, strongest nearest the light point
-    const lit = render(
-      'draw d 8x1:\n  r = rect(0:0, 7:0)\n  fill #000000 r\n  lightRegion r 0:0 #ffffff 1\n',
+  test('the removed light commands stay reserved — a binding of the same name is E007', () => {
+    // Reserved uniformly (ADR-0096 §5) so a stale recipe hits the removal hint rather than
+    // silently resolving a user binding that shadows it.
+    for (const name of ['shadeRegion', 'lightRegion', 'rim', 'ao']) {
+      expect(() => render(`draw d 2x2:\n  ${name} = 3\n  bg #ffffff\n`, 'd')).toThrow()
+    }
+  })
+
+  test('the veil branch: a gradient fill darkens drawn detail without erasing it (ADR-0097)', () => {
+    // The reason the migration is not mechanical. `model` writes opaque tones through putPixel, so
+    // modelling a region that already carries hand-drawn marks *repaints over them*; a gradient
+    // `fill` is a veil and keeps them. This is the replacement for `shadeRegion` over drawn pixels.
+    const veiled = render(
+      [
+        'draw d 8x1:',
+        '  r = rect(0:0, 7:0)',
+        '  fill #ffffff r',
+        '  px #ff0000 6:0', // hand-drawn detail inside the region
+        '  fill linear(0, transparent, #000000.alpha(50%)) r',
+        '',
+      ].join('\n'),
       'd',
     )
-    expect(px(lit, 0, 0)).toEqual([255, 255, 255, 255]) // nearest the light: brightest
-    expect(px(lit, 7, 0)).toEqual([0, 0, 0, 255]) // far corner: untouched
+    // the mark survives, darkened — still red-dominant, never flattened to the veil's own tone
+    const [r, g, b] = px(veiled, 6, 0)
+    expect(r).toBeGreaterThan(g + 60)
+    expect(r).toBeGreaterThan(b + 60)
+    // and the veil really did grade across the region: the far end is darker than the near end
+    expect(px(veiled, 7, 0)[0]).toBeLessThan(px(veiled, 0, 0)[0])
   })
 
   test('while was removed (ADR-0094) — an unbounded loop is a budget hazard for never posed', () => {

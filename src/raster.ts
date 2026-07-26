@@ -1149,8 +1149,8 @@ export const filterQuantize = (
 /**
  * Iterate every in-bounds, in-mask, in-region pixel of `region`, invoking `paint(x, y, t)` with
  * `t` = the pixel's distance from `light` normalized to the region bbox's farthest corner (clamped
- * to [0,1]; 0 at `light`, 1 at the far corner). Shared spine of the distance-scaled lighting helpers
- * (ADR-0063, ADR-0068, ADR-0069) so `shadeRegion`/`lightRegion` stay pixel-consistent.
+ * to [0,1]; 0 at `light`, 1 at the far corner). The distance spine of {@link lightRegion}
+ * (ADR-0063, ADR-0068, ADR-0069).
  */
 const forRegionDistance = (
   ctx: Context,
@@ -1182,29 +1182,12 @@ const forRegionDistance = (
 }
 
 /**
- * Directional distance shading (ADR-0068): blend `base` as a shadow veil over `region` with
- * opacity `base.a × amount × t`, where `t` is the pixel's normalized distance from `light`. Nearest
- * to `light` is untouched; the far corner reaches `base.a × amount`. Here `amount` is the veil
- * opacity — an opaque `base` no longer repaints the region, it just makes the veil reach full black.
- */
-export const shadeRegion = (
-  ctx: Context,
-  region: Region,
-  light: { readonly x: number; readonly y: number },
-  base: Color,
-  amount: number,
-): void => {
-  const strength = clamp01(amount)
-  forRegionDistance(ctx, region, light, (x, y, t) => {
-    ctx.buffer.blend(x, y, base.r, base.g, base.b, roundHalfUp(base.a * strength * t))
-  })
-}
-
-/**
- * Additive counterpart to {@link shadeRegion} (ADR-0069): blend `paint` as a light veil over
- * `region` with opacity `paint.a × amount × (1 − t)`, where `t` is the pixel's normalized distance
- * from `light`. Nearest to `light` is brightest (up to `paint.a × amount`); the far corner is
- * untouched. Mirror-symmetric to `shadeRegion` — that darkens by `t`, this brightens by `1 − t`.
+ * Distance-scaled light veil (ADR-0069): blend `paint` over `region` with opacity
+ * `paint.a × amount × (1 − t)`, where `t` is the pixel's normalized distance from `light`. Nearest
+ * to `light` is brightest (up to `paint.a × amount`); the far corner is untouched.
+ *
+ * Internal only since ADR-0097 removed the raw `lightRegion` command — its one caller is the `glow`
+ * response's self-light, which brightens a region from its own centre outward.
  */
 export const lightRegion = (
   ctx: Context,
@@ -1222,6 +1205,10 @@ export const lightRegion = (
 /**
  * Width-pixel directional rim light: paints the band of region not covered by region shifted
  * in the opposite direction, one shift-step per pixel of width.
+ *
+ * Internal only since ADR-0097 removed the raw `rim` command — its one caller is the material `rim`
+ * dose. Authors reach the same geometry through the region method `R.edge(dx:dy, n)`, which paints
+ * the whole band in *one* pass (uniform coverage) instead of stacking `n` overlapping fills.
  */
 export const rimRegion = (
   ctx: Context,
@@ -1249,7 +1236,11 @@ export const rimRegion = (
   }
 }
 
-/** Convenience filter: a 1px inner-boundary stroke of region at paint alpha scaled by amount. */
+/**
+ * A 1px inner-boundary stroke of region at paint alpha scaled by amount — the contact darkening at
+ * a form's seated edge. Internal only since ADR-0097 removed the raw `ao` command (pixel-identical
+ * to `stroke p.alpha(a) r`); its one caller is the material `ao` dose.
+ */
 export const ambientOcclusion = (
   ctx: Context,
   region: Region,
@@ -1257,51 +1248,6 @@ export const ambientOcclusion = (
   amount: number,
 ): void => {
   strokeRegion(ctx, region, { ...paint, a: roundHalfUp(paint.a * clamp01(amount)) }, 1)
-}
-
-/**
- * Banded distance fill for a crisp cel-shaded look (ADR-0086): quantize each pixel's distance from
- * `light` (the same {@link forRegionDistance} spine as `shadeRegion`) into `colors.length` discrete
- * bands — `colors[0]` nearest the light (highlight), the last colour farthest (deepest shadow) —
- * and write each band with a raw `set`, so bands stay hard-edged with **no alpha stacking** (unlike
- * the continuous `shadeRegion` veil). Distance is re-normalized over the region's own near..far
- * span (a first pass finds it) so all N bands appear evenly even when the light sits far off the
- * region — a synthetic directional source compresses raw `t` into a sub-range otherwise. Pair with
- * `ramp(base, n)` for an even, hue-consistent band list. A single colour fills the whole region;
- * an empty list no-ops.
- */
-export const celRegion = (
-  ctx: Context,
-  region: Region,
-  light: { readonly x: number; readonly y: number },
-  colors: readonly Color[],
-): void => {
-  const n = colors.length
-  if (n === 0) {
-    return
-  }
-  let tMin = Number.POSITIVE_INFINITY
-  let tMax = Number.NEGATIVE_INFINITY
-  forRegionDistance(ctx, region, light, (_x, _y, t) => {
-    if (t < tMin) {
-      tMin = t
-    }
-    if (t > tMax) {
-      tMax = t
-    }
-  })
-  if (!Number.isFinite(tMin)) {
-    return
-  }
-  const span = tMax - tMin
-  forRegionDistance(ctx, region, light, (x, y, t) => {
-    const u = span < 1e-9 ? 0 : (t - tMin) / span
-    const idx = Math.min(n - 1, Math.floor(u * n))
-    const c = colors[idx]
-    if (c) {
-      ctx.buffer.set(x, y, c)
-    }
-  })
 }
 
 // ── form (normal-based) shading (ADR-0089) ───────────────────────────────────

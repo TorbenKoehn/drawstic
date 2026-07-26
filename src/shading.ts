@@ -1,6 +1,6 @@
 // Declarative light + material lowering (ADR-0086, ADR-0089). This module is the *encoding
 // unification*: the single `Light` value is converted, per region, into whatever shape each raster
-// shading primitive needs — a point (`shadeRegion`/`lightRegion`), a direction (`rim`/form normals),
+// shading primitive needs — a point (the `glow` self-light), a direction (rim band / form normals),
 // or a `dx:dy` offset (cast shadow) — so a body shade, a rim, and a cast shadow driven by one light
 // stay coherent *structurally*, not by author discipline. `lowerMaterial` expands a `Material` under
 // a `Light` onto the craft-correct sequence: the **form (normal-based) body shade** (ADR-0089, the
@@ -18,7 +18,6 @@ import {
   formShade,
   lightRegion,
   rimRegion,
-  shadeRegion,
   type Vec3,
 } from './raster.js'
 import {
@@ -77,7 +76,7 @@ export const regionDiagonal = (region: Region): number => {
 // ── encoding unification: one Light → point / direction / offset ─────────────
 
 /**
- * The point `shadeRegion`/`lightRegion` need. For a point light (`pos` set) it *is* `pos`. For a
+ * The point {@link lightRegion} needs. For a point light (`pos` set) it *is* `pos`. For a
  * directional light it is a synthetic up-source placed opposite the travel direction — the region
  * centre pulled back by twice the region diagonal along `−dir` — so the near (lit) side reads low
  * distance and the far side reads high distance, exactly matching the light's direction.
@@ -106,7 +105,7 @@ export const lightDirOf = (l: Light, region?: Region): Vec2 => {
 
 /**
  * The integer `dx:dy` offset a cast shadow needs: the travel direction (per region) scaled by
- * `len` and rounded. `dir 1:1` therefore casts down-right — the same side `shadeRegion` darkens,
+ * `len` and rounded. `dir 1:1` therefore casts down-right — the same side the form shade darkens,
  * so shade and cast never disagree.
  */
 export const shadowOffsetFor = (
@@ -253,7 +252,6 @@ const castLenFor = (region: Region): number => {
 export type ShadeOp =
   | { readonly kind: 'fill'; readonly color: Color }
   | { readonly kind: 'form'; readonly spec: FormSpec; readonly field?: Region }
-  | { readonly kind: 'shade'; readonly point: Vec2; readonly color: Color; readonly amount: number }
   | { readonly kind: 'light'; readonly point: Vec2; readonly color: Color; readonly amount: number }
   | { readonly kind: 'rim'; readonly dir: Vec2; readonly color: Color; readonly width: number }
   | { readonly kind: 'ao'; readonly color: Color; readonly amount: number }
@@ -420,9 +418,6 @@ const executeOp = (ctx: Context, region: Region, op: ShadeOp): void => {
       return
     case 'form':
       formShade(ctx, region, op.spec, op.field ?? region)
-      return
-    case 'shade':
-      shadeRegion(ctx, region, op.point, op.color, op.amount)
       return
     case 'light':
       lightRegion(ctx, region, op.point, op.color, op.amount)

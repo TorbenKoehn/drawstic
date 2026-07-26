@@ -63,7 +63,6 @@ import { Framebuffer, MirrorFramebuffer } from './framebuffer.js'
 import { parse, parseStandaloneExpr } from './parser.js'
 import { decodePng } from './png.js'
 import {
-  ambientOcclusion,
   arcPoints,
   bezierPoints,
   type Context,
@@ -80,15 +79,12 @@ import {
   filterShadow,
   filterSpeckle,
   filterTint,
-  lightRegion,
   type Paint,
   PixelSink,
   putPixel,
   quadPoints,
   quantInt,
   type RenderMode,
-  rimRegion,
-  shadeRegion,
   stampSprite,
   strokeLine,
   strokePath,
@@ -492,10 +488,9 @@ type DrawState = {
   title: string | undefined
   description: string | undefined
   /**
-   * The light in scope for shading commands (ADR-0086), set only for the body of a `lit L:`
-   * block (set/restored like {@link DrawState.mirror}). `null` outside any `lit` block — a
-   * `model`/`cel` with no light in scope and no explicit `light L` argument is a hard E024,
-   * never a silent default.
+   * The light in scope for shading commands (ADR-0086): the applied theme's default light, or
+   * `null` when the theme declares none. A `model`/`cel` with no light here and no explicit
+   * `light L` argument is a hard E024, never a silent default.
    */
   light: Light | null
   /**
@@ -748,6 +743,8 @@ const BUILTIN_NAMES = new Set([
   'intersect',
   'subtract',
   'xor',
+  // ADR-0097: the one-sided edge band, region algebra rather than a light
+  'edge',
   // transforms (ADR-0044)
   'shift',
   'rotate',
@@ -785,7 +782,10 @@ const BUILTIN_NAMES = new Set([
   'ripple',
   'dither',
   'quantize',
-  // ADR-0086 declarative light/material; reserved uniformly with everything else (ADR-0096 §5)
+  // ADR-0086 declarative light/material; reserved uniformly with everything else (ADR-0096 §5).
+  // `rim`/`ao` stay reserved as *material dose keys* even though the raw commands are gone
+  // (ADR-0097); `shadeRegion`/`lightRegion` are reserved so a stale recipe hits the removal hint
+  // rather than resolving a user binding of the same name.
   'model',
   'cel',
   'shadeRegion',
@@ -1037,13 +1037,6 @@ const explainShadeOp = (op: ShadeOp): ExplainStep => {
         ...(op.spec.spec > 0 ? { spec: round3(op.spec.spec), specPow: op.spec.specPow } : {}),
         ...(op.spec.bands !== null ? { bands: op.spec.bands } : {}),
         ...(op.spec.profile !== 'round' ? { profile: op.spec.profile } : {}),
-      }
-    case 'shade':
-      return {
-        op: 'shade',
-        point: roundVec(op.point),
-        color: toHexColor(op.color),
-        amount: round3(op.amount),
       }
     case 'light':
       return {
@@ -2166,9 +2159,9 @@ export class Engine {
       fontName: theme.font ?? mod.fontDefault,
       title: undefined,
       description: undefined,
-      // The applied theme's default light (ADR-0086 tier 3) is the drawing's outermost
-      // light, so every view/variant using the theme shares one source; a `lit L:` block
-      // overrides it for its body, an explicit `light L` argument for a single command.
+      // The applied theme's default light (ADR-0086) is the drawing's outermost light, so every
+      // view/variant using the theme shares one source; an explicit `light L` argument overrides
+      // it for a single command.
       light: theme.light,
       pins: new Map(),
       mirror: null,
@@ -4345,11 +4338,11 @@ export class Engine {
   }
 
   /**
-   * Resolve the light for a `model`/`cel` command in three tiers (ADR-0086), most-local first:
-   * an explicit `light L` argument, else the enclosing `lit L:` block, else the applied theme's
-   * default (both of the latter live in {@link DrawState.light}, which a `lit` block sets/restores
-   * over `draw.light`'s theme-default seed). No light in any tier is a hard E024 — never a silent
-   * default, so a light is always named and always visible.
+   * Resolve the light for a `model`/`cel` command in two tiers (ADR-0086), most-local first: an
+   * explicit `light L` argument, else the applied theme's default (which seeds
+   * {@link DrawState.light}). ADR-0094 removed the third tier, the `lit L:` block. No light in
+   * either tier is a hard E024 — never a silent default, so a light is always named and always
+   * visible.
    */
   #requireLight(
     explicit: Light | null,
@@ -4361,10 +4354,10 @@ export class Engine {
     if (!lt) {
       throw error(
         ERROR_CODE.noLight,
-        `'${stmt.callee}' needs a light: wrap it in a 'lit L:' block or pass 'light L'`,
+        `'${stmt.callee}' needs a light: pass 'light L', or give the theme a default light`,
         state.module.displayPath,
         stmt.span,
-        'declare one (e.g. `light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%`), then open `lit sun:` around this command or add a trailing `light sun`',
+        'declare one (e.g. `light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%`), then add a trailing `light sun` to this command or set it as the theme default',
       )
     }
     return lt
@@ -4790,49 +4783,48 @@ export class Engine {
         filterQuantize(ctx, this.#paletteColors(palVal, stmt.span, state), region)
         return
       }
-      case 'shadeRegion': {
-        const region = args.region()
-        const light = args.pair()
-        const base = args.color()
-        const amount = args.num()
-        args.done()
-        // ADR-0068: `amount` is the veil opacity — an opaque `base` no longer repaints the region.
-        shadeRegion(ctx, region, light, base, amount)
-        return
-      }
-      case 'lightRegion': {
-        const region = args.region()
-        const light = args.pair()
-        const paint = args.color()
-        const amount = args.num()
-        args.done()
-        lightRegion(ctx, region, light, paint, amount)
-        return
-      }
-      case 'rim': {
-        const region = args.region()
-        const direction = args.pair()
-        const paint = args.paint()
-        const width = args.empty() ? 1 : args.num()
-        args.done()
-        rimRegion(ctx, region, direction, paint, quantInt(width))
-        return
-      }
-      case 'ao': {
-        const region = args.region()
-        const paint = args.color()
-        const amount = args.num()
-        args.done()
-        ambientOcclusion(ctx, region, paint, amount)
-        return
-      }
-      case 'ambientOcclusion':
-        // Renamed to `ao` (ADR-0096 §2) — 4 tokens for a 1px contact-darkening helper. Distinct
-        // from the `ao` material dose override (`material x = c metal ao 20%`, ADR-0091), which
-        // coexists the same way `rim` already does (both a raw command and a material dose key).
+      // The raw hand-light quartet was removed (ADR-0097): `model`/`cel` are now the only lighting
+      // verbs, and everything the quartet could do that they cannot is ordinary region + paint work.
+      // Each hint names the *canonical* replacement, not a mechanical transliteration — for the two
+      // distance veils the right answer depends on whether the region already carries drawn detail
+      // (`model` is a repaint and would erase it; a gradient `fill` veils it).
+      case 'shadeRegion':
         throw error(
           ERROR_CODE.syntax,
-          "'ambientOcclusion' was renamed to 'ao' — use 'ao r p amount'",
+          "'shadeRegion' was removed — shade a solid body with 'model r mat'; " +
+            "veil already-drawn pixels with 'fill linear(deg, transparent, c.alpha(a)) r'",
+          state.module.displayPath,
+          stmt.span,
+        )
+      case 'lightRegion':
+        throw error(
+          ERROR_CODE.syntax,
+          "'lightRegion' was removed — light a solid body with 'model r mat'; " +
+            "veil already-drawn pixels with 'fill linear(deg, c.alpha(a), transparent) r'",
+          state.module.displayPath,
+          stmt.span,
+        )
+      case 'rim':
+        throw error(
+          ERROR_CODE.syntax,
+          "'rim' was removed — use 'fill p r.edge(dx:dy[, n])', or the material's own 'rim N%' dose",
+          state.module.displayPath,
+          stmt.span,
+        )
+      case 'ao':
+        throw error(
+          ERROR_CODE.syntax,
+          "'ao' was removed — use 'stroke p.alpha(a) r', or the material's own 'ao N%' dose",
+          state.module.displayPath,
+          stmt.span,
+        )
+      case 'ambientOcclusion':
+        // Renamed to `ao` by ADR-0096 §2, then removed outright with the rest of the quartet
+        // (ADR-0097) — it was byte-identical to a 1px inner stroke.
+        throw error(
+          ERROR_CODE.syntax,
+          "'ambientOcclusion' was removed — use 'stroke p.alpha(a) r', " +
+            "or the material's own 'ao N%' dose",
           state.module.displayPath,
           stmt.span,
         )
@@ -7169,6 +7161,34 @@ export class Engine {
           return pathFromRegion(regionXor(pathFillRegion(a), pathFillRegion(b)), a.viewBox)
         }
         return regionXor(reg(0), reg(1))
+      }
+      case 'edge': {
+        // `R.edge(DX:DY [, N])` (ADR-0097) ≡ `R.subtract(R.shift(sign(DX)·N : sign(DY)·N))`: the
+        // one-sided edge band, N px wide with uniform coverage (one fill, so a translucent paint
+        // never stacks). Direction reads as the removed `rim` did — `0:1` is the *top* edge,
+        // because the light travels down. `0:0` (or `N = 0`) is the empty region.
+        //
+        // Pure geometry — no light, no paint — so unlike `rim` it composes: `R.edge(D).intersect(C)`
+        // clips the silhouette band, whereas `rim R.intersect(C) D P` painted the *clip rect's* own
+        // boundary (a straight bar across the mass). Fusing constructor and eliminator made that
+        // order inexpressible; splitting them is the fix.
+        if (ctx.args.length !== 2 && ctx.args.length !== 3) {
+          throw error(
+            ERROR_CODE.arity,
+            `edge takes 2 or 3 argument(s), got ${ctx.args.length}`,
+            ctx.file,
+            ctx.span,
+          )
+        }
+        const region = reg(0)
+        const dir = ctx.point(1)
+        const width = Math.max(0, ctx.args.length === 3 ? quantInt(ctx.number(2)) : 1)
+        const dx = Math.sign(dir.x) * width
+        const dy = Math.sign(dir.y) * width
+        return regionSubtract(
+          region,
+          regionTransform(region, translation(dx, dy), translation(-dx, -dy)),
+        )
       }
       case 'fill':
         arity(1)

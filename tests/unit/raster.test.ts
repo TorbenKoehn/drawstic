@@ -29,7 +29,6 @@ import {
   quantInt,
   rimRegion,
   scaleBitmap,
-  shadeRegion,
   stampSprite,
   strokeLine,
   strokePath,
@@ -615,21 +614,24 @@ describe('filters', () => {
   })
 })
 
-describe('shadeRegion / rimRegion / ambientOcclusion', () => {
-  test('shadeRegion (v2) veils by distance from the light without repainting the near side', () => {
-    // an 8px opaque-white strip, light at the left end
+// The raw `shadeRegion`/`lightRegion`/`rim`/`ao` commands were removed by ADR-0097; these three
+// helpers survive as the *internals* of the declarative pipeline (`lightRegion` = the `glow` response's
+// self-light, `rimRegion`/`ambientOcclusion` = the material `rim`/`ao` doses), so their pixel
+// contracts still need locking down.
+describe('lightRegion / rimRegion / ambientOcclusion (internal material-dose primitives)', () => {
+  test('lightRegion brightens by proximity to the light', () => {
     const strip = rectRegion(0, 0, 7, 0)
     const c = ctx(8, 1)
-    fillRegion(c, strip, white)
-    shadeRegion(c, strip, { x: 0, y: 0 }, red, 1)
-    expect(px(c, 0, 0)).toEqual([255, 255, 255, 255]) // at the light: t=0, untouched — no repaint
-    expect(px(c, 3, 0)).toEqual([255, 146, 146, 255]) // a graded veil, not a flat repaint
-    expect(px(c, 7, 0)).toEqual([255, 0, 0, 255]) // far corner: full base veil (a = base.a * amount)
+    fillRegion(c, strip, black)
+    lightRegion(c, strip, { x: 0, y: 0 }, white, 1)
+    expect(px(c, 0, 0)).toEqual([255, 255, 255, 255]) // nearest the light: strongest (a = paint.a * amount)
+    expect(px(c, 3, 0)).toEqual([146, 146, 146, 255]) // a graded brightening
+    expect(px(c, 7, 0)).toEqual([0, 0, 0, 255]) // far corner: untouched
   })
 
-  test('shadeRegion (v2) no-ops with no bbox and honours bounds/mask/region gating', () => {
+  test('lightRegion no-ops with no bbox and honours bounds/mask/region gating', () => {
     const c = ctx(4, 4)
-    shadeRegion(
+    lightRegion(
       c,
       { type: 'region', bbox: null, has: () => true, test: () => true },
       { x: 0, y: 0 },
@@ -641,19 +643,9 @@ describe('shadeRegion / rimRegion / ambientOcclusion', () => {
     const c3 = ctx(8, 8)
     c3.mask = rectRegion(0, 0, 3, 7)
     const disc = circleRegion(4, 4, 3)
-    shadeRegion(c3, disc, { x: 4, y: 4 }, white, 1)
+    lightRegion(c3, disc, { x: 4, y: 4 }, white, 1)
     expect(px(c3, 5, 4)).toEqual([0, 0, 0, 0]) // masked out
     expect(px(c3, 1, 1)).toEqual([0, 0, 0, 0]) // outside the region (bbox corner, not in disc)
-  })
-
-  test('lightRegion brightens by proximity to the light — mirror of shadeRegion', () => {
-    const strip = rectRegion(0, 0, 7, 0)
-    const c = ctx(8, 1)
-    fillRegion(c, strip, black)
-    lightRegion(c, strip, { x: 0, y: 0 }, white, 1)
-    expect(px(c, 0, 0)).toEqual([255, 255, 255, 255]) // nearest the light: strongest (a = paint.a * amount)
-    expect(px(c, 3, 0)).toEqual([146, 146, 146, 255]) // a graded brightening
-    expect(px(c, 7, 0)).toEqual([0, 0, 0, 255]) // far corner: untouched
   })
 
   test('rimRegion no-ops on a zero direction, paints a band otherwise, and clamps width', () => {

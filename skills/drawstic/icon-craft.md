@@ -45,9 +45,8 @@ the most iterations. Build the tile.)
 edge**, identical proportion at every size (32→6, 16→3, 64→12); margin 1–2px.
 
 One light direction for the whole family: **light top-left, dark bottom-right.** Icon *mechanics*
-carry it — geometry, a rim pair, discrete zones — **not** scene filters: at 16–32px
-`shadeRegion`/`lightRegion` are too weak and areal, and `rim` is a thin band. Three verified
-contracts; pick one per family:
+carry it — geometry, an edge-band pair, discrete zones. At 16–32px an areal veil is too weak to
+read; commit the light to the tile's own geometry. Three verified contracts; pick one per family:
 
 - **Vertical gradient + 1px rim/highlight** (productivity, system) — row-uniform, cheap SVG:
   ```drw
@@ -71,8 +70,13 @@ contracts; pick one per family:
   ```
 
 A 135° `linear` gradient (media) also reads well but varies along scanlines → heavy SVG (§8).
-`rim` on a **filled** silhouette strokes the whole contour — on a `rrect` region it hits the edge,
-which is what you want here.
+
+**Edge bands** are `fill p face.edge(dx:dy[, n])` (ADR-0097) — `face.edge(0:1)` the top band,
+`face.edge(0:-1, 2)` a 2px bottom bevel. Direction = where the light travels. On a filled `rrect`
+this follows the whole facing contour, which is exactly what a tile wants. Give the pair the same
+geometry and opposite colours (`#ffffff.alpha(50%)` top, `#0a1220.alpha(35%)` bottom) and the tile
+reads lit without a single filter. Widening with `n` keeps **uniform** coverage — the band is one
+region, so a translucent paint does not stack toward the outer row.
 
 ## 3. Glyph = white silhouette, disambiguated
 
@@ -150,7 +154,7 @@ and re-thickened strokes.
 ## 8. SVG targets = flat tiles
 
 Pixel-mode SVG merges *horizontal* runs, so anything varying **along a scanline** — a horizontal or
-135° gradient, a `shadeRegion`/`lightRegion` veil, `grain` — breaks the merge into ~1 `<rect>`/pixel
+135° gradient, a `model` form shade, `grain` — breaks the merge into ~1 `<rect>`/pixel
 (5–25×; measured 3.7 → 50.8 KB for one 32px icon). For SVG-export families use the **flat-tile or
 1px-bevel contract (§2)** or 2–3 discrete `palette` zones; reserve gradient/veil tiles for PNG-only. The
 row-uniform vertical gradient (§2, first option) is the exception — it stays compact. Full detail:

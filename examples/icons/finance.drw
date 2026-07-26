@@ -42,7 +42,7 @@ draw wallet 32x32:
   mask walletBody = rrect(5:10, 26:23, 3)
   shadow walletBody 1:1 shade.alpha(30%)
   fill ink walletBody
-  rim walletBody 1:1 tileLight 1
+  fill tileLight walletBody.edge(1:1)
   line inkDim 5:15 26:15
   circle gold 21:15 2 fill
   circle goldDark 21:15 2
@@ -97,7 +97,7 @@ draw tag 32x32:
   mask tagShape = poly(6:16, 13:8, 26:8, 26:24, 13:24)
   shadow tagShape 1:1 shade.alpha(30%)
   fill ink tagShape
-  rim tagShape 1:1 tileLight 1
+  fill tileLight tagShape.edge(1:1)
   circle tile 12:16 2 fill
   circle tileDark 12:16 2
   rrect gold 16:14 23:19 1 fill
@@ -127,7 +127,7 @@ draw invoice 32x32:
   mask paperShape = poly(7:5, 25:5, 25:20, 22:23, 19:20, 16:23, 13:20, 10:23, 7:20)
   shadow paperShape 1:1 shade.alpha(30%)
   fill ink paperShape
-  rim paperShape 1:1 tileLight 1
+  fill tileLight paperShape.edge(1:1)
   line tile 10:9 22:9
   line tile 10:13 22:13
   line tile 10:17 18:17

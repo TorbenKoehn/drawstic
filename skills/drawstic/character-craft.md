@@ -9,9 +9,9 @@ silent to `check`; the render, the `--silhouette` black-out, and a per-joint `--
 judges, and a clean `critique --strict` verifies structure, not craft.**
 
 Characters are **not scenes and not icons.** Keep one **light contract** (a `theme` `light`) and
-`model`/`cel` form shading (it works at chibi scale — §6); the contact-shadow ellipse. The *raw*
-`shadeRegion`/`rim` veils are too weak at ≤64px — reach for `model`/`cel`, never the low-level
-primitives. Add what is character-specific: the **figure oracle** (§2), **organic head construction**
+`model`/`cel` form shading (it works at chibi scale — §6); the contact-shadow ellipse. There is no
+low-level alternative to reach for: the raw hand-light quartet was removed (ADR-0097), and an areal
+veil read too weak at ≤64px anyway. Add what is character-specific: the **figure oracle** (§2), **organic head construction**
 (§3), parts + **seams** (§5), **three views** with declared z-order (§6), faction recolor (§4).
 
 ## 1. The fixed build order (the one canonical path)
@@ -510,7 +510,7 @@ A face at chibi part-scale reads as "two dots" if you stop at pupils. Five marks
    part; C009 never fires between a subject's own front/side/back views), then **answer its seam-contact
    rubric** by looking.
 1. `check --lint --json` = `{diagnostics:[], census}` (W002 orphan part, W009 transparent end-row,
-   W012–W015 the retired hand idioms — antiPatterns all 0).
+   W013–W015 the retired hand idioms, `retired` on any removed construct — antiPatterns all 0).
 2. **Part fragment `--png@6–8`** — each part isolated with literal args (`#head(#a83a36)`).
 3. **Composite `--png@4`** — light contract + proportions read here.
 4. **`--silhouette --png@4`** — seam contact + archetype signal, colour stripped, every view incl. back.
