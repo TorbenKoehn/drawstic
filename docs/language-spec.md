@@ -57,8 +57,7 @@ see §13). A module's public surface is the set of `(name, type)` it defines:
 |----------|-------------|------|
 | `draw`   | `draw …:`   | a drawing (content). Stampable and/or exportable. |
 | `path`   | `path …:` / `path … = …` | reusable vector geometry. Fillable, strokeable, mask-convertible, transformable, importable, and path-exportable (§8–§9, [ADR-0061](decisions/0061-first-class-paths-and-local-pen-cursors.md)). |
-| `tileset`| `tileset …:`| equal-sized tiles baked into a grid, index-addressed (§9). |
-| `atlas`  | `atlas …:`  | varied-sized sprites packed into one image, name-addressed (§9). |
+| `atlas`  | `atlas …:`  | N drawings baked into one image plus a name-addressed rect map; `tile WxH` opts into a uniform grid (§9, [ADR-0096](decisions/0096-language-freeze-for-1-0.md) §3 — merges the former `tileset`). |
 | `theme`  | `theme …:`  | palette + style guide + shared parts (§12). |
 | `fn`     | `fn …`      | a value-returning function (§10). |
 | `gradient`   | `gradient …`    | a gradient paint value (§12). |
@@ -176,9 +175,9 @@ positioned error naming the removal. Delete the line from any file that still op
     `k = #1a1a1a`, `gradient sky = …`, `mask m = …`, `fn area(r) = …`). Scan for `=` to find
     every definition; a leading `kind` keyword only tags the binding's type.
   - **Block** `kind name … :` + indent — opens a **structured body** (`draw`, `theme`,
-    `export`, `filter`, `tileset`, `atlas`, `if`/`for`/`match`).
+    `export`, `filter`, `atlas`, `if`/`for`/`match`).
   - **Directive** `verb args` — performs an **action**, introduces no name (`circle k 8:8 6`,
-    `tiles grass, dirt`, `with warmPal`).
+    `sprites grass, dirt`, `with warmPal`).
 
   Punctuation is kept only where it resolves a real ambiguity or serves error-robustness /
   self-verifiability (so `=` stays even though dropping it benches ~6 % cheaper, while
@@ -232,7 +231,7 @@ Coordinates coerce (§5); indices do not.
   they round half-up to the fixed **1/16 subpixel grid** (`floor(v*16 + 0.5) / 16`), so
   anti-aliased output can place geometry between pixels — exactly, deterministically.
   Inherently integer slots — canvas size, pixel cells, `px`, `stamp` position/scale,
-  tileset/atlas layout — coerce to integers in **both** modes.
+  atlas layout — coerce to integers in **both** modes.
 - **Out-of-bounds is clipped:** drawing or stamping outside the canvas is silently clipped;
   negative or over-size coordinates are legal ([ADR-0028](decisions/0028-rasterization-semantics.md)).
 - Built-ins `w` and `h` hold the current drawing's width and height.
@@ -490,7 +489,7 @@ font runic 5x7:            # optional WxH = monospace assertion
       kkk
       k.k
       kkk
-  glyphs digits "0123456789"   # bulk: i-th tile of a tileset → i-th character
+  glyphs digits "0123456789"   # bulk: i-th member of a uniform-tile atlas → i-th character
   tracking 1               # optional; default 1
   lineheight 8             # optional; default glyph height + 1
 ```
@@ -887,43 +886,54 @@ draw badge 16x16:
   path (framebuffer-first, [ADR-0001](decisions/0001-framebuffer-first-core.md)); an engine
   may keep regions symbolic internally, but the semantics are per-pixel coverage.
 
-### Tilesets & atlases
+### Atlases
 
 Bake several drawings into **one image plus a coordinate map**, for game engines and sprite
-runtimes. Both are **content** (like `draw`): importable and exportable (§13), with
-**deterministic** layout. See [ADR-0016](decisions/0016-tilesets-and-atlases.md).
+runtimes. **Content** (like `draw`): importable and exportable (§13), with **deterministic**
+layout. One construct, `atlas`, covers both uniform sprite sheets and packed atlases — the
+only irreducible difference is whether the tiles are uniform, which is exactly what an
+optional `tile WxH` declaration toggles ([ADR-0016](decisions/0016-tilesets-and-atlases.md);
+[ADR-0096](decisions/0096-language-freeze-for-1-0.md) §3 merged the former separate `tileset`
+construct in). *(`tileset NAME SIZE:` is removed — a positioned error names the replacement.)*
 
-A **`tileset`** packs **equal-sized** tiles into a grid, addressed by **index** (row-major
-from 0). Every member must equal the declared tile size:
+**With `tile WxH`:** members pack onto a **uniform grid**, addressed by **name**, row-major
+from the top-left. Every member must equal the declared tile size:
 
 ```drw
-tileset terrain 16x16:                 # 16x16 = tile size; each member must be 16x16
-  tiles grass, dirt, water, stone      # index order: grass = 0, dirt = 1, …
-  cols 4                               # optional; default: near-square auto layout
+atlas terrain:
+  sprites grass, dirt, water, stone    # any declaration order; row-major grid placement
+  tile 16x16                           # 16x16 = tile size; each member must be exactly 16x16
+  cols 4                               # optional; default: near-square auto layout ceil(sqrt(n))
+  pad 1                                # optional grid gutter in px (default 0) — also the `tiled` sidecar's spacing
 ```
 
-An **`atlas`** packs **varied-sized** sprites and addresses them by **name**. Members pack
-automatically in a fixed order (so the sheet is reproducible); pin any subset with `place`
-and the rest pack around them:
+**Without `tile`:** members shelf-pack (tallest-first, then declaration order) at **varied**
+sizes, still addressed by **name**. Pin any subset with `place` and the rest pack around them:
 
 ```drw
 atlas hud:
   sprites play, pause, stop, logo      # any sizes; the member name keys the frame
-  pad 1                                # optional inter-sprite padding in px (default 0)
+  pad 1                                # optional inter-sprite gutter in px (default 0)
   place logo 0:0                       # optional: pin a member; others auto-pack
 ```
 
-- **Members** are drawings in scope (local or imported), given as a bracket-less list (§3).
-  Order is the tile index for `tileset`; for `atlas` it only seeds the packer.
-- `tiles`/`sprites`/`cols`/`pad`/`place` are **command-form directives** (like `with`,
-  `apply`, `mode` — §3), *not* `=` bindings, so none implies a reusable variable: the body
-  configures the construct just as a `draw` body holds drawing commands. A `tileset` member
-  that is not exactly the tile size is a positioned error.
-- Layout is **auto with explicit override**: `tileset` auto-columns at `ceil(sqrt(count))`
-  (override `cols`); `atlas` shelf-packs deterministically (override by `place`-pinning).
-  This upholds visual determinism (§14): the same members yield the same layout.
-- A single member can be addressed for re-`stamp`ing — `terrain.0` by index — as a natural
-  extension (see [ADR-0016](decisions/0016-tilesets-and-atlases.md)).
+- **Members** are drawings in scope (local or imported), given as a bracket-less `sprites`
+  list (§3) — repeatable, entries accumulate. **Addressed by name only**: `terrain.grass`
+  resolves that member's sub-sprite directly (for re-`stamp`ing, e.g.); the numeric
+  `terrain.0` index form the old `tileset` supported is removed (name addressing covers every
+  case index addressing did, uniform or not). An unknown member name is a positioned E015.
+- `sprites`/`tile`/`cols`/`pad`/`place` are **command-form directives** (like `with`, `apply`,
+  `mode` — §3), *not* `=` bindings: the body configures the construct just as a `draw` body
+  holds drawing commands. With `tile` declared, a member that isn't exactly that size is a
+  positioned **E016**.
+- **`cols`** requires a `tile` declaration (nothing to count grid columns of otherwise) — a
+  positioned E004 without one. **`place`** is rejected alongside `tile` — a grid already has
+  fixed slots — also a positioned E004. **`place`** naming a name not in `sprites` is a
+  positioned E001 (previously silently ignored). Zero `sprites`, or an explicit `cols 0`, are
+  guarded positioned errors rather than a silent divide-by-zero.
+- Layout is **auto with explicit override** either way — `cols`'s default (`tile` mode) or
+  `place`-pinning (shelf-pack mode) — upholding visual determinism (§14): the same members
+  yield the same layout.
 
 ---
 
@@ -939,7 +949,7 @@ x += 10          # mutate: += -= *= /=
 
 ### Scope & evaluation
 
-- **Module-scope-only definitions** (`draw`/`path`/`fn`/`theme`/`tileset`/`atlas`/`export`)
+- **Module-scope-only definitions** (`draw`/`path`/`fn`/`theme`/`atlas`/`export`)
   live at the top level of a file, are **order-independent** (may reference each other
   forward), and are collected before the module runs. Writing one inside a `draw` body is a
   positioned **E004** error — `fn`/`path` name the restriction explicitly
@@ -967,7 +977,7 @@ x += 10          # mutate: += -= *= /=
 
 | Kind | Module scope | Drawing-local | Order |
 |---|---|---|---|
-| `draw` / `path` / `fn` / `theme` / `tileset` / `atlas` / `export` | yes | no (E004) | order-independent |
+| `draw` / `path` / `fn` / `theme` / `atlas` / `export` | yes | no (E004) | order-independent |
 | `filter` | yes | yes | order-independent at module scope; sequential (must precede `apply`) when drawing-local |
 | `mask` / `gradient` / `palette` / binding (`=`) | yes | yes | sequential — visible from its line onward |
 
@@ -1460,11 +1470,17 @@ draw sword 24x48:
   "turtle-shell" (`material cloak = #4a3f56 cloth drape spread 200%`). Use `drape` only for hanging
   drapes; keep `round` for compact masses.
 - **Resolution order** for a `model`/`cel` command, most-local first: an explicit `light L`
-  argument → the applied theme's **default** light (`§ Themes`, ADR-0086 tier 2). No light in
-  **either** tier is a hard error (`E024`) — a light is always named and always visible, never a
-  silent default. (The `lit L: body` scoping block was removed in
-  [ADR-0094](decisions/0094-language-diet-and-canonical-lints.md): the two tiers cover both real
-  cases.) The theme default is how a front/side view pair or a
+  argument → the applied theme's **default** light (`§ Themes`, ADR-0086 tier 2) → the module's
+  **sole** bare `light NAME = …` binding (tier 3, [ADR-0096](decisions/0096-language-freeze-for-1-0.md)
+  §4). Tier 3 fires only when tier 2 is empty (no theme, or a theme with no default light) **and**
+  the file declares **exactly one** module-scope light: an author who has named one light in one
+  file has unambiguously said what the light is, so every `model`/`cel` there resolves without
+  needing a per-command `light sun` or a theme just to carry it. Two or more module-scope lights
+  don't collapse the ambiguity — the error names every candidate so the fix is one keystroke away.
+  No light in **any** tier is a hard error (`E024`) — a light is always named and always visible,
+  never a silent default. (The `lit L: body` scoping block was removed in
+  [ADR-0094](decisions/0094-language-diet-and-canonical-lints.md): tiers 1–2 cover both cases it
+  used to.) The theme default is how a front/side view pair or a
   colour variant shares **one** light without re-authoring it per view — the structural fix for the
   "light mirrored per view" bug.
 - **`model REGION MATERIAL [over UNION] [light L]`** lowers `MATERIAL` under the resolved light (the
@@ -1635,7 +1651,7 @@ draw moonIcon 16x16:
 
 ## 13. Output — the `export` element
 
-Content (`draw`, `path`, `tileset`, `atlas`) is separate from output. An `export` declares **what
+Content (`draw`, `path`, `atlas`) is separate from output. An `export` declares **what
 artifacts** to materialize from a content item; the **CLI decides where** they go (disk or
 stream). See [ADR-0006](decisions/0006-modules-and-content-output-separation.md).
 
@@ -1683,16 +1699,16 @@ export gem icons/gem:
   `mode smooth` (anti-aliased); the default comes from the theme
   ([ADR-0013](decisions/0013-render-mode-pixel-vs-aa.md)).
 
-**Tileset / atlas sidecars.** Exporting a `tileset` or `atlas` (§9) emits the baked `png`
-plus an optional descriptor of the index/name → rect map. File names are fixed so multiple
-descriptors never collide. See [ADR-0016](decisions/0016-tilesets-and-atlases.md).
+**Atlas sidecars.** Exporting an `atlas` (§9) emits the baked `png` plus an optional descriptor
+of the name → rect map. File names are fixed so multiple descriptors never collide. See
+[ADR-0016](decisions/0016-tilesets-and-atlases.md).
 
 | Format line | Emits | Applies to |
 |-------------|-------|------------|
-| `png` (alone) | `<base>.png` — the grid/packed sheet, engine-agnostic | both |
-| `tiled` (`tiled xml`) | `<base>.tsj` / `<base>.tsx` — Tiled tileset | `tileset` only (uniform tiles) |
-| `atlasJson` | `<base>.json` — TexturePacker/Phaser/Pixi frames map | both |
-| `aseprite` | `<base>.aseprite.json` — Aseprite sheet | both |
+| `png` (alone) | `<base>.png` — the grid/packed sheet, engine-agnostic | both atlas modes |
+| `tiled` (`tiled xml`) | `<base>.tsj` / `<base>.tsx` — Tiled tileset, `spacing` = the atlas's `pad` | a `tile WxH` atlas only (uniform tiles) — **E018** otherwise |
+| `atlasJson` | `<base>.json` — TexturePacker/Phaser/Pixi frames map | both atlas modes |
+| `aseprite` | `<base>.aseprite.json` — Aseprite sheet | both atlas modes |
 
 ```drw
 export terrain tiles/terrain:
@@ -2052,7 +2068,7 @@ top-stmt       = from-stmt | use-stmt | size-dir | font-dir
 definition     = draw-def | path-def | theme-def | fn-def | gradient-def | filter-def | mask-def
                | light-def | material-def                              (* §12, ADR-0086 *)
                | skeleton-def | pose-def                               (* §9, ADR-0095 *)
-               | font-def | image-import | tileset-def | atlas-def | export-def ;
+               | font-def | image-import | atlas-def | export-def ;
 
 from-stmt      = "from" MODULE-PATH import-item { "," import-item } NL ;  (* source-first (§2) *)
 import-item    = NAME [ "as" NAME ] ;
@@ -2157,7 +2173,7 @@ stroke-flags   = [ W-FLAG ] ;                       (* `cap`/`join` removed — 
                                                         rendered (§8, ADR-0096 §1) *)
 
 stampable      = NAME [ "(" [ expr-seq ] ")" ]      (* plain or parametric drawing (§6) *)
-               | NAME "." INT ;                     (* tileset member by index (§9) *)
+               | NAME "." NAME ;                    (* atlas member by name (§9) *)
 stamp-flag     = "flipx" | "flipy" | ROT-FLAG | SCALE-FLAG          (* pinned sugar (§9) *)
                | "transform" expr | "tint" paint expr | "mask" NAME
                | "anchor" NAME | "shadow" point paint ;
@@ -2211,16 +2227,17 @@ font-item      = "with" NAME NL                     (* fallback face, fold (§8)
                | "glyph" STRING NAME NL             (* one character → one drawing *)
                | "glyph" STRING [ SIZE ] ":" NL INDENT { draw-item } DEDENT
                                                         (* inline glyph; SIZE defaults to font SIZE *)
-               | "glyphs" NAME STRING NL            (* bulk: tileset → characters *)
+               | "glyphs" NAME STRING NL            (* bulk: uniform-tile atlas → characters *)
                | "tracking" INT NL
                | "lineheight" INT NL ;
 
-(* ─────────────────────── tilesets & atlases ─────────────────────── *)
+(* ────────────────────────────── atlases ────────────────────────────── *)
+(* ADR-0096 §3 merged the former separate `tileset NAME SIZE:` construct into `atlas`; the *)
+(* removed keyword keeps a positioned error naming the replacement. *)
 
-tileset-def    = "tileset" NAME SIZE ":" NL INDENT { tileset-item } DEDENT ;  (* §9 *)
-tileset-item   = "tiles" name-list NL | "cols" INT NL ;
-atlas-def      = "atlas" NAME ":" NL INDENT { atlas-item } DEDENT ;
-atlas-item     = "sprites" name-list NL | "pad" INT NL | "place" NAME point NL ;
+atlas-def      = "atlas" NAME ":" NL INDENT { atlas-item } DEDENT ;  (* §9 *)
+atlas-item     = "sprites" name-list NL | "tile" SIZE NL | "cols" INT NL
+               | "pad" INT NL | "place" NAME point NL ;
 
 (* ───────────────────────────── exports ───────────────────────────── *)
 
@@ -2230,7 +2247,7 @@ format-line    = "png"  { out-size | Z-FLAG | "indexed" | mode-flag } NL
                | "svg"  { "ids" | "classes" | "inlineStyles" | mode-flag } NL
                | "jpeg" { out-size | Q-FLAG | mode-flag } NL
                | "path" NL
-               | "tiled" [ "xml" ] NL               (* tileset sidecar: .tsj / .tsx (§13) *)
+               | "tiled" [ "xml" ] NL               (* uniform-tile atlas sidecar: .tsj / .tsx (§13) *)
                | "atlasJson" NL
                | "aseprite" NL ;
 out-size       = AT-SCALE | SIZE ;                  (* @N | 512x512 (§13); a bare-int size

@@ -163,12 +163,15 @@ draw magicBarrier:
   stroke a body w1
   stroke c core w1
 
-tileset shieldsGrid 64x64:
-  tiles roundShield, heraldShield, towerShield, buckler, woodShield, magicBarrier
-  cols 3
-
-atlas shieldsAtlas:
+# ADR-0096 §3: the former `tileset shieldsGrid` (grid, cols 3, no gutter) and `atlas shieldsAtlas`
+# (shelf-pack, pad 1) baked the same six members twice, differing only by `pad` — folded into one
+# uniform-tile atlas. `shields-grid.png`/`shields-atlas.png` are now the same bake (byte-identical
+# to each other); the sidecars keep both consumers (Tiled + TexturePacker/Phaser/Pixi) working off
+# it, `pad`'s 1px gutter now also carried into `tiled`'s `spacing`.
+atlas shieldsSheet:
   sprites roundShield, heraldShield, towerShield, buckler, woodShield, magicBarrier
+  tile 64x64
+  cols 3
   pad 1
 
 export roundShield round-shield:
@@ -189,10 +192,10 @@ export woodShield wood-shield:
 export magicBarrier magic-barrier:
   png @1 @4
 
-export shieldsGrid shields-grid:
+export shieldsSheet shields-grid:
   png @1 @4
   tiled
 
-export shieldsAtlas shields-atlas:
+export shieldsSheet shields-atlas:
   png @1 @4
   atlasJson

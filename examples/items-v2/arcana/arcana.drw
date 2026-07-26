@@ -189,8 +189,9 @@ draw amulet 64x64:
   px h 26:31
   px h 38:31
 
-tileset arcanaSetSheet 64x64:
-  tiles combatStaff, crystalStaff, scepter, spellbook, scroll, amulet
+atlas arcanaSetSheet:
+  sprites combatStaff, crystalStaff, scepter, spellbook, scroll, amulet
+  tile 64x64
   cols 3
 
 export combatStaff combatStaff:

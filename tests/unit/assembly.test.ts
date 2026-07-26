@@ -384,6 +384,66 @@ describe('pin — HEAD.KEY seeds ALL the part pins (§5.8 fix, ADR-0087 amendmen
   })
 })
 
+describe('pin HEAD.KEY seed-all rides a preceding stamp transform (impl-progress.md pin-transform fix)', () => {
+  // torso is 12 wide (cx = 5.5): `shoulder` sits near the right edge, `hip` near the left — flipx
+  // maps local x → 11 − x, so shoulder(10,3) → (1,3) and hip(2,3) → (9,3). Before the fix, the
+  // seed-all resolved HEAD's pins from the UNTRANSFORMED sprite, so `torso.hip` landed at the
+  // unflipped position; a chained `fit` off it then missed the actual (flipped) contact edge.
+  const T = [
+    'draw torso 12x20:',
+    '  fill #6a5030 rect(0:0, 11:19)',
+    '  pin shoulder 10:3',
+    '  pin hip 2:3',
+    'draw tag 4x4:',
+    '  fill #8a5a3a rect(0:0, 3:3)',
+    '  pin p 0:0',
+  ].join('\n')
+
+  test('a manual `pin HEAD.KEY` seed after `stamp HEAD … flipx` seeds the OTHER pins through the same flip', () => {
+    const src = [
+      T,
+      'draw fig 30x30:',
+      '  stamp torso 4:2 flipx', // origin (4,2); shoulder lands at origin+(1,3) = (5,5)
+      '  pin torso.shoulder 5:5', // the seed anchor — the ACTUAL post-flip shoulder position
+      '  fit tag.p torso.hip', // hip should have seeded at origin+(9,3) = (13,5), not the unflipped (6,5)
+    ].join('\n')
+    const { sprite, placements } = renderPlacements(src, 'fig')
+    const p = placements.find((r) => r.target === 'tag.p')
+    expect(p?.landed).toEqual({ x: 13, y: 5 })
+    expect(p?.coincident).toBe(true)
+    // the flipped torso is genuinely painted there (the seed didn't just land in empty space).
+    expect(alpha(sprite, 13, 5)).toBeGreaterThan(0)
+  })
+
+  test('…and through a flipy too (not flip-axis-specific)', () => {
+    const src = [
+      T,
+      'draw fig 30x30:',
+      '  stamp torso 4:2 flipy', // flipy maps local y → 19 − y: shoulder(10,3)→(10,16), hip(2,3)→(2,16)
+      '  pin torso.shoulder 14:18', // origin(4,2) + (10,16) = (14,18)
+      '  fit tag.p torso.hip', // hip should seed at origin(4,2) + (2,16) = (6,18)
+    ].join('\n')
+    const { placements } = renderPlacements(src, 'fig')
+    const p = placements.find((r) => r.target === 'tag.p')
+    expect(p?.landed).toEqual({ x: 6, y: 18 })
+    expect(p?.coincident).toBe(true)
+  })
+
+  test('no preceding transform (the common unflipped-root case) is untouched — identity seeding', () => {
+    const src = [
+      T,
+      'draw fig 30x30:',
+      '  stamp torso 4:2', // no flags at all
+      '  pin torso.shoulder 14:5', // origin(4,2) + shoulder(10,3) = (14,5)
+      '  fit tag.p torso.hip', // hip should seed at origin(4,2) + hip(2,3) = (6,5), plain identity
+    ].join('\n')
+    const { placements } = renderPlacements(src, 'fig')
+    const p = placements.find((r) => r.target === 'tag.p')
+    expect(p?.landed).toEqual({ x: 6, y: 5 })
+    expect(p?.coincident).toBe(true)
+  })
+})
+
 describe('fit — placement correctness through transforms (ADR-0087 amendment 2)', () => {
   const T = [
     'draw torso 12x20:',

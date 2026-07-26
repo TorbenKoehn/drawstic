@@ -102,8 +102,9 @@ draw crown 64x64:
   line h 23:33 29:24 w1
   line h 35:24 41:33 w1
 
-tileset loot 64x64:
-  tiles pickaxe, axe, key, coinPouch, gem, crown
+atlas loot:
+  sprites pickaxe, axe, key, coinPouch, gem, crown
+  tile 64x64
   cols 3
 
 export pickaxe pickaxe:

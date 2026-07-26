@@ -818,13 +818,19 @@ _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen an
   Konsequenz für Phase 4: falls die Reservierung dieser Namen doch gewünscht ist, gehört das
   begleitende Umbenennen der `ramp`-Bindings in allen Examples in den „Legacy kollabieren"-Schritt,
   nicht in 2a. Inline-Kommentar an den `#builtinColor`-Cases hinterlegt.
-- [ ] **b-finding: `pin HEAD.KEY`-seed-all kennt die Stamp-Transform NICHT.** `pin torso.neck …`
-  löst die Origin aus dem **untransformierten** Part-Sprite; steht davor ein `stamp torso … flipx`,
-  seedet der manuelle Pin die anderen Pins an der *unflippten* Position (Schulter-Seite stimmt dann
-  nicht). Grund: `stamp` merkt sich seine Transform nicht. Idiom-Ausweg (dokumentiert): den
-  gespiegelten Part per `fit` platzieren statt `stamp`+manuellem `pin` — dann reiten die Pins die
-  Transform korrekt. Ein sauberer Fix bräuchte transform-tragende Stamp-Registrierung (größerer
-  Umbau, außerhalb b-Scope). Für unflippte Roots (der Normalfall) irrelevant.
+- [x] **b-finding: `pin HEAD.KEY`-seed-all kennt die Stamp-Transform NICHT — behoben (W3-2, Release-1.0).**
+  War: `pin torso.neck …` löst die Origin aus dem **untransformierten** Part-Sprite; steht davor ein
+  `stamp torso … flipx`, seedete der manuelle Pin die anderen Pins an der *unflippten* Position
+  (Schulter-Seite stimmte dann nicht) — Grund: `stamp` merkte sich seine Transform nicht. **Sauberer
+  Fix statt Fehler-Route**: `#execStamp` zeichnet die kompilierte Transform-Matrix jetzt unter dem
+  Kopf-Namen (bare Name/parametrischer Callee des ersten Stamp-Arguments) in
+  `DrawState.stampTransforms` auf; `#execPinDeclaration`s seed-all-Zweig wendet dieselbe Matrix auf
+  JEDEN lokalen Pin an (inkl. des Seed-Ankers selbst), bevor die Offsets berechnet werden — spiegelt
+  genau, wie `fit` seine Pins bereits durch die eigene Transform trägt (ADR-0087 Amendment 2). Kein
+  größerer Umbau nötig: die Registrierung ist eine zusätzliche `Map` auf `DrawState`, befüllt am
+  ohnehin schon statement-geordneten `#execStamp`-Aufruf innerhalb der Zwei-Phasen-Assembly. Kein
+  aufgezeichneter Stamp (unflippte Roots, der Normalfall) ⇒ Identität, unverändertes Alt-Verhalten.
+  3 neue Tests in `assembly.test.ts` (flipx, flipy, identity-Kontrollfall).
 - [ ] **b-finding: W011-Schwelle ist Chebyshev >2px, part-lokal.** Bewusst hochkonfident/eng: fängt
   echte Float-Joints (Wizard-`chin` 4–5px daneben) ohne False-Positive-Flut. Kanten-Pins (0–1px) und
   1px-Overlap-Nähte (§4d) bleiben still. Falls je zu streng: die Konstante `LOOSE_PIN_MAX` in

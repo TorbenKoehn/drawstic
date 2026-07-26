@@ -1,7 +1,8 @@
 // The evaluator: module loading (sandboxed imports, ADR-0035), theme
 // composition (ADR-0005), one-namespace scope with const palettes
 // (ADR-0046/0050), drawing rendering, the command set (§8–§9), the runtime
-// budget (§15), tilesets/atlases (ADR-0016), fonts (ADR-0022/0042).
+// budget (§15), atlases (ADR-0016, merged with the former `tileset` by ADR-0096 §3), fonts
+// (ADR-0022/0042).
 
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
@@ -20,7 +21,6 @@ import type {
   PathDefinition,
   Statement,
   ThemeDefinition,
-  TilesetDefinition,
 } from './ast.js'
 import { MATERIAL_OVERRIDE_KEYS } from './ast.js'
 import {
@@ -345,11 +345,6 @@ export type DefinitionEntry =
       readonly module: ModuleRecord
     }
   | { readonly kind: 'font'; readonly definition: FontDefinition; readonly module: ModuleRecord }
-  | {
-      readonly kind: 'tileset'
-      readonly definition: TilesetDefinition
-      readonly module: ModuleRecord
-    }
   | { readonly kind: 'atlas'; readonly definition: AtlasDefinition; readonly module: ModuleRecord }
   | {
       readonly kind: 'image'
@@ -377,6 +372,14 @@ export type ModuleRecord = {
   fileTheme: FoldedTheme | undefined
   sizeDefault: { readonly width: number; readonly height: number } | undefined
   fontDefault: string | undefined
+  /**
+   * Every bare, module-scope `light NAME = …` binding this module declares (ADR-0096 §4 — the
+   * third light-resolution tier: a file with exactly one of these and no theme default
+   * unambiguously names its light). Populated by {@link Engine.#execTopLevel} as each binding
+   * runs; a `light` declared inside a `theme:` block or a `draw:` body never lands here — only
+   * a theme's own default (tier 2) or an explicit `light L` argument (tier 1) covers those.
+   */
+  readonly moduleLights: Map<string, Light>
 }
 
 /**
@@ -433,29 +436,12 @@ const emptyTheme = (): FoldedTheme => ({
 })
 
 /**
- * A built tileset (ADR-0016): tiles blitted into one `sheet` sprite on a
- * regular grid, `frames[i]` giving tile `i`'s rect in sheet coordinates in
- * declaration order (matching `names`). Built lazily by {@link Engine.buildTileset}
- * and cached per definition.
- */
-export type TilesetValue = {
-  readonly sheet: Sprite
-  readonly tileWidth: number
-  readonly tileHeight: number
-  readonly columns: number
-  readonly frames: readonly {
-    readonly x: number
-    readonly y: number
-    readonly width: number
-    readonly height: number
-  }[]
-  readonly names: readonly string[]
-}
-
-/**
- * A built atlas (ADR-0016): member sprites deterministically shelf-packed
- * into one `sheet` (see {@link packShelves}), with each frame's placement
- * and original name recorded for downstream lookup/export.
+ * A built atlas (ADR-0096 §3 — merges the former `tileset`/`atlas`): member sprites either
+ * blitted onto a uniform grid (`tile` set — row-major, see {@link Engine.buildAtlas}) or
+ * deterministically shelf-packed (see {@link packShelves}) into one `sheet`, with each frame's
+ * placement and original name recorded for downstream lookup/export. `tile` carries the grid
+ * facts (tile size, resolved column count, gutter) a `tiled` sidecar needs; it's `undefined` in
+ * shelf-pack mode, which gates `tiled` off (uniform tiles only).
  */
 export type AtlasValue = {
   readonly sheet: Sprite
@@ -466,6 +452,14 @@ export type AtlasValue = {
     readonly width: number
     readonly height: number
   }[]
+  readonly tile:
+    | {
+        readonly tileWidth: number
+        readonly tileHeight: number
+        readonly columns: number
+        readonly padding: number
+      }
+    | undefined
 }
 
 /**
@@ -490,7 +484,8 @@ type DrawState = {
   /**
    * The light in scope for shading commands (ADR-0086): the applied theme's default light, or
    * `null` when the theme declares none. A `model`/`cel` with no light here and no explicit
-   * `light L` argument is a hard E024, never a silent default.
+   * `light L` argument falls back to the module's sole `light` binding (ADR-0096 §4,
+   * {@link Engine.#requireLight}) before it's a hard E024 — never a silent default.
    */
   light: Light | null
   /**
@@ -500,6 +495,21 @@ type DrawState = {
    * part exports its local pins to whatever assembles it.
    */
   readonly pins: Map<string, { readonly x: number; readonly y: number }>
+  /**
+   * The transform matrix each `stamp HEAD …` placement in this drawing used, keyed by `HEAD`'s
+   * bare name (the fix for the pin-transform bug on record in `docs/impl-progress.md`: a manual
+   * `pin HEAD.KEY PT` seed-all used to resolve HEAD's pins from the untransformed part sprite, so
+   * a preceding `stamp HEAD … flipx` left the seeded siblings at the unflipped positions). Set by
+   * {@link Engine.#execStamp} right after it computes the placement's matrix (`undefined` = no
+   * transform flags, recorded so `.has(head)` distinguishes "stamped, no transform" from "never
+   * stamped under this name"); read by {@link Engine.#execPinDeclaration}'s seed-all branch, which
+   * applies the same matrix to every local pin before seeding — mirroring how `fit` already
+   * carries its own pins through its transform (ADR-0087 amendment 2). Only the most recent stamp
+   * of a given head name is tracked; a head re-stamped under the same name with a different
+   * transform before the seeding `pin` line is an existing, undocumented edge case this does not
+   * attempt to resolve.
+   */
+  readonly stampTransforms: Map<string, readonly number[] | undefined>
   /**
    * The active `mirror` reflection (ADR-0078) during the reflected pass, or `null`
    * outside any mirror / during the normal pass. `matrix` maps author → real
@@ -1061,7 +1071,7 @@ const commandArgName = (arg: Argument | undefined): string | undefined =>
 /**
  * The Drawstic evaluator. One `Engine` instance owns a project root, a
  * shared {@link Budget}, and per-instance caches for parsed modules and
- * rendered sprites/tilesets/atlases — so repeated references to the same
+ * rendered sprites/atlases — so repeated references to the same
  * drawing (e.g. stamped many times, or requested for several export
  * targets) are evaluated once. An engine is not meant to be reused across
  * unrelated recipes: caches are keyed by file path plus arguments/theme
@@ -1071,7 +1081,7 @@ const commandArgName = (arg: Argument | undefined): string | undefined =>
  *
  * Public entry points: {@link loadEntry}/{@link loadSource} to parse and
  * run a module's top level, {@link renderDraw} to rasterize a drawing to a
- * {@link Sprite}, {@link buildTileset}/{@link buildAtlas} for sheet content,
+ * {@link Sprite}, {@link buildAtlas} for sheet content,
  * {@link evalPath}/{@link defToSprite} for path and generic content
  * resolution, {@link renderFragment} for the CLI `render file#draw(args)`
  * fragment (ADR-0067), and {@link evalExpr}/{@link evalNumber}/
@@ -1086,7 +1096,6 @@ export class Engine {
   readonly #modules = new Map<string, ModuleRecord>()
   readonly #loading = new Set<string>()
   readonly #spriteCache = new Map<string, Sprite>()
-  readonly #tilesetCache = new Map<string, TilesetValue>()
   readonly #atlasCache = new Map<string, AtlasValue>()
   /** Render-mode override for ad-hoc renders/exports. */
   modeOverride: RenderMode | null = null
@@ -1215,6 +1224,7 @@ export class Engine {
       sizeDefault: undefined,
       fontDefault: undefined,
       exports: [],
+      moduleLights: new Map(),
     }
     this.#collectDefs(rec)
     this.#execTopLevel(rec)
@@ -1344,9 +1354,6 @@ export class Engine {
         case 'fontDefinition':
           add(s.def.name, { kind: 'font', definition: s.def, module: rec }, s.span)
           break
-        case 'tilesetDefinition':
-          add(s.def.name, { kind: 'tileset', definition: s.def, module: rec }, s.span)
-          break
         case 'atlasDefinition':
           add(s.def.name, { kind: 'atlas', definition: s.def, module: rec }, s.span)
           break
@@ -1419,9 +1426,17 @@ export class Engine {
         case 'binding':
           this.#execBinding(s, rec.env, state)
           break
-        case 'lightBinding':
+        case 'lightBinding': {
           this.#execLightBinding(s, rec.env, state)
+          // Track every bare module-scope light binding (ADR-0096 §4 tier 3) — a `theme:` block's
+          // own `light` line folds into `FoldedTheme.light` through a different path and never
+          // reaches this loop (module top-level statements only), so this can't double-count it.
+          const bound = rec.env.lookup(s.name)
+          if (bound && typeof bound.value === 'object' && bound.value?.type === 'light') {
+            rec.moduleLights.set(s.name, bound.value)
+          }
           break
+        }
         case 'materialBinding':
           this.#execMaterialBinding(s, rec.env, state)
           break
@@ -2164,6 +2179,7 @@ export class Engine {
       // it for a single command.
       light: theme.light,
       pins: new Map(),
+      stampTransforms: new Map(),
       mirror: null,
       pendingFits: [],
       bones: new Map(),
@@ -2727,10 +2743,37 @@ export class Engine {
       const part = this.#tryResolveSprite(head, env, state, stmt.span)
       const localPin = part?.pins?.get(key)
       if (part?.pins && localPin) {
-        const ox = value.x - localPin.x
-        const oy = value.y - localPin.y
+        // The pin-transform fix (docs/impl-progress.md): if a `stamp HEAD … flipx/rotN/scaleN/
+        // transform` painted this head earlier in the same drawing, `#execStamp` recorded its
+        // matrix — apply it to every local pin (including the seed anchor itself) before
+        // computing offsets, exactly as `fit` already carries its target's pins through its own
+        // transform. No recorded stamp (the common unflipped-root case) means identity, matching
+        // the previous behaviour exactly.
+        const matrix = draw.stampTransforms.get(head)
+        const mapPin = (p: {
+          readonly x: number
+          readonly y: number
+        }): { readonly x: number; readonly y: number } => {
+          if (!matrix) {
+            return p
+          }
+          const m = applyMatrix(matrix, p.x, p.y)
+          if (!m) {
+            throw error(
+              ERROR_CODE.nonInvertible,
+              'stamp transform is not invertible',
+              state.module.displayPath,
+              stmt.span,
+            )
+          }
+          return m
+        }
+        const mLocalPin = mapPin(localPin)
+        const ox = value.x - mLocalPin.x
+        const oy = value.y - mLocalPin.y
         for (const [name, p] of part.pins) {
-          draw.pins.set(`${head}.${name}`, { x: quantInt(ox + p.x), y: quantInt(oy + p.y) })
+          const mp = mapPin(p)
+          draw.pins.set(`${head}.${name}`, { x: quantInt(ox + mp.x), y: quantInt(oy + mp.y) })
         }
         return
       }
@@ -3762,14 +3805,6 @@ export class Engine {
           stmt.span,
           moduleScopeHint,
         )
-      case 'tilesetDefinition':
-        throw error(
-          ERROR_CODE.syntax,
-          'tileset definitions live at module scope',
-          state.module.displayPath,
-          stmt.span,
-          moduleScopeHint,
-        )
       case 'atlasDefinition':
         throw error(
           ERROR_CODE.syntax,
@@ -4338,11 +4373,14 @@ export class Engine {
   }
 
   /**
-   * Resolve the light for a `model`/`cel` command in two tiers (ADR-0086), most-local first: an
-   * explicit `light L` argument, else the applied theme's default (which seeds
-   * {@link DrawState.light}). ADR-0094 removed the third tier, the `lit L:` block. No light in
-   * either tier is a hard E024 — never a silent default, so a light is always named and always
-   * visible.
+   * Resolve the light for a `model`/`cel` command in three tiers (ADR-0086; the third tier is
+   * ADR-0096 §4), most-local first: an explicit `light L` argument; else the applied theme's
+   * default (which seeds {@link DrawState.light}); else, if the theme tier is empty, the module's
+   * *sole* bare `light NAME = …` binding ({@link ModuleRecord.moduleLights}) — a file that
+   * declares exactly one light and no theme has unambiguously said what the light is. Two or
+   * more module lights don't collapse the ambiguity automatically; ADR-0094 removed the earlier
+   * `lit L:` block that could have picked one by scope. No light in any tier is a hard E024 —
+   * never a silent default, so a light is always named and always visible.
    */
   #requireLight(
     explicit: Light | null,
@@ -4350,14 +4388,21 @@ export class Engine {
     stmt: Extract<Statement, { readonly kind: 'call' }>,
     state: State,
   ): Light {
-    const lt = explicit ?? draw.light
+    const moduleLights = state.module.moduleLights
+    const sole = moduleLights.size === 1 ? ([...moduleLights.values()][0] ?? null) : null
+    const lt = explicit ?? draw.light ?? sole
     if (!lt) {
+      const names = [...moduleLights.keys()]
+      const hint =
+        names.length > 1
+          ? `this module declares ${names.length} lights (${names.join(', ')}) with no theme default — name one: add a trailing 'light ${names[0]}' to this command, or set the theme's default light`
+          : 'declare one (e.g. `light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%`), then add a trailing `light sun` to this command or set it as the theme default'
       throw error(
         ERROR_CODE.noLight,
         `'${stmt.callee}' needs a light: pass 'light L', or give the theme a default light`,
         state.module.displayPath,
         stmt.span,
-        'declare one (e.g. `light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%`), then add a trailing `light sun` to this command or set it as the theme default',
+        hint,
       )
     }
     return lt
@@ -5230,6 +5275,25 @@ export class Engine {
     return { x: quantInt(point.x - mapped.x), y: quantInt(point.y - mapped.y) }
   }
 
+  /**
+   * Extracts a `stamp`/`fit`-style target argument's bare head name — `stamp torso …` → `'torso'`,
+   * `stamp torso(x) …` → `'torso'` (the parametric call's callee) — mirroring `lint.ts`'s
+   * `stampTargetName` (kept as a separate, private copy rather than an import to avoid a
+   * lint.ts↔eval.ts module cycle). `null` for anything else (a UFCS chain, member access, …).
+   */
+  #stampHeadName(arg: Argument | undefined): string | null {
+    if (arg?.kind !== 'expression') {
+      return null
+    }
+    if (arg.expression.kind === 'name') {
+      return arg.expression.name
+    }
+    if (arg.expression.kind === 'call' && arg.expression.callee.kind === 'name') {
+      return arg.expression.callee.name
+    }
+    return null
+  }
+
   #execStamp(
     stmt: Extract<Statement, { readonly kind: 'call' }>,
     args: Args,
@@ -5246,6 +5310,15 @@ export class Engine {
     const flags = this.#parseStampFlags(args, state, stmt.span)
     args.done()
     const matrix = this.#buildStampMatrix(sprite, flags)
+    // Record this placement's transform under the target's bare head name (the pin-transform fix
+    // on record in `docs/impl-progress.md`), so a later manual `pin HEAD.KEY PT` seed-all
+    // (`#execPinDeclaration`) can carry the same part's OTHER pins through it instead of seeding
+    // them from the untransformed sprite. A target that isn't a bare name/parametric-call (a UFCS
+    // chain, say) has no head name to key by — left unrecorded, exactly like before this fix.
+    const headName = this.#stampHeadName(stmt.args[0])
+    if (headName) {
+      draw.stampTransforms.set(headName, matrix)
+    }
     // A stamp `mask` region is in canvas coordinates like every mask; inside a `mirror` the
     // reflecting buffer flips the sprite pixels and the mask travels with them (ADR-0078 §5).
     // Offset anchors resolve against the transformed footprint bbox (visual — ADR-0072).
@@ -5388,37 +5461,46 @@ export class Engine {
   }
 
   /**
-   * Expand a `glyphs tilesetName "abc…"` item: maps each character in
-   * `item.chars` to the tileset frame at the same index (E017 if the
-   * tileset is shorter than the character string).
+   * Expand a `glyphs atlasName "abc…"` item: maps each character in `item.chars` to the named
+   * atlas's member at the same index (ADR-0096 §3 — requires a uniform-tile atlas; index order
+   * is only meaningful once every member is the same size). E017 if the atlas is not found, isn't
+   * uniform, or is shorter than the character string.
    */
   #addFontGlyphs(
     item: Extract<FontItem, { readonly kind: 'glyphs' }>,
     mod: ModuleRecord,
     glyphs: Map<string, Sprite>,
   ): void {
-    const tileset = mod.definitions.get(item.tileset)
-    if (tileset?.kind !== 'tileset') {
+    const entry = mod.definitions.get(item.atlas)
+    if (entry?.kind !== 'atlas') {
       throw error(
         ERROR_CODE.fontError,
-        `glyphs tileset '${item.tileset}' not found`,
+        `glyphs atlas '${item.atlas}' not found`,
         mod.displayPath,
         item.span,
       )
     }
-    const value = this.buildTileset(tileset, item.span)
+    if (!entry.definition.tile) {
+      throw error(
+        ERROR_CODE.fontError,
+        `glyphs atlas '${item.atlas}' needs a 'tile WxH' declaration (uniform tiles)`,
+        mod.displayPath,
+        item.span,
+      )
+    }
+    const value = this.buildAtlas(entry, item.span)
     for (let i = 0; i < item.chars.length; i++) {
       const ch = item.chars[i] ?? ''
       const frame = value.frames[i]
       if (!frame) {
         throw error(
           ERROR_CODE.fontError,
-          `tileset has no tile ${i} for character "${ch}"`,
+          `atlas has no tile ${i} for character "${ch}"`,
           mod.displayPath,
           item.span,
         )
       }
-      glyphs.set(ch, extractSubSprite(value.sheet, frame, `${item.tileset}.${i}`))
+      glyphs.set(ch, extractSubSprite(value.sheet, frame, `${item.atlas}.${i}`))
     }
   }
 
@@ -5560,87 +5642,24 @@ export class Engine {
     }
   }
 
-  // ── tilesets & atlases (ADR-0016) ─────────────────────────────────────
+  // ── atlases (ADR-0016, merged with the former `tileset` by ADR-0096 §3) ─
 
   /**
-   * Build (or fetch cached) a `tileset` definition: renders each named
-   * tile, checks every tile matches the declared `tileWidth`x`tileHeight`
-   * (E016), then blits them in declaration order onto a grid sheet
-   * (`columns` defaults to a square-ish layout via `ceil(sqrt(n))`).
-   */
-  buildTileset(
-    entry: Extract<DefinitionEntry, { readonly kind: 'tileset' }>,
-    span: TextSpan,
-  ): TilesetValue {
-    const key = `${entry.module.file}#${entry.definition.name}`
-    const cached = this.#tilesetCache.get(key)
-    if (cached) {
-      return cached
-    }
-    const def = entry.definition
-    const mod = entry.module
-    const sprites: Sprite[] = def.tiles.map((name) => {
-      const tileDef = mod.definitions.get(name)
-      if (!tileDef) {
-        throw error(ERROR_CODE.unknownName, `tile '${name}' not found`, mod.displayPath, def.span)
-      }
-      const tile = this.defToSprite(tileDef, span)
-      if (tile.w !== def.tileWidth || tile.h !== def.tileHeight) {
-        throw error(
-          ERROR_CODE.tileSize,
-          `tile '${name}' is ${tile.w}x${tile.h} — tileset '${def.name}' requires ${def.tileWidth}x${def.tileHeight}`,
-          mod.displayPath,
-          def.span,
-        )
-      }
-      return tile
-    })
-    const columns = def.columns ?? Math.ceil(Math.sqrt(sprites.length))
-    const rows = Math.ceil(sprites.length / columns)
-    const width = columns * def.tileWidth
-    const height = rows * def.tileHeight
-    const buffer = new Framebuffer(width, height)
-    const frames: {
-      readonly x: number
-      readonly y: number
-      readonly width: number
-      readonly height: number
-    }[] = []
-    const ctx: Context = { buffer: buffer, mask: null, mode: 'pixel' }
-    sprites.forEach((sp, i) => {
-      const x = (i % columns) * def.tileWidth
-      const y = Math.floor(i / columns) * def.tileHeight
-      stampSprite(ctx, sp, x, y)
-      frames.push({ x, y, width: def.tileWidth, height: def.tileHeight })
-    })
-    const palette = foldPalettes(sprites)
-    const value: TilesetValue = {
-      sheet: {
-        type: 'sprite',
-        name: def.name,
-        w: width,
-        h: height,
-        data: buffer.data,
-        pal: palette,
-        title: undefined,
-        desc: undefined,
-      },
-      tileWidth: def.tileWidth,
-      tileHeight: def.tileHeight,
-      columns,
-      frames,
-      names: def.tiles.slice(),
-    }
-    this.#tilesetCache.set(key, value)
-    return value
-  }
-
-  /**
-   * Build (or fetch cached) an `atlas` definition: explicitly `place`d
-   * members keep their pinned coordinates; the rest are shelf-packed
-   * deterministically (tallest-first, then declaration order — see
-   * {@link packShelves}) around them. Overlapping members blit in
-   * declaration order, so later members paint over earlier ones.
+   * Build (or fetch cached) an `atlas` definition. Two modes, chosen by whether `tile WxH` is
+   * declared:
+   *
+   * - **Uniform grid** (`tile` set): every member is checked against `tileWidth`x`tileHeight`
+   *   (E016), then blitted in declaration order onto a row-major grid (`columns` defaults to a
+   *   square-ish `ceil(sqrt(n))`), `padding` opening a fixed gutter between cells (also the
+   *   `tiled` sidecar's `spacing`). The parser already rejects `place`/`cols` mis-combinations and
+   *   a zero/negative `cols`, so the grid math here can't divide by zero.
+   * - **Shelf-pack** (no `tile`): explicitly `place`d members keep their pinned coordinates; the
+   *   rest are shelf-packed deterministically (tallest-first, then declaration order — see
+   *   {@link packShelves}) around them, `padding` as inter-sprite gutter. Overlapping members blit
+   *   in declaration order, so later members paint over earlier ones.
+   *
+   * A `place` naming a member the atlas doesn't have is E001 — silently ignoring a typo'd pin
+   * would place its target by shelf-pack fallback with no sign anything was wrong.
    */
   buildAtlas(entry: Extract<DefinitionEntry, { kind: 'atlas' }>, span: TextSpan): AtlasValue {
     const key = `${entry.module.file}#${entry.definition.name}`
@@ -5657,7 +5676,63 @@ export class Engine {
       }
       return { name, sprite: this.defToSprite(memberDef, span) }
     })
+    for (const p of def.place) {
+      if (!members.some((m) => m.name === p.name)) {
+        throw error(
+          ERROR_CODE.unknownName,
+          `atlas '${def.name}' has no member '${p.name}' to place`,
+          mod.displayPath,
+          p.span,
+        )
+      }
+    }
     const padding = def.padding
+
+    if (def.tile) {
+      const { width: tileWidth, height: tileHeight } = def.tile
+      for (const m of members) {
+        if (m.sprite.w !== tileWidth || m.sprite.h !== tileHeight) {
+          throw error(
+            ERROR_CODE.tileSize,
+            `tile '${m.name}' is ${m.sprite.w}x${m.sprite.h} — atlas '${def.name}' requires ${tileWidth}x${tileHeight} (tile declaration)`,
+            mod.displayPath,
+            def.span,
+          )
+        }
+      }
+      const columns = def.columns ?? Math.ceil(Math.sqrt(members.length))
+      const rows = Math.ceil(members.length / columns)
+      const cellWidth = tileWidth + padding
+      const cellHeight = tileHeight + padding
+      const width = columns * cellWidth - padding
+      const height = rows * cellHeight - padding
+      const buffer = new Framebuffer(width, height)
+      const ctx: Context = { buffer: buffer, mask: null, mode: 'pixel' }
+      const frames: { name: string; x: number; y: number; width: number; height: number }[] = []
+      members.forEach((m, i) => {
+        const x = (i % columns) * cellWidth
+        const y = Math.floor(i / columns) * cellHeight
+        stampSprite(ctx, m.sprite, x, y)
+        frames.push({ name: m.name, x, y, width: tileWidth, height: tileHeight })
+      })
+      const value: AtlasValue = {
+        sheet: {
+          type: 'sprite',
+          name: def.name,
+          w: width,
+          h: height,
+          data: buffer.data,
+          pal: foldPalettes(members.map((m) => m.sprite)),
+          title: undefined,
+          desc: undefined,
+        },
+        frames,
+        tile: { tileWidth, tileHeight, columns, padding },
+      }
+      this.#atlasCache.set(key, value)
+      return value
+    }
+
     const pinned = new Map(def.place.map((p) => [p.name, p]))
     const placed: AtlasPlaced[] = []
     for (const member of members) {
@@ -5716,6 +5791,7 @@ export class Engine {
         const p = placed.find((q) => q.name === member.name)
         return p ? [{ name: member.name, x: p.x, y: p.y, width: p.width, height: p.height }] : []
       }),
+      tile: undefined,
     }
     this.#atlasCache.set(key, value)
     return value
@@ -6035,16 +6111,14 @@ export class Engine {
   }
 
   /**
-   * Resolve any content definition to a sprite: drawings render, tilesets
-   * and atlases yield their full sheet, images decode. Themes/functions/
-   * filters/fonts/paths aren't stampable content and throw E006.
+   * Resolve any content definition to a sprite: drawings render, an atlas yields its full built
+   * sheet, images decode. Themes/functions/filters/fonts/paths aren't stampable content and throw
+   * E006.
    */
   defToSprite(entry: DefinitionEntry, span: TextSpan, args: Value[] = []): Sprite {
     switch (entry.kind) {
       case 'draw':
         return this.renderDraw(entry, args, span)
-      case 'tileset':
-        return this.buildTileset(entry, span).sheet
       case 'atlas':
         return this.buildAtlas(entry, span).sheet
       case 'image':
@@ -6157,33 +6231,16 @@ export class Engine {
   }
 
   /**
-   * Evaluate `target.index` (dot-index sugar). A bare tileset name gets a
-   * fast path straight to its frame (`terrain.0`) without materializing
-   * the whole sheet as a value first; everything else falls through to
-   * generic {@link #indexValue} on the evaluated target.
+   * Evaluate `target.index` (dot-index sugar, numeric index only — D8). Atlas members are no
+   * longer index-addressable (ADR-0096 §3 retired the numeric `terrain.0` form the old `tileset`
+   * supported; member addressing is by name only, via `case 'method'` below); this always falls
+   * through to generic {@link #indexValue} on the evaluated target.
    */
   #evalDotIndex(
     expr: Extract<Expression, { readonly kind: 'dotIndex' }>,
     env: Environment,
     state: State,
   ): Value {
-    // tileset member? `terrain.0`
-    if (expr.target.kind === 'name') {
-      const entry = state.module.definitions.get(expr.target.name)
-      if (entry?.kind === 'tileset') {
-        const tv = this.buildTileset(entry, expr.span)
-        const frame = tv.frames[expr.index]
-        if (!frame) {
-          throw error(
-            ERROR_CODE.indexError,
-            `tileset '${expr.target.name}' has no tile ${expr.index}`,
-            state.module.displayPath,
-            expr.span,
-          )
-        }
-        return extractSubSprite(tv.sheet, frame, `${expr.target.name}.${expr.index}`)
-      }
-    }
     const obj = this.evalExpr(expr.target, env, state)
     return this.#indexValue(obj, expr.index, state, expr.span)
   }
@@ -6246,6 +6303,28 @@ export class Engine {
       case 'dotIndex':
         return this.#evalDotIndex(expr, env, state)
       case 'method': {
+        // Atlas member access by name (ADR-0096 §3 — member addressing is by name only, the
+        // numeric `terrain.0` form the old `tileset` supported is retired): a zero-arg reference
+        // (bare `terrain.grass` or explicit `terrain.grass()`) whose target names a module-level
+        // atlas commits to member semantics — resolved before generic UFCS, mirroring the `fig`
+        // guide-getter intercept just below. An unmatched name is a positioned E015, not a silent
+        // fall-through to UFCS on the whole sheet.
+        if (expr.target.kind === 'name' && (expr.args === undefined || expr.args.length === 0)) {
+          const targetEntry = state.module.definitions.get(expr.target.name)
+          if (targetEntry?.kind === 'atlas') {
+            const av = this.buildAtlas(targetEntry, expr.span)
+            const frame = av.frames.find((f) => f.name === expr.name)
+            if (!frame) {
+              throw error(
+                ERROR_CODE.indexError,
+                `atlas '${expr.target.name}' has no member '${expr.name}'`,
+                state.module.displayPath,
+                expr.span,
+              )
+            }
+            return extractSubSprite(av.sheet, frame, `${expr.target.name}.${expr.name}`)
+          }
+        }
         const obj = this.evalExpr(expr.target, env, state)
         // A figure's guide getters (`fig.crown`, `fig.eyeL`, `fig.side.eye`, ADR-0093) resolve as
         // figure-local fields, not global builtins — so `crown`/`eye`/`ear`/… stay ordinary names.
@@ -6357,7 +6436,7 @@ export class Engine {
    * Resolve a bare name reference, in order: a scoped binding (env
    * chain), the `pi`/`tau` constants, the `rgb`/`hsl`/`oklch` colour-space
    * keywords (ADR-0096 §7), a module-level definition (instantiating
-   * non-parametric drawings/paths and building tilesets/atlases/images on
+   * non-parametric drawings/paths and building atlases/images on
    * the fly), then a theme base drawing (a drawing folded in via `use` but
    * not locally redefined). Unresolved names throw E001 with a did-you-mean
    * suggestion ({@link suggest}) — except `w`/`h` outside a draw body,
@@ -6407,8 +6486,6 @@ export class Engine {
             )
           }
           return this.evalPath(entry, [], span)
-        case 'tileset':
-          return this.buildTileset(entry, span).sheet
         case 'atlas':
           return this.buildAtlas(entry, span).sheet
         case 'image':
@@ -8138,8 +8215,8 @@ const lightFingerprint = (l: Light): string => {
 
 /**
  * Merge several sprites' palette artifacts into one, deduped by color
- * (first occurrence wins, in `sprites` order) — used when building a
- * tileset/atlas sheet so its combined palette reflects its members'.
+ * (first occurrence wins, in `sprites` order) — used when building an
+ * atlas sheet so its combined palette reflects its members'.
  */
 const foldPalettes = (sprites: Sprite[]): { key: string; color: Color; source: string }[] => {
   const palette: { key: string; color: Color; source: string }[] = []

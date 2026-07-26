@@ -168,8 +168,9 @@ draw quiver:
   line k 37:11 42:2 w3
   line w 37:11 42:2
 
-tileset ranged 64x64:
-  tiles shortbow, longbow, crossbow, arrowBundle, bolts, quiver
+atlas ranged:
+  sprites shortbow, longbow, crossbow, arrowBundle, bolts, quiver
+  tile 64x64
   cols 3
 
 export shortbow shortbow:

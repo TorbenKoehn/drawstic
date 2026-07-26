@@ -21,7 +21,6 @@ import type {
   SkeletonJointAst,
   Statement,
   ThemeDefinition,
-  TilesetDefinition,
 } from './ast.js'
 import { MATERIAL_OVERRIDE_KEYS } from './ast.js'
 import { ERROR_CODE, error, type TextSpan } from './diagnostic.js'
@@ -470,8 +469,14 @@ class Parser {
         }
         break
       case 'tileset':
+        // `tileset NAME SIZE:` was merged into `atlas` (ADR-0096 §3) — a uniform-tile sheet is now
+        // `atlas NAME:` with a `tile WxH` item. `tileset = …` (name binding) still works; only the
+        // def shape errors.
         if (this.#peek(1).kind === 'name' && this.#peek(2).kind === 'size') {
-          return this.#parseTileset()
+          this.#fail(
+            "'tileset' was merged into 'atlas' — write 'atlas NAME:' with a 'tile WxH' declaration",
+            t,
+          )
         }
         break
       case 'atlas':
@@ -1513,9 +1518,9 @@ class Parser {
         }
         case 'glyphs': {
           this.#next()
-          const ts = this.#expect('name', undefined, 'a tileset name').text
+          const atlasName = this.#expect('name', undefined, 'an atlas name').text
           const chars = this.#expect('string', undefined, 'a character string').str
-          items.push({ kind: 'glyphs', tileset: ts, chars, span: sp })
+          items.push({ kind: 'glyphs', atlas: atlasName, chars, span: sp })
           break
         }
         case 'tracking': {
@@ -1542,55 +1547,18 @@ class Parser {
   }
 
   /**
-   * Parses `tileset-def` (§17.4): `tileset NAME SIZE: { tileset-item }`. `tiles`
-   * may repeat (entries accumulate) and `cols` may repeat (last write
-   * wins) — neither is restricted to appearing once.
-   */
-  readonly #parseTileset = (): Statement => {
-    const s = this.#span(this.#peek())
-    this.#next() // tileset
-    const name = this.#next().text
-    const sz = this.#expect('size')
-    this.#expect('op', ':')
-    this.#expect('nl')
-    this.#skipNLs()
-    this.#expect('indent')
-    const tiles: string[] = []
-    let cols: number | undefined
-    this.#skipNLs()
-    while (!this.#at('dedent') && !this.#at('eof')) {
-      const t = this.#peek()
-      if (this.#atName('tiles')) {
-        this.#next()
-        tiles.push(...this.#parseNameList())
-      } else if (this.#atName('cols')) {
-        this.#next()
-        cols = this.#expect('int').num
-      } else {
-        this.#fail(`unknown tileset item '${t.text}'`)
-      }
-      this.#expectNL()
-      this.#skipNLs()
-    }
-    if (this.#at('dedent')) {
-      this.#next()
-    }
-    const def: TilesetDefinition = {
-      name,
-      tileWidth: sz.num,
-      tileHeight: sz.sizeH,
-      tiles,
-      columns: cols,
-      span: s,
-    }
-    return { kind: 'tilesetDefinition', def, span: s }
-  }
-
-  /**
-   * Parses `atlas-def` (§17.4): `atlas NAME: { atlas-item }`. `place NAME x:y`
-   * reads `x` and `y` as two bare `INT`s around a literal `:` — not
-   * through the point-expression grammar, so `place` coordinates cannot
-   * be arithmetic expressions.
+   * Parses `atlas-def` (§17.4, ADR-0096 §3 — merges the former `tileset`+`atlas` split): `atlas
+   * NAME: { atlas-item }`. `sprites` may repeat (entries accumulate, like the retired `tileset`'s
+   * `tiles`); `tile`/`cols`/`pad` may repeat (last write wins) — none is restricted to appearing
+   * once. `place NAME x:y` reads `x`/`y` as two bare `INT`s around a literal `:` — not through the
+   * point-expression grammar, so `place` coordinates cannot be arithmetic expressions.
+   *
+   * Cross-item shape checks run after the whole body is read (order-independent — `cols`/`place`
+   * may appear before or after `tile` in source): `cols` without `tile` and `place` with `tile`
+   * are both a positioned E004 (a grid has fixed slots either way — nothing to count columns of
+   * without one, and nothing to pin within one); `cols 0` (immediate, at the token) and zero
+   * `sprites` are degenerate-layout guards that would otherwise divide by zero when the sheet is
+   * baked ({@link Engine.buildAtlas}).
    */
   readonly #parseAtlas = (): Statement => {
     const s = this.#span(this.#peek())
@@ -1601,24 +1569,40 @@ class Parser {
     this.#skipNLs()
     this.#expect('indent')
     const sprites: string[] = []
+    let tile: { width: number; height: number } | undefined
+    let cols: number | undefined
+    let colsToken: Token | undefined
     let pad = 0
-    const place: { name: string; x: number; y: number }[] = []
+    const place: { name: string; x: number; y: number; span: TextSpan }[] = []
+    let firstPlaceToken: Token | undefined
     this.#skipNLs()
     while (!this.#at('dedent') && !this.#at('eof')) {
       const t = this.#peek()
       if (this.#atName('sprites')) {
         this.#next()
         sprites.push(...this.#parseNameList())
+      } else if (this.#atName('tile')) {
+        this.#next()
+        const sz = this.#expect('size')
+        tile = { width: sz.num, height: sz.sizeH }
+      } else if (this.#atName('cols')) {
+        colsToken = this.#next()
+        const n = this.#expect('int').num
+        if (n <= 0) {
+          this.#fail(`atlas 'cols' must be a positive integer, got ${n}`, colsToken)
+        }
+        cols = n
       } else if (this.#atName('pad')) {
         this.#next()
         pad = this.#expect('int').num
       } else if (this.#atName('place')) {
-        this.#next()
+        const pt = this.#next()
+        firstPlaceToken ??= pt
         const n = this.#expect('name').text
         const x = this.#expect('int').num
         this.#expect('op', ':')
         const y = this.#expect('int').num
-        place.push({ name: n, x, y })
+        place.push({ name: n, x, y, span: this.#span(pt) })
       } else {
         this.#fail(`unknown atlas item '${t.text}'`)
       }
@@ -1628,7 +1612,29 @@ class Parser {
     if (this.#at('dedent')) {
       this.#next()
     }
-    const def: AtlasDefinition = { name, sprites, padding: pad, place, span: s }
+    if (sprites.length === 0) {
+      throw error(
+        ERROR_CODE.syntax,
+        `atlas '${name}' has no members — add a 'sprites' line`,
+        this.#file,
+        s,
+      )
+    }
+    if (cols !== undefined && !tile) {
+      this.#fail("'cols' needs a 'tile WxH' declaration", colsToken)
+    }
+    if (place.length > 0 && tile) {
+      this.#fail("'place' cannot be used with 'tile' (a grid has fixed slots)", firstPlaceToken)
+    }
+    const def: AtlasDefinition = {
+      name,
+      sprites,
+      tile,
+      columns: cols,
+      padding: pad,
+      place,
+      span: s,
+    }
     return { kind: 'atlasDefinition', def, span: s }
   }
 

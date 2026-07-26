@@ -343,7 +343,7 @@ const createEngine = (cli: CliArguments): Engine => {
 
 /**
  * Runs `drawstic check`: parse + deep semantic validation. Renders every
- * non-parametric `draw`/`tileset`/`atlas` and validates every `export`
+ * non-parametric `draw`/`atlas` and validates every `export`
  * (deduping identical diagnostics), so render-time errors (budget, type,
  * region) surface here, not just at `build`/`render`. `--lint` folds in
  * authoring warnings ({@link lintModule}); `--rows` reports per-drawing
@@ -379,9 +379,6 @@ const runCheck = (cli: CliArguments): number => {
         (entry.definition.params?.length ?? 0) === 0
       ) {
         collect(() => engine.renderDraw(entry, [], entry.definition.span))
-      }
-      if (entry.kind === 'tileset' && entry.module === mod) {
-        collect(() => engine.buildTileset(entry, entry.definition.span))
       }
       if (entry.kind === 'atlas' && entry.module === mod) {
         collect(() => engine.buildAtlas(entry, entry.definition.span))

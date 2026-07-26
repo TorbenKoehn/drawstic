@@ -165,8 +165,9 @@ draw cloak 64x64:
   line o 41:21 40:44
   outline k
 
-tileset armorSheet 64x64:
-  tiles helm, breastplate, gloves, boots, belt, cloak
+atlas armorSheet:
+  sprites helm, breastplate, gloves, boots, belt, cloak
+  tile 64x64
   cols 3
 
 export helm helm:

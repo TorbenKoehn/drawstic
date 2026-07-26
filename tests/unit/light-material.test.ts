@@ -77,11 +77,14 @@ describe('light + material bindings and explicit light args', () => {
   })
 
   test('an explicit `light L` argument does not leak to the next statement', () => {
-    // The next `model` has no light of its own → hard E024, proving the arg is per-statement.
+    // Two module lights (ADR-0096 §4 keeps this ambiguous — ADR-0096 §4's sole-module-light
+    // fallback only fires for exactly one) so the next `model`, with no light of its own, still
+    // hard-E024s instead of silently reusing `sun` — proving the explicit arg is per-statement.
     expect(() =>
       render(
         [
           'light sun = dir 1:1 #ffe6b0',
+          'light moon = dir -1:1 #b0c4ff',
           'material steel = #8a95a5 metal',
           'draw x 12x12:',
           '  a = rect(1:1, 5:5)',
@@ -197,6 +200,99 @@ describe('model / cel command verbs', () => {
         expect(e.toDiagnostic().code).toBe('E024')
       }
     }
+  })
+
+  // ADR-0096 §4: a third resolution tier — explicit `light L` arg → theme default → the module's
+  // sole bare `light` binding → E024. Only the third tier is new; a file that declares exactly one
+  // light and no theme used to raise E024 from every `model`, the most common first-run trap.
+  // `lightPointOf` renders the same body with a given light passed *explicitly*, giving a
+  // reference `ExplainRecord.light` value (a derived per-region point, not the raw `dir` vector)
+  // to compare a fallback-resolved render against — robust to that derivation's internals.
+  const lightPointOf = (dirLine: string): { readonly x: number; readonly y: number } | undefined =>
+    renderWithExplain(
+      [
+        `light ref = ${dirLine}`,
+        'material steel = #8a95a5 metal',
+        'draw x 16x16:',
+        '  body = rect(2:2, 13:13)',
+        '  model body steel light ref',
+      ].join('\n'),
+      'x',
+    )[0]?.light
+
+  test("§4: the module's sole light binding resolves automatically (no theme, no explicit arg)", () => {
+    const sunPoint = lightPointOf('dir 0:1 #ffe6b0')
+    const rec = renderWithExplain(
+      [
+        'light sun = dir 0:1 #ffe6b0',
+        'material steel = #8a95a5 metal',
+        'draw x 16x16:',
+        '  body = rect(2:2, 13:13)',
+        '  model body steel',
+      ].join('\n'),
+      'x',
+    )[0]
+    expect(rec?.command).toBe('model')
+    expect(rec?.light).toEqual(sunPoint)
+  })
+
+  test('§4: two module-scope lights and no theme still E024, naming both candidates in the hint', () => {
+    try {
+      render(
+        [
+          'light sun = dir 0:1 #ffe6b0',
+          'light moon = dir 1:0 #b0c4ff',
+          'material steel = #8a95a5 metal',
+          'draw x 12x12:',
+          '  body = rect(2:2, 9:9)',
+          '  model body steel',
+        ].join('\n'),
+        'x',
+      )
+      expect(false).toBe(true)
+    } catch (e) {
+      expect(e).toBeInstanceOf(DrawsticError)
+      if (e instanceof DrawsticError) {
+        const d = e.toDiagnostic()
+        expect(d.code).toBe('E024')
+        expect(d.hint).toContain('sun')
+        expect(d.hint).toContain('moon')
+      }
+    }
+  })
+
+  test('§4: an explicit `light L` argument still wins over the sole module light', () => {
+    const moonPoint = lightPointOf('dir 1:0 #b0c4ff')
+    const rec = renderWithExplain(
+      [
+        'light sun = dir 0:1 #ffe6b0',
+        'light moon = dir 1:0 #b0c4ff',
+        'material steel = #8a95a5 metal',
+        'draw x 16x16:',
+        '  body = rect(2:2, 13:13)',
+        '  model body steel light moon',
+      ].join('\n'),
+      'x',
+    )[0]
+    expect(rec?.light).toEqual(moonPoint)
+  })
+
+  test("§4: a theme's default light still wins over the module's sole light binding", () => {
+    const moonPoint = lightPointOf('dir 1:0 #b0c4ff')
+    const rec = renderWithExplain(
+      [
+        'light sun = dir 0:1 #ffe6b0',
+        'theme t:',
+        '  light moon = dir 1:0 #b0c4ff',
+        'use t',
+        'material steel = #8a95a5 metal',
+        'draw x 16x16:',
+        '  body = rect(2:2, 13:13)',
+        '  model body steel',
+      ].join('\n'),
+      'x',
+    )[0]
+    expect(rec?.light).toEqual(moonPoint)
   })
 
   test('a self-illuminated `glow` material only fills + self-lights (no shade/rim/cast)', () => {

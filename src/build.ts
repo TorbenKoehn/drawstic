@@ -21,18 +21,21 @@ export type BuiltArtifact = { readonly path: string; readonly bytes: number }
  * The rendered result of one export's content reference, resolved once per
  * format line (§13) so a per-line `mode` override re-renders under that
  * mode. `path` is set only for `path` definitions (geometry, not pixels);
- * `frames`/`tileMeta` are set only for `tileset`/`atlas` sidecars.
+ * `frames`/`tileMeta` are set only for `atlas` sidecars, and `tileMeta` only
+ * when the atlas carries a `tile WxH` declaration (ADR-0096 §3 — uniform
+ * tiles gate the `tiled` sidecar).
  */
 type Content = {
   readonly sprite: Sprite
   readonly path: Path | null
-  readonly kind: 'draw' | 'tileset' | 'atlas' | 'image' | 'path'
+  readonly kind: 'draw' | 'atlas' | 'image' | 'path'
   readonly frames: readonly Frame[] | null
   readonly tileMeta: {
     readonly tileWidth: number
     readonly tileHeight: number
     readonly columns: number
     readonly count: number
+    readonly spacing: number
   } | null
 }
 
@@ -63,24 +66,23 @@ const contentFromEntry = (
         frames: null,
         tileMeta: null,
       }
-    case 'tileset': {
-      const tv = engine.buildTileset(entry, ex.span)
-      return {
-        sprite: tv.sheet,
-        path: null,
-        kind: 'tileset',
-        frames: tv.frames.map((f, i) => ({ name: tv.names[i] ?? String(i), ...f })),
-        tileMeta: {
-          tileWidth: tv.tileWidth,
-          tileHeight: tv.tileHeight,
-          columns: tv.columns,
-          count: tv.frames.length,
-        },
-      }
-    }
     case 'atlas': {
       const av = engine.buildAtlas(entry, ex.span)
-      return { sprite: av.sheet, path: null, kind: 'atlas', frames: av.frames, tileMeta: null }
+      return {
+        sprite: av.sheet,
+        path: null,
+        kind: 'atlas',
+        frames: av.frames,
+        tileMeta: av.tile
+          ? {
+              tileWidth: av.tile.tileWidth,
+              tileHeight: av.tile.tileHeight,
+              columns: av.tile.columns,
+              count: av.frames.length,
+              spacing: av.tile.padding,
+            }
+          : null,
+      }
     }
     case 'path': {
       const path = engine.evalPath(entry, [], ex.span)
@@ -116,7 +118,7 @@ const contentFromEntry = (
     default:
       throw error(
         ERROR_CODE.exportError,
-        `'${ex.name}' is not exportable content (a draw, path, tileset, or atlas)`,
+        `'${ex.name}' is not exportable content (a draw, path, or atlas)`,
         entry.module.displayPath,
         ex.span,
       )
@@ -331,10 +333,10 @@ export const runExport = (
           break
         }
         case 'tiled': {
-          if (content.kind !== 'tileset' || !content.tileMeta) {
+          if (content.kind !== 'atlas' || !content.tileMeta) {
             throw error(
               ERROR_CODE.exportError,
-              "'tiled' applies to tilesets only (uniform tiles)",
+              "'tiled' needs an atlas with a 'tile WxH' declaration (uniform tiles)",
               mod.displayPath,
               line.span,
             )
@@ -351,6 +353,7 @@ export const runExport = (
                 m.tileHeight,
                 m.count,
                 m.columns,
+                m.spacing,
               )
             : tiledTsj(
                 ex.name,
@@ -361,6 +364,7 @@ export const runExport = (
                 m.tileHeight,
                 m.count,
                 m.columns,
+                m.spacing,
               )
           write(`${base}.${line.tiledXml ? 'tsx' : 'tsj'}`, emit, artifacts, {
             file: mod.displayPath,
@@ -458,10 +462,10 @@ export const validateExport = (engine: Engine, mod: ModuleRecord, ex: ExportDefi
       if (line.format === 'png' && line.indexed) {
         indexedPalette(content.sprite, mod, line)
       }
-      if (line.format === 'tiled' && (content.kind !== 'tileset' || !content.tileMeta)) {
+      if (line.format === 'tiled' && (content.kind !== 'atlas' || !content.tileMeta)) {
         throw error(
           ERROR_CODE.exportError,
-          "'tiled' applies to tilesets only (uniform tiles)",
+          "'tiled' needs an atlas with a 'tile WxH' declaration (uniform tiles)",
           mod.displayPath,
           line.span,
         )

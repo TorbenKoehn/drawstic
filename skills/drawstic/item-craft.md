@@ -25,7 +25,7 @@ The order that wins on the first attempt — do not reorder:
 4. **Silhouette pass** — the dark outline + filled mass that already reads with colour removed.
 5. **Material pass** — metal/wood/leather/cloth/glass/magic/gold/gem accents only after the shape is
    solved.
-6. **Production exports** — per-item PNGs, then the set `tileset` + sidecars (`tiled`,
+6. **Production exports** — per-item PNGs, then the set `atlas` (`tile WxH`) + sidecars (`tiled`,
    `atlasJson`), then verification.
 
 ## 2. Theme = the family contract, not decoration
@@ -200,40 +200,37 @@ circle arcane.alpha(20%) 24:7 3 fill
 
 ## 7. Export pattern — ship the family, not just the singles
 
-The verified default for item sets:
+One `atlas` (ADR-0096 §3 merged the former separate `tileset`/`atlas` split) serves every
+consumer — `tile WxH` bakes the uniform grid `tiled` needs; the SAME baked sheet also carries
+`atlasJson` for runtime name lookups. The verified default for item sets:
 
 ```drw
-tileset set 32x32:
-  tiles itemA, itemB, itemC, itemD, itemE, itemF
+atlas set:
+  sprites itemA, itemB, itemC, itemD, itemE, itemF
+  tile 32x32
   cols 3
+  pad 1                      # optional grid gutter — also the `tiled` sidecar's `spacing`
 
 export itemA item-a:
   png @1 @4
 
-export set set:
+export set set-grid:
   png @1 @4
   tiled
-  atlasJson
-```
 
-When the named atlas must be separate or padded, use the second verified variant:
-
-```drw
-atlas setAtlas:
-  sprites itemA, itemB, itemC, itemD, itemE, itemF
-  pad 1
-
-export setAtlas set-atlas:
+export set set-atlas:
   png @1 @4
   atlasJson
 ```
 
-Export paths are recipe-relative (ADR-0096 §6): `build` writes next to the recipe file, so bare
-names like the ones above are correct as-is — never repeat the recipe's own directory name as a
-leading `dirname/` prefix (lint `W016`).
+Two `export` blocks, one content name — `set-grid` and `set-atlas` bake the identical sheet, they
+just differ in which sidecar rides along. Export paths are recipe-relative (ADR-0096 §6): `build`
+writes next to the recipe file, so bare names like the ones above are correct as-is — never
+repeat the recipe's own directory name as a leading `dirname/` prefix (lint `W016`).
 
 Use `tiled` for editor grids, `atlasJson` for runtime names, and singles for quick spot checks. Do
-not stop at standalone PNGs if the deliverable is a set.
+not stop at standalone PNGs if the deliverable is a set. Members are addressed **by name only**
+(`set.itemA`) — the old `tileset`'s numeric `set.0` index form is retired.
 
 ## 8. Verification cadence
 

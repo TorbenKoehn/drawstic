@@ -27,7 +27,7 @@ recipe-language *literals*: number, color (`#rrggbb[aa]`) or `transparent`, stri
 No parens, or `()`, means zero args (today's behavior). Argument count must match the
 drawing's own params — a mismatch is `E011` with a hint spelling out the fix
 (`pass literal arguments: render <file>#house(c, count)`). Non-parametric targets
-(a plain `draw`, a `tileset`/`atlas`/`image`) take no args.
+(a plain `draw`, an `atlas`/`image`) take no args.
 
 Render outputs (mutually exclusive):
 
@@ -201,11 +201,11 @@ concrete, author it locally or copy from the motif cookbook — `std` stays abst
 
 | Kind | Module scope | Drawing-local | Notes |
 |---|---|---|---|
-| `draw` `path` `fn` `theme` `tileset` `atlas` `export` | yes | **no** — E004 | order-independent; may forward-reference each other |
+| `draw` `path` `fn` `theme` `atlas` `export` | yes | **no** — E004 | order-independent; may forward-reference each other |
 | `filter` | yes | **yes** | module-level `filter name:` is order-independent like `fn`; a `filter name:` written inside a `draw` body is drawing-local and must precede its `apply name` |
 | `mask` `gradient` `light` `material` `palette` / any binding (`=`) | yes | yes | sequential, not order-independent — a drawing-local one must be written before it is used (`light`/`material` = ADR-0086) |
 
-Writing `fn`/`path` (or `draw`/`theme`/`tileset`/`atlas`/`export`) inside a `draw` body is a
+Writing `fn`/`path` (or `draw`/`theme`/`atlas`/`export`) inside a `draw` body is a
 positioned `E004`. `mask`/`gradient`/`light`/`material`/`palette`/`filter`/bindings have no such restriction — they read
 identically at module or drawing-local scope; only their *position* changes what's already in
 scope when they run.
@@ -552,7 +552,7 @@ mirror x=8: …             # draw body + its reflection across x=8 (§ Mirror)
 
 Operators: `+ - * / //` (floored int division) · `mod` keyword (floored, sign of divisor) ·
 `> < >= <= == !=` · `& | !` · `( )` grouping. `%` is only the percent suffix.
-`draw`/`path`/`fn`/`theme`/`tileset`/`atlas`/`export` are module-level, order-independent
+`draw`/`path`/`fn`/`theme`/`atlas`/`export` are module-level, order-independent
 definitions; `mask`/`gradient`/`palette`/`filter`/bindings run top-to-bottom eagerly and may also be
 drawing-local (§ Definition scope above). One namespace, lexically scoped; palette names are
 const and reserved. Collision rule is asymmetric (ADR-0073): a value binding may **not** shadow
@@ -814,8 +814,11 @@ then reads the theme light; the explicit arg is for overriding it on one command
   its hem (`material cloak = #4a3f56 cloth drape spread 200%`) — the fix for a "turtle-shell" cape; keep
   `round` for compact masses.
 - **Resolution order** (most-local first): explicit `light L` arg → applied **theme default**
-  (`light` in a `theme` body, § Themes). Neither tier = hard `E024`. (The `lit L:` scoping block was
-  removed — ADR-0094; the two tiers cover both cases.) The theme default is the cross-view fix: front
+  (`light` in a `theme` body, § Themes) → the module's **sole** bare `light NAME = …` binding
+  (ADR-0096 §4 — fires only when the theme tier is empty and the file declares *exactly one*
+  module-scope light: one light, one file, no theme is unambiguous). Two or more module lights
+  keep raising `E024`, naming every candidate. (The `lit L:` scoping block was removed —
+  ADR-0094; tiers 1–2 cover both cases it used to.) The theme default is the cross-view fix: front
   + side + recolor variants applying one theme share **one** light, so shading is never mirrored per view.
 - **`model REGION MATERIAL [over UNION] [light L]`** lowers the material under the resolved light onto a **form
   (normal-based) body shade → rim → AO → cast** (ADR-0089, ADR-0091); `MATERIAL` is a `material` value
@@ -899,27 +902,35 @@ font runic 5x7:            # WxH = optional monospace assertion
   glyph "A" runeA          # a glyph is a drawing (pixels or paths; non-parametric)
   glyph "B":               # inline body; k binds to the text paint
     pixels: …
-  glyphs digits "0123456789"   # bulk: i-th tile of a tileset → i-th char
+  glyphs digits "0123456789"   # bulk: i-th member of a uniform-tile atlas → i-th char
   tracking 1
   lineheight 8
 ```
 
 Glyph heights must agree; widths may vary (advance = width + tracking).
 
-## Tilesets & atlases
+## Atlases
+
+One construct, two modes — `tile WxH` toggles a uniform grid (ADR-0096 §3; `tileset` was merged
+into `atlas` and is now a positioned error naming this replacement):
 
 ```drw
-tileset terrain 16x16:               # every member exactly 16x16
-  tiles grass, dirt, water, stone    # index 0..3, row-major
-  cols 4                             # optional; default near-square
+atlas terrain:
+  sprites grass, dirt, water, stone  # every member exactly 16x16
+  tile 16x16                         # uniform grid: row-major, name-addressed
+  cols 4                             # optional; default near-square; requires `tile` (else E004)
+  pad 1                              # optional grid gutter px (default 0) — also `tiled`'s spacing
 
 atlas hud:
-  sprites play, pause, stop, logo    # varied sizes, name-addressed
-  pad 1                              # optional padding px
-  place logo 0:0                     # optional pin; rest auto-packs deterministically
+  sprites play, pause, stop, logo    # varied sizes, name-addressed (no `tile`)
+  pad 1                              # optional inter-sprite gutter px
+  place logo 0:0                     # optional pin; rest auto-packs deterministically (E004 with `tile`)
 ```
 
-Address a member for stamping: `terrain.0`.
+Address a member for stamping: `terrain.grass` (**by name only** — the old `tileset`'s numeric
+`terrain.0` index form is removed; an unknown member is E015). Zero `sprites` or `cols 0` are
+positioned errors, not a silent empty/degenerate sheet. `place` naming a name not in `sprites` is
+E001.
 
 ## Export
 
@@ -932,9 +943,9 @@ export gem icons/gem:        # source-first, bareword base path
   path                       # geometry SVG (path definitions only)
 ```
 
-Sheet sidecars (tileset/atlas exports): `png` (the sheet) · `tiled` (`.tsj`; `tiled xml` →
-`.tsx`; tileset only) · `atlasJson` (`.json` frames map — TexturePacker/Phaser/Pixi) ·
-`aseprite` (`.aseprite.json`).
+Sheet sidecars (atlas exports): `png` (the sheet) · `tiled` (`.tsj`; `tiled xml` → `.tsx`;
+requires the atlas's `tile WxH` — E018 otherwise) · `atlasJson` (`.json` frames map —
+TexturePacker/Phaser/Pixi) · `aseprite` (`.aseprite.json`).
 
 **Base path is recipe-relative** (ADR-0096 §6): `build` defaults `--out` to the recipe file's own
 directory, and the base path is relative to that — the recipe alone decides the layout; an

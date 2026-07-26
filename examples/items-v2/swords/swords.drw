@@ -122,8 +122,9 @@ draw magicBlade:
   circle k 8:64 4 fill
   circle p 8:64 2 fill
 
-tileset swords 64x64:
-  tiles dagger, shortsword, longsword, scimitar, twoHander, magicBlade
+atlas swords:
+  sprites dagger, shortsword, longsword, scimitar, twoHander, magicBlade
+  tile 64x64
   cols 3
 
 export dagger dagger:

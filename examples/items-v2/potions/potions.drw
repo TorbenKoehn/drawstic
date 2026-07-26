@@ -120,8 +120,9 @@ draw emptyVial 64x64:
   fill x rect(28:2, 35:7)
   stroke k shell w1
 
-tileset potionSheet 64x64:
-  tiles healingPotion, manaPotion, poisonPotion, elixirPotion, bombPotion, emptyVial
+atlas potionSheet:
+  sprites healingPotion, manaPotion, poisonPotion, elixirPotion, bombPotion, emptyVial
+  tile 64x64
   cols 3
 
 export healingPotion healing-potion:

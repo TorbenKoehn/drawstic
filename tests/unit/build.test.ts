@@ -103,8 +103,14 @@ draw tileA 2x2:
 draw tileB 2x2:
   bg rgb(0, 255, 0)
 
-tileset tiny 2x2:
-  tiles tileA, tileB
+atlas tiny:
+  sprites tileA, tileB
+  tile 2x2
+
+atlas tinyPad:
+  sprites tileA, tileB
+  tile 2x2
+  pad 1
 
 draw hudA 2x2:
   bg rgb(10, 10, 200)
@@ -170,6 +176,10 @@ export tiny out/tiny:
 
 export tiny out/tiny-xml:
   tiled xml
+
+export tinyPad out/tiny-pad:
+  png
+  tiled
 
 export hud out/hud:
   png
@@ -397,8 +407,8 @@ describe('buildModule — svg / jpeg / path formats', () => {
   })
 })
 
-describe('buildModule — tileset/atlas sidecars (tiled, atlasJson, aseprite)', () => {
-  test('tileset content: png sheet + tiled .tsj', () => {
+describe('buildModule — atlas sidecars (tiled, atlasJson, aseprite)', () => {
+  test('uniform-tile atlas content: png sheet + tiled .tsj', () => {
     const { engine, mod } = load(CONTENT_SRC)
     const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
     try {
@@ -428,7 +438,7 @@ describe('buildModule — tileset/atlas sidecars (tiled, atlasJson, aseprite)', 
     }
   })
 
-  test('tileset content: tiled xml flag writes .tsx instead of .tsj', () => {
+  test('uniform-tile atlas content: tiled xml flag writes .tsx instead of .tsj', () => {
     const { engine, mod } = load(CONTENT_SRC)
     const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
     try {
@@ -436,7 +446,7 @@ describe('buildModule — tileset/atlas sidecars (tiled, atlasJson, aseprite)', 
       const tsx = readFileSync(join(out, 'out', 'tiny-xml.tsx'), 'utf8')
       expect(tsx).toContain('<?xml version="1.0" encoding="UTF-8"?>')
       expect(tsx).toContain(
-        '<tileset version="1.10" name="tiny" tilewidth="2" tileheight="2" tilecount="2" columns="2">',
+        '<tileset version="1.10" name="tiny" tilewidth="2" tileheight="2" tilecount="2" columns="2" spacing="0">',
       )
       expect(tsx).toContain('<image source="tiny-xml.png" width="4" height="2"/>')
     } finally {
@@ -444,7 +454,7 @@ describe('buildModule — tileset/atlas sidecars (tiled, atlasJson, aseprite)', 
     }
   })
 
-  test('tileset content: atlasJson/aseprite use the real per-tile frame map', () => {
+  test('uniform-tile atlas content: atlasJson/aseprite use the real per-tile frame map', () => {
     const { engine, mod } = load(CONTENT_SRC)
     const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
     try {
@@ -472,6 +482,22 @@ describe('buildModule — tileset/atlas sidecars (tiled, atlasJson, aseprite)', 
       const ase = JSON.parse(readFileSync(join(out, 'out', 'hud.aseprite.json'), 'utf8'))
       expect(ase.frames.hudA.duration).toBe(100)
       expect(ase.frames.hudB.duration).toBe(100)
+    } finally {
+      rmSync(out, { recursive: true, force: true })
+    }
+  })
+
+  test("uniform-tile atlas with 'pad': the sheet gutter and the tiled sidecar's spacing agree", () => {
+    const { engine, mod } = load(CONTENT_SRC)
+    const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
+    try {
+      buildModule(engine, mod, out)
+      // 2 tiles of 2x2 with a 1px grid gutter, no trailing margin: width = 2*(2+1) - 1 = 5
+      const p = decodePng(new Uint8Array(readFileSync(join(out, 'out', 'tiny-pad.png'))))
+      expect(p.w).toBe(5)
+      expect(p.h).toBe(2)
+      const tsj = JSON.parse(readFileSync(join(out, 'out', 'tiny-pad.tsj'), 'utf8'))
+      expect(tsj).toMatchObject({ spacing: 1, columns: 2, imagewidth: 5, imageheight: 2 })
     } finally {
       rmSync(out, { recursive: true, force: true })
     }
@@ -513,6 +539,18 @@ export solid out/solid-tiled-fail:
 export solid out/solid-path-fail:
   path
 
+draw hudA 2x2:
+  bg #123456
+
+draw hudB 3x2:
+  bg #654321
+
+atlas hud:
+  sprites hudA, hudB
+
+export hud out/hud-tiled-fail:
+  tiled
+
 draw manyColors 17x17:
   for x 0..17:
     for y 0..17:
@@ -548,7 +586,7 @@ export manyColors out/many:
         if (e instanceof DrawsticError) {
           expect(e.toDiagnostic()).toMatchObject({
             code: 'E018',
-            message: "'triple' is not exportable content (a draw, path, tileset, or atlas)",
+            message: "'triple' is not exportable content (a draw, path, or atlas)",
           })
         }
       }
@@ -557,16 +595,29 @@ export manyColors out/many:
     }
   })
 
-  test("'tiled' on non-tileset content fails in both runExport and validateExport", () => {
+  test("'tiled' on non-atlas (or non-uniform-tile) content fails in both runExport and validateExport", () => {
     const { engine, mod } = load(ERROR_SRC)
     const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
     try {
       const ex = exportAt(mod, 'out/solid-tiled-fail')
       expect(() => runExport(engine, mod, ex, out)).toThrow(
-        /'tiled' applies to tilesets only \(uniform tiles\)/,
+        /'tiled' needs an atlas with a 'tile WxH' declaration \(uniform tiles\)/,
       )
       expect(() => validateExport(engine, mod, ex)).toThrow(
-        /'tiled' applies to tilesets only \(uniform tiles\)/,
+        /'tiled' needs an atlas with a 'tile WxH' declaration \(uniform tiles\)/,
+      )
+    } finally {
+      rmSync(out, { recursive: true, force: true })
+    }
+  })
+
+  test("'tiled' on a non-uniform (shelf-packed) atlas is the same E018 as on a plain draw", () => {
+    const { engine, mod } = load(ERROR_SRC)
+    const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
+    try {
+      const ex = exportAt(mod, 'out/hud-tiled-fail')
+      expect(() => runExport(engine, mod, ex, out)).toThrow(
+        /'tiled' needs an atlas with a 'tile WxH' declaration \(uniform tiles\)/,
       )
     } finally {
       rmSync(out, { recursive: true, force: true })

@@ -87,7 +87,7 @@ describe('check', () => {
     expect(r.json).toEqual([])
   })
 
-  test('renders tileset and atlas members during deep validation', () => {
+  test('renders both atlas modes (uniform-tile grid + shelf-pack) during deep validation', () => {
     withTmpDir((dir) => {
       const file = join(dir, 'sheet.drw')
       writeFileSync(
@@ -105,8 +105,9 @@ describe('check', () => {
           '    rr',
           '    rr',
           '',
-          'tileset ts 2x2:',
-          '  tiles a, b',
+          'atlas ts:',
+          '  sprites a, b',
+          '  tile 2x2',
           '  cols 2',
           '',
           'atlas at:',

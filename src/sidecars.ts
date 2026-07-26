@@ -5,7 +5,11 @@
 /** A packed sprite's placement within a sidecar sheet, keyed by tile index or atlas name. */
 export type Frame = { name: string; x: number; y: number; width: number; height: number }
 
-/** Tiled `.tsj` (JSON) tileset descriptor for a uniform-grid `tileset` (ADR-0016). */
+/**
+ * Tiled `.tsj` (JSON) tileset descriptor for a uniform-grid `atlas` (ADR-0016; the source
+ * construct was `tileset` before ADR-0096 §3 merged it into `atlas`). `spacing` is the atlas's
+ * `pad` — the grid gutter between tiles, `0` when the atlas declares none.
+ */
 export const tiledTsj = (
   name: string,
   imageFile: string,
@@ -15,6 +19,7 @@ export const tiledTsj = (
   tileH: number,
   count: number,
   columns: number,
+  spacing: number,
 ): string =>
   `${JSON.stringify(
     {
@@ -24,7 +29,7 @@ export const tiledTsj = (
       imagewidth: imgW,
       margin: 0,
       name,
-      spacing: 0,
+      spacing,
       tilecount: count,
       tileheight: tileH,
       tilewidth: tileW,
@@ -45,8 +50,9 @@ export const tiledTsx = (
   tileH: number,
   count: number,
   columns: number,
+  spacing: number,
 ): string =>
-  `<?xml version="1.0" encoding="UTF-8"?>\n<tileset version="1.10" name="${name}" tilewidth="${tileW}" tileheight="${tileH}" tilecount="${count}" columns="${columns}">\n <image source="${imageFile}" width="${imgW}" height="${imgH}"/>\n</tileset>\n`
+  `<?xml version="1.0" encoding="UTF-8"?>\n<tileset version="1.10" name="${name}" tilewidth="${tileW}" tileheight="${tileH}" tilecount="${count}" columns="${columns}" spacing="${spacing}">\n <image source="${imageFile}" width="${imgW}" height="${imgH}"/>\n</tileset>\n`
 
 /** TexturePacker/Phaser/Pixi frame-map atlas descriptor, name-addressed (ADR-0016). */
 export const atlasJson = (

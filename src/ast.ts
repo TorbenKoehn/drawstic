@@ -456,7 +456,6 @@ export type Statement =
   | { readonly kind: 'drawDefinition'; readonly def: DrawDefinition; readonly span: TextSpan }
   | { readonly kind: 'themeDefinition'; readonly def: ThemeDefinition; readonly span: TextSpan }
   | { readonly kind: 'fontDefinition'; readonly def: FontDefinition; readonly span: TextSpan }
-  | { readonly kind: 'tilesetDefinition'; readonly def: TilesetDefinition; readonly span: TextSpan }
   | { readonly kind: 'atlasDefinition'; readonly def: AtlasDefinition; readonly span: TextSpan }
   | { readonly kind: 'exportDefinition'; readonly def: ExportDefinition; readonly span: TextSpan }
   | {
@@ -621,11 +620,12 @@ export type FontItem =
     }
   | {
       /**
-       * A `glyphs TILESET STRING` item — bulk-assigns one tileset's tiles to the
-       * characters of `chars`, positionally.
+       * A `glyphs ATLAS STRING` item — bulk-assigns one uniform-tile atlas's members to the
+       * characters of `chars`, positionally (ADR-0096 §3: requires the named `atlas` to carry a
+       * `tile WxH` declaration — index order is only meaningful for uniform tiles).
        */
       readonly kind: 'glyphs'
-      readonly tileset: string
+      readonly atlas: string
       readonly chars: string
       readonly span: TextSpan
     }
@@ -639,20 +639,27 @@ export type FontDefinition = {
   readonly span: TextSpan
 }
 
-export type TilesetDefinition = {
-  readonly name: string
-  readonly tileWidth: number
-  readonly tileHeight: number
-  readonly tiles: string[]
-  readonly columns: number | undefined
-  readonly span: TextSpan
-}
-
+/**
+ * `atlas NAME:` (ADR-0096 §3 — merges the former `tileset`/`atlas` split into one construct).
+ * `tile`, when present, makes every member a fixed `width`x`height` grid slot (row-major,
+ * `columns` — default `ceil(sqrt(n))`), addressed by name; `pad` is the grid gutter (also the
+ * Tiled sidecar's `spacing`), and `place` is rejected (a grid has fixed slots already). Without
+ * `tile`, members shelf-pack (tallest-first, then declaration order) with `pad` as inter-sprite
+ * gutter, and any subset may be pinned with `place`; `cols` is rejected (nothing to count columns
+ * of without a fixed grid).
+ */
 export type AtlasDefinition = {
   readonly name: string
   readonly sprites: string[]
+  readonly tile: { readonly width: number; readonly height: number } | undefined
+  readonly columns: number | undefined
   readonly padding: number
-  readonly place: { readonly name: string; readonly x: number; readonly y: number }[]
+  readonly place: readonly {
+    readonly name: string
+    readonly x: number
+    readonly y: number
+    readonly span: TextSpan
+  }[]
   readonly span: TextSpan
 }
 

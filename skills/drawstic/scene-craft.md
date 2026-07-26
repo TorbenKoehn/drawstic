@@ -9,9 +9,11 @@ failure below is silent to `check`; a render is the only judge.**
 
 Declare ONE named **`light`** before the first `draw` (ADR-0086). It is the single source of truth
 every object reads, so shade, highlight, rim, and cast can never drift apart — this replaces the old
-hand-typed `sun`-point + `warm`/`cool` triple as the default. A `model`/`cel` reaches it either from
-a **theme default** (`light sun = …` inside a `theme` body → applied by `use`) or from an explicit
-**`light sun`** argument on the command (the `lit L:` block was removed — ADR-0094).
+hand-typed `sun`-point + `warm`/`cool` triple as the default. A `model`/`cel` reaches it from a
+**theme default** (`light sun = …` inside a `theme` body → applied by `use`), from an explicit
+**`light sun`** argument on the command, or — with no theme at all and exactly one bare `light`
+declared in the file — automatically (ADR-0096 §4: one light, one file, unambiguous). The `lit L:`
+block was removed — ADR-0094.
 
 ```drw
 light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%   # source up-left ⇒ up-left edge lit; amb = cool fill, never pure black

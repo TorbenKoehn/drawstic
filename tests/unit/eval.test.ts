@@ -959,7 +959,7 @@ draw d 2x2:
     ).toThrow(/'while' was removed/)
   })
 
-  test('tileset bakes a grid and members are addressable', () => {
+  test('atlas (uniform tile) bakes a grid and members are addressable by name', () => {
     const src = `draw a 2x2:
   palette k=#000
   pixels:
@@ -971,21 +971,40 @@ draw b 2x2:
     rr
     rr
 
-tileset ts 2x2:
-  tiles a, b
+atlas ts:
+  sprites a, b
+  tile 2x2
   cols 2
 
 draw d 4x2:
-  stamp ts.1 0:0
+  stamp ts.b 0:0
 `
     const s = render(src, 'd')
     expect(px(s, 0, 0)).toEqual([255, 0, 0, 255])
   })
 
+  test('atlas member index addressing (`ts.0`) was removed — name addressing only', () => {
+    expect(() =>
+      render(
+        'draw a 2x2:\n  palette k=#000\n  pixels:\n    kk\n    kk\n\natlas ts:\n  sprites a\n  tile 2x2\n\ndraw d 4x2:\n  stamp ts.0 0:0\n',
+        'd',
+      ),
+    ).toThrow(/cannot index a sprite/)
+  })
+
+  test("atlas member addressed by an unknown name is E015 ('atlas has no member')", () => {
+    expect(() =>
+      render(
+        'draw a 2x2:\n  palette k=#000\n  pixels:\n    kk\n    kk\n\natlas ts:\n  sprites a\n  tile 2x2\n\ndraw d 4x2:\n  stamp ts.nope 0:0\n',
+        'd',
+      ),
+    ).toThrow(/atlas 'ts' has no member 'nope'/)
+  })
+
   test('tile size mismatch is E016', () => {
     expect(() =>
       render(
-        'draw a 2x2:\n  palette k=#000\n  pixels:\n    kk\n    kk\ndraw b 3x2:\n  palette k=#000\n  pixels:\n    kkk\n    kkk\n\ntileset ts 2x2:\n  tiles a, b\n\ndraw d 4x2:\n  stamp ts.0 0:0\n',
+        'draw a 2x2:\n  palette k=#000\n  pixels:\n    kk\n    kk\ndraw b 3x2:\n  palette k=#000\n  pixels:\n    kkk\n    kkk\n\natlas ts:\n  sprites a, b\n  tile 2x2\n\ndraw d 4x2:\n  stamp ts.a 0:0\n',
         'd',
       ),
     ).toThrow(/requires 2x2/)
@@ -1446,9 +1465,9 @@ draw d 12x12:
     ).toThrow(/glyph drawings must be non-parametric/)
   })
 
-  test('font glyphs bulk-maps a tileset to characters, with tileset/coverage errors', () => {
+  test('font glyphs bulk-maps a uniform-tile atlas to characters, with atlas/coverage errors', () => {
     const s = render(
-      'draw d0 2x2:\n  palette k=#000000\n  bg k\ndraw d1 2x2:\n  palette r=#ff0000\n  bg r\ndraw d2 2x2:\n  palette g=#00ff00\n  bg g\n\ntileset digits 2x2:\n  tiles d0, d1, d2\n  cols 3\n\nfont digitFont 2x2:\n  glyphs digits "012"\n\ndraw d 8x2:\n  text #000000 0:0 "1" font digitFont\n',
+      'draw d0 2x2:\n  palette k=#000000\n  bg k\ndraw d1 2x2:\n  palette r=#ff0000\n  bg r\ndraw d2 2x2:\n  palette g=#00ff00\n  bg g\n\natlas digits:\n  sprites d0, d1, d2\n  tile 2x2\n  cols 3\n\nfont digitFont 2x2:\n  glyphs digits "012"\n\ndraw d 8x2:\n  text #000000 0:0 "1" font digitFont\n',
       'd',
     )
     expect(px(s, 0, 0)).toEqual([255, 0, 0, 255])
@@ -1457,13 +1476,19 @@ draw d 12x12:
         'font digitFont 2x2:\n  glyphs nope "01"\n\ndraw d 8x2:\n  text #000000 0:0 "0" font digitFont\n',
         'd',
       ),
-    ).toThrow(/glyphs tileset 'nope' not found/)
+    ).toThrow(/glyphs atlas 'nope' not found/)
     expect(() =>
       render(
-        'draw d0 2x2:\n  palette k=#000000\n  bg k\ndraw d1 2x2:\n  palette r=#ff0000\n  bg r\n\ntileset digits 2x2:\n  tiles d0, d1\n  cols 2\n\nfont digitFont 2x2:\n  glyphs digits "012"\n\ndraw d 8x2:\n  text #000000 0:0 "2" font digitFont\n',
+        'draw d0 2x2:\n  palette k=#000000\n  bg k\n\natlas digits:\n  sprites d0\n\nfont digitFont 2x2:\n  glyphs digits "0"\n\ndraw d 8x2:\n  text #000000 0:0 "0" font digitFont\n',
         'd',
       ),
-    ).toThrow(/tileset has no tile 2 for character "2"/)
+    ).toThrow(/glyphs atlas 'digits' needs a 'tile WxH' declaration/)
+    expect(() =>
+      render(
+        'draw d0 2x2:\n  palette k=#000000\n  bg k\ndraw d1 2x2:\n  palette r=#ff0000\n  bg r\n\natlas digits:\n  sprites d0, d1\n  tile 2x2\n  cols 2\n\nfont digitFont 2x2:\n  glyphs digits "012"\n\ndraw d 8x2:\n  text #000000 0:0 "2" font digitFont\n',
+        'd',
+      ),
+    ).toThrow(/atlas has no tile 2 for character "2"/)
   })
 
   test('path arc tessellates clockwise and counterclockwise around a center', () => {

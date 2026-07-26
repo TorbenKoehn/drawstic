@@ -442,7 +442,9 @@ pin before shading: `cloakReg = raw.intersect(rect(0:0, attachX:h))`.
 putting ONE `light` in the `theme` and `use`-ing it: it becomes the outermost light of *every* drawing
 that applies the theme, so front/side/back + every recolor variant read the **same** world-space source.
 A trailing `light L` on one `model`/`cel` overrides locally (resolution: explicit `light L` > theme
-default; the `lit L:` block was removed — ADR-0094). Confirm numerically: the lit third of the
+default > the module's sole `light` binding, ADR-0096 §4; the `lit L:` block was removed —
+ADR-0094) — use the theme tier here regardless, since a character's whole point is sharing one
+light across several views/variants. Confirm numerically: the lit third of the
 silhouette is the same world side in both `--inspect`ed views.
 
 **Shade volumes with `model` — the default even at ≤64px** (ADR-0089/0091): the body shade follows the

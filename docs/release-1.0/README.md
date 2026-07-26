@@ -59,14 +59,24 @@ Status-Legende: `[ ]` offen · `[~]` läuft · `[x]` fertig (verifiziert: `bun t
 - [x] Umbenennungen (D1) über Parser/Eval/Lint/Spec/Skill/Beispiele (`8a2b488`).
 - [x] Export-Pfad-Konvention (D7) + Lint `W016` (`8a2b488`); Pfadkollision → `E018` (`0aaf5d9`).
 - [x] Roh-Shading-Quartett raus, `REGION.edge()` rein (`eb91eac`, ADR-0097).
-- [~] `atlas`-Merge + Builtin-Reservierung + Licht-Auflösungsregel + `pin`-Transform-Bug.
+- [x] `atlas`-Merge (ADR-0096 §3: `tileset`+`atlas` → ein `atlas` mit optionalem `tile WxH`,
+      `E015`/`E016`/`E004`/`E001` + Degenerate-Guards, `tiled`-`spacing`) + Builtin-Reservierung
+      (bereits erledigt, s.o.) + Licht-Auflösungsregel (ADR-0096 §4: explizit → Theme-Default →
+      alleinige Modul-`light`-Bindung → `E024`) + `pin`-Transform-Bug (`stamp` zeichnet seine
+      Transform-Matrix jetzt unter dem Kopf-Namen auf `DrawState.stampTransforms` auf; `pin
+      HEAD.KEY`-seed-all wendet sie auf jeden lokalen Pin an, bevor die Offsets berechnet werden —
+      sauberer Fix statt Fehler-Route, kein größerer Umbau nötig). tsc+biome clean, 953 Tests grün
+      (+neue Atlas-Grammatik-/Sidecar-/Licht-Fallback-/Pin-Transform-Tests).
 
 ### W3-3 — Beispiele auf den kanonischen Pfad
 - [x] `icons` auf `light`/`material`/`model` (`eb91eac`).
 - [x] `scenes-v3` — 74 Aufrufe migriert (`e4fe7c6`). Die fünf geschützten Szenen sind
       pixel-erhaltend (arctic/desert/island/market Δmax 2, reef Δmax 8, jeweils reines
       Quantisierungsrauschen des Gradient-Pfades); volcano + orbit bewusst verbessert.
-- [~] `items-v2` (läuft mit dem `atlas`-Merge).
+- [x] `items-v2` — 7 `tileset`s auf `atlas … tile WxH` migriert (byte-identische Sheets/Sidecars);
+      `shields.drw`s doppeltes `tileset`+`atlas` (nur `pad` unterschiedlich) zu einem `atlas
+      shieldsSheet` gefaltet (bewusste Änderung: beide Export-Blöcke backen jetzt dieselbe
+      gepolsterte Grid-Sheet statt Grid- vs. Shelf-Pack-Layout).
 - [ ] Spec-Grammatik-Sync (pin/fit, behind/front, quantize, organische Konstruktoren, CLI-Tabelle, E026).
 
 ### W3-4 — Product-Skill + README

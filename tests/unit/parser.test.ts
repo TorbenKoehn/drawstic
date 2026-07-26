@@ -409,17 +409,51 @@ describe('parser', () => {
     }
   })
 
-  test('tileset and atlas', () => {
-    const t = one('tileset terrain 16x16:\n  tiles grass, dirt\n  cols 4\n')
-    expect(t.kind).toBe('tilesetDefinition')
-    if (t.kind === 'tilesetDefinition') {
+  test('tileset was merged into atlas (ADR-0096 §3)', () => {
+    expect(() => parse('tileset terrain 16x16:\n  tiles grass, dirt\n  cols 4\n', 't.drw')).toThrow(
+      /'tileset' was merged into 'atlas'/,
+    )
+    // `tileset = …` (name binding) still works; only the def shape errors.
+    const s = one('tileset = 1\n')
+    expect(s.kind).toBe('binding')
+  })
+
+  test('atlas: uniform grid (`tile`) and shelf-pack (no `tile`) modes', () => {
+    const t = one('atlas terrain:\n  sprites grass, dirt\n  tile 16x16\n  cols 4\n')
+    expect(t.kind).toBe('atlasDefinition')
+    if (t.kind === 'atlasDefinition') {
+      expect(t.def.tile).toEqual({ width: 16, height: 16 })
       expect(t.def.columns).toBe(4)
     }
     const a = one('atlas hud:\n  sprites play, stop\n  pad 1\n  place logo 0:0\n')
     expect(a.kind).toBe('atlasDefinition')
     if (a.kind === 'atlasDefinition') {
+      expect(a.def.tile).toBeUndefined()
       expect(a.def.padding).toBe(1)
+      expect(a.def.place[0]?.name).toBe('logo')
     }
+  })
+
+  test('atlas: cols without tile is E004', () => {
+    expect(() => parse('atlas hud:\n  sprites a, b\n  cols 2\n', 't.drw')).toThrow(
+      /'cols' needs a 'tile WxH' declaration/,
+    )
+  })
+
+  test('atlas: place with tile is E004 (a grid has fixed slots)', () => {
+    expect(() =>
+      parse('atlas terrain:\n  sprites a, b\n  tile 4x4\n  place a 0:0\n', 't.drw'),
+    ).toThrow(/'place' cannot be used with 'tile'/)
+  })
+
+  test('atlas: cols 0 is a positioned error, not a silent divide-by-zero', () => {
+    expect(() => parse('atlas terrain:\n  sprites a, b\n  tile 4x4\n  cols 0\n', 't.drw')).toThrow(
+      /'cols' must be a positive integer/,
+    )
+  })
+
+  test('atlas: no members is a positioned error', () => {
+    expect(() => parse('atlas empty:\n  pad 1\n', 't.drw')).toThrow(/has no members/)
   })
 
   test('UFCS chain and dot-index', () => {

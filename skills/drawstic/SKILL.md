@@ -221,7 +221,9 @@ be a `pixels:` grid with a `palette` (palette keys = one ASCII letter, `.` = tra
   base's C004 contrast). **`drape`** shades a *hanging* cloak/skirt as a per-row half-tube that doesn't
   darken toward its hem. **`over UNION`** builds the field from `UNION` (e.g. `leg.union(boot)`) but
   tones only `R`, so stacked parts co-shade as **one continuous limb**. Resolution: explicit `light L` →
-  **theme default** (the `lit L:` block was removed — ADR-0094); neither = hard `E024`.
+  **theme default** → **the module's sole `light` binding** (no theme, exactly one `light NAME = …` in
+  the file — ADR-0096 §4; two or more keeps it a named `E024`); the `lit L:` block was removed — ADR-0094;
+  no light in any tier = hard `E024`.
 - **Control flow:** `for i 0..8:` (the one loop — half-open; `..=` inclusive) · `if c:`/`else:` ·
   `match x:` · expression `if c then a else b` · `fn f(a, b) = expr`.
 - **Floor constructs** (reach past the canonical path — reference.md): `scatter` (seeded points from a
@@ -336,7 +338,7 @@ light direction, 2–4 px breathing room, shared axis/footprint, outline/materia
 silhouette distance before ornament. (3) **shared scaffolds** — one bottle shell, one shaft angle, one
 shield mass. (4) **silhouette pass, then material pass** — metal = dark spine + mid fill + 1–2px glints;
 wood/leather/cloth stay sparse; glass = strips + liquid band; accents stay tight. (5) **ship the family**
-— per-item `png @1 @4`, plus a `tileset` export with `tiled` + `atlasJson`.
+— per-item `png @1 @4`, plus one uniform-tile `atlas` (`tile WxH`) export with `tiled` + `atlasJson`.
 
 **Before "done":** `critique --as item` (C009 flags a sibling reading like another — differentiate or
 confirm a deliberate recolor/shared-shell; answer its pair-confusion rubric), **`sheet --png@4`** first,
@@ -362,7 +364,7 @@ then native **`--png@1`**, then **`--silhouette --png@4`** on the weakest pair. 
   fill thin bars/bones/blades; don't stroke them.
 - Canvas `WxH` are integer literals, never expressions; scale via `stamp … scale2` or export `@N`.
 - Drawing-level `use themes x` lines must be the first statements of the body.
-- Scope: `draw`/`path`/`fn`/`theme`/`tileset`/`atlas`/`export` are **module-scope only** (E004
+- Scope: `draw`/`path`/`fn`/`theme`/`atlas`/`export` are **module-scope only** (E004
   inside a `draw` body); `mask`/`gradient`/`palette`/`light`/`material`/`filter`/bindings may also be
   drawing-local. Full table: reference.md § Definition scope.
 - A `theme` body holds **only** `palette:`/`gradient NAME=…`/`size`/`mode`/`font`/`light`/`figure:`/`style`/

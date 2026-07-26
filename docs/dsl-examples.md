@@ -326,18 +326,20 @@ draw medal 16x16:
 ```
 
 ---
-## 9. Tilesets & atlases — bake sprites into one image
+## 9. Atlases — bake sprites into one image
 
-A uniform `tileset` (grid, index-addressed) and a packed `atlas` (varied sizes,
-name-addressed), each exported with a sidecar for common engines. Layout is automatic and
-deterministic; both are content, exported like any drawing.
+One `atlas` construct, two modes (ADR-0096 §3): `tile WxH` bakes a uniform grid, index-order but
+still **name**-addressed; without it, members of varied sizes shelf-pack automatically. Each mode
+exports with a sidecar for common engines. Layout is automatic and deterministic; an atlas is
+content, exported like any drawing.
 
 ```drw
 from tiles grass, dirt, water, stone
 from hud play, pause, stop, logo
 
-tileset terrain 16x16:
-  tiles grass, dirt, water, stone     # index 0..3; every member is exactly 16x16
+atlas terrain:
+  sprites grass, dirt, water, stone   # every member is exactly 16x16
+  tile 16x16                          # uniform grid — row-major placement
 
 atlas hud:
   sprites play, pause, stop, logo     # varied sizes, packed automatically
