@@ -50,6 +50,7 @@ const warning = (
 export const lintModule = (engine: Engine, mod: ModuleRecord): Diagnostic[] => {
   const diagnostics: Diagnostic[] = []
   lintExportPathRepeatsDir(mod, diagnostics)
+  lintMirroredViewPin(mod, diagnostics)
   const exported = new Set(mod.exports.map((ex) => ex.name))
   const used = new Set<string>()
   const fontCache = new Map<string, FontResolved | null>()
@@ -723,6 +724,123 @@ const lintExportPathRepeatsDir = (mod: ModuleRecord, diagnostics: Diagnostic[]):
   }
 }
 
+/** A `pin NAME PT` fact resolved to a literal `x`; `y` is irrelevant here (a Front/Back mirror never changes it). */
+type PinXFact = { readonly x: number; readonly span: TextSpan }
+
+/**
+ * The literal, own (non-dotted) `pin` declarations at the top level of `def`'s body — the same
+ * scope `lintStampWithPins`'s `hasPins` reads, i.e. the part's OWN attach points, never a
+ * canvas-space pin seed (`pin part.name PT`) or one buried in a conditional. Keyed by name; a pin
+ * whose point isn't a literal number pair (a computed anchor) can't be checked and is skipped.
+ */
+const ownPinFacts = (def: DrawDefinition): Map<string, PinXFact> => {
+  const out = new Map<string, PinXFact>()
+  for (const stmt of def.body) {
+    if (stmt.kind !== 'pinDeclaration' || stmt.name.includes('.')) {
+      continue
+    }
+    const point = pointFromExpr(stmt.point)
+    if (point) {
+      out.set(stmt.name, { x: point.x, span: stmt.span })
+    }
+  }
+  return out
+}
+
+/**
+ * True iff `name` ends in a handed `L`/`R` suffix AND `pins` also declares the opposite-handed
+ * sibling (`templeL` <-> `templeR`) — the pin SET is then already mirror-symmetric by construction:
+ * a `fit` mirrors the view by fitting the prop to the OTHER pin, never by moving either coordinate.
+ */
+const hasHandedSibling = (name: string, pins: ReadonlyMap<string, PinXFact>): boolean => {
+  const last = name.slice(-1)
+  if (name.length < 2 || (last !== 'L' && last !== 'R')) {
+    return false
+  }
+  return pins.has(`${name.slice(0, -1)}${last === 'L' ? 'R' : 'L'}`)
+}
+
+/**
+ * Lint `W017`: a `Front`/`Back` view pair of the same part (two draws in one module whose names
+ * share a stem and differ only by that suffix) repeats an off-centre attach pin's `x` verbatim. The
+ * `Back` view is the SAME figure turned 180 degrees, so a pin that doesn't sit on the vertical
+ * centreline must mirror between the two (`w - 1 - x` — the engine mirrors about `cx = (w-1)/2`,
+ * `#buildStampMatrix` in `src/eval.ts`, the same axis `flipx` uses). Copying the front pin verbatim
+ * leaves the prop on the same side of the canvas in both views and the character silently swaps
+ * hands — this shipped in three places at once this release (the character starter and both
+ * flagship knight/wizard recipes, fixed in `615be5a`/`761347d`/`dd3d063`) and passed every
+ * automated gate; only a human looking at a contact sheet caught it.
+ *
+ * Every condition below is measured against the corpus, not assumed:
+ * - both draws must share a canvas width — an unequal width has no shared mirror axis to check
+ * - only an OFF-CENTRE pin (`|x - (w-1)/2| >= 4`) is flagged; a near-centreline pin is legitimately
+ *   close to symmetric and repeating it is not a bug
+ * - a pin that is part of an L/R pair ({@link hasHandedSibling}) is exempt — without this exclusion
+ *   the check is unusable: on the pre-fix corpus it fired 8 times on the wizard and twice on the
+ *   assassin, every single one a correct `templeL`/`templeR`, `brimL`/`brimR`, `shoulderL`/
+ *   `shoulderR`, `gripL`/`gripR` pair. WITH it: two real findings (knight, starter), zero false
+ *   positives, and no findings at all on the fixed corpus (knight, wizard, archer, assassin).
+ *
+ * Honest limit, deliberately not addressed here: this only catches a wrong PIN COORDINATE. It does
+ * NOT catch an assembly-site error — fitting a prop to the wrong pin of an already-correct L/R pair
+ * (the wizard's actual pre-fix defect: `robeBack.gripL` instead of `gripR`) is a different mistake
+ * and would need its own measurement, not a bolt-on rule here.
+ *
+ * The stem/suffix split here is deliberately its own thing, not a reuse of `critique.ts`'s
+ * `viewSubjectStem`: that helper groups a name under ANY shared view stem (front/side/back alike)
+ * for silhouette/landmark comparison across a whole family; this check needs a directed Front<->Back
+ * pair specifically, and reusing it would mean exporting a symbol from a file this change otherwise
+ * never touches (and that, at the time of writing, is under concurrent edit).
+ */
+const lintMirroredViewPin = (mod: ModuleRecord, diagnostics: Diagnostic[]): void => {
+  const draws = new Map<string, DrawDefinition>()
+  for (const [name, entry] of mod.definitions) {
+    if (entry.kind === 'draw' && entry.module === mod) {
+      draws.set(name, entry.definition)
+    }
+  }
+  for (const [backName, backDef] of draws) {
+    if (!backName.endsWith('Back') || backName.length <= 'Back'.length) {
+      continue
+    }
+    const frontName = `${backName.slice(0, -'Back'.length)}Front`
+    const frontDef = draws.get(frontName)
+    if (!frontDef) {
+      continue
+    }
+    const backWidth = (backDef.size ?? mod.sizeDefault ?? mod.fileTheme?.size)?.width
+    const frontWidth = (frontDef.size ?? mod.sizeDefault ?? mod.fileTheme?.size)?.width
+    if (backWidth === undefined || backWidth !== frontWidth) {
+      continue
+    }
+    const w = backWidth
+    const backPins = ownPinFacts(backDef)
+    const frontPins = ownPinFacts(frontDef)
+    for (const [name, backPin] of backPins) {
+      const frontPin = frontPins.get(name)
+      if (
+        !frontPin ||
+        frontPin.x !== backPin.x ||
+        Math.abs(backPin.x - (w - 1) / 2) < 4 ||
+        hasHandedSibling(name, frontPins) ||
+        hasHandedSibling(name, backPins)
+      ) {
+        continue
+      }
+      const expected = w - 1 - backPin.x
+      diagnostics.push(
+        warning(
+          'W017',
+          `pin '${name}' has the same x (${backPin.x}) in '${frontName}' and '${backName}' — a Front/Back pair is the same figure turned 180°`,
+          mod.displayPath,
+          backPin.span,
+          `mirror it: x=${expected} here (w - 1 - x on canvas width ${w} — the axis 'flipx' mirrors about)`,
+        ),
+      )
+    }
+  }
+}
+
 // ── W013–W015: the one-canonical-way lints (ADR-0094) ───────────────────────
 //
 // Each pushes toward the single canonical path the declarative pipeline established, and each is
@@ -1194,20 +1312,24 @@ export const stampTargetName = (arg: Argument | undefined): string | null => {
   return null
 }
 
+/** The literal `{x, y}` of a point expression (`6:52`); `null` for anything computed. */
+const pointFromExpr = (expr: Expression): { readonly x: number; readonly y: number } | null => {
+  if (expr.kind !== 'point') {
+    return null
+  }
+  const x = literalNumber(expr.x)
+  const y = literalNumber(expr.y)
+  return x === null || y === null ? null : { x, y }
+}
+
 /**
  * Resolves a stamp's placement point only when it's a literal (optionally
  * negated) numeric point expression; `null` for anything computed.
  */
 const literalPoint = (
   arg: Argument | undefined,
-): { readonly x: number; readonly y: number } | null => {
-  if (arg?.kind !== 'expression' || arg.expression.kind !== 'point') {
-    return null
-  }
-  const x = literalNumber(arg.expression.x)
-  const y = literalNumber(arg.expression.y)
-  return x === null || y === null ? null : { x, y }
-}
+): { readonly x: number; readonly y: number } | null =>
+  arg?.kind === 'expression' ? pointFromExpr(arg.expression) : null
 
 const literalNumber = (expr: Expression): number | null => {
   if (expr.kind === 'number') {

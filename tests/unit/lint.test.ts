@@ -836,3 +836,87 @@ describe("W016: export path repeats the recipe's own directory (ADR-0096 §6)", 
     expect(lintModule(engine, mod).some((d) => d.code === 'W016')).toBe(false)
   })
 })
+
+describe('W017: Front/Back view pair repeats an off-centre pin x (mirrored-prop hand swap)', () => {
+  /** Two 20x10 draws (mirror axis (20-1)/2 = 9.5) sharing a name stem, `bodyFront`/`bodyBack`,
+   *  each carrying its own pin lines — the shape every real Front/Back part pair has. */
+  const bodyPair = (frontPins: string, backPins: string): string =>
+    [
+      'draw bodyFront 20x10:',
+      '  fill #808080 rect(0:0, 19:9)',
+      frontPins,
+      '',
+      'draw bodyBack 20x10:',
+      '  fill #808080 rect(0:0, 19:9)',
+      backPins,
+      '',
+      'export bodyFront b/front:',
+      '  png',
+      '',
+      'export bodyBack b/back:',
+      '  png',
+      '',
+    ].join('\n')
+
+  test('fires on a lone off-centre pin repeated verbatim across Front/Back', () => {
+    const { engine, mod } = load(bodyPair('  pin grip 2:5', '  pin grip 2:5'))
+    const diags = lintModule(engine, mod).filter((d) => d.code === 'W017')
+    expect(diags).toHaveLength(1)
+    expect(diags[0]).toMatchObject({
+      severity: 'warning',
+      code: 'W017',
+      message:
+        "pin 'grip' has the same x (2) in 'bodyFront' and 'bodyBack' — a Front/Back pair is the same figure turned 180°",
+      hint: "mirror it: x=17 here (w - 1 - x on canvas width 20 — the axis 'flipx' mirrors about)",
+    })
+    // span sits on the BACK draw's own pin statement, never the front one and never a draw header.
+    expect(diags[0]?.line).toBe(7)
+  })
+
+  test('is silent on an L/R pair — the pin SET is already mirror-symmetric', () => {
+    const { engine, mod } = load(
+      bodyPair('  pin gripL 2:5\n  pin gripR 17:5', '  pin gripL 2:5\n  pin gripR 17:5'),
+    )
+    expect(lintModule(engine, mod).filter((d) => d.code === 'W017')).toEqual([])
+  })
+
+  test('is silent on a centred pin (within 4px of the mirror axis)', () => {
+    const { engine, mod } = load(bodyPair('  pin neck 9:5', '  pin neck 9:5'))
+    expect(lintModule(engine, mod).filter((d) => d.code === 'W017')).toEqual([])
+  })
+
+  test('is silent when Front and Back canvas widths differ', () => {
+    const src = [
+      'draw bodyFront 20x10:',
+      '  fill #808080 rect(0:0, 19:9)',
+      '  pin grip 2:5',
+      '',
+      'draw bodyBack 24x10:',
+      '  fill #808080 rect(0:0, 23:9)',
+      '  pin grip 2:5',
+      '',
+      'export bodyFront b/front:',
+      '  png',
+      '',
+      'export bodyBack b/back:',
+      '  png',
+      '',
+    ].join('\n')
+    const { engine, mod } = load(src)
+    expect(lintModule(engine, mod).filter((d) => d.code === 'W017')).toEqual([])
+  })
+
+  test('is silent when only one of the paired views exists', () => {
+    const src = [
+      'draw bodyFront 20x10:',
+      '  fill #808080 rect(0:0, 19:9)',
+      '  pin grip 2:5',
+      '',
+      'export bodyFront b/front:',
+      '  png',
+      '',
+    ].join('\n')
+    const { engine, mod } = load(src)
+    expect(lintModule(engine, mod).filter((d) => d.code === 'W017')).toEqual([])
+  })
+})

@@ -1950,6 +1950,7 @@ skipped rather than guessed at, so a lint pass never produces a false positive.
 | `W014` | a `stamp` of a part that declares attach `pin`s (unless it is a pin-seeded assembly root, ADR-0092/0094) — `stamp` is for pin-less decoration | place it with `fit <part>.<pin> <anchor>`, or drop the pins if it is decoration |
 | `W015` | a semi-transparent `fill … ellipse(…)` low in the foot zone of a drawing that uses `fit` — a hand contact-shadow (ADR-0094) | drop it; add the `ground` flag to the root `fit … ground` |
 | `W016` | an `export` base path's first segment repeats the recipe file's own directory name (ADR-0096 §6) — `build` already writes next to the recipe | drop the redundant `<dirname>/` prefix |
+| `W017` | a `Front`/`Back` view pair (two draws sharing a name stem, same canvas width) repeats an off-centre attach `pin`'s `x` verbatim — the back view is the same figure turned 180°, so the pin should mirror. Exempt when the pin is part of an L/R pair (a sibling pin in the same draw with the trailing `L`/`R` swapped) — that pin set is already mirror-symmetric | mirror the coordinate: `x = w - 1 - x`, the axis `flipx` mirrors about |
 
 **Construct census.** `critique --json` and `check --lint --json` carry a deterministic `census`
 (AST-only, [ADR-0094](decisions/0094-language-diet-and-canonical-lints.md)): every construct used in

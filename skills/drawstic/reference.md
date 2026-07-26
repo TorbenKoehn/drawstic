@@ -115,14 +115,16 @@ Render modifiers: `--fit WxH` (downscale ascii/preview only), `--crop x:y WxH` (
 full canvas renders, no error), `--mode pixel|smooth` (override theme), `--budget N` (evaluation-step
 cap).
 
-**`--silhouette` — shape-only black-out.** A deterministic framebuffer pre-pass applied **before** the
-output kind is chosen: every pixel with `alpha > 0` becomes opaque black `#000000ff`, `alpha == 0` stays
-transparent (a hard 1-bit coverage mask). The colour-free shape test — silhouette legibility, occupancy,
-modular-part alignment. Composes with every output kind (`--ascii`/`--preview`/`--inspect`/PNG via
-`--png@N`) and every downstream framebuffer op (`--crop`/`--fit`/`--grid`); `--inspect` then describes
-the silhouette (a fully-opaque sprite collapses toward `distinctColorCount: 1`) and `--json` carries
-`silhouette: true`. **Caveat:** under `--ascii` the luminance ramp reads black as empty — view a
-silhouette as PNG or `--preview`. Never reaches `build`.
+**`--silhouette` — shape-only black-out, plate-aware.** A deterministic framebuffer pre-pass applied
+**before** the output kind is chosen: every covered pixel becomes opaque black `#000000ff`, everything
+else stays transparent (a hard 1-bit coverage mask) — except when a plate/tile (icon-craft.md's opaque
+background) is detected from pixel evidence, in which case only the figure stamped on it silhouettes, so
+a plated icon never collapses to a featureless black square; a detected plate is announced on stderr and
+`--json` carries `plateDetected` alongside `silhouette: true`. Composes with every output kind
+(`--ascii`/`--preview`/`--inspect`/PNG via `--png@N`) and every downstream framebuffer op
+(`--crop`/`--fit`/`--grid`); `--inspect` then describes the silhouette (a fully-opaque sprite collapses
+toward `distinctColorCount: 1`). **Caveat:** under `--ascii` the luminance ramp reads black as empty —
+view a silhouette as PNG or `--preview`. Never reaches `build`.
 
 **Debug-only PNG aids** (never reach `build` exports; inert under `--ascii`/`--preview`/`--inspect` since
 those short-circuit before the PNG stage):
@@ -248,6 +250,7 @@ and answer every `rubric.items` prompt by looking. The metric bundle is a supers
 | W014 | a `stamp` of a part that declares attach `pin`s (not a pin-seeded root) → `fit` it, or drop the pins if decoration |
 | W015 | a semi-transparent `fill … ellipse(…)` in the foot zone of a `fit`-using drawing → use the root `fit … ground` |
 | W016 | an `export` base path's first segment repeats the recipe's own directory name → drop the redundant `<dirname>/` prefix |
+| W017 | a `Front`/`Back` view pair repeats an off-centre pin's `x` verbatim (not an L/R pair) → mirror it: `x = w-1-x` |
 
 ### Construct census
 

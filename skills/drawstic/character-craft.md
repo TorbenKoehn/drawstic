@@ -169,7 +169,8 @@ mirrored copy of one draw — `flipx`/`flipy` only swap left/right *within* one 
   (`w - 1 - x`, the same axis `flipx` mirrors about), and the `aim` target mirrors with it
   (`12:16` → `51:16` on a 64-wide
   canvas). Copying the front pin verbatim is the classic back-view bug: the prop stays on the viewer's
-  left, so the character silently swaps hands between views. This also collapses `critique`'s `C009` sibling-silhouette check by
+  left, so the character silently swaps hands between views — `check --lint` catches a repeated
+  off-centre pin here as `W017`. This also collapses `critique`'s `C009` sibling-silhouette check by
   construction for a subject's own views — it never fires between `…Front`/`…Side`/`…Back` of one name
   stem.
 - **A dominating prop is an explicit layer, not auto-order.** A slung sword or a back cape doesn't ride
