@@ -703,6 +703,116 @@ describe('C009 sibling-silhouette collapse (critiqueFamily)', () => {
   })
 })
 
+describe('C009-Plate-Blindheit fix (plate detection + figure subtraction)', () => {
+  // A minimal but real icon-craft plate/tile + glyph family (theme, palette, shared `tile(c)`
+  // stamped per icon) — mirrors examples/icons/system.drw's actual construction so the fix is
+  // proven against the real language surface, not just synthetic pixel fixtures.
+  const plateFamily = (glyphB: string, glyphR: string): string => `
+theme t:
+  palette:
+    k = #20242c
+    l = #f7faff
+    b = #3b82f0
+    r = #ef5d52
+  size 32x32
+  mode pixel
+
+use t
+
+draw tile(c):
+  rrect linear(90, c.mix(l, 20%), c.darken(14%)) 2:2 29:29 6 fill
+  line c.mix(l, 52%) 9:2 22:2
+
+draw iconA:
+  stamp tile(b) 0:0
+  ${glyphB}
+
+draw iconC:
+  stamp tile(r) 0:0
+  ${glyphR}
+`
+
+  const gearGlyph = 'fill l circle(16:16, 7).subtract(circle(16:16, 3))'
+  const folderGlyph = 'poly l 5:10 5:8 12:8 14:10 26:10 26:23 5:23 fill'
+
+  test('two different glyphs on differently-accented plates no longer collapse (the plate defect)', () => {
+    const fam = critiqueFamily([
+      { name: 'iconA', sprite: render(plateFamily(gearGlyph, folderGlyph), 'iconA') },
+      { name: 'iconC', sprite: render(plateFamily(gearGlyph, folderGlyph), 'iconC') },
+    ])
+    expect(fam?.checks.some((c) => c.code === CRITIQUE_CODE.siblingCollapse)).toBe(false)
+    // pre-fix this measured 0 for every plate pair in the bundled corpus (the plate itself was
+    // the entire signature) — assert it now reads as a real, non-trivial silhouette distance.
+    expect(fam?.metrics.distanceMatrix[0]?.[1]).toBeGreaterThan(0.12)
+  })
+
+  test('a genuinely duplicated glyph on a different-accent plate still collapses (C009 still bites)', () => {
+    // Same folder glyph stamped on both a blue and a red plate — a realistic copy-paste bug.
+    const fam = critiqueFamily([
+      { name: 'iconA', sprite: render(plateFamily(folderGlyph, folderGlyph), 'iconA') },
+      { name: 'iconC', sprite: render(plateFamily(folderGlyph, folderGlyph), 'iconC') },
+    ])
+    const c9 = fam?.checks.filter((c) => c.code === CRITIQUE_CODE.siblingCollapse) ?? []
+    expect(c9.map((c) => c.target).sort()).toEqual(['iconA', 'iconC'])
+    expect(fam?.metrics.distanceMatrix[0]?.[1]).toBe(0)
+  })
+
+  test('a plate-only tile with no glyph at all falls back to the full mask (degenerate-figure floor)', () => {
+    // No stamped glyph on either tile: subtracting the plate would leave ~0px, so
+    // detectPlateFigure must decline (PLATE_MIN_FIGURE_FLOOR) rather than sign an empty figure.
+    const bareA = render(plateFamily('', ''), 'iconA')
+    const bareC = render(plateFamily('', ''), 'iconC')
+    const fam = critiqueFamily([
+      { name: 'iconA', sprite: bareA },
+      { name: 'iconC', sprite: bareC },
+    ])
+    // Falls back to the untouched covered-mask signature — the *exact* pre-fix value.
+    const direct = signatureDistance(sigOf(bareA), sigOf(bareC))
+    expect(fam?.metrics.distanceMatrix[0]?.[1]).toBe(direct)
+  })
+
+  test('a non-plate silhouette (touches only two canvas edges, never all four) signs its full covered mask unchanged', () => {
+    // Mimics a character: a high-contrast dark outline ring around a lighter fill, touching only
+    // the top+bottom edges (hair/feet) with a clear left/right margin — never all four edges, so
+    // detectPlateFigure must decline for both and critiqueFamily falls back to the pre-fix
+    // silhouetteSignature(covered mask) exactly.
+    const outlineBlob =
+      (topOffset: number) =>
+      (name: string): Sprite =>
+        synthSprite(name, 20, 30, (x, y) => {
+          const cx = 10
+          const cy = 15 + topOffset
+          const dx = (x - cx) / 6
+          const dy = (y - cy) / 12
+          const r2 = dx * dx + dy * dy
+          if (r2 > 1) {
+            return null
+          }
+          return r2 > 0.75 ? DARK : LIGHT
+        })
+    const a = outlineBlob(0)('a')
+    const b = outlineBlob(3)('b')
+    const fam = critiqueFamily([
+      { name: 'a', sprite: a },
+      { name: 'b', sprite: b },
+    ])
+    const direct = signatureDistance(sigOf(a), sigOf(b))
+    expect(fam?.metrics.distanceMatrix[0]?.[1]).toBe(direct)
+  })
+
+  test('a genuine full-canvas plate-like block (all 4 edges, solid colour) still falls back — no glyph to keep', () => {
+    const solidPlate = synthSprite('solid', 24, 24, () => LIGHT)
+    const tri = synthSprite('tri', 24, 24, triangle(24, 24))
+    const fam = critiqueFamily([
+      { name: 'solid', sprite: solidPlate },
+      { name: 'tri', sprite: tri },
+    ])
+    // Unaffected: same numeric result as computing the raw covered-mask signatures directly.
+    const direct = signatureDistance(sigOf(solidPlate), sigOf(tri))
+    expect(fam?.metrics.distanceMatrix[0]?.[1]).toBe(direct)
+  })
+})
+
 describe('C011 family weight parity', () => {
   test('a member far lighter than the family median fires C011 with the ratio', () => {
     const big1 = synthSprite('big1', 16, 16, () => LIGHT) // 256

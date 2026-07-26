@@ -58,6 +58,15 @@ pass/fail:
 - **C009** sibling-silhouette collapse — alpha box-resampled onto a fixed 32×32 grid (scale-
   and position-invariant), normalized L1 distance between siblings; a pair under ~0.12 is
   flagged (catches e.g. a shortbow/longbow pair reading as the same shape at a glance).
+  > **Update (release 1.0 hardening):** the signature used to sign a sprite's *full* covered
+  > mask, so an icon built on `icon-craft.md`'s mandatory opaque plate/tile signed as the plate
+  > itself — every glyph on it collapsed to one signature (C009-Plate-Blindheit, formerly a
+  > documented known limitation below). Fixed: `detectPlateFigure` in `src/critique.ts` detects
+  > a plate from pixel evidence (never a `--as` profile assumption) via a tolerant OkLab flood
+  > fill seeded from the canvas-edge margin, gated on touching all four edges *and* covering
+  > ≥50 % of the covered mass, and signs the subtracted *figure* instead when one is found. A
+  > non-plate sprite (a framed character/item/icon glyph, an outlined silhouette) is detected as
+  > such and signs its full covered mask exactly as before.
 - **C011** family weight parity · **C012** the rendered form of `W009` — an *asymmetric* bottom
   gap (trailing transparent rows exceeding the top margin beyond the centering tolerance), measured
   from pixels rather than the static `pixels:` grid; symmetric breathing room is never flagged.
@@ -120,12 +129,6 @@ Closed as deliberate, calibrated advisory scope — not defects — per
 `docs/impl-progress.md`'s "1c-followup" notes; revisit only if a future corpus proves the
 false-positive risk of tightening them is gone:
 
-- **C009 plate-blindness.** The sibling-silhouette signature is built from the sprite's
-  *full* covered mask, so an icon with an opaque plate/background tile signs as the plate,
-  not the glyph on it — distinct glyphs on the same plate can read as "collapsed". C009 is
-  `warning`-only (never `--strict`-promoted), so this cannot become a false CI blocker; a
-  future fix would subtract the dominant background colour before signing, or skip C009 for
-  the `icon` profile. See the comment at `COLLAPSE_DISTANCE` in `src/critique.ts`.
 - **C011 gates weight only, not margin.** The originally-planned "margin parity" (uniform
   breathing room across siblings) is not a separate gated check — only covered-mass parity
   is. Each member's `bbox` is already in the `familyMetrics` payload, so margin consistency

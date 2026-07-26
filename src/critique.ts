@@ -29,8 +29,9 @@
 // (src/preview.ts) and `relativeLuminance` (src/color.ts): no metric is computed
 // twice.
 
-import { relativeLuminance } from './color.js'
+import { color, colorToOklch, relativeLuminance } from './color.js'
 import type { Diagnostic, Severity, TextSpan } from './diagnostic.js'
+import { dcosDeg, dsinDeg } from './dmath.js'
 import { inspectSprite } from './inspect.js'
 import { spritePreviewStats } from './preview.js'
 import type { OcclusionResult, Sprite } from './values.js'
@@ -1197,15 +1198,15 @@ const viewSubjectStem = (name: string): string => {
 }
 
 /**
- * **Known limitation (docs/impl-progress.md "1c-followup C009-Plate-Blindheit"), advisory
- * by design, not fixed here.** {@link silhouetteSignature} is built from the sprite's *full*
- * covered mask — for an icon with an opaque plate/background tile, the covered mask (and
- * therefore the signature) IS the plate silhouette, so every glyph on that plate collapses
- * to the same signature regardless of the glyph inside it (`chat` vs `phone` both read as
- * "plate"). C009 stays `warning`-only (never `--strict`-promoted), so this is unreachable as
- * a false blocker today; if C009 is ever tightened, subtract the dominant edge/background
- * colour (the plate) from the covered mask before signing, or skip C009 for the `icon`
- * profile outright.
+ * **C009-Plate-Blindheit, fixed** (was: docs/impl-progress.md "1c-followup C009-Plate-Blindheit").
+ * {@link silhouetteSignature} signs a sprite's *full* covered mask — for an icon built on an
+ * opaque plate/background tile (`icon-craft.md`'s mandatory build order), the covered mask
+ * *is* the plate, so every glyph stamped onto it used to collapse to one signature regardless
+ * of the glyph inside (`chat` vs `phone` both read as "plate", silhouette distance 0). {@link
+ * detectPlateFigure} (below `signatureDistance`) detects the plate from pixel evidence alone —
+ * never assumed from a `--as` profile — and, when found, signs only the *figure* subtracted
+ * from it instead. A non-plate sprite (a character/item silhouette on transparent canvas) is
+ * detected as such and signs its full covered mask exactly as before this fix.
  */
 
 /**
@@ -1435,6 +1436,220 @@ export const signatureDistance = (
   return mass > 0 ? round4(diff / mass) : 1
 }
 
+// ── plate detection (C009-Plate-Blindheit fix) ────────────────────────────────
+
+/** OkLab Cartesian coordinates, derived from {@link colorToOklch}'s polar `(l, c, h)`. */
+type Lab = { readonly l: number; readonly a: number; readonly b: number }
+
+/**
+ * sRGB8 → OkLab, via {@link colorToOklch} and the project's own deterministic trig
+ * ({@link dcosDeg}/{@link dsinDeg}, ADR-0026/ADR-0027) — never raw `Math.cos`/`Math.sin` — so the
+ * plate/glyph distance test below reproduces bit-for-bit across platforms.
+ */
+const toLab = (r: number, g: number, b: number, a: number): Lab => {
+  const ok = colorToOklch(color(r, g, b, a))
+  return { l: ok.l, a: ok.c * dcosDeg(ok.h), b: ok.c * dsinDeg(ok.h) }
+}
+
+/** Euclidean OkLab distance — the same "perceptually nearest" metric {@link nearestColor} (color.ts) uses. */
+const labDistance = (x: Lab, y: Lab): number => {
+  const dl = x.l - y.l
+  const da = x.a - y.a
+  const db = x.b - y.b
+  return Math.sqrt(dl * dl + da * da + db * db)
+}
+
+/**
+ * OkLab step tolerance for the plate flood fill below. Calibrated against the bundled icon
+ * corpus (`examples/icons/*.drw`): every measured *intra-plate* adjacent-pixel step (vertical-
+ * gradient tiles, rim highlight/shadow bevels, `model`-shaded plates) stays ≤0.03, while every
+ * measured plate-to-glyph step at a genuine silhouette boundary starts ≥0.11 (the corpus's
+ * closest case, `productivity.drw#clock`'s modelled hour ticks). 0.06 sits at the midpoint, a
+ * ~2× margin on both sides.
+ */
+const PLATE_STEP_TOLERANCE = 0.06
+
+/**
+ * Width of the canvas-edge band a plate's own margin must fall inside (a fraction of
+ * `max(w,h)`, floored at {@link PLATE_EDGE_BAND_MIN}px). `icon-craft.md`'s documented margins
+ * (1–2px @16/32px, 4px @64px) are exactly 6.25 % of the edge at every size; this band is ~1.6×
+ * that, with slack for anti-aliasing.
+ */
+const PLATE_EDGE_BAND_FRACTION = 0.1
+const PLATE_EDGE_BAND_MIN = 2
+
+/**
+ * Minimum share of the covered mask a flood-filled edge region must reach before it counts as a
+ * plate. Measured on the bundled corpus: every genuine plate (icon families that stamp a shared
+ * tile) reaches ≥51 %; every non-plate icon/character/item silhouette (an outline stroke, a
+ * `model`-shaded prop with no background tile) tops out at ≤40 % of what a same-tolerance flood
+ * fill reaches from the canvas edge. 0.5 sits in the gap between them.
+ */
+const PLATE_AREA_DOMINANCE_MIN = 0.5
+
+/** Below this many kept (non-plate) px, treat the subtraction as degenerate — a flat plate-only sprite with no distinguishable glyph — and fall back to the untouched covered mask. */
+const PLATE_MIN_FIGURE_FLOOR = 4
+
+/** Tight inclusive bbox of an arbitrary 0/1 mask (not necessarily the sprite's own covered mask); `null` when empty. */
+const maskBBox = (mask: Uint8Array, w: number, h: number): CoverageBBox => {
+  let x0 = w
+  let y0 = h
+  let x1 = -1
+  let y1 = -1
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (mask[y * w + x] === 1) {
+        x0 = Math.min(x0, x)
+        x1 = Math.max(x1, x)
+        y0 = Math.min(y0, y)
+        y1 = Math.max(y1, y)
+      }
+    }
+  }
+  return x1 < 0 ? null : { x: x0, y: y0, width: x1 - x0 + 1, height: y1 - y0 + 1 }
+}
+
+/**
+ * Detects a "plate" (an opaque background tile filling the canvas to its margin, per
+ * `icon-craft.md`'s mandatory tile/plate build order) from pixel evidence alone — never assumed
+ * from a `--as` profile — and returns the covered-mask subset that is genuinely the *figure* (the
+ * glyph stamped onto the plate), for {@link silhouetteSignature} to sign instead of the raw
+ * covered mask (the C009-Plate-Blindheit fix, see the doc comment above `viewSubjectStem`).
+ *
+ * Seeds a tolerant flood fill from every covered pixel within the {@link PLATE_EDGE_BAND_FRACTION}
+ * canvas-edge band — the plate's own thin margin — growing through covered neighbours whose OkLab
+ * distance from the just-accepted pixel is within {@link PLATE_STEP_TOLERANCE}. This is a *chained*
+ * per-step tolerance (graph reachability over a fixed, symmetric edge predicate — deterministic
+ * and order-independent, like {@link labelComponents}'s flood fill), not a single fixed reference
+ * colour: it follows a shaded/gradient plate's own smooth colour drift all the way across the tile
+ * while stopping cold at a genuinely different-coloured glyph, so an anti-aliased plate edge or a
+ * shaded plate still counts as plate without ever bleeding into the silhouette it carries.
+ *
+ * A flood region counts as a plate only when **both** hold: (a) the seed band touches *all four*
+ * canvas edges — a rectangular tile reaches every margin, where a framed character/item/icon
+ * glyph (`icon-craft.md` §4 optical centering) reaches at most two — and (b) the grown region
+ * covers ≥{@link PLATE_AREA_DOMINANCE_MIN} of the covered mass, so a thin border-only stroke (an
+ * outlined character/item silhouette, which floods just its own outline) never qualifies. Both
+ * conditions are load-bearing: several non-plate icons touch 2–3 edges without ever reaching
+ * dominance, and a solid single-hue prop can flood to 100 % without ever touching all four edges.
+ *
+ * Returns `null` when no plate is detected (the common case) or when subtracting the detected
+ * plate would leave fewer than {@link PLATE_MIN_FIGURE_FLOOR}px (a flat plate-only sprite with no
+ * distinguishable glyph) — the caller falls back to the full covered mask, exactly as before this
+ * fix.
+ */
+const detectPlateFigure = (
+  sprite: Sprite,
+  covered: Uint8Array,
+): { readonly mask: Uint8Array; readonly bbox: CoverageBBox } | null => {
+  const w = sprite.w
+  const h = sprite.h
+  let coveredCount = 0
+  for (let p = 0; p < covered.length; p++) {
+    coveredCount += covered[p] ?? 0
+  }
+  if (coveredCount === 0) {
+    return null
+  }
+  const lab: (Lab | undefined)[] = new Array(covered.length)
+  for (let p = 0; p < covered.length; p++) {
+    if (covered[p] === 1) {
+      const i = p * 4
+      lab[p] = toLab(
+        sprite.data[i] ?? 0,
+        sprite.data[i + 1] ?? 0,
+        sprite.data[i + 2] ?? 0,
+        sprite.data[i + 3] ?? 0,
+      )
+    }
+  }
+  const size = Math.max(w, h)
+  const edgeBand = Math.max(PLATE_EDGE_BAND_MIN, Math.round(size * PLATE_EDGE_BAND_FRACTION))
+  const plate = new Uint8Array(covered.length)
+  const stack: number[] = []
+  const seedIfCovered = (x: number, y: number): boolean => {
+    const p = y * w + x
+    if (covered[p] === 0) {
+      return false
+    }
+    if (plate[p] === 0) {
+      plate[p] = 1
+      stack.push(p)
+    }
+    return true
+  }
+  let top = false
+  let bottom = false
+  let left = false
+  let right = false
+  for (let y = 0; y < Math.min(edgeBand, h); y++) {
+    for (let x = 0; x < w; x++) {
+      top = seedIfCovered(x, y) || top
+    }
+  }
+  for (let y = Math.max(0, h - edgeBand); y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      bottom = seedIfCovered(x, y) || bottom
+    }
+  }
+  for (let x = 0; x < Math.min(edgeBand, w); x++) {
+    for (let y = 0; y < h; y++) {
+      left = seedIfCovered(x, y) || left
+    }
+  }
+  for (let x = Math.max(0, w - edgeBand); x < w; x++) {
+    for (let y = 0; y < h; y++) {
+      right = seedIfCovered(x, y) || right
+    }
+  }
+  if (!(top && bottom && left && right)) {
+    return null
+  }
+  while (stack.length > 0) {
+    const p = stack.pop() as number
+    const x = p % w
+    const y = (p - x) / w
+    const pLab = lab[p] as Lab
+    const tryNeighbor = (nx: number, ny: number): void => {
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) {
+        return
+      }
+      const q = ny * w + nx
+      if (covered[q] === 0 || plate[q] === 1) {
+        return
+      }
+      if (labDistance(pLab, lab[q] as Lab) <= PLATE_STEP_TOLERANCE) {
+        plate[q] = 1
+        stack.push(q)
+      }
+    }
+    tryNeighbor(x - 1, y)
+    tryNeighbor(x + 1, y)
+    tryNeighbor(x, y - 1)
+    tryNeighbor(x, y + 1)
+  }
+  let plateCount = 0
+  for (let p = 0; p < plate.length; p++) {
+    plateCount += plate[p] ?? 0
+  }
+  if (plateCount / coveredCount < PLATE_AREA_DOMINANCE_MIN) {
+    return null
+  }
+  const figure = new Uint8Array(covered.length)
+  let figureCount = 0
+  for (let p = 0; p < covered.length; p++) {
+    if (covered[p] === 1 && plate[p] === 0) {
+      figure[p] = 1
+      figureCount++
+    }
+  }
+  if (figureCount < PLATE_MIN_FIGURE_FLOOR) {
+    return null
+  }
+  const bbox = maskBBox(figure, w, h)
+  return bbox ? { mask: figure, bbox } : null
+}
+
 /** One sibling's family facts: covered mass, content bbox, and nearest-silhouette neighbour. */
 export type FamilyMember = {
   readonly name: string
@@ -1553,7 +1768,9 @@ const viewLandmarkChecks = (
  * covered mass deviates from the family median by more than
  * {@link PARITY_FACTOR}×). Returns `null` for fewer than two members (nothing to
  * compare). `strict` promotes C009 (a must-fix code) to `error`; C011 stays an
- * advisory `warning`.
+ * advisory `warning`. Each member's signature is signed off {@link detectPlateFigure}'s
+ * figure mask when a plate is detected on that sprite, else off its full covered mask
+ * (C009-Plate-Blindheit fix) — a non-plate character/item sprite is unaffected.
  */
 export const critiqueFamily = (
   members: readonly { readonly name: string; readonly sprite: Sprite }[],
@@ -1565,11 +1782,15 @@ export const critiqueFamily = (
   const facts = members.map((m) => {
     const { covered, luminances } = scanCoverage(m.sprite)
     const metrics = computeCritiqueMetrics(m.sprite, luminances)
+    const plateFigure = detectPlateFigure(m.sprite, covered)
+    const signature = plateFigure
+      ? silhouetteSignature(plateFigure.mask, m.sprite.w, plateFigure.bbox)
+      : silhouetteSignature(covered, m.sprite.w, metrics.bbox)
     return {
       name: m.name,
       coveredPixelCount: metrics.coveredPixelCount,
       bbox: metrics.bbox,
-      signature: silhouetteSignature(covered, m.sprite.w, metrics.bbox),
+      signature,
       landmarks: viewLandmarks(covered, m.sprite.w, m.sprite.h),
       height: metrics.bbox ? metrics.bbox.height : 0,
     }

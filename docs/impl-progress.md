@@ -776,12 +776,24 @@ _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen an
   hält). C005 bleibt ≥48px-wirksam + advisory; 32px-Hairline-Dominanz fängt stattdessen die Vision-
   Rubrik (Silhouette-first-Render). Kein Regressionsrisiko am Gate, da C005 nicht must-fix.
 
-- [x] **1c-followup C009-Plate-Blindheit** → **gelöst = bewusst advisory**: Verhalten/Thresholds
-  bewusst NICHT geändert (Risiko von False Positives; C009 advisory war die kalibrierte 1c-Entscheidung).
-  Als dokumentierte bekannte Limitation geschlossen: Kommentar an `COLLAPSE_DISTANCE` in
-  `src/critique.ts` (C009 signiert die *volle* Covered-Maske → bei opakem Plate = Plate-Silhouette,
-  alle Glyphen kollabieren) + „Known limitations"-Abschnitt in `docs/decisions/0085-critique-command.md`.
-  C009 bleibt `warning`-only (nie `--strict`-promoted) → in der Praxis kein False-Positive-Blocker.
+- [x] **1c-followup C009-Plate-Blindheit** → **tatsächlich behoben (Release-1.0-Härtung)**: die
+  ursprüngliche 1c-Entscheidung (advisory belassen, nicht fixen) galt nur, solange C009 nie
+  `--strict`-promoted war — wurde aber zur benannten Ausnahme im Product-Skill-Done-Gate, was der
+  Skill-Audit als Finding #3 (geschriebene Gate-Ausnahme) markierte. Jetzt korrekt gelöst statt nur
+  dokumentiert: `detectPlateFigure` in `src/critique.ts` erkennt ein Plate/Tile rein aus
+  Pixel-Evidenz (nie aus einem `--as`-Profil angenommen) — toleranter OkLab-Flood-Fill ab dem
+  Canvas-Rand-Band, gegated auf „berührt alle vier Ränder" **und** „Flood-Region ≥50% der Covered-
+  Masse" — und signiert bei Treffer die subtrahierte *Figur* statt der vollen Maske. Ein
+  Nicht-Plate-Sprite (gerahmtes Icon/Item/Character-Glyph, umrandete Silhouette) wird als solches
+  erkannt und signiert unverändert wie zuvor (test-bewiesener Fallback,
+  `tests/unit/critique.test.ts`). Vorher/Nachher auf dem kompletten `examples/icons/*.drw`-Korpus:
+  9 falsche Kollaps-Findings pro Plate-Familie (alles kollabiert auf Distanz 0) → 0–5 echte
+  Findings (verbliebene Treffer sind Multi-Size-Redraws derselben Figur oder echte geteilte
+  Scaffolds, z.B. `notes`/`calculator` teilen eine Rounded-Card-Silhouette). Konstruierter
+  Positiv-Fall (echtes Duplikat-Glyph auf verschiedenfarbigem Plate, Kopie außerhalb des Repos)
+  feuert weiterhin bei Distanz 0. `examples/characters-ro2/`, `items-v2/`, `scenes-v3/`:
+  byte-identische C009-Ausgabe vor/nach dem Fix. Siehe „Update"-Hinweis in
+  `docs/decisions/0085-critique-command.md`.
 - [x] **1c-followup C011-Margin** → **gelöst = bewusst advisory**: Verhalten/Thresholds bewusst NICHT
   geändert (gleiche Begründung wie C009). Als dokumentierte bekannte Limitation geschlossen: Kommentar
   an `PARITY_FACTOR` in `src/critique.ts` (C011 gated nur Gewicht via Covered-Count-Ratio; Margin ist
