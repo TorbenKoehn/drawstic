@@ -834,3 +834,17 @@ _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen an
   `anchor …`, aber für `fit` IST der Pin der Anker — `flags.anchor` wird beim Origin-Solve nicht
   gelesen. Kein Fehler, nur wirkungslos; nicht dokumentiert (kein sinnvoller `fit`-Use). Bei Bedarf
   später als E-Fehler ablehnen.
+
+---
+
+## Welle 3 — Release-Härtung (ab 2026-07-26)
+
+Der Tracker für diese Welle ist **[docs/release-1.0/README.md](release-1.0/README.md)** (Audits,
+Entscheidungen D1–D7, Phasen W3-0…W3-5). Dieses Dokument bleibt das Protokoll der Wellen 1 und 2;
+neue Punkte werden dort geführt, nicht hier.
+
+Aus den offenen Punkten oben werden in Welle 3 erledigt:
+- `fit … anchor` wird zum Fehler statt still ignoriert ([ADR-0096](decisions/0096-language-freeze-for-1-0.md) §1).
+- Builtin-Reservierung wird vereinheitlicht (ADR-0096 §5) — inklusive der `ramp`-Bindings in den
+  Beispielen, wie hier vorgemerkt.
+- `pin HEAD.KEY` + Stamp-Transform: bleibt offen, jetzt als benannter Punkt W3-2e im Release-Tracker.
