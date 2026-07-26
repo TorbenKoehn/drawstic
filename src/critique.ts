@@ -49,6 +49,7 @@ export const CRITIQUE_CODE = {
   familyParity: 'C011',
   trailingEdgeRow: 'C012',
   occlusionParity: 'C013',
+  viewLandmarkParity: 'C014',
 } as const
 
 /**
@@ -1216,6 +1217,17 @@ const viewSubjectStem = (name: string): string => {
 const PARITY_FACTOR = 6
 
 /**
+ * C014 landmark tolerance: a view's horizontal landmark may sit this far from the family median
+ * before it reads as a misplaced part. `max(2, 3 % of the figure's height)` — measured against the
+ * bundled RO chibis (skeleton/pose-built, so their views agree by construction): their worst
+ * landmark spread is 4 px at 124 px tall, which the 3 % band (≈4 px) keeps silent, while the
+ * defect class this exists for — a head/hat/prop that drifted between views, the wizard's 4–5 px
+ * floating chin from the 2026-07-10 human review — clears it.
+ */
+const LANDMARK_TOLERANCE_FRACTION = 0.03
+const LANDMARK_TOLERANCE_MIN = 2
+
+/**
  * **Known limitation (docs/impl-progress.md "1c-followup C011-Margin"), advisory by design,
  * not fixed here.** C011 gates only *weight* (covered-pixel-count ratio vs. the family
  * median, below) — it does not separately gate *margin* parity (uniform breathing room
@@ -1287,6 +1299,79 @@ const resampleCoverage = (
     out[i] = ws > 0 ? (acc[i] ?? 0) / ws : 0
   }
   return out
+}
+
+/**
+ * The horizontal landmarks of a figure, read off its row-coverage profile (C014). All four are
+ * **row indices**, never widths: a side view is legitimately narrower than a front view, but the
+ * same figure's head, neck, shoulders and feet must sit at the same *heights* in every view.
+ */
+export type ViewLandmarks = {
+  /** First covered row — the top of the head (or hat/helmet). */
+  readonly top: number
+  /** Last covered row — the ground contact. */
+  readonly bottom: number
+  /** Narrowest row in the upper 15–50 % band: the neck, below the head mass and above the shoulders. */
+  readonly neck: number
+  /** Steepest widening below the neck: the shoulder line. */
+  readonly shoulder: number
+}
+
+/** Covered-pixel count per row — the profile every {@link viewLandmarks} reads from. */
+const rowCoverage = (covered: Uint8Array, w: number, h: number): number[] => {
+  const rows: number[] = new Array<number>(h).fill(0)
+  for (let y = 0; y < h; y++) {
+    let n = 0
+    const base = y * w
+    for (let x = 0; x < w; x++) {
+      n += covered[base + x] ?? 0
+    }
+    rows[y] = n
+  }
+  return rows
+}
+
+/**
+ * Derives a figure's {@link ViewLandmarks} from its coverage profile, or `null` when the sprite is
+ * empty or too short for the bands to mean anything. Pure integer scanning — no thresholds beyond
+ * "covered at all", so it does not care about colour, shading or style.
+ */
+export const viewLandmarks = (covered: Uint8Array, w: number, h: number): ViewLandmarks | null => {
+  const rows = rowCoverage(covered, w, h)
+  const top = rows.findIndex((n) => n > 0)
+  if (top < 0) {
+    return null
+  }
+  let bottom = h - 1
+  while (bottom > top && (rows[bottom] ?? 0) === 0) {
+    bottom--
+  }
+  const height = bottom - top
+  if (height < 8) {
+    return null // too short for a head/neck/shoulder band to be distinguishable
+  }
+  const lo = top + Math.round(height * 0.15)
+  const hi = top + Math.round(height * 0.5)
+  let neck = lo
+  let neckWidth = Number.POSITIVE_INFINITY
+  for (let y = lo; y <= hi; y++) {
+    const n = rows[y] ?? 0
+    if (n > 0 && n < neckWidth) {
+      neckWidth = n
+      neck = y
+    }
+  }
+  let shoulder = neck
+  let widest = 0
+  const shoulderLimit = Math.min(bottom, neck + Math.round(height * 0.3))
+  for (let y = neck; y < shoulderLimit; y++) {
+    const delta = (rows[y + 1] ?? 0) - (rows[y] ?? 0)
+    if (delta > widest) {
+      widest = delta
+      shoulder = y + 1
+    }
+  }
+  return { top, bottom, neck, shoulder }
 }
 
 /** A scale-/position-invariant silhouette signature: 1024 fractional-coverage cells in [0,1]. */
@@ -1388,6 +1473,78 @@ const medianOf = (values: readonly number[]): number => {
   return ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2
 }
 
+/** The landmark rows C014 compares, with the wording each uses in its finding. */
+const LANDMARK_LABELS: readonly { readonly key: keyof ViewLandmarks; readonly label: string }[] = [
+  { key: 'top', label: 'head top' },
+  { key: 'neck', label: 'neck' },
+  { key: 'shoulder', label: 'shoulder line' },
+  { key: 'bottom', label: 'ground contact' },
+]
+
+/**
+ * **C014 — view landmark parity.** The same figure drawn front/side/back must place its head, neck,
+ * shoulders and feet at the same *rows*; only its widths may change. A view whose landmark sits more
+ * than {@link LANDMARK_TOLERANCE_FRACTION} of the figure height off the family median has a part
+ * placed at the wrong height — the defect class human review kept finding and every pixel check kept
+ * missing ("head floats above the neck", "hat sits too high", "shoulders pass through the cape").
+ *
+ * Compares only members that share a view-suffix-stripped stem (`knightFront`/`knightSide`/
+ * `knightBack`), so two *different* characters in one family are never compared, and needs ≥2 views
+ * of that stem. Advisory (`warning`) — a deliberate crouch or a hat worn only in one view is a
+ * legitimate reason to differ, so this reports and explains rather than blocks.
+ */
+const viewLandmarkChecks = (
+  facts: readonly {
+    readonly name: string
+    readonly landmarks: ViewLandmarks | null
+    readonly height: number
+  }[],
+): FamilyCheck[] => {
+  const groups = new Map<string, typeof facts>()
+  for (const f of facts) {
+    if (!f.landmarks) {
+      continue
+    }
+    const stem = viewSubjectStem(f.name)
+    if (stem === f.name) {
+      continue // not a named view — nothing to compare it against
+    }
+    groups.set(stem, [...(groups.get(stem) ?? []), f])
+  }
+  const checks: FamilyCheck[] = []
+  for (const [stem, views] of groups) {
+    if (views.length < 2) {
+      continue
+    }
+    const height = medianOf(views.map((v) => v.height))
+    const tolerance = Math.max(
+      LANDMARK_TOLERANCE_MIN,
+      Math.round(height * LANDMARK_TOLERANCE_FRACTION),
+    )
+    for (const { key, label } of LANDMARK_LABELS) {
+      const median = medianOf(views.map((v) => v.landmarks?.[key] ?? 0))
+      for (const v of views) {
+        const row = v.landmarks?.[key] ?? 0
+        const offset = row - median
+        if (Math.abs(offset) <= tolerance) {
+          continue
+        }
+        checks.push({
+          target: v.name,
+          code: CRITIQUE_CODE.viewLandmarkParity,
+          severity: 'warning',
+          message: `view landmark parity: '${v.name}' puts its ${label} at row ${row}, ${Math.abs(offset)}px ${offset < 0 ? 'above' : 'below'} the '${stem}' views' median ${median} (tolerance ${tolerance})`,
+          measured: Math.abs(offset),
+          threshold: tolerance,
+          fix: `move the part that sets '${v.name}'s ${label} by ${offset < 0 ? '+' : '-'}${Math.abs(offset)}px on y — or, better, build all views from one skeleton and a pose per view so the heights cannot drift`,
+          detail: { row, median, tolerance },
+        })
+      }
+    }
+  }
+  return checks
+}
+
 /**
  * Compares a group of sibling drawings (≥2) and returns the family findings:
  * C009 (sibling-silhouette collapse — a member whose nearest neighbour's
@@ -1413,6 +1570,8 @@ export const critiqueFamily = (
       coveredPixelCount: metrics.coveredPixelCount,
       bbox: metrics.bbox,
       signature: silhouetteSignature(covered, m.sprite.w, metrics.bbox),
+      landmarks: viewLandmarks(covered, m.sprite.w, m.sprite.h),
+      height: metrics.bbox ? metrics.bbox.height : 0,
     }
   })
   const n = facts.length
@@ -1488,6 +1647,9 @@ export const critiqueFamily = (
         })
       }
     }
+  }
+  if (sameCharacterViews) {
+    checks.push(...viewLandmarkChecks(facts))
   }
   const finalChecks =
     (options.strict ?? false)
