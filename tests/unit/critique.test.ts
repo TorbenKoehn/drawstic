@@ -126,6 +126,27 @@ describe('C004 value / contrast spread', () => {
     expect(byCode(d.checks, CRITIQUE_CODE.valueSpread)).toBeUndefined()
     expect((d.luminance?.spread ?? 0) >= 0.15).toBe(true)
   })
+
+  test('the fix names the canonical `spread` dose with a concrete multiplier', () => {
+    const d = critique('draw flat 8x8:\n  bg #808080\n', 'flat')
+    const c = byCode(d.checks, CRITIQUE_CODE.valueSpread)
+    expect(c?.severity).toBe('warning')
+    expect(c?.fix).toContain('spread')
+    expect(c?.fix).toMatch(/spread \d+%/)
+    // never point the agent back at the hand-shading floor the canonical lints forbid
+    expect(c?.fix).not.toContain('shadeRegion')
+    expect(c?.fix).not.toContain('lightRegion')
+  })
+
+  test('a near-black subject demotes C004 to a non-blocking advisory', () => {
+    // linear luminance compresses toward black, so the fixed p90−p10 threshold is unreachable
+    // there at any sane dose — the number is still reported, it just stops gating `pass`.
+    const d = critique('draw dark 8x8:\n  bg #080808\n', 'dark')
+    const c = byCode(d.checks, CRITIQUE_CODE.valueSpread)
+    expect(c?.code).toBe('C004')
+    expect(c?.severity).toBe('info')
+    expect(c?.message).toContain('advisory')
+  })
 })
 
 describe('C008 interior pinholes', () => {

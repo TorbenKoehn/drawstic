@@ -79,6 +79,13 @@ const MIN_VALUE_SPREAD = 0.15
 /** Skip C004 below this many covered pixels — too small for a meaningful histogram. */
 const MIN_SPREAD_SAMPLE = 8
 
+/**
+ * Median linear luminance below which C004 is demoted to a non-blocking advisory: linear luminance
+ * compresses hard toward black, so a legitimately dark subject cannot reach {@link MIN_VALUE_SPREAD}
+ * at any sane dose. See {@link checkValueSpread}.
+ */
+const DARK_SUBJECT_L50 = 0.06
+
 /** Canvas size (`max(w,h)`) below which C005 is skipped — hairline strokes read fine on tiny sprites. */
 const STROKE_MIN_SIZE = 32
 
@@ -543,7 +550,15 @@ const checkCentering = (metrics: CritiqueMetrics): CritiqueCheck | null => {
   }
 }
 
-/** C004: value/contrast spread — flags a covered region whose luminance p90−p10 reads flat. */
+/**
+ * C004: value/contrast spread — flags a covered region whose luminance p90−p10 reads flat.
+ *
+ * The `fix` names the **canonical** lever (the material's own `spread` dose) and carries a concrete
+ * multiplier, because a bare "raise the contrast" turned this into the most-gamed metric in the
+ * corpus: 13.7 % of all recipe edits in the session history were blind dose nudges chasing this one
+ * number (`45%` → `26%` → `48%` → `30%` → `44%` on a single binding). A number plus the one right
+ * knob is actionable; a number alone invites a random walk.
+ */
 const checkValueSpread = (metrics: CritiqueMetrics): CritiqueCheck | null => {
   if (!metrics.luminance || metrics.coveredPixelCount < MIN_SPREAD_SAMPLE) {
     return null
@@ -552,14 +567,22 @@ const checkValueSpread = (metrics: CritiqueMetrics): CritiqueCheck | null => {
   if (spread >= MIN_VALUE_SPREAD) {
     return null
   }
+  // On a near-black subject the *linear* p90−p10 spread is compressed by the transfer curve itself,
+  // so the fixed threshold is unreachable without wrecking the art (ADR-0091 known limit: the
+  // assassin's dark cloth needed `spread ~800 %`). Keep measuring it, stop blocking `pass` on it.
+  const dark = metrics.luminance.p50 < DARK_SUBJECT_L50
+  const factor = Math.min(6, Math.max(1.5, MIN_VALUE_SPREAD / Math.max(spread, 0.005)))
+  const suggested = Math.round(factor * 20) * 5
   return {
     code: CRITIQUE_CODE.valueSpread,
-    severity: 'warning',
-    message: `flat value: luminance p90−p10 spread is ${spread}, want ≥ ${MIN_VALUE_SPREAD}`,
+    severity: dark ? 'info' : 'warning',
+    message: dark
+      ? `flat value (advisory — near-black subject, linear spread is compressed): luminance p90−p10 spread is ${spread}, want ≥ ${MIN_VALUE_SPREAD}`
+      : `flat value: luminance p90−p10 spread is ${spread}, want ≥ ${MIN_VALUE_SPREAD}`,
     measured: spread,
     threshold: MIN_VALUE_SPREAD,
-    fix: 'add a darker shade + lighter highlight (shadeRegion/lightRegion) to raise value contrast',
-    detail: { p10: metrics.luminance.p10, p90: metrics.luminance.p90 },
+    fix: `raise the material's own value spread — \`material NAME = COLOR RESPONSE spread ${suggested}%\` (≈${round4(factor)}× the current dose) — or switch that mass to \`cel N\` for a flat top band; never patch tones onto the region by hand (W013)`,
+    detail: { p10: metrics.luminance.p10, p50: metrics.luminance.p50, p90: metrics.luminance.p90 },
   }
 }
 
