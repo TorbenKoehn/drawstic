@@ -99,6 +99,8 @@ type CliArguments = {
   readonly strict: boolean
   readonly family: readonly string[] | null
   readonly explain: boolean
+  /** Flags this parser did not recognize — reported as `E026` instead of being ignored. */
+  readonly unknownFlags: readonly string[]
 }
 
 type Writable<T> = { -readonly [P in keyof T]: T[P] }
@@ -141,7 +143,9 @@ const parseArguments = (argv: string[]): CliArguments => {
     strict: false,
     family: null,
     explain: false,
+    unknownFlags: [],
   }
+  const unknown: string[] = []
 
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i] ?? ''
@@ -211,10 +215,15 @@ const parseArguments = (argv: string[]): CliArguments => {
       cli.command = 'help'
     } else if (VERSION_FLAGS.has(a)) {
       cli.command = 'version'
-    } else if (!a.startsWith('--') && cli.target === null) {
+    } else if (a.startsWith('-')) {
+      // An unrecognized flag used to be swallowed in silence, so a typo (`--pgn@4`, `--strickt`)
+      // read as "the flag had no effect" — the CLI's own version of a silent failure.
+      unknown.push(a)
+    } else if (cli.target === null) {
       cli.target = a
     }
   }
+  cli.unknownFlags = unknown
   return cli
 }
 
@@ -1708,6 +1717,20 @@ options (every command):
  */
 export const main = (argv: string[]): number => {
   const cli = parseArguments(argv)
+  if (cli.unknownFlags.length > 0 && cli.command !== 'help' && cli.command !== 'version') {
+    return emit(
+      cli.unknownFlags.map((flag) => ({
+        severity: 'error' as const,
+        code: ERROR_CODE.unknownFlag,
+        message: `unknown flag '${flag}'`,
+        file: cli.target ?? '',
+        line: 1,
+        column: 1,
+        hint: `run 'drawstic help' for the flags '${cli.command}' accepts`,
+      })),
+      cli.json,
+    )
+  }
   switch (cli.command) {
     case 'check':
       return runCheck(cli)

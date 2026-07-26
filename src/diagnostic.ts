@@ -113,4 +113,5 @@ export const ERROR_CODE = {
   diffMismatch: 'E023',
   noLight: 'E024',
   occlusionCycle: 'E025',
+  unknownFlag: 'E026',
 } as const
