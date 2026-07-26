@@ -28,6 +28,12 @@ Status-Legende: `[ ]` offen · `[~]` läuft · `[x]` fertig (verifiziert: `bun t
 - **D3 Ein Beispiel-Korpus pro Kategorie.** Behalten: `characters-ro2`, `scenes-v3`, `items-v2`,
   `icons`, `basic-shapes`, `showcase`, `text`. Löschen: `characters/`, `characters-ro/`, `items/`,
   `scenes/`, `scenes-v2/` (Historie bleibt in git).
+  - **`scenes-v3` ist geschütztes Material.** Es hat außerhalb des Projekts viel positive Resonanz
+    bekommen; **arctic, desert, island, market, reef** werden bei Umbauten pixelgenau erhalten (Ziel:
+    `--diff` = 0), nicht „verbessert". Nur **volcano** und **orbit** dürfen bewusst besser werden.
+    Bei mehreren vertretbaren Migrationswegen gewinnt der, der das Bild reproduziert (Schleier via
+    `fill linear(...)` statt `model`, das mit formfolgenden Tönen neu anstreicht). Diese Szenen sind
+    zugleich das Bildmaterial für die README (D6).
 - **D4 Craft-Signal.** C004 wird beratend + bekommt einen konkreten `spread`-Vorschlag im `fix`-Feld
   (es war die meistgezählte und am leichtesten zu gamende Metrik).
 - **D5 Skill-Neubau** nach der Struktur aus [audit-skill.md](audit-skill.md) §8/§9, inkl.
