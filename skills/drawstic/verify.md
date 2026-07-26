@@ -24,12 +24,12 @@ STAGE 2 — look
 STAGE 3 — structure
   run: drawstic critique FILE --as PROFILE --strict --json
   PROFILE is one of: icon | item | character | scene   (never omit it — thresholds differ)
-  if exit code != 0                 -> fix every code in critique.failedCodes, go to STAGE 1.
+  if exit code != 0                 -> a must-fix code fired. Fix it, go to STAGE 1. Not negotiable.
   for each code left in critique.failedCodes:
-      if it is C009 AND the siblings it names share a silhouette on purpose
-                                    -> keep it, and say which pair and why in your final message.
+      if you can state, in one sentence, why it is correct here
+                                    -> keep it, and say that sentence in your final message.
       else                          -> apply that check's own `fix` field, go to STAGE 1.
-  when failedCodes holds nothing else -> go to STAGE 4.
+  when every remaining code has a stated reason -> go to STAGE 4.
 
 STAGE 4 — craft
   run every command in critique.rubric.renders, in the order given.
@@ -50,9 +50,13 @@ the icon profile) to errors, so a clean exit code can still carry advisory findi
 `critique.pass` goes `false` on *any* fired check — read it, but it is not the gate: a family of
 icons/items sharing one scaffold silhouette on purpose (a plate, a bottle, a shield) fires `C009`
 **by design** and can never reach `pass: true`. Size variants are never compared at all — C009
-only pairs siblings of the same canvas size — so a size ladder never fires it. `C009` is the one
-code you may leave standing, and only with a stated reason. Everything else in `failedCodes` gets
-fixed.
+only pairs siblings of the same canvas size — so a size ladder never fires it.
+
+**Every advisory code may stand — with a stated reason, never silently.** Each one has a real
+exception: `C009` for a deliberate shared scaffold, `C012` for a sprite whose padding is a chosen
+baseline, `C004` for a near-black subject, `C002` for an object that touches the frame on purpose.
+Of the 29 recipes bundled with this engine, 17 ship with at least one advisory code standing, and
+every one is a decision, not an oversight. What is never acceptable is a code you did not read.
 
 ## Which render mode answers which question
 

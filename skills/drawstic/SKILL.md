@@ -61,7 +61,9 @@ and do not invent a different order.
    structural, not eyeballed. `behind`/`front` set paint order, `aim` orients a held prop.
 5. **Shade** — `model REGION MAT` (smooth, form-following; the default) or `cel REGION MAT N`
    (N crisp bands). There is no third way and no hand-shading floor.
-6. **`outline`** — one bare pass as the assembly's last statement.
+6. **`outline`** — one bare pass as the assembly's last statement. It rings the sprite against
+   **transparency**, so it is what separates a part-built asset from its background. A full-bleed
+   scene has no transparency, so there it is a no-op — omit it, as `starters/scene-layers.drw` does.
 7. **`critique` → answer its rubric → `build`.**
 
 Icons are the one exception: at 16–32 px a flat plate with a 1 px bevel reads better than `model`.
@@ -70,7 +72,7 @@ icon-craft.md gives the rules.
 ## Workflow
 
 ```
-1  context   drawstic context file.drw            # only if the file imports or uses a theme
+1  context   drawstic context file.drw            # only when editing a file you did not write
 2  write     theme → materials → parts → assembly → outline → export
 3  check     drawstic check file.drw --lint --json     → must be []
 4  fmt       drawstic fmt file.drw                     # canonical, idempotent, in place
@@ -155,19 +157,20 @@ All four, every time. There is no fifth condition and no "accepted anyway" claus
 
 1. `drawstic check file.drw --lint --json` → `diagnostics` is `[]` **and** all three
    `census.antiPatterns` counters are `0`.
-2. `drawstic critique file.drw --as <profile> --strict --json` → **exit code 0**, and
-   `critique.failedCodes` is empty. Exactly one code may remain: **`C009`** (never across canvas
-   sizes — it only compares same-size siblings), and only when the two it names share a silhouette
-   *on purpose* — a faction recolor, a shared plate or bottle shell. It is the one check that
-   cannot distinguish a deliberate variant from a duplicate. If it remains, name the pair and the
-   reason in your final message. Every other code is fixed, never explained away — each carries a
-   `fix` field that tells you how.
+2. `drawstic critique file.drw --as <profile> --strict --json` → **exit code 0**. That is the
+   must-fix subset — `C001`, `C007`, `C013`, plus `C003` for `icon` — and it is not negotiable.
+   Then read **every** code in `critique.failedCodes` and, for each, either fix it or name it and
+   say why it stands. Each carries a `fix` field that tells you how. Codes outside the must-fix
+   subset are advisory *by design*, because each has a legitimate exception — `C009` between
+   siblings that share a silhouette on purpose (a faction recolor, a shared plate or bottle shell),
+   `C012` on a sprite whose padding is a deliberate baseline, `C004` on a near-black subject. An
+   unexplained advisory code is a defect you did not look at; an explained one is a decision.
 3. Every item in `critique.rubric.items` answered **by looking at a rendered image**, not by
    reasoning about the recipe. A clean `critique` verifies structure; only your eyes verify craft.
 4. `drawstic build file.drw --json` → every artifact in the list has `bytes > 0`.
 
-`critique.pass` is a stricter, separate signal: it goes `false` on *any* fired check, including the
-C009 above. Read it, but the gate is the four conditions.
+`critique.pass` goes `false` on *any* fired check, advisory ones included, so it is stricter than
+the exit code and stricter than this gate. Read it as a prompt to explain, not as a failure.
 
 If you cannot reach all four, say so and report the outstanding codes. Do not describe an unbuilt
 or unviewed asset as finished.
