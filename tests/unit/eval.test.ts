@@ -1148,6 +1148,78 @@ draw d 4x2:
     }
   })
 
+  test('a reserved-name collision (E007) hints at what kind of name it hit and how to escape it', () => {
+    const cases: readonly [string, RegExp][] = [
+      ['rim', /material\/lighting keyword/], // a natural English word (a wheel/boat/plate rim)
+      ['fill', /drawing command/],
+      ['sin', /built-in function/],
+    ]
+    for (const [name, kindRe] of cases) {
+      try {
+        render(`draw d 2x2:\n  ${name} = rect(0:0, 1:1)\n  bg #fff\n`, 'd')
+        expect(false).toBe(true)
+      } catch (e) {
+        expect(e).toBeInstanceOf(DrawsticError)
+        if (e instanceof DrawsticError) {
+          const d = e.toDiagnostic()
+          expect(d.code).toBe('E007')
+          expect(d.message).toBe(`'${name}' is a predefined, unshadowable name`)
+          expect(d.hint).toMatch(kindRe)
+          expect(d.hint).toMatch(/rename/)
+        }
+      }
+    }
+  })
+
+  test('a reserved-name collision at module scope (a drawing named like a builtin) also gets the E007 hint', () => {
+    try {
+      render('draw rim 2x2:\n  bg #fff\n', 'rim')
+      expect(false).toBe(true)
+    } catch (e) {
+      expect(e).toBeInstanceOf(DrawsticError)
+      if (e instanceof DrawsticError) {
+        const d = e.toDiagnostic()
+        expect(d.code).toBe('E007')
+        expect(d.hint).toMatch(/material\/lighting keyword/)
+      }
+    }
+  })
+
+  test('fill missing its drawable argument (E011) names the command and the expected slot', () => {
+    try {
+      render('draw d 2x2:\n  fill #fff\n', 'd')
+      expect(false).toBe(true)
+    } catch (e) {
+      expect(e).toBeInstanceOf(DrawsticError)
+      if (e instanceof DrawsticError) {
+        expect(e.toDiagnostic()).toMatchObject({
+          code: 'E011',
+          message: 'fill: expected a path or region',
+        })
+      }
+    }
+  })
+
+  test('a binding sharing a name with a reserved keyword-arg word (E011) hints at the rename, not just "missing argument"', () => {
+    // `anchor` isn't a builtin (E007 doesn't fire), but it IS one of parser.ts's KW_ARG_ARITY
+    // words (D2) — so `anchor` used later as a value gets read as that keyword's own argument
+    // slot instead, the exact "far from the real cause" trap character-craft.md documents for
+    // cap/join/mask/font/anchor/transform/tint/shadow.
+    try {
+      render('draw d 8x8:\n  anchor = rect(0:0, 3:3)\n  x = 5\n  fill #ffffff anchor x\n', 'd')
+      expect(false).toBe(true)
+    } catch (e) {
+      expect(e).toBeInstanceOf(DrawsticError)
+      if (e instanceof DrawsticError) {
+        const d = e.toDiagnostic()
+        expect(d.code).toBe('E011')
+        expect(d.message).toBe("fill: expected a path or region, got the reserved 'anchor' keyword")
+        expect(d.hint).toMatch(/rename/)
+        expect(d.hint).toContain('anchor')
+      }
+    }
+  })
+
   test('block pal destructures color lists', () => {
     const s = render(
       'draw d 3x1:\n  palette:\n    a, b, c = #777.tones(-10%, 0%, 10%)\n  pixels:\n    abc\n',

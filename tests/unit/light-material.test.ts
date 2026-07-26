@@ -376,6 +376,29 @@ describe('keyword discipline (new words stay contextual, D7)', () => {
     )
   })
 
+  test('reusing a material as a colour (E006) hints at its own base colour', () => {
+    // The verified blind-test mistake: a `material` looks like a colour (it carries one), but
+    // `alpha`/`mix` etc. need the colour itself — the message alone ("must be a color") doesn't
+    // say the argument WAS a material, so the hint has to name it and the way out.
+    for (const call of ['m.alpha(30%)', 'm.mix(#ffffff, 30%)']) {
+      try {
+        render(`material m = #8a5a3c cloth\n\ndraw x 2x2:\n  fill ${call} rect(0:0, 1:1)\n`, 'x')
+        expect(false).toBe(true)
+      } catch (e) {
+        expect(e).toBeInstanceOf(DrawsticError)
+        if (e instanceof DrawsticError) {
+          const d = e.toDiagnostic()
+          expect(d.code).toBe('E006')
+          expect(d.message).toBe(
+            `${call.startsWith('m.alpha') ? 'alpha' : 'mix'}: argument 1 must be a color`,
+          )
+          expect(d.hint).toMatch(/material/)
+          expect(d.hint).toContain('#8a5a3c')
+        }
+      }
+    }
+  })
+
   test('an unknown material response is a positioned parse error', () => {
     expect(() => render('material bad = #808080 shiny\ndraw x 2x2:\n  px #fff 0:0', 'x')).toThrow(
       /unexpected 'shiny' in a material binding/,

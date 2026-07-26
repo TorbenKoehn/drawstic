@@ -804,6 +804,58 @@ const BUILTIN_NAMES = new Set([
   'ao',
 ])
 
+/**
+ * The subset of {@link BUILTIN_NAMES} that are drawing commands (statement position, §8/§9)
+ * rather than expression-position functions — named separately, duplicating a handful of the
+ * entries above, only so E007's collision hint ({@link reservedNameHint}) can say *which kind* of
+ * reserved name a binding hit instead of a bare "it's reserved".
+ */
+const RESERVED_COMMAND_NAMES = new Set([
+  'bg',
+  'px',
+  'move',
+  'line',
+  'arc',
+  'quad',
+  'bezier',
+  'curve',
+  'curvePoly',
+  'profile',
+  'fill',
+  'stroke',
+  'text',
+  'stamp',
+  'apply',
+  'outline',
+  'tint',
+  'shadow',
+  'grain',
+  'speckle',
+  'ripple',
+  'dither',
+  'quantize',
+])
+
+/** The subset of {@link BUILTIN_NAMES} that are `material`/`model`/`cel` declaration keywords. */
+const RESERVED_MATERIAL_NAMES = new Set(['model', 'cel', 'shadeRegion', 'lightRegion', 'rim', 'ao'])
+
+/**
+ * E007's collision hint (ADR-0096 §5's uniform, no-shadowable-exceptions reservation rule): names
+ * *what kind* of reserved word `name` hit — an everyday English word like `rim` reads as a natural
+ * binding name until it collides, and the escape is always the same shape (character-craft.md's
+ * verified `cap`→`turbCap`, `mask`→`hoodMask` trap) — so spell that pattern out at the raise site,
+ * not only in skill prose.
+ */
+const reservedNameHint = (name: string): string => {
+  const kind = RESERVED_MATERIAL_NAMES.has(name)
+    ? 'a material/lighting keyword'
+    : RESERVED_COMMAND_NAMES.has(name)
+      ? 'a drawing command'
+      : 'a built-in function'
+  const compound = `part${name.charAt(0).toUpperCase()}${name.slice(1)}`
+  return `'${name}' is ${kind}, reserved everywhere (no shadowing) — rename with a qualifying prefix (e.g. '${compound}') instead`
+}
+
 // ── the engine ──────────────────────────────────────────────────────────────
 
 type AtlasPlaced = {
@@ -878,6 +930,23 @@ const packShelves = (
     currentX += spriteWidth + padding
     shelfHeight = Math.max(shelfHeight, spriteHeight)
   }
+}
+
+/**
+ * Hint text for E006 when a colour-typed slot receives a `material` instead — a natural,
+ * encouraged-looking mistake: a `material NAME = COLOR RESPONSE` binding (ADR-0086) reads like a
+ * colour but is a colour *plus* a response, and the language has no accessor to pull the colour
+ * back out of it. Names the material's own base colour — always statically known at this point,
+ * since colours are committed values, never symbolic — as the way out: reuse that literal, or keep
+ * a separate plain binding for the accent. `undefined` for every other mismatch, where the
+ * message's own `got <kind>` already disambiguates without needing a hint.
+ */
+const materialColorHint = (value: Value | undefined): string | undefined => {
+  if (typeof value !== 'object' || value === null || value.type !== 'material') {
+    return undefined
+  }
+  const hex = toHexColor(value.base)
+  return `this is a material (a colour plus a response) — reuse its own colour ${hex} directly, or bind a separate colour (e.g. accent = ${hex}) instead of the material`
 }
 
 /**
@@ -1312,6 +1381,7 @@ export class Engine {
           `'${name}' is a predefined, unshadowable name`,
           rec.displayPath,
           span,
+          reservedNameHint(name),
         )
       }
       if (rec.definitions.has(name)) {
@@ -1760,6 +1830,7 @@ export class Engine {
         `'${name}' is a predefined, unshadowable name`,
         state.module.displayPath,
         span,
+        reservedNameHint(name),
       )
     }
     if (env.visiblePalette(name)) {
@@ -2325,7 +2396,12 @@ export class Engine {
           const rel = stampRelations(s)
           behind = rel.behind
           front = rel.front
-          name = this.#execStamp(s, new Args(this, rel.args, env, state, s.span), env, state)
+          name = this.#execStamp(
+            s,
+            new Args(this, rel.args, env, state, s.span, 'stamp'),
+            env,
+            state,
+          )
         }
         const depth = draw.lastPlacementDepth ?? undefined
         draw.context.buffer = prev
@@ -3024,7 +3100,7 @@ export class Engine {
     // about the footprint centre; `anchor` was removed on `fit` (ADR-0096 §1) — the pin IS the
     // anchor, so `#parseStampFlags` now errors on it instead of silently ignoring it.
     const flags = this.#parseStampFlags(
-      new Args(this, stmt.flags, env, state, stmt.span),
+      new Args(this, stmt.flags, env, state, stmt.span, 'fit'),
       state,
       stmt.span,
       false,
@@ -4276,7 +4352,11 @@ export class Engine {
    */
   #execProfile(ctx: Context, A: Args, state: State, span: TextSpan): void {
     const paint = A.drawPaint(span)
-    const columns = this.#profileColumns(A.value(), span, state)
+    const columns = this.#profileColumns(
+      A.value('a range or list of x-columns (e.g. 0..w)'),
+      span,
+      state,
+    )
     const fnName = A.rawName()
     const hasBaseline = !A.empty() && A.peekFlag() === undefined && A.peekKeyword() === null
     const baseline = hasBaseline ? A.num() : ctx.buffer.height - 1
@@ -4441,7 +4521,7 @@ export class Engine {
       )
     }
     const ctx = draw.context
-    const args = new Args(this, stmt.args, env, state, stmt.span)
+    const args = new Args(this, stmt.args, env, state, stmt.span, stmt.callee)
     switch (stmt.callee) {
       case 'bg': {
         const paint = args.paint()
@@ -4651,7 +4731,7 @@ export class Engine {
       }
       case 'fill': {
         const paint = args.paint()
-        const value = args.value()
+        const value = args.value('a path or region')
         args.done()
         if (typeof value === 'object' && value !== null && value.type === 'path') {
           fillRegion(ctx, pathFillRegion(value), paint)
@@ -4670,7 +4750,7 @@ export class Engine {
       }
       case 'stroke': {
         const paint = args.paint()
-        const value = args.value()
+        const value = args.value('a path or region')
         const flags = args.strokeFlags()
         args.done()
         if (typeof value === 'object' && value !== null && value.type === 'path') {
@@ -4712,7 +4792,7 @@ export class Engine {
         // strip them so a stamp reached through a block (barrier) doesn't choke on the extra args.
         this.#execStamp(
           stmt,
-          new Args(this, stampRelations(stmt).args, env, state, stmt.span),
+          new Args(this, stampRelations(stmt).args, env, state, stmt.span, 'stamp'),
           env,
           state,
         )
@@ -4745,7 +4825,7 @@ export class Engine {
         // two forms by value type: a region → local region shadow (ADR-0062); a dx:dy point →
         // the canonical whole-frame drop shadow. The whole-frame shadow always honours an
         // enclosing `mask …:` block (ADR-0070 / ADR-0088).
-        const first = args.value()
+        const first = args.value('a dx:dy offset or region')
         if (typeof first === 'object' && first !== null && first.type === 'region') {
           const offset = args.pair()
           const paint = args.paint()
@@ -4789,7 +4869,7 @@ export class Engine {
       // grain/speckle/ripple, a paint for dither), and the whole-frame form runs unchanged.
       // The two numeric scalars are uniformly ordered `magnitude seed` (ADR-0080).
       case 'grain': {
-        const first = args.value()
+        const first = args.value('a region or a number')
         const region = regionScopeOf(first)
         const amount = region ? args.num() : this.#asNumber(first, stmt.span, state)
         const seed = args.num()
@@ -4799,7 +4879,7 @@ export class Engine {
         return
       }
       case 'speckle': {
-        const first = args.value()
+        const first = args.value('a region or a number')
         const region = regionScopeOf(first)
         const density = region ? args.num() : this.#asNumber(first, stmt.span, state)
         const seed = args.num()
@@ -4809,7 +4889,7 @@ export class Engine {
         return
       }
       case 'ripple': {
-        const first = args.value()
+        const first = args.value('a region or a number')
         const region = regionScopeOf(first)
         const strength = region ? args.num() : this.#asNumber(first, stmt.span, state)
         const seed = args.num()
@@ -4819,7 +4899,7 @@ export class Engine {
         return
       }
       case 'dither': {
-        const first = args.value()
+        const first = args.value('a region or a paint')
         const region = regionScopeOf(first)
         const paintA = region ? args.paint() : this.#asPaint(first, stmt.span, state)
         const paintB = args.paint()
@@ -4831,9 +4911,9 @@ export class Engine {
       case 'quantize': {
         // `quantize [REGION] PALETTE` (ADR-0093): remap opaque pixels to their nearest palette colour.
         // Optional leading region scope, like the other texture filters; PALETTE is a list of colours.
-        const first = args.value()
+        const first = args.value('a region or a palette')
         const region = regionScopeOf(first)
-        const palVal = region ? args.value() : first
+        const palVal = region ? args.value('a palette') : first
         args.done()
         filterQuantize(ctx, this.#paletteColors(palVal, stmt.span, state), region)
         return
@@ -7538,6 +7618,7 @@ export class Engine {
             `${name}: argument ${index + 1} must be a color`,
             file,
             span,
+            materialColorHint(value),
           )
         }
         return value
@@ -7647,7 +7728,9 @@ const FLAG_RE = /^(fill|flipx|flipy|w\d+|rot\d+(\.\d+)?|scale\d+)$/
  * checks it (E006 on mismatch); `peekFlag`/`peekKeyword` look ahead
  * without consuming so command handlers can loop over optional trailing
  * modifiers. {@link done} enforces that every argument was consumed
- * (E012 on leftovers), catching typos and misplaced flags.
+ * (E012 on leftovers), catching typos and misplaced flags. `name` (the
+ * owning command/callee) prefixes every {@link #fail} message so E011 names
+ * *which* call ran out of arguments, not just that one did.
  */
 class Args {
   readonly #items: Argument[]
@@ -7655,14 +7738,23 @@ class Args {
   readonly #env: Environment
   readonly #state: State
   readonly #span: TextSpan
+  readonly #name: string
   #index = 0
 
-  constructor(engine: Engine, items: Argument[], env: Environment, state: State, span: TextSpan) {
+  constructor(
+    engine: Engine,
+    items: Argument[],
+    env: Environment,
+    state: State,
+    span: TextSpan,
+    name: string,
+  ) {
     this.#engine = engine
     this.#items = items
     this.#env = env
     this.#state = state
     this.#span = span
+    this.#name = name
   }
 
   empty(): boolean {
@@ -7670,14 +7762,43 @@ class Args {
   }
 
   #fail(msg: string): never {
-    throw error(ERROR_CODE.arity, msg, this.#state.module.displayPath, this.#span)
+    throw error(
+      ERROR_CODE.arity,
+      `${this.#name}: ${msg}`,
+      this.#state.module.displayPath,
+      this.#span,
+    )
   }
 
-  #nextExpr(): Expression {
+  /**
+   * The argument at the cursor, asserted to be an `expression` (not a keyword-prefixed sequence
+   * like `mask m`/`font small`/`transform t`, D2). Two distinct ways to run out of expression
+   * arguments both used to collapse into the same bare "missing argument" (E011) — this splits
+   * them: genuinely no argument left names `expected`; an argument *is* there but a same-named
+   * local binding collided with a reserved keyword (`transform`/`tint`/`mask`/`font`/`cap`/`join`/
+   * `sha256`/`anchor`/`shadow`) and got read as that keyword's own argument slot instead of the
+   * value it names — the confusing "far from the real cause" case `character-craft.md` warns
+   * about, now named at the raise site instead of only in skill prose.
+   */
+  #expectExpr(expected: string): Extract<Argument, { kind: 'expression' }> {
     const arg = this.#items[this.#index]
-    if (arg?.kind !== 'expression') {
-      return this.#fail('missing argument')
+    if (arg === undefined) {
+      this.#fail(`expected ${expected}`)
     }
+    if (arg.kind === 'keyword') {
+      throw error(
+        ERROR_CODE.arity,
+        `${this.#name}: expected ${expected}, got the reserved '${arg.keyword}' keyword`,
+        this.#state.module.displayPath,
+        arg.span,
+        `'${arg.keyword}' is parsed as a keyword in argument position here — rename the binding (e.g. '${arg.keyword}Val') so it passes as a value`,
+      )
+    }
+    return arg
+  }
+
+  #nextExpr(expected: string): Expression {
+    const arg = this.#expectExpr(expected)
     this.#index++
     return arg.expression
   }
@@ -7741,25 +7862,25 @@ class Args {
 
   /** A raw name argument (not resolved as a value): `apply retro`. */
   rawName(): string {
-    const arg = this.#items[this.#index]
-    if (arg?.kind === 'expression' && arg.expression.kind === 'name') {
+    const arg = this.#expectExpr('a name')
+    if (arg.expression.kind === 'name') {
       this.#index++
       return arg.expression.name
     }
     return this.#fail('expected a name')
   }
 
-  value(): Value {
-    return this.#engine.evalExpr(this.#nextExpr(), this.#env, this.#state)
+  value(expected = 'a value'): Value {
+    return this.#engine.evalExpr(this.#nextExpr(expected), this.#env, this.#state)
   }
 
   num(): number {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a number')
     return this.#engine.evalNumber(expr, this.#env, this.#state)
   }
 
   string(): string {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a string')
     const value = this.#engine.evalExpr(expr, this.#env, this.#state)
     if (typeof value !== 'string') {
       this.#fail('expected a string')
@@ -7775,7 +7896,7 @@ class Args {
    * sites that do need the cursor.
    */
   point(_draw: DrawState): { x: number; y: number } {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a point')
     const value = this.#engine.evalExpr(expr, this.#env, this.#state)
     if (typeof value !== 'object' || value?.type !== 'point') {
       throw error(
@@ -7802,7 +7923,7 @@ class Args {
    * {@link point} but framed for radii/offsets in error messages.
    */
   pair(): { readonly x: number; readonly y: number } {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a rx:ry pair')
     const value = this.#engine.evalExpr(expr, this.#env, this.#state)
     if (typeof value !== 'object' || value?.type !== 'point' || value.rel) {
       throw error(
@@ -7816,7 +7937,7 @@ class Args {
   }
 
   paint(): Paint {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a paint (color or gradient)')
     const value = this.#engine.evalExpr(expr, this.#env, this.#state)
     if (
       typeof value === 'object' &&
@@ -7856,16 +7977,22 @@ class Args {
   }
 
   color(): Color {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a color')
     const value = this.#engine.evalExpr(expr, this.#env, this.#state)
     if (typeof value === 'object' && value !== null && value.type === 'color') {
       return value
     }
-    throw error(ERROR_CODE.typeError, 'expected a color', this.#state.module.displayPath, expr.span)
+    throw error(
+      ERROR_CODE.typeError,
+      'expected a color',
+      this.#state.module.displayPath,
+      expr.span,
+      materialColorHint(value),
+    )
   }
 
   region(): Region {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a region')
     const value = this.#engine.evalExpr(expr, this.#env, this.#state)
     if (typeof value === 'object' && value !== null && value.type === 'region') {
       return value
@@ -7888,10 +8015,7 @@ class Args {
    * reader (e.g. `cel`'s band count), so a response word is a contextual keyword, never reserved.
    */
   material(): Material {
-    const arg = this.#items[this.#index]
-    if (arg?.kind !== 'expression') {
-      return this.#fail('missing material')
-    }
+    const arg = this.#expectExpr('a material or a colour')
     const value = this.#engine.evalExpr(arg.expression, this.#env, this.#state)
     this.#index++
     if (typeof value === 'object' && value !== null && value.type === 'material') {
@@ -7920,7 +8044,7 @@ class Args {
 
   /** A light-valued argument (the `light L` override on `model`/`cel`, ADR-0086). */
   light(): Light {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a light')
     const value = this.#engine.evalExpr(expr, this.#env, this.#state)
     if (typeof value === 'object' && value !== null && value.type === 'light') {
       return value
@@ -7942,7 +8066,7 @@ class Args {
   }
 
   sprite(): Sprite {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a drawing')
     const value = this.#engine.evalExpr(expr, this.#env, this.#state)
     if (typeof value === 'object' && value !== null && value.type === 'sprite') {
       return value
