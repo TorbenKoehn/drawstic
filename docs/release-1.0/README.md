@@ -181,12 +181,12 @@ nicht gut genug ist.
 | # | Befund | Status |
 |---|---|---|
 | 1 | `--silhouette` liefert bei jedem Icon auf undurchsichtiger Platte ein schwarzes Quadrat — der Fehllese-Test, den `icon-craft.md` für genau diese Kategorie vorschreibt, ist dort prinzipiell blind. Beim Charakter liefert dasselbe Kommando ein brauchbares Bild. | delegiert |
-| 2 | `drawstic help` listet vier akzeptierte Flags nicht, darunter `--lint` — Bedingung 1 des Done-Gates. Die `E026`-Meldung schickt einen ausdrücklich zu `help`, wo die Antwort fehlt. | delegiert |
+| 2 | `drawstic help` listet vier akzeptierte Flags nicht, darunter `--lint` — Bedingung 1 des Done-Gates. Die `E026`-Meldung schickt einen ausdrücklich zu `help`, wo die Antwort fehlt. | **behoben** `2b1f0f5` — `--lint`/`--rows` bei `check`, `--crop`/`--fit` bei `render`; neuer Test leitet die Flag-Menge aus dem Parser ab und prüft beide Richtungen (kein Phantom-Flag). Hilfe 21 → 25 Flags. |
 | 3 | Die ältesten Kernfehler tragen **gar keinen `hint`** (E006, E007, E011), die diesen Release neu gebauten (E024, E026) präzise. `E011 missing argument` nennt weder Kommando noch Argumentplatz — genau der Fehler, vor dem `character-craft.md` als „confusing … far from the real cause" warnt. | **behoben** — E011 nennt jetzt Kommando+Slot (`fill: expected a path or region`) und, wo ein gleichnamiges Binding ein KW_ARG_ARITY-Wort (`transform`/`tint`/`mask`/`font`/`cap`/`join`/`sha256`/`anchor`/`shadow`) kapert, den Keyword-Namen samt Rename-Hint; E006/E007 tragen neue Hints (s. #5/#8). Messages unverändert, nur `hint` ergänzt. |
-| 4 | **`outline`-Widerspruch aufgelöst.** SKILL.md führt es als Schritt 6 mit „do not invent a different order", der ausgelieferte Szenen-Starter enthält null `outline`-Aufrufe. Gemessen: auf einer randlos gefüllten Szene ist `outline` ein **No-op** (byte-identisches PNG), weil es gegen Transparenz umrandet. Keine Seite ist falsch — SKILL.md nennt die Bedingung nicht. | offen |
+| 4 | **`outline`-Widerspruch aufgelöst.** SKILL.md führt es als Schritt 6 mit „do not invent a different order", der ausgelieferte Szenen-Starter enthält null `outline`-Aufrufe. Gemessen: auf einer randlos gefüllten Szene ist `outline` ein **No-op** (byte-identisches PNG), weil es gegen Transparenz umrandet. Keine Seite ist falsch — SKILL.md nennt die Bedingung nicht. | **behoben** `7d04527`/`96b1657`/`5ec3eac` — Bedingung in SKILL.md, README und den drei Craft-Guides ergänzt statt des Widerspruchs. |
 | 5 | Ein `material` ist keine Farbe: `material m = #8a5a3c cloth` und dann `m.alpha(30%)` → `E006`. Der Szenen-Builder tappte **zweimal hintereinander** hinein. Nirgends dokumentiert. | **behoben** — E006 hintet jetzt bei jedem `material`-als-Farbe-Fehlgriff (`alpha`, `mix`, …) die eigene Basisfarbe (statisch bekannt, z. B. `#8a5a3c`) und den Ausweg (Literal wiederverwenden oder eigenes Farb-Binding) |
-| 6 | `drawing.region` liegt im **eigenen** Raum des Parts, nicht dort, wo `fit` ihn gesetzt hat — nachgestellt: der Overlay landet im Ursprung, der Part woanders. Die Doku sagt nur „any drawing's silhouette", nicht in welchem Raum. Deshalb musste der Builder die Verschiebung von Hand ausrechnen. | offen |
-| 7 | Kein Wort zu schwimmenden Objekten: „boat", „float", „moor" kommen in `scene-craft.md` nicht vor; `ground` ist nur für festen Boden dokumentiert. Reflexion und Wasserlinien-Kontakt musste der Builder per Analogie selbst herleiten. | offen |
+| 6 | `drawing.region` liegt im **eigenen** Raum des Parts, nicht dort, wo `fit` ihn gesetzt hat — nachgestellt: der Overlay landet im Ursprung, der Part woanders. Die Doku sagt nur „any drawing's silhouette", nicht in welchem Raum. Deshalb musste der Builder die Verschiebung von Hand ausrechnen. | **behoben** `8fccc90` — `language.md` nennt den Raum und das Idiom `part.region.shift(landed − pin)`, beides gerendert belegt. |
+| 7 | Kein Wort zu schwimmenden Objekten: „boat", „float", „moor" kommen in `scene-craft.md` nicht vor; `ground` ist nur für festen Boden dokumentiert. Reflexion und Wasserlinien-Kontakt musste der Builder per Analogie selbst herleiten. | **behoben** `8fccc90` — `scene-craft.md` §8 zeigt die drei Teile (Kiel-Pin auf der Wasserlinie, Kontaktband, geclippte Reflexion), aus dem lauffähigen Blind-Build destilliert und selbst nachgebaut. |
 | 8 | Die Reserved-Word-Liste ist eine flache Wortwolke ohne Kategorien — `rim` ist das natürlichste Wort für eine Bootskante, und der Builder kollidierte damit, **obwohl er die Liste gelesen hatte**. | **behoben** — E007 hintet jetzt die Kollisionsart (Material-/Lighting-Keyword, Drawing-Command oder Built-in-Funktion) plus Rename-Vorschlag (`'rim'` → z. B. `'partRim'`) |
 
 **Durchgehendes Muster, in zwei unabhängigen Läufen bestätigt:** Ein sauberes Gate plus die
@@ -195,6 +195,34 @@ Selbstauskunft des Modells ist **kein** Craft-Nachweis. Beide Agenten beantworte
 („liest das richtig?") auf eine **Erzeugungsfrage** umstellen („nenne die zwei wahrscheinlichsten
 Fehldeutungen, bevor du den Namen liest") — ein Ja/Nein lässt sich schönreden, eine erzwungene
 Aufzählung nicht.
+
+**Fix-Welle aus den Blind-Läufen** (über die acht Tabellen-Befunde hinaus):
+
+- [x] **Lint `W017`** (`d74f9d3`) für genau die Defektklasse, die dreimal gleichzeitig ausgeliefert
+      wurde. Regel: in einem `<stem>Front`/`<stem>Back`-Paar gleicher Canvas-Breite muss ein
+      außermittiger Pin spiegeln (`w − 1 − x`); ausgenommen sind **L/R-Paare**, deren Pin-*Menge*
+      bereits symmetrisch ist — ohne diese Ausnahme feuert die Prüfung achtmal auf den korrekten
+      Magier und zweimal auf den korrekten Assassin. Gemessen: 2 von 2 echten Defekten, 0
+      Fehlalarme, nach den Fixes stumm. Der Hinweis nennt die Formel samt `flipx`-Achse.
+      Bekannte Grenze, im Code vermerkt: der Magier-Defekt war ein *Assembly*-Fehler (falscher Pin
+      gefittet), keine Koordinate — das braucht eine eigene Messung.
+- [x] **Starter-Seitenprofil** (`4abec5b`). Die „Nase" war ein 9px-Wulst auf Augenhöhe mit dem Auge
+      obendrauf — eine Schnauze, im Asset, das `character-craft.md` zum Kopieren empfiehlt. Ursache:
+      das Auge sitzt ~3px hinter der Gesichtsvorderkante, davor ist kein Platz. Acht Varianten
+      verworfen, bis die Nase klar **unter** der Augenlinie saß.
+- [x] **Selbstbenotung entschärfen** — Konsequenz aus dem Muster oben: alle Rubrikfragen werden von
+      Urteils- auf Erzeugungsfragen umgestellt.
+
+**Gefundener Rückschritt** (deshalb steht Befund 1 noch offen): die Neukalibrierung des
+Plattendetektors tauschte eine Fehlerklasse gegen eine andere. Sie beseitigte 19 Nicht-Icon-
+Fehlalarme, ließ dafür aber `communication.drw` von **2 auf 5** C009-Befunde steigen — drei neue auf
+Distanz 0, also Platten-Blindheit zurück für dünne Glyphen (`phone`, `contacts`, `feed`). Die
+Verifikation maß Plattentreffer und Render-Bytes; beides kann das nicht sehen, weil sich die
+C009-Signatur ändert, ohne dass ein Bild sich ändert. Belegt ist zugleich, dass **rohe Flächenanteile
+die zwei Populationen nicht trennen können**: der schlimmste Fehlalarm (`market.drw#barrel`, 13,7 %)
+ist *größer* als eine echte Glyphe (`finance.drw#bank`, 13,5 %). Zurückgegeben mit der Vorgabe, einen
+strukturellen Unterscheider zu messen statt eine Schwelle zu drehen — und mit der ausdrücklichen
+Erlaubnis, im Zweifel zwei Aufrufstellen mit unterschiedlicher Toleranz zu führen.
 
 ### W3-6 — Release scharf schalten
 - Der Workflow ist bereits tag-getrieben und vollständig (`NODE_AUTH_TOKEN`, `--provenance`,
