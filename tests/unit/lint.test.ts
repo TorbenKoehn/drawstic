@@ -12,8 +12,9 @@ const load = (src: string): { engine: Engine; mod: ModuleRecord } => {
 
 describe('lintModule', () => {
   test('W002: flags a drawing that is neither exported, stamped, nor fitted', () => {
+    // The module exports something, so it is not a library module and the leftover is real.
     const { engine, mod } = load(
-      'draw orphan 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n',
+      'draw kept 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n\ndraw orphan 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n\nexport kept kept:\n  png\n',
     )
     const diags = lintModule(engine, mod)
     expect(diags).toHaveLength(1)
@@ -24,6 +25,15 @@ describe('lintModule', () => {
       file: 'lint.drw',
       hint: 'export it, stamp it, or fit it from another drawing',
     })
+  })
+
+  // `examples/showcase/parts.drw` is this shape — `showcase.drw` does `from parts gem, eye` and
+  // stamps both — and `check` only ever sees one file, so it cannot observe the importer.
+  test('W002 is silent in a module with no exports at all (a library module)', () => {
+    const { engine, mod } = load(
+      'draw gem 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n',
+    )
+    expect(lintModule(engine, mod).some((d) => d.code === 'W002')).toBe(false)
   })
 
   test('W002 is avoided by exporting a drawing or by stamping it from another', () => {
@@ -538,8 +548,11 @@ describe('lintModule', () => {
 
   test('W009: flags a pixels grid whose last row is fully transparent (the seam-footprint case)', () => {
     const { engine, mod } = load(
+      // No `WxH` on the header: the grid itself sets the footprint, so the trailing row really does
+      // make this 4x4 instead of 4x3 — that is the seam case. (With a declared size the header
+      // fixes the canvas and the row is harmless padding; see the test below.)
       [
-        'draw part 4x4:',
+        'draw part:',
         '  palette k=#000000',
         '  pixels:',
         '    kkkk',
@@ -563,6 +576,27 @@ describe('lintModule', () => {
     })
     // span points at the offending (last) row, not the draw header
     expect(diags[0]?.line).toBe(7)
+  })
+
+  // examples/icons/games.drw#heart16 centres an 8-row heart in a declared 16x16 canvas and was
+  // flagged before this exemption, which put a bundled example outside the skill's own done gate.
+  test('W009 is silent when the draw declares its own size (padding, not footprint drift)', () => {
+    const { engine, mod } = load(
+      [
+        'draw part 4x4:',
+        '  palette k=#000000',
+        '  pixels:',
+        '    kkkk',
+        '    kkkk',
+        '    kkkk',
+        '    ....',
+        '',
+        'export part parts/part:',
+        '  png',
+        '',
+      ].join('\n'),
+    )
+    expect(lintModule(engine, mod).some((d) => d.code === 'W009')).toBe(false)
   })
 
   test('W009 is silent when the grid has no transparent last row', () => {

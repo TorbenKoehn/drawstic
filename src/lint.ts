@@ -70,7 +70,13 @@ export const lintModule = (engine: Engine, mod: ModuleRecord): Diagnostic[] => {
     lintUnknownGlyphs(engine, mod, entry.definition, diagnostics, fontCache)
     lintTransparentLastRow(entry.definition, mod, diagnostics)
     diagnostics.push(...canonicalPathChecks(engine, mod, entry.definition))
-    if (!exported.has(name) && !used.has(name)) {
+    // A module with no `export` block is a *library* module: every drawing in it exists to be
+    // pulled in elsewhere via `from <module> a, b`, and `check` sees one file at a time, so it can
+    // never observe the importer. `examples/showcase/parts.drw` is exactly this — `showcase.drw`
+    // stamps its `gem` and `eye` — and flagging it made a shipped example fail the skill's own
+    // gate for doing the correct thing. In a module that *does* export, an unused drawing is still
+    // a real leftover and still flagged.
+    if (mod.exports.length > 0 && !exported.has(name) && !used.has(name)) {
       diagnostics.push(
         warning(
           'W002',
@@ -678,6 +684,13 @@ const lintTransparentLastRow = (
   mod: ModuleRecord,
   diagnostics: Diagnostic[],
 ): void => {
+  // The whole premise is that the grid *determines* the footprint. With an explicit `WxH` on the
+  // draw header the canvas is fixed by the header, so a trailing empty row cannot move anything —
+  // it is deliberate padding (`games.drw#heart16` centres an 8-row heart in 16 rows). Verified:
+  // a grid with no declared size makes a 4x2 heart 4x3; with `4x2` declared it stays 4x2.
+  if (def.size !== undefined) {
+    return
+  }
   walkStatements(def.body, (stmt) => {
     if (stmt.kind !== 'pixels' || stmt.rows.length < 2) {
       return
@@ -709,6 +722,13 @@ const lintTransparentLastRow = (
 const lintExportPathRepeatsDir = (mod: ModuleRecord, diagnostics: Diagnostic[]): void => {
   const recipeDir = basename(dirname(mod.file))
   for (const ex of mod.exports) {
+    // Only a *leading directory segment* duplicates anything. A bare basename that happens to equal
+    // the folder name (`export loot loot:` inside `items-v2/loot/`) writes `loot/loot.png` — the set
+    // named after its own folder, which is the normal convention, not the junk-directory bug. Four
+    // bundled recipes tripped this before the `/` guard, so the corpus failed the skill's own gate.
+    if (!ex.basePath.includes('/')) {
+      continue
+    }
     const first = ex.basePath.split('/')[0]
     if (first === recipeDir) {
       diagnostics.push(

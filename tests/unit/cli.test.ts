@@ -121,18 +121,39 @@ describe('check', () => {
     })
   })
 
+  // Authors its own warning instead of relying on a bundled example still having one. The previous
+  // form asserted a W002 on showcase.drw, so cleaning the corpus up to the skill's own done gate
+  // broke it — a test that needs the shipped examples to stay defective is the wrong test.
   test('--lint folds in authoring warnings + a construct census without failing the exit code', () => {
-    const r = runJson('check', 'examples/showcase/showcase.drw', '--json', '--lint')
-    expect(r.exitCode).toBe(0)
-    // --lint --json wraps the diagnostics alongside the ADR-0094 construct census.
-    const body = r.json as {
-      diagnostics: { severity: string; code: string; message: string }[]
-      census: { constructs: { construct: string; count: number }[]; antiPatterns: object }
+    withTmpDir((dir) => {
+      const file = join(dir, 'lintme.drw')
+      writeFileSync(
+        file,
+        'draw kept 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n\ndraw orphan 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n\nexport kept kept:\n  png\n',
+      )
+      const r = runJson('check', file, '--json', '--lint')
+      expect(r.exitCode).toBe(0)
+      // --lint --json wraps the diagnostics alongside the ADR-0094 construct census.
+      const body = r.json as {
+        diagnostics: { severity: string; code: string; message: string }[]
+        census: { constructs: { construct: string; count: number }[]; antiPatterns: object }
+      }
+      expect(body.diagnostics.some((d) => d.code === 'W002' && d.message.includes('orphan'))).toBe(
+        true,
+      )
+      expect(body.diagnostics.every((d) => d.severity === 'warning')).toBe(true)
+      expect(body.census.constructs.length).toBeGreaterThan(0)
+      expect(body.census.antiPatterns).toBeDefined()
+    })
+  })
+
+  // The bundled corpus must stay clean under the gate the product skill imposes on its users.
+  test('every bundled example recipe is check --lint clean', () => {
+    for (const path of ['examples/showcase/showcase.drw', 'examples/basic-shapes/circles.drw']) {
+      const r = runJson('check', path, '--json', '--lint')
+      expect(r.exitCode).toBe(0)
+      expect((r.json as { diagnostics: unknown[] }).diagnostics).toEqual([])
     }
-    expect(body.diagnostics.some((d) => d.code === 'W002' && d.message.includes('face'))).toBe(true)
-    expect(body.diagnostics.every((d) => d.severity === 'warning')).toBe(true)
-    expect(body.census.constructs.length).toBeGreaterThan(0)
-    expect(body.census.antiPatterns).toBeDefined()
   })
 
   test('--rows reports ragged pixel-row metadata and E002', () => {

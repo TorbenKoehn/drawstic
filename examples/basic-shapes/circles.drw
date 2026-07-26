@@ -20,3 +20,6 @@ draw circles 128x16:
 export circleIcon circle:
   png @1 @2
   svg ids classes
+
+export circles circles:
+  png

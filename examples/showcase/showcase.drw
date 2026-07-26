@@ -57,3 +57,9 @@ export badge badge:
 
 export stripes stripes:
   png
+
+export face face:
+  png
+
+export dots dots:
+  png

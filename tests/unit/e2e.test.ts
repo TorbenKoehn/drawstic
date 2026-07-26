@@ -156,7 +156,7 @@ describe('e2e', () => {
       const engine = new Engine(process.cwd())
       const mod = engine.loadEntry('examples/basic-shapes/circles.drw')
       const artifacts = buildModule(engine, mod, out)
-      expect(artifacts.length).toBe(3) // @1 @2 png + svg
+      expect(artifacts.length).toBe(4) // circleIcon: @1 @2 png + svg; circles: png
     } finally {
       rmSync(out, { recursive: true, force: true })
     }

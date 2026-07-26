@@ -29,3 +29,9 @@ draw squares 128x16:
 
 export squares squares:
   png
+
+export squareDeclarative square-declarative:
+  png
+
+export squareImperative square-imperative:
+  png
