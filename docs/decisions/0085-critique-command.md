@@ -67,6 +67,24 @@ pass/fail:
   > ≥50 % of the covered mass, and signs the subtracted *figure* instead when one is found. A
   > non-plate sprite (a framed character/item/icon glyph, an outlined silhouette) is detected as
   > such and signs its full covered mask exactly as before.
+  >
+  > **Round 2:** the first pass still failed on `skills/drawstic/starters/icon-family.drw` — the
+  > product skill's own runnable starter, the recipe an agent actually copies. Its `plate(t)` uses
+  > `icon-craft.md`'s "edge band" contract (a flat fill plus a *separate* 2px alpha-blended
+  > lit/shaded contour composited only at the face's edge, `face.edge(dx:dy,2)`), not a continuous
+  > gradient — the tint-to-fill adjacent step (0.085–0.125 across its five glyphs) exceeded the
+  > original `PLATE_STEP_TOLERANCE` (0.06, calibrated only against the corpus's gradient-style
+  > plates), so the flood never crossed it and stayed stuck at the thin ring, under the area-
+  > dominance floor. A global (non-chained) "match any border-band colour" alternative was tried
+  > and rejected: it broke `system.drw#search`, whose bright rim highlight sits only 0.15 from the
+  > glyph white, and several `productivity`/`media` icons, because it drops the flood fill's
+  > spatial-adjacency safety net entirely. Kept the chained, connectivity-respecting flood fill and
+  > *raised* `PLATE_STEP_TOLERANCE` to 0.13 instead — re-swept 0.06→0.20 against the full corpus:
+  > stable through 0.14, cracks at 0.15 (`system.drw#settings64`, `games.drw#dice16` start bleeding
+  > into the plate). 0.13 sits inside the verified `[0.125, 0.15)` window safe for both
+  > populations. See `PLATE_STEP_TOLERANCE`'s doc comment in `src/critique.ts` for the full
+  > measurement, and `tests/unit/critique.test.ts`'s `edgeBandPlateFamily` fixture for the
+  > regression coverage.
 - **C011** family weight parity · **C012** the rendered form of `W009` — an *asymmetric* bottom
   gap (trailing transparent rows exceeding the top margin beyond the centering tolerance), measured
   from pixels rather than the static `pixels:` grid; symmetric breathing room is never flagged.

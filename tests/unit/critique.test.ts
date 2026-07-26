@@ -746,6 +746,59 @@ draw iconC:
     expect(fam?.metrics.distanceMatrix[0]?.[1]).toBeGreaterThan(0.12)
   })
 
+  // skills/drawstic/starters/icon-family.drw's `plate(t)` — a flat `fill t face` plus a *separate*
+  // 2px alpha-blended lit/shaded contour composited only at the face's own edge
+  // (`face.edge(1:1,2)` / `face.edge(-1:-1,2)`), not a continuous gradient. The tint-to-fill
+  // adjacent step this creates (~0.09–0.13 across the starter's five glyphs) is bigger than a
+  // gradient's own per-row step, so it needs its own regression coverage beyond `plateFamily`
+  // above (round-2 follow-up: the coordinator measured this exact construction still collapsing
+  // at distance 0 after the first fix).
+  const edgeBandPlateFamily = (glyphB: string, glyphR: string): string => `
+theme t2:
+  palette:
+    k = #141a26
+    l = #f4f8ff
+    b = #3b82f0
+    r = #e0574f
+  size 32x32
+  mode pixel
+
+use t2
+
+draw plate(t):
+  face = rrect(2:2, 29:29, 6)
+  fill t face
+  fill l.alpha(34%) face.edge(1:1, 2)
+  fill k.alpha(28%) face.edge(-1:-1, 2)
+
+draw iconA:
+  stamp plate(b) 0:0
+  ${glyphB}
+
+draw iconC:
+  stamp plate(r) 0:0
+  ${glyphR}
+`
+
+  test('a flat-fill plate with a separate 2px edge-band tint (not a gradient) also no longer collapses', () => {
+    const fam = critiqueFamily([
+      { name: 'iconA', sprite: render(edgeBandPlateFamily(gearGlyph, folderGlyph), 'iconA') },
+      { name: 'iconC', sprite: render(edgeBandPlateFamily(gearGlyph, folderGlyph), 'iconC') },
+    ])
+    expect(fam?.checks.some((c) => c.code === CRITIQUE_CODE.siblingCollapse)).toBe(false)
+    expect(fam?.metrics.distanceMatrix[0]?.[1]).toBeGreaterThan(0.12)
+  })
+
+  test('a genuinely duplicated glyph on an edge-band-tint plate still collapses (C009 still bites)', () => {
+    const fam = critiqueFamily([
+      { name: 'iconA', sprite: render(edgeBandPlateFamily(folderGlyph, folderGlyph), 'iconA') },
+      { name: 'iconC', sprite: render(edgeBandPlateFamily(folderGlyph, folderGlyph), 'iconC') },
+    ])
+    const c9 = fam?.checks.filter((c) => c.code === CRITIQUE_CODE.siblingCollapse) ?? []
+    expect(c9.map((c) => c.target).sort()).toEqual(['iconA', 'iconC'])
+    expect(fam?.metrics.distanceMatrix[0]?.[1]).toBe(0)
+  })
+
   test('a genuinely duplicated glyph on a different-accent plate still collapses (C009 still bites)', () => {
     // Same folder glyph stamped on both a blue and a red plate — a realistic copy-paste bug.
     const fam = critiqueFamily([

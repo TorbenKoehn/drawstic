@@ -794,6 +794,27 @@ _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen an
   feuert weiterhin bei Distanz 0. `examples/characters-ro2/`, `items-v2/`, `scenes-v3/`:
   byte-identische C009-Ausgabe vor/nach dem Fix. Siehe „Update"-Hinweis in
   `docs/decisions/0085-critique-command.md`.
+  **Runde 2 (Koordinator-Review):** die Runde-1-Fassung versagte noch am product-skill-eigenen
+  Starter `skills/drawstic/starters/icon-family.drw` — dem Rezept, das ein Agent tatsächlich
+  kopiert — weil dessen `plate(t)` `icon-craft.md`s "Edge-band"-Kontrakt nutzt (Flat-Fill +
+  separater 2px alpha-geblendeter Licht/Schatten-Saum via `face.edge(dx:dy,2)`), kein Gradient:
+  der Sprung vom Saum zur Flat-Fill (0.085–0.125 über die fünf Glyphen) lag über der
+  Runde-1-Toleranz 0.06 (nur gegen die Gradient-Plates des Korpus kalibriert), sodass der Flood
+  nie darüber kam und unter der Flächen-Dominanz-Schwelle stecken blieb. Ein globaler
+  (nicht-chained) "gegen jede Border-Band-Farbe matchen"-Ansatz wurde geprüft und verworfen: er
+  bricht `system.drw#search` (dessen helle Rand-Highlight nur 0.15 vom weißen Glyph entfernt
+  liegt) sowie mehrere `productivity`/`media`-Icons, weil er die räumliche
+  Adjazenz-Sicherheitsschranke des Flood-Fills komplett aufgibt. Stattdessen: chained Flood-Fill
+  (Konnektivität) beibehalten, `PLATE_STEP_TOLERANCE` auf 0.13 angehoben — Sweep 0.06→0.20 über
+  den vollen Korpus erneut gefahren: stabil bis 0.14, Bruch bei 0.15 (`system.drw#settings64`,
+  `games.drw#dice16` bluten in die Plate). 0.13 liegt sicher im verifizierten Fenster
+  `[0.125, 0.15)` für beide Populationen. `critique --as icon --strict` auf dem Starter: 0
+  Kollaps-Findings zwischen den fünf 32×32-Glyphen (das verbleibende Finding ist `mail` vs.
+  `mailSmall`, derselbe Glyph als 16px-Handpixel-Redraw — dieselbe Multi-Size-Klasse wie
+  `settings`/`settings64`, bewusst nicht in dieser Runde adressiert). Korpus- und
+  Characters/Items/Scenes-Regression erneut byte-identisch geprüft. Neue Testabdeckung:
+  `edgeBandPlateFamily`-Fixture in `tests/unit/critique.test.ts` (mirrort den Starter-Kontrakt
+  exakt).
 - [x] **1c-followup C011-Margin** → **gelöst = bewusst advisory**: Verhalten/Thresholds bewusst NICHT
   geändert (gleiche Begründung wie C009). Als dokumentierte bekannte Limitation geschlossen: Kommentar
   an `PARITY_FACTOR` in `src/critique.ts` (C011 gated nur Gewicht via Covered-Count-Ratio; Margin ist

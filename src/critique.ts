@@ -1460,14 +1460,29 @@ const labDistance = (x: Lab, y: Lab): number => {
 }
 
 /**
- * OkLab step tolerance for the plate flood fill below. Calibrated against the bundled icon
- * corpus (`examples/icons/*.drw`): every measured *intra-plate* adjacent-pixel step (vertical-
- * gradient tiles, rim highlight/shadow bevels, `model`-shaded plates) stays ≤0.03, while every
- * measured plate-to-glyph step at a genuine silhouette boundary starts ≥0.11 (the corpus's
- * closest case, `productivity.drw#clock`'s modelled hour ticks). 0.06 sits at the midpoint, a
- * ~2× margin on both sides.
+ * OkLab step tolerance for the plate flood fill below. Calibrated against **two** populations —
+ * the bundled icon corpus (`examples/icons/*.drw`) *and* the product skill's own runnable starter
+ * (`skills/drawstic/starters/icon-family.drw`), the recipe an agent actually copies for icon work:
+ *
+ * - The starter's `plate(t)` is `icon-craft.md`'s "edge band" contract — a flat `fill t face`
+ *   with a separate 2px-wide alpha-blended lit/shaded contour composited only at the face's own
+ *   edge (`face.edge(1:1,2)` / `face.edge(-1:-1,2)`), *not* a continuous gradient. The single
+ *   adjacent-pixel step from that 2px contour into the plain fill measures 0.085–0.125 across its
+ *   five 32×32 glyphs (`folder` 0.085, `chat` 0.105, `mail`/`search` 0.115, `bolt` 0.125 — the
+ *   corpus's own vertical/45°-gradient plates never have this discontinuity, since a continuous
+ *   gradient's own per-row step stays ≤0.03, so the border-seeded chain never needs to bridge it).
+ * - Swept 0.06→0.20 against the full `examples/icons/*.drw` corpus (every family, every size):
+ *   results are stable through 0.14, then crack at 0.15 (`system.drw#settings64`'s modelled gear
+ *   and `games.drw#dice16`'s pips start bleeding into the plate — a real glyph-swallowing
+ *   regression, not noise).
+ *
+ * 0.13 sits just above the starter's worst-case bridge requirement (0.125), inside the verified
+ * `[0.125, 0.15)` safe window, with a full step of margin below the corpus's first crack — checked
+ * against every `examples/icons/*.drw` family (no new C009 finding introduced, `docs/impl-
+ * progress.md`) and the starter (all five 32×32 glyphs correctly differentiate; see
+ * `tests/unit/critique.test.ts`).
  */
-const PLATE_STEP_TOLERANCE = 0.06
+const PLATE_STEP_TOLERANCE = 0.13
 
 /**
  * Width of the canvas-edge band a plate's own margin must fall inside (a fraction of
