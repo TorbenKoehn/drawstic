@@ -61,7 +61,7 @@ import {
 } from './dmath.js'
 import { Framebuffer, MirrorFramebuffer } from './framebuffer.js'
 import { parse, parseStandaloneExpr } from './parser.js'
-import { decodePng } from './png.js'
+import { decodePng, PngDecodeError } from './png.js'
 import {
   arcPoints,
   bezierPoints,
@@ -5856,8 +5856,11 @@ export class Engine {
     try {
       decoded = decodePng(bytes)
     } catch (e) {
+      // A structured decode failure (bad signature/interlaced/bad filter, src/png.ts) keeps its own
+      // code (E027) so the diagnostic names the actual problem instead of a generic import failure.
+      const code = e instanceof PngDecodeError ? ERROR_CODE.pngUnsupported : ERROR_CODE.importError
       throw error(
-        ERROR_CODE.importError,
+        code,
         `failed to decode '${entry.path}': ${(e as Error).message}`,
         entry.module.displayPath,
         entry.span,

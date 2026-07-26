@@ -1085,7 +1085,9 @@ shadow it. See [ADR-0034](decisions/0034-standard-library.md).
 
 - **Math:** `min max abs clamp floor ceil round sign sqrt hypot dist`, `sin cos tan atan2 pow
   exp log`, `lerp`; constants `pi tau`. (Modulo is the operator `mod`, §above — not a
-  stdlib function; [ADR-0048](decisions/0048-mod-keyword-percent-suffix-only.md).)
+  stdlib function; [ADR-0048](decisions/0048-mod-keyword-percent-suffix-only.md).) `x(pt)`/`y(pt)`
+  extract a point's coordinates as plain numbers (`x(4:5) == 4`, `y(4:5) == 5`) — the escape hatch
+  for treating a point's components as independent scalars (e.g. `noise(seed, x(p) * 0.05, 0)`).
 - **Lists:** `len(xs)`; `xs.cycle(i)` auto-wraps any integer index (including negative) via
   floored modulo — sugar for `xs[i mod len(xs)]`, so `xs.cycle(-1)` is the last element; an
   empty list is E015 ([ADR-0079](decisions/0079-ramp-cycling.md)). Indexing/destructuring are
@@ -1199,9 +1201,11 @@ A colour is a **first-class value**. Produce one with:
 - a **hex literal**: `#1a1a1a`, `#fff`, `#rrggbbaa`;
 - a **colour-space constructor**: `rgb(255, 128, 0)`, `hsl(40, 70%, 60%)`, `oklch(0.78, 0.12, 75)`;
 - a **colour operation** (colour → colour): `lighten`, `darken`, `saturate`,
-  `desaturate`, `hue` (hue rotation — renamed from `rotate`, which is the transform
-  constructor; [ADR-0044](decisions/0044-first-class-transforms.md)), `alpha`, `mix` —
-  call-style `lighten(c, 20%)` or method-style `c.lighten(20%)` (§10);
+  `desaturate`, `hue` (renamed from `rotate`, which is the transform constructor;
+  [ADR-0044](decisions/0044-first-class-transforms.md)) — two overloads: `hue(c, degrees)`
+  **rotates** the hue by `degrees`, `hue(c, targetColor)` **sets** the hue to exactly match
+  `targetColor`'s (lightness/chroma untouched) — `#235.hue(red)` reads as "recolour to red's hue";
+  `alpha`, `mix` — call-style `lighten(c, 20%)` or method-style `c.lighten(20%)` (§10);
 - a **colour-list helper**: `tones(base, ...amounts)` / `base.tones(...)` and
   `mixes(a, b, count[, space])` / `a.mixes(b, count[, space])` return ordinary lists of
   colours for explicit local ramps ([ADR-0060](decisions/0060-explicit-color-list-ramps.md));
@@ -1791,9 +1795,18 @@ configurable via the CLI with a sensible default.
 | `drawstic fmt <file> [--check] [--stdout] [--diff]` | canonical formatter (indentation, layout); idempotent; `--check` exits non-zero on unformatted input. |
 | `drawstic context <file>` | emit the resolved **design brief** for the file (§ below), including export plans. |
 | `drawstic build <file> [--out <dir>]` | run every `export` in the file, writing artifacts to disk. `--out` defaults to the recipe file's own directory ([ADR-0096](decisions/0096-language-freeze-for-1-0.md) §6) — an export path is relative to that, and an explicit `--out` only relocates the whole tree. |
-| `drawstic render <file>#<drawing>[(args)] [--png@2] [--stdout] [--ascii] [--preview] [--silhouette] [--inspect] [--explain] [--fit WxH] [--crop x:y WxH] [--grid N] [--diff <png>]` | ad-hoc render of one drawing; can stream. A parametric drawing takes literal arguments in the fragment — `file#house(#c04040, 3)` (number, color, string, point, boolean only; [ADR-0067](decisions/0067-render-fragment-literal-arguments.md)). `--ascii` = luminance-ramp grayscale text; `--preview` = half-block ANSI colour; `--silhouette` = shape-only black-out ([ADR-0083](decisions/0083-render-silhouette.md)); `--inspect --json` emits render facts; `--explain` prints every `model`/`cel`'s lowered primitive expansion ([ADR-0086](decisions/0086-declarative-light-and-material.md) §6) **and every `fit`'s placement** — where each pin landed, whether the pins coincide, and the pin-to-ink gap ([ADR-0087](decisions/0087-anchored-assembly.md)) — instead of an image. Output-kind precedence `--ascii` > `--preview` > `--inspect` > `--explain` > PNG. `--grid N`/`--diff <png>` are debug-only PNG aids, below. |
+| `drawstic render <file>#<drawing>[(args)] [--png@2] [--out <path>] [--stdout] [--ascii] [--preview] [--silhouette] [--inspect] [--explain] [--fit WxH] [--crop x:y WxH] [--grid N] [--diff <png>] [--mode pixel\|smooth]` | ad-hoc render of one drawing; can stream. A parametric drawing takes literal arguments in the fragment — `file#house(#c04040, 3)` (number, color, string, point, boolean only; [ADR-0067](decisions/0067-render-fragment-literal-arguments.md)). `--ascii` = luminance-ramp grayscale text; `--preview` = half-block ANSI colour; `--silhouette` = shape-only black-out ([ADR-0083](decisions/0083-render-silhouette.md)); `--inspect --json` emits render facts; `--explain` prints every `model`/`cel`'s lowered primitive expansion ([ADR-0086](decisions/0086-declarative-light-and-material.md) §6) **and every `fit`'s placement** — where each pin landed, whether the pins coincide, and the pin-to-ink gap ([ADR-0087](decisions/0087-anchored-assembly.md)) — instead of an image. Output-kind precedence `--ascii` > `--preview` > `--inspect` > `--explain` > PNG. `--grid N`/`--diff <png>` are debug-only PNG aids, below; `--mode` overrides the recipe's own `mode pixel\|smooth` (§12). |
 | `drawstic sheet <file> [--all] [--cols N] [--png@N] [--out <path>] [--stdout] [--ascii] [--preview]` | family contact sheet ([ADR-0082](decisions/0082-sheet-contact-sheet-cli.md)): composes the selected drawings size-normalized into ONE labeled comparison grid for cross-drawing consistency QA (§ below). Default selection = the module's `export`ed drawings in export order; `--all` = every non-parametric drawing. Reuses the renderer; never part of `build`. |
-| `drawstic critique <file> [--as icon\|scene\|character\|item] [--family a,b,c] [--strict]` | pixel-based, vision-free quality checks (`C0xx`) over every rendered drawing, plus family checks across siblings ([ADR-0085](decisions/0085-critique-command.md); § below). `--as` selects a category threshold profile; `--strict` promotes the must-fix subset to `error` (exit 1) as a CI gate. Complements `check` (grammar) — catches the visual, silent bug class. |
+| `drawstic critique <file> [--as icon\|scene\|character\|item] [--family a,b,c] [--strict] [--all]` | pixel-based, vision-free quality checks (`C0xx`) over every rendered drawing, plus family checks across siblings ([ADR-0085](decisions/0085-critique-command.md); § below). `--as` selects a category threshold profile; `--strict` promotes the must-fix subset to `error` (exit 1) as a CI gate; `--all` widens the family-check sibling selection to every non-parametric drawing (like `sheet --all`), overridden by `--family`. Complements `check` (grammar) — catches the visual, silent bug class. |
+| `drawstic help` \| `--help` \| `-h` | print usage and exit 0 (also the default with no command). |
+| `drawstic version` \| `--version` \| `-v`/`-V` | print the installed package version and exit 0. |
+
+**Global flags.** Every command that evaluates a recipe (`check`, `context`, `build`, `render`,
+`sheet`, `critique` — not `fmt`, which is pure text formatting, nor `help`/`version`) additionally
+accepts **`--budget N`** (overrides the evaluation-step budget, §15) and **`--mode pixel|smooth`**
+(overrides the recipe's own render mode, §12). An **unrecognized flag** is a positioned `E026` (one
+diagnostic per bad flag, exit 1) naming the flag — never silently ignored, so a typo (`--pgn@4`,
+`--strickt`) fails loudly instead of reading as "the flag had no effect".
 
 **`--grid N` / `--diff <png>` — debug-only PNG aids.** Neither ever reaches `build`
 exports, and both are inert whenever `--ascii`/`--preview`/`--inspect` also short-circuit
@@ -2090,9 +2103,14 @@ fn-def         = "fn" NAME "(" [ name-list ] ")" "=" expr NL ;   (* first-order 
 gradient-def   = "gradient" NAME "=" expr NL ;      (* linear(…) / radial(…) paint (§12) *)
 mask-def       = "mask" NAME "=" expr NL ;          (* region expression (§9) *)
 light-def      = "light" NAME "=" ( "dir" | "at" ) point paint          (* Light value (§12, ADR-0086) *)
-                 [ "amb" paint expr ] [ "gain" expr ] NL ;              (* dir/at/amb/gain: contextual (D7) *)
-material-def   = "material" NAME "=" paint [ RESPONSE ] NL ;            (* Material value (§12, ADR-0086) *)
+                 { "amb" paint expr | "gain" expr } NL ;                (* order-free; dir/at/amb/gain
+                                                                            are contextual (D7) *)
+material-def   = "material" NAME "=" paint [ RESPONSE ] { dose-override | FORM-PROFILE } NL ;
+                                                                (* Material value (§12, ADR-0086/0091) *)
 RESPONSE       = "flat" | "metal" | "skin" | "cloth" | "glass" | "glow" ; (* contextual keyword (D7) *)
+dose-override  = ( "shade" | "hi" | "rim" | "ao" | "spec" | "puff" | "spread" ) expr ;
+                                                       (* order-free trailing dose override (ADR-0091) *)
+FORM-PROFILE   = "round" | "drape" ;                  (* height-field profile, default round (ADR-0091) *)
 skeleton-def   = "skeleton" NAME ":" NL                                 (* rig (§9, ADR-0095) *)
                  INDENT skel-joint NL { skel-joint NL } DEDENT ;
 skel-joint     = NAME ( "at" point                                     (* anchored joint *)
@@ -2125,8 +2143,34 @@ draw-stmt      = palette-stmt | pixels-block | meta-stmt
                | gradient-def | filter-def | mask-def   (* drawing-local overrides (§9, §12) *)
                | light-def | material-def           (* drawing-local light/material (§12, ADR-0086) *)
                | pose-apply                          (* apply a pose (§9, ADR-0095) *)
+               | pin-decl | fit-stmt                 (* anchored assembly (§9, ADR-0087/0092/0095) *)
                | binding | control-stmt | mask-block | call-stmt ;
 pose-apply     = "pose" NAME NL ;                    (* solves the pose's rig for this drawing *)
+
+(* ─────────────────── anchored assembly: pin / fit (§9) ───────────────────
+   ADR-0087 (contact-guaranteed placement), ADR-0092 (occlusion + aim),
+   ADR-0095 (bone source). Both are keywords only in this statement position (D7). *)
+
+pin-decl       = "pin" pin-key point NL ;
+pin-key        = NAME [ "." NAME ] ;                 (* unspaced dot; a dotted PART.pin seeds a
+                                                         canvas-space point from an already-placed part *)
+
+fit-stmt       = "fit" fit-ref fit-source { fit-flag } NL ;
+fit-ref        = NAME [ "." NAME ] ;                 (* unspaced dot: TARGET or TARGET.pin; a bare
+                                                         ref auto-matches the one pin shared by name *)
+fit-source     = fit-ref                             (* another already-placed part's pin *)
+               | "bone" NAME                         (* the active pose's solved joint (ADR-0095) *)
+               | point ;                             (* canvas point — the ground-placement oracle *)
+fit-flag       = "flipx" | "flipy" | ROT-FLAG | SCALE-FLAG
+               | "transform" expr | "tint" paint expr | "mask" NAME
+                                                      (* NOT "anchor" — the pin already is the
+                                                         anchor, so that stamp-flag is a positioned
+                                                         error here (ADR-0096 §1) *)
+               | "ground"                            (* auto contact-shadow ellipse; the bare
+                                                         `shadow` spelling was renamed, ADR-0096 §2 *)
+               | "behind" NAME | "front" NAME         (* occlusion order, may repeat (ADR-0092) *)
+               | "aim" NAME point ;                   (* orient toward a point via a second pin
+                                                         (ADR-0092) *)
 
 meta-stmt      = ( "title" | "desc" ) STRING NL ;   (* SVG metadata (§6, §13) *)
 mask-block     = "mask" expr ":" block ;            (* expr must evaluate to a Region (§9) *)
@@ -2162,6 +2206,10 @@ draw-cmd       = "bg"      paint                     (* paint first everywhere (
                | "curvePoly" paint point point point { point } draw-flags  (* closed loop, region ctor, ≥3 (ADR-0075) *)
                | "profile" paint expr NAME [ expr ] draw-flags     (* filled fn silhouette; expr=span (range/list), NAME=fn, opt. baseline; fn gets normalized x (ADR-0076) *)
                | "poly"    paint point point { point } [ "fill" ]
+               | "dome"    paint point pair draw-flags              (* upper-half ellipse cap (ADR-0093) *)
+               | "lobe"    paint point point expr draw-flags        (* base point, tip point, width *)
+               | "crescent" paint point pair expr pair draw-flags   (* center, rx:ry, thickness, dir *)
+               | "ribbon"  paint point point point expr draw-flags  (* p0 p1 p2 through a quadratic arc, width *)
                | "fill"    paint ( path-value | region )             (* eliminators (§8) *)
                | "stroke"  paint ( path-value | region ) stroke-flags
                | "text"    paint point STRING [ "font" NAME ]
@@ -2176,7 +2224,9 @@ stampable      = NAME [ "(" [ expr-seq ] ")" ]      (* plain or parametric drawi
                | NAME "." NAME ;                    (* atlas member by name (§9) *)
 stamp-flag     = "flipx" | "flipy" | ROT-FLAG | SCALE-FLAG          (* pinned sugar (§9) *)
                | "transform" expr | "tint" paint expr | "mask" NAME
-               | "anchor" NAME | "shadow" point paint ;
+               | "anchor" NAME | "shadow" point paint
+               | "behind" NAME | "front" NAME ;      (* occlusion order vs. an earlier-placed part,
+                                                         may repeat (ADR-0092); `stamp` only *)
 
 filter-cmd     = "outline" [ paint ] [ expr ]       (* built-in filter set (§12); paint+width optional, ADR-0090 *)
                | "tint"    paint expr               (* extensible — new filters follow the same shape *)
@@ -2190,8 +2240,10 @@ filter-cmd     = "outline" [ paint ] [ expr ]       (* built-in filter set (§12
                | "quantize" [ region ] expr        (* palette remap (ADR-0093); the raw light quartet
                                                       `shadeRegion`/`lightRegion`/`rim`/`ao` was
                                                       removed, ADR-0097 §1 *)
-               | "model" region material [ "light" NAME ]      (* declarative shading (§12, ADR-0086) *)
-               | "cel" region material expr [ "light" NAME ] ; (* N-band cel fill; expr = band count *)
+               | "model" region material [ "over" region ] [ "light" NAME ]  (* declarative shading
+                                                                    (§12, ADR-0086); over: ADR-0091 *)
+               | "cel" region material expr [ "over" region ] [ "light" NAME ] ;
+                                                       (* N-band cel fill; expr = band count *)
 material       = NAME | paint [ RESPONSE ] ;        (* a `material` value, or inline COLOR [RESPONSE] *)
 
 (* ───────────────────────────── control flow ───────────────────────────── *)
@@ -2216,9 +2268,18 @@ mirror-stmt    = "mirror" ( "x" | "y" ) "=" expr ":" block ; (* axis symmetry (�
 
 theme-def      = "theme" NAME ":" NL INDENT { theme-item } DEDENT ;
 theme-item     = with-stmt | palette-stmt | style-stmt | size-dir | font-dir | mode-dir
-               | gradient-def | filter-def | draw-def ;                 (* §12 *)
+               | gradient-def | filter-def | draw-def
+               | light-def | figure-block ;          (* §12, ADR-0086/0093; a material-def or a
+                                                         non-gradient binding also parses here but is
+                                                         rejected at fold time (E004) — materials and
+                                                         other constants live at module scope, above
+                                                         the theme *)
 with-stmt      = "with" name-list NL ;              (* compose parts, ordered fold (§12) *)
 style-stmt     = "style" STRING NL ;                (* "…" or """…""" *)
+figure-block   = "figure" ":" NL INDENT figure-field { figure-field } DEDENT ;
+                                                     (* proportions oracle (§12, ADR-0093) *)
+figure-field   = NAME expr NL ;                     (* heads/headW/eyeLine/earLine/eyeSep/neckW/
+                                                        shoulderW/hipW — contextual, validated at fold *)
 
 (* ──────────────────────── user-defined fonts ──────────────────────── *)
 
@@ -2237,7 +2298,14 @@ font-item      = "with" NAME NL                     (* fallback face, fold (§8)
 
 atlas-def      = "atlas" NAME ":" NL INDENT { atlas-item } DEDENT ;  (* §9 *)
 atlas-item     = "sprites" name-list NL | "tile" SIZE NL | "cols" INT NL
-               | "pad" INT NL | "place" NAME point NL ;
+               | "pad" INT NL | "place" NAME INT ":" INT NL ;
+                 (* `place`'s coordinates are two literal INTs around a literal ":", not the point-
+                    expression grammar — no arithmetic there. Cross-item constraints (checked once the
+                    whole body is read, order-independent): at least one `sprites` name is required;
+                    `cols` needs a `tile` declaration; `place` and `tile` are mutually exclusive — a
+                    grid (`tile`) has fixed slots either way, so freeform `place` only applies to a
+                    grid-less atlas. `sprites`/`tile`/`cols`/`pad` may each repeat (last/accumulate
+                    wins); none is order-restricted. *)
 
 (* ───────────────────────────── exports ───────────────────────────── *)
 

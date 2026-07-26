@@ -1681,6 +1681,39 @@ draw d 12x12:
         }
         decodeEngine.defToSprite(e, { line: 1, column: 1 })
       }).toThrow(/failed to decode 'bad\.png'/)
+
+      // An Adam7-interlaced PNG is a distinct, honestly-reported failure (E027, src/png.ts) — not
+      // decoding it is in scope, but silently surfacing it as an unpositioned bare Error is not.
+      // decodePng never checks CRC, so flipping the IHDR interlace-method byte (offset 28: 8-byte
+      // signature + 4-byte length + 4-byte 'IHDR' type + 12 bytes of IHDR data preceding it) on an
+      // otherwise-valid encoded PNG is enough to exercise the interlaced branch specifically.
+      const interlaced = encodePngRgba(data, 2, 2)
+      interlaced[28] = 1
+      writeFileSync(join(dir, 'interlaced.png'), interlaced)
+      const interlacedEngine = new Engine(dir)
+      let caught: unknown
+      try {
+        const m = interlacedEngine.loadSource(
+          'image photo = interlaced.png\n\ndraw d 2x2:\n  stamp photo 0:0\n',
+          join(dir, 'main7.drw'),
+          'main7.drw',
+        )
+        const e = m.definitions.get('d')
+        if (!e) {
+          throw new Error('no d')
+        }
+        interlacedEngine.defToSprite(e, { line: 1, column: 1 })
+      } catch (e) {
+        caught = e
+      }
+      expect(caught).toBeInstanceOf(DrawsticError)
+      if (caught instanceof DrawsticError) {
+        const diag = caught.toDiagnostic()
+        expect(diag.code).toBe('E027')
+        expect(diag.message).toMatch(/Adam7-interlaced PNGs are not supported/)
+        // span points at the `image photo = interlaced.png` declaration (line 1 of main7.drw)
+        expect(diag.line).toBe(1)
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

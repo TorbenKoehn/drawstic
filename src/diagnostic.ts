@@ -114,4 +114,5 @@ export const ERROR_CODE = {
   noLight: 'E024',
   occlusionCycle: 'E025',
   unknownFlag: 'E026',
+  pngUnsupported: 'E027',
 } as const
