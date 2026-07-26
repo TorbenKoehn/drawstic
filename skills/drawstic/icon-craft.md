@@ -133,8 +133,7 @@ and re-thickened strokes.
   together) as **one `pixels:` grid** using theme `pal` keys — identical corner cut-outs to its
   siblings, no stamp-order pitfalls. Above it, primitives.
 - **64px is a detail redraw, not an enlargement:** add detail (fluting, glints, vents, a modelled
-  lens), keep the *same* contract (radius %, light direction, palette). W004 no longer fires on
-  48/64/128 detail sizes (reference.md).
+  lens), keep the *same* contract (radius %, light direction, palette).
 
 ## 7. Family palette
 

@@ -1877,7 +1877,7 @@ skipped rather than guessed at, so a lint pass never produces a false positive.
 | `W001` | a locally declared `pal` key is never used by `pixels:` or a paint expression | remove it or use it |
 | `W002` | a drawing is neither `export`ed, `stamp`ed, nor a `fit` target from another drawing | export it, stamp it, or fit it |
 | `W003` | a `stamp`'s literal target at a literal point lands entirely outside the host canvas | move it on-canvas or drop it |
-| `W004` | a procedural (no `pixels:`) drawing exceeds **128 px on either axis** (a square ceiling, so the canonical 48/64/128-px icon detail redraws stay silent) | preview with `render --preview --fit` |
+| `W004` | *retired* (code never reused) — it fired on every scene-sized canvas without carrying an action; verifying a large drawing is the render-and-look loop's job | — |
 | `W006` | a `dither` partner paint statically resolves to alpha 0 — `dither` is a raw set, not a blend (§12 Filters), so this punches a transparency hole | give the partner a visible alpha |
 | `W007` | a `stamp` is fully covered by a later, provably opaque `stamp`/`rect …fill`/`bg` in the same drawing | reorder the stamps, or delete the dead one |
 | `W008` | a `text` command's **literal** string contains character(s) that have no glyph in the resolved font (font resolution: per-`text` `font` flag > theme/draw/module directive > `small`), so they render silently as the unknown-glyph box | add the glyphs to the font, pick a font that has them, or drop them |

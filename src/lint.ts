@@ -61,7 +61,6 @@ export const lintModule = (engine: Engine, mod: ModuleRecord): Diagnostic[] => {
       continue
     }
     lintUnusedPaletteKeys(entry.definition, mod, diagnostics)
-    lintLargeProcedural(entry.definition, mod, diagnostics)
     lintClippedStamps(engine, mod, entry.definition, diagnostics)
     lintDitherTransparentPartner(engine, mod, entry.definition, diagnostics)
     lintCoveredStamps(engine, mod, entry.definition, diagnostics)
@@ -135,43 +134,11 @@ const lintUnusedPaletteKeys = (
   }
 }
 
-/**
- * The `W004` "large procedural drawing" ceiling, in pixels per axis. Set at 128
- * (not the old scene-calibrated 80×40) so deliberate icon/sprite detail
- * variants — the canonical 48/64/128-px redraws of a family — don't trip the
- * ASCII-preview nudge; only canvases beyond a 128-px detail size (scene
- * backdrops and the like) still do. A square threshold avoids the old 80×40
- * asymmetry that fired on any 64×64 icon whose height merely exceeded 40.
- */
-const LARGE_PROCEDURAL_MAX = 128
-
-/**
- * Lint `W004`: a procedural (no `pixels:`) drawing larger than
- * {@link LARGE_PROCEDURAL_MAX} on either axis — too large for a round-trippable
- * ASCII dump to verify by eye; nudges toward `render --preview --fit`
- * (ADR-0031) instead.
- */
-const lintLargeProcedural = (
-  def: DrawDefinition,
-  mod: ModuleRecord,
-  diagnostics: Diagnostic[],
-): void => {
-  if (def.body.some((stmt) => stmt.kind === 'pixels')) {
-    return
-  }
-  const size = def.size ?? mod.sizeDefault ?? mod.fileTheme?.size
-  if (size && (size.width > LARGE_PROCEDURAL_MAX || size.height > LARGE_PROCEDURAL_MAX)) {
-    diagnostics.push(
-      warning(
-        'W004',
-        `large procedural drawing '${def.name}' should be previewed with --fit`,
-        mod.displayPath,
-        def.span,
-        `use drawstic render <file>#${def.name} --preview --fit 80x40`,
-      ),
-    )
-  }
-}
+// `W004` (large procedural drawing → preview with --fit) is **retired**, code never reused: it
+// fired on every scene-sized canvas — 90 emissions across the session history, the single
+// most-emitted diagnostic, and universally ignored — while carrying no action a recipe could take.
+// Verifying a big drawing is the job of the render-and-look loop the `critique` rubric prescribes
+// with exact commands, not of a lint that repeats "this drawing is large".
 
 /**
  * Lint `W003`: a `stamp` call whose target, placed at a literal point, would land

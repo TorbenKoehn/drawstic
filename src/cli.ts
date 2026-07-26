@@ -108,9 +108,14 @@ type Writable<T> = { -readonly [P in keyof T]: T[P] }
  * are silently ignored rather than erroring — there is no "unknown flag"
  * diagnostic at this layer.
  */
+/** The flag spellings of `help` / `version` that a first-time user actually types. */
+const HELP_FLAGS = new Set(['help', '--help', '-h'])
+const VERSION_FLAGS = new Set(['version', '--version', '-v', '-V'])
+
 const parseArguments = (argv: string[]): CliArguments => {
+  const head = argv[0] ?? 'help'
   const cli: Writable<CliArguments> = {
-    command: argv[0] ?? 'help',
+    command: HELP_FLAGS.has(head) ? 'help' : VERSION_FLAGS.has(head) ? 'version' : head,
     target: null,
     json: false,
     check: false,
@@ -201,6 +206,11 @@ const parseArguments = (argv: string[]): CliArguments => {
       cli.family = names.length > 0 ? names : null
     } else if (/^--png@\d+$/.test(a)) {
       cli.pngScale = Number.parseInt(a.slice(6), 10)
+    } else if (HELP_FLAGS.has(a)) {
+      // `drawstic render --help` asks for help, not for a render of a file named "--help"
+      cli.command = 'help'
+    } else if (VERSION_FLAGS.has(a)) {
+      cli.command = 'version'
     } else if (!a.startsWith('--') && cli.target === null) {
       cli.target = a
     }
@@ -1652,6 +1662,22 @@ const runCritique = (cli: CliArguments): number => {
 
 // ── entry ───────────────────────────────────────────────────────────────────
 
+/**
+ * The published package version, read from the `package.json` that sits one directory above this
+ * module in both layouts (`src/cli.ts` and `dist/cli.js`). Read lazily and defensively: a missing or
+ * unreadable manifest reports `unknown` rather than crashing the CLI.
+ */
+const packageVersion = (): string => {
+  try {
+    const manifest = new URL('../package.json', import.meta.url)
+    const parsed: unknown = JSON.parse(readFileSync(manifest, 'utf8'))
+    const version = (parsed as { readonly version?: unknown }).version
+    return typeof version === 'string' ? version : 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
 const HELP = `drawstic — deterministic drawing engine
 
 usage:
@@ -1665,17 +1691,20 @@ usage:
   drawstic sheet <file> [--all] [--cols N] [--png@N] [--out <path>]
                   [--stdout] [--ascii] [--preview] [--json]
   drawstic critique <file> [--as icon|scene|character|item] [--family a,b,c]
-                  [--strict] [--json]
-options:
+                  [--strict] [--all] [--json]
+  drawstic help | --help | -h        this text
+  drawstic version | --version | -v  the package version
+options (every command):
   --json     stable diagnostic records
   --budget N evaluation-step budget
+  --mode pixel|smooth  override the recipe's render mode
 `
 
 /**
  * CLI entry point: dispatches `argv` to a subcommand handler and returns the
- * process exit code. An unrecognized command prints {@link HELP} and exits
- * `0` only for the literal `help` command (or no command at all); any other
- * unknown command exits `1`.
+ * process exit code. `help`/`--help`/`-h` (and no command at all) print
+ * {@link HELP} and exit `0`; `version`/`--version`/`-v` print the package
+ * version; any other unknown command prints {@link HELP} and exits `1`.
  */
 export const main = (argv: string[]): number => {
   const cli = parseArguments(argv)
@@ -1694,6 +1723,9 @@ export const main = (argv: string[]): number => {
       return runSheet(cli)
     case 'critique':
       return runCritique(cli)
+    case 'version':
+      process.stdout.write(`${packageVersion()}\n`)
+      return 0
     default:
       process.stdout.write(HELP)
       return cli.command === 'help' ? 0 : 1

@@ -162,38 +162,12 @@ describe('lintModule', () => {
     })
   })
 
-  test('W004: flags a procedural drawing larger than 128px on an axis', () => {
+  test('W004 is retired: a large procedural drawing lints clean', () => {
+    // The old "preview this with --fit" nudge fired on every scene-sized canvas (90 emissions in
+    // the session history, the most-emitted diagnostic of all) and carried no action. Verifying a
+    // big drawing belongs to the render-and-look loop, not to a lint. The code is never reused.
     const { engine, mod } = load(
       'draw bigProcedural 200x100:\n  circle #202020 100:50 40 fill\n\nexport bigProcedural shapes/big:\n  png\n',
-    )
-    const diags = lintModule(engine, mod)
-    expect(diags).toHaveLength(1)
-    expect(diags[0]).toMatchObject({
-      severity: 'warning',
-      code: 'W004',
-      message: "large procedural drawing 'bigProcedural' should be previewed with --fit",
-      hint: 'use drawstic render <file>#bigProcedural --preview --fit 80x40',
-    })
-  })
-
-  test('W004 does not fire on icon-sized detail variants up to 128px (the icon-evaluation carry-over)', () => {
-    // 64px and 128px procedural detail redraws are deliberate icon sizes, not
-    // accidental oversized scenes — the raised threshold keeps them quiet.
-    const { engine, mod } = load(
-      [
-        'draw detail64 64x64:',
-        '  circle #202020 32:32 28 fill',
-        '',
-        'draw detail128 128x128:',
-        '  circle #202020 64:64 60 fill',
-        '',
-        'export detail64 icons/d64:',
-        '  png',
-        '',
-        'export detail128 icons/d128:',
-        '  png',
-        '',
-      ].join('\n'),
     )
     expect(lintModule(engine, mod)).toEqual([])
   })

@@ -131,7 +131,7 @@ tile's top-left in **unscaled** sheet coordinates (× `--png@N` for output pixel
 | W001 | unused local `pal` key |
 | W002 | drawing never `export`ed, `stamp`ed, nor a `fit` target |
 | W003 | stamp's literal target at a literal point lands fully off-canvas |
-| W004 | procedural (no `pixels:`) drawing over 128 px on either axis (icon detail sizes 48/64/128 stay silent) |
+| W004 | *retired* — never emitted |
 | W006 | `dither` partner paint statically alpha-0 (transparency hole) |
 | W007 | stamp fully covered by a later, provably opaque stamp/fill |
 | W008 | `text` literal has char(s) with no glyph in the resolved font (renders as the unknown-glyph box) — static cases only |
