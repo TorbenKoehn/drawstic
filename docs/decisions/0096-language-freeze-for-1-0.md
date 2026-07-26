@@ -49,16 +49,40 @@ generations are deleted outright).
 Each removal keeps a **positioned error with a hint** naming the replacement, as ADR-0094 established
 — a removed construct must teach, not just fail.
 
-### 2 — Renames (all token-neutral or cheaper)
+### 2 — Renames
 
-| Was | Now | Why |
-|---|---|---|
-| `import N = f.png` | `image N = f.png` | `import` means *module import* everywhere else; Drawstic's module import is `from` |
-| `band(...)` | `ribbon(...)` | `band` already means cel band, `ripple` band, gradient band |
-| `fit … shadow` | `fit … ground` | same word as `stamp … shadow dx:dy p` but zero-arity and different semantics |
-| `ambientOcclusion` | `ao` | 4 tokens for a 1px contact-darkening helper |
-| `pal` | `palette` | abbreviation that buys nothing |
-| `grad` | `gradient` | same |
+| Was | Now | Why | Δ tokens (measured) |
+|---|---|---|---|
+| `import N = f.png` | `image N = f.png` | `import` means *module import* everywhere else; Drawstic's module import is `from` | 0 |
+| `band(...)` | `ribbon(...)` | `band` already means cel band, `ripple` band, gradient band | 0 |
+| `fit … shadow` | `fit … ground` | same word as `stamp … shadow dx:dy p` but zero-arity and different semantics | 0 |
+| `ambientOcclusion` | `ao` | 4 tokens for a 1px contact-darkening helper | **−3** |
+| `pal` | `palette` | abbreviation that buys nothing | 0 |
+| `grad` | `gradient` | same | 0 |
+
+**The token budget was measured, not assumed** — the recipe language is LLM-facing, so a rename that
+costs tokens costs real money on every render. Counted with `js-tiktoken` (`cl100k_base`) on the
+*lines as recipes actually write them*, because BPE merges are context-sensitive and bare-word counts
+mislead:
+
+```
+pal k=#24161f  w=#f0e6d2                18 → 18    palette
+grad sky = linear(90, #6a8fd0, #2a3a5e) 23 → 23    gradient
+fill k band(4:20, 16:8, 28:20, 3)       23 → 23    ribbon
+import logo = art/logo.png sha256 ab12  12 → 12    image
+fit body.foot 32:120 shadow             12 → 12    ground
+ambientOcclusion body inkC 0.3          14 → 11    ao
+```
+
+`palette`, `gradient`, `ribbon`, `image` and `ground` are each a **single token**, exactly like the
+abbreviations they replace: the tokenizer carries whole entries for common English words, so "longer
+word = more tokens" simply does not hold in this range. What *is* expensive is a non-word:
+`ambientOcclusion` costs 4 tokens, `ao` costs 1. Over the whole bundled corpus (31 recipes) the
+renames come out at **68 096 → 68 075 tokens, i.e. 21 tokens cheaper**.
+
+Caveat on record: `cl100k_base` is a proxy — Claude's tokenizer is not public. Both are BPE over
+English text and words of this frequency class are single tokens in either, but the measurement is
+evidence, not proof, for the model that actually reads these recipes.
 
 **`model` stays.** *Modelling* is the standing art term for rendering volume with light; the verb is
 correct and the churn would be pure noise.
