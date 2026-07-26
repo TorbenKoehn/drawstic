@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import type { ExportDefinition, FormatLine } from './ast.js'
 import type { Color } from './color.js'
-import { ERROR_CODE, error } from './diagnostic.js'
+import { ERROR_CODE, error, type TextSpan } from './diagnostic.js'
 import type { DefinitionEntry, Engine, ModuleRecord } from './eval.js'
 import { encodeJpeg } from './jpeg.js'
 import { encodePngIndexed, encodePngRgba } from './png.js'
@@ -126,8 +126,27 @@ const contentFromEntry = (
 /**
  * Writes `data`, creating parent directories as needed, and records the
  * artifact (byte length via UTF-8 for text, buffer length for binary).
+ *
+ * A build that would write the **same path twice** is an error, not a silent overwrite: two format
+ * lines can genuinely collide (`png 8x8 16x16` — every explicit size lands on `<base>.png`; `svg`
+ * plus `path` — both land on `<base>.svg`), and the symptom is one missing artifact that the
+ * artifact list still claims to have produced.
  */
-const write = (path: string, data: Uint8Array | string, out: BuiltArtifact[]): void => {
+const write = (
+  path: string,
+  data: Uint8Array | string,
+  out: BuiltArtifact[],
+  at: { readonly file: string; readonly span: TextSpan },
+): void => {
+  if (out.some((a) => a.path === path)) {
+    throw error(
+      ERROR_CODE.exportError,
+      `two export format lines both write '${path}'`,
+      at.file,
+      at.span,
+      'give them separate export blocks (each with its own path), or drop one of the formats',
+    )
+  }
   mkdirSync(dirname(path), { recursive: true })
   if (typeof data === 'string') {
     writeFileSync(path, data, 'utf8')
@@ -243,7 +262,10 @@ export const runExport = (
                   zl,
                 )
               : encodePngRgba(data, sprite.w * s, sprite.h * s, zl)
-            write(`${base}${suffix}.png`, bytes, artifacts)
+            write(`${base}${suffix}.png`, bytes, artifacts, {
+              file: mod.displayPath,
+              span: line.span,
+            })
           }
           for (const sz of line.sizes) {
             const nw = sz.width
@@ -258,7 +280,7 @@ export const runExport = (
                   zl,
                 )
               : encodePngRgba(data, nw, nh, zl)
-            write(`${base}.png`, bytes, artifacts)
+            write(`${base}.png`, bytes, artifacts, { file: mod.displayPath, span: line.span })
           }
           break
         }
@@ -268,7 +290,7 @@ export const runExport = (
             classes: line.svgFlags.includes('classes'),
             inlineStyles: line.svgFlags.includes('inlineStyles'),
           })
-          write(`${base}.svg`, svg, artifacts)
+          write(`${base}.svg`, svg, artifacts, { file: mod.displayPath, span: line.span })
           break
         }
         case 'path': {
@@ -280,7 +302,10 @@ export const runExport = (
               line.span,
             )
           }
-          write(`${base}.svg`, encodePathSvg(content.path), artifacts)
+          write(`${base}.svg`, encodePathSvg(content.path), artifacts, {
+            file: mod.displayPath,
+            span: line.span,
+          })
           break
         }
         case 'jpeg': {
@@ -299,7 +324,10 @@ export const runExport = (
             h = sprite.h * sc
             data = scaleBitmap(sprite.data, sprite.w, sprite.h, w, h)
           }
-          write(`${base}.jpeg`, encodeJpeg(data, w, h, q), artifacts)
+          write(`${base}.jpeg`, encodeJpeg(data, w, h, q), artifacts, {
+            file: mod.displayPath,
+            span: line.span,
+          })
           break
         }
         case 'tiled': {
@@ -334,7 +362,10 @@ export const runExport = (
                 m.count,
                 m.columns,
               )
-          write(`${base}.${line.tiledXml ? 'tsx' : 'tsj'}`, emit, artifacts)
+          write(`${base}.${line.tiledXml ? 'tsx' : 'tsj'}`, emit, artifacts, {
+            file: mod.displayPath,
+            span: line.span,
+          })
           break
         }
         case 'atlasJson': {
@@ -342,7 +373,10 @@ export const runExport = (
             { name: ex.name, x: 0, y: 0, width: sprite.w, height: sprite.h },
           ]
           const img = `${ex.basePath.split('/').pop() ?? ex.name}.png`
-          write(`${base}.json`, atlasJson(img, sprite.w, sprite.h, frames), artifacts)
+          write(`${base}.json`, atlasJson(img, sprite.w, sprite.h, frames), artifacts, {
+            file: mod.displayPath,
+            span: line.span,
+          })
           break
         }
         case 'aseprite': {
@@ -350,7 +384,10 @@ export const runExport = (
             { name: ex.name, x: 0, y: 0, width: sprite.w, height: sprite.h },
           ]
           const img = `${ex.basePath.split('/').pop() ?? ex.name}.png`
-          write(`${base}.aseprite.json`, asepriteJson(img, sprite.w, sprite.h, frames), artifacts)
+          write(`${base}.aseprite.json`, asepriteJson(img, sprite.w, sprite.h, frames), artifacts, {
+            file: mod.displayPath,
+            span: line.span,
+          })
           break
         }
         default:
