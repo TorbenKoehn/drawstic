@@ -228,8 +228,10 @@ Each finding carries `{measured, threshold, fix}`.
 **`pass` ≠ exit code.** `pass` is `false` on *any* fired finding (must-fix or advisory — one lone
 C009/C011/C012 warning flips it); the process exit code trips only on the `--strict` must-fix subset
 above, so exit 0 does not imply `pass:true`. Read `failedCodes`/per-drawing `checks[]` for what's
-actually outstanding. `pass:true` is necessary, not sufficient — run `rubric.renders` (silhouette-first)
-and answer every `rubric.items` prompt by looking. The metric bundle is a superset of `render --inspect`.
+actually outstanding. Neither signal reaches craft: run `rubric.renders` (silhouette-first) and answer
+every `rubric.items` prompt from those images. Each prompt asks for an **observation** — a name, a
+count, a location — never a yes/no, because a verdict question collects the answer you hoped for.
+The metric bundle is a superset of `render --inspect`.
 
 ### `check --lint` warnings
 

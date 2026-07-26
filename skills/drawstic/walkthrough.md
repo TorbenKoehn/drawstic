@@ -104,13 +104,12 @@ Green. **This is exactly the moment where a run goes wrong** — a green gate is
                "render compass.drw#compass --png@4" ],
   "items": [
     { "id": "misread", "when": "at native @1",
-      "ask": "With colour stripped (silhouette), does each glyph read as its intended concept?
-              Run the mis-reading test — cover the name and identify it." },
+      "ask": "Cover the names. From the silhouettes alone, write down what you think each glyph
+              is, one word each. Only then compare with what you meant …" },
     { "id": "merge-trap", "when": "glyph meets plate or a neighbour",
-      "ask": "Do any strokes merge into the plate or an adjacent glyph at @1?
-              Add a 1px gap where they touch." } ],
-  "note": "critique pass:true is necessary, not sufficient — answer every rubric item by looking
-           at the renders above before calling it done." }
+      "ask": "At @1, name every place a stroke touches another stroke or the plate edge …" } ],
+  "note": "Answer every item from the renders above, with an observation — a name, a count, a
+           location. \"Yes\" is not an answer. …" }
 ```
 
 </example>

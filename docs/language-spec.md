@@ -1922,8 +1922,11 @@ finding a structured diagnostic in a new **`C0xx`** namespace carrying `{measure
   legitimate form a pixel check cannot distinguish from a bug (recolor/shared-shell silhouettes, open
   frames enclosing small gaps, symmetric breathing room).
 - **Vision rubric.** After the automatic gate, `critique` prints an ordered list of silhouette-first
-  render commands plus a category rubric. `pass:true` is **necessary, not sufficient** — the rubric is
-  the part that still requires looking, and the product skill states this as the definition of done.
+  render commands plus a category rubric. Neither `pass` nor the exit code reaches craft — the rubric
+  is the part that still requires looking. Every prompt asks for an **observation** (a name, a count,
+  a location) rather than a yes/no verdict: blind builds twice answered verdict questions in their own
+  favour while looking straight at the defect, so a question that cannot be answered without naming
+  something is the only kind that forces the look. The product skill states this as the done gate.
 
 ### Lint warnings — `check --lint`
 

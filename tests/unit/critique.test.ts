@@ -967,7 +967,25 @@ describe('buildRubric (vision rubric block, ADR-0085 §6)', () => {
       'sheet f.drw --png@4',
     ])
     expect(r.items.map((i) => i.id)).toEqual(['misread', 'merge-trap'])
-    expect(r.note).toContain('necessary, not sufficient')
+    expect(r.note).toContain('"Yes" is not an answer')
+  })
+
+  // Blind builds answered yes/no prompts in their own favour — one graded an icon that reads as a
+  // life-ring "clearly = sun". Every prompt must therefore demand an observation, which in practice
+  // means an imperative ("name…", "write down…", "give…", "state…"), never a "does/is/do" question.
+  test('every rubric prompt asks for an observation, not a verdict', () => {
+    const all = [
+      ...buildRubric(icon, 'f.drw', 'a', true).items,
+      ...buildRubric(character, 'f.drw', 'a', true).items,
+      ...buildRubric(item, 'f.drw', 'a', true).items,
+      ...buildRubric(scene, 'f.drw', 'a', true).items,
+      ...buildRubric(null, 'f.drw', 'a', false).items,
+    ]
+    expect(all.length).toBeGreaterThan(0)
+    for (const it of all) {
+      expect(it.ask).toMatch(/\b([Nn]ame|write down|[Gg]ive|[Ss]tate|[Cc]over)\b/)
+      expect(it.ask).not.toMatch(/^(Does|Is|Do|Are|Can|Has|Have)\b/)
+    }
   })
 
   test('no profile yields the agnostic rubric and no sheet render when there is no family', () => {

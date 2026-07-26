@@ -1725,48 +1725,53 @@ export type VisionRubric = {
   readonly note: string
 }
 
+// Every `ask` demands an OBSERVATION — a name, a count, a location — never a verdict.
+// Measured, twice: blind builds answered yes/no prompts in their own favour. One graded an icon
+// that reads as a life-ring "clearly = sun"; another reported a mast its render does not contain.
+// Both were looking at the image. A question whose cheapest true answer is "yes" collects "yes";
+// a question that cannot be answered without naming something forces the look it asks for.
 const RUBRIC_ITEMS: Record<CritiqueCategory, readonly RubricItem[]> = {
   icon: [
     {
       id: 'misread',
       when: 'at native @1',
-      ask: 'With colour stripped (silhouette), does each glyph read as its intended concept? Run the mis-reading test — cover the name and identify it.',
+      ask: 'Cover the names. From the silhouettes alone, write down what you think each glyph is, one word each. Only then compare with what you meant — every mismatch is a redraw, not a judgement call.',
     },
     {
       id: 'merge-trap',
       when: 'glyph meets plate or a neighbour',
-      ask: 'Do any strokes merge into the plate or an adjacent glyph at @1? Add a 1px gap where they touch.',
+      ask: 'At @1, name every place a stroke touches another stroke or the plate edge. If you name none, say which glyphs you looked at.',
     },
   ],
   character: [
     {
       id: 'seam-contact',
       when: 'assembled from parts',
-      ask: 'On the silhouette, do all limbs read as one connected mass with contact — no visible seam or gap at the joints?',
+      ask: 'On the silhouette, name each joint you checked (neck, shoulders, elbows, hips, hands, feet) and what you saw at it. A joint you did not name is a joint you did not check.',
     },
   ],
   item: [
     {
       id: 'pair-confusion',
       when: '≥2 siblings',
-      ask: 'On the sheet, are the two most similar siblings distinct at a glance, or do their silhouettes read the same?',
+      ask: 'On the sheet, name the two siblings that look most alike, then name what tells them apart. "Nothing" is the finding, not a failure to answer.',
     },
   ],
   scene: [
     {
       id: 'hero-contrast',
       when: 'has a focal subject',
-      ask: 'Does the hero silhouette cross a contrast edge, or is it lost against a same-value background?',
+      ask: "Name the point where the hero's outline is hardest to follow against the background, and say what holds it there — or that nothing does.",
     },
     {
       id: 'no-floating',
       when: 'objects rest on ground',
-      ask: 'Is every object contact-grounded (shadow/AO), with nothing floating?',
+      ask: 'Name every object whose contact with the ground you cannot actually see in the render.',
     },
     {
       id: 'one-light',
       when: 'always',
-      ask: 'Does exactly one light direction drive every shadow and highlight?',
+      ask: 'State the light direction, then name any shadow or highlight that disagrees with it.',
     },
   ],
 }
@@ -1775,12 +1780,12 @@ const AGNOSTIC_RUBRIC_ITEMS: readonly RubricItem[] = [
   {
     id: 'silhouette',
     when: 'always',
-    ask: 'Does the silhouette read as the intended subject with colour stripped?',
+    ask: 'Cover the name. From the silhouette alone, write down what you think this is, then compare.',
   },
   {
     id: 'centering',
     when: 'framed (transparent-margin) sprite',
-    ask: 'Is the subject optically centered (bbox parity) with even margins?',
+    ask: 'Give the left and right margins in pixels, then say whether they match.',
   },
 ]
 
@@ -1811,6 +1816,6 @@ export const buildRubric = (
   return {
     renders,
     items: profile ? RUBRIC_ITEMS[profile.name] : AGNOSTIC_RUBRIC_ITEMS,
-    note: 'critique pass:true is necessary, not sufficient — answer every rubric item by looking at the renders above before calling it done.',
+    note: 'Answer every item from the renders above, with an observation — a name, a count, a location. "Yes" is not an answer. A clean exit code says the structure holds; only these answers say the craft does.',
   }
 }
