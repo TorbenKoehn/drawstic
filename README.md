@@ -38,9 +38,9 @@ rendered as-is.
 
 ## What it looks like
 
-Three real excerpts from the example corpus below. Each recipe is `check`-clean and the
-image next to it is rendered from exactly that recipe — nothing invented, nothing
-abbreviated past parsing.
+Everything below comes from the example corpus in this repo, and a test keeps it that way:
+each complete recipe shown is `check`-clean, each excerpt is proved line-by-line against the
+file it came from, and every image is rendered from exactly the recipe beside it.
 
 ### A — light, material, model: shading is declarative
 
@@ -88,6 +88,49 @@ rig once; a `pose` sets each joint's angle and paint depth for one view. `fit` t
 every part with a **contact guarantee** — no hand-computed offsets.
 
 <img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/figure-archer.png" width="130" alt="An archer figure assembled from separate head, torso and leg parts">
+
+The assembly is the whole pitch — the rig, one pose per view, and a `fit` per part. No
+offset is computed by hand, and `aim`/`behind` say what a part points at and what hides it
+instead of encoding that in coordinates:
+
+<!-- excerpt-of: examples/characters-ro2/archer.drw -->
+```drw
+skeleton archerRig:
+  headJ at fig.chin
+  chestJ at fig.neck
+  shLJ at fig.shoulderL
+  shRJ at fig.shoulderR
+  hipLJ at fig.hipL
+  hipRJ at fig.hipR
+
+pose front over archerRig:
+  view front
+  hipLJ 0 z 0
+  hipRJ 0 z 0
+  chestJ 0 z 2
+  shRJ 0 z 1
+  shLJ 0 z 3
+  headJ 0 z 4
+
+draw figFront 64x128:
+  use archer
+  pose front
+  fit torsoFront.neck bone chestJ
+  fit leg.hip bone hipLJ ground
+  fit leg.hip bone hipRJ
+  fit armBow.shoulder bone shLJ
+  fit armRelax.shoulder bone shRJ
+  fit headFront.chin bone headJ
+  fit bow.grip armBow.grip aim tip 8:14
+  fit quiver.attach torsoFront.quiverAttach behind torsoFront
+  outline
+```
+
+Every line above is verbatim from the committed recipe (a test enforces that). The parts it
+assembles are ordinary `draw`s with `pin`s — here is the complete, runnable figure:
+
+<details>
+<summary><strong>Full recipe</strong> — theme, figure oracle, parts, rig, pose, assembly</summary>
 
 ```drw
 theme archer:
@@ -210,11 +253,12 @@ export figFront archer-front:
   png @1 @4
 ```
 
-Rendered with `drawstic render archer.drw#figFront --png@4`. Adapted from
-[`examples/characters-ro2/archer.drw`](examples/characters-ro2/archer.drw) — every line
-above is unchanged from that file; only the arm/bow/quiver parts and their `fit`s are
-omitted here for length. The full character (with arms and bow, three views) renders from
-the file as committed.
+</details>
+
+Rendered with `drawstic render archer.drw#figFront --png@4`. Every line of the full recipe
+is unchanged from [`examples/characters-ro2/archer.drw`](examples/characters-ro2/archer.drw);
+only the arm, bow and quiver parts are left out, which is why its assembly is three `fit`s
+shorter than the excerpt above. The committed file renders all three views.
 
 ### C — an icon family with `export`: repeatable, multi-artifact
 
