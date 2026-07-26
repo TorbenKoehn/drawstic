@@ -42,7 +42,7 @@ Copy-paste start:
 
 ```drw
 theme itemSet:
-  pal:
+  palette:
     k = #241a20
     m = #95a1b4
     h = #eef4fb
@@ -97,7 +97,7 @@ fn tagBox() = rrect(10:17, 20:24, 2)
 
 ```drw
 draw gauntlet(t) 12x15:
-  pal:
+  palette:
     i = #1f2530
     l = t
     g = t.lighten(18%)
@@ -207,10 +207,10 @@ tileset set 32x32:
   tiles itemA, itemB, itemC, itemD, itemE, itemF
   cols 3
 
-export itemA items/item-a:
+export itemA item-a:
   png @1 @4
 
-export set items/set:
+export set set:
   png @1 @4
   tiled
   atlasJson
@@ -223,10 +223,14 @@ atlas setAtlas:
   sprites itemA, itemB, itemC, itemD, itemE, itemF
   pad 1
 
-export setAtlas items/set-atlas:
+export setAtlas set-atlas:
   png @1 @4
   atlasJson
 ```
+
+Export paths are recipe-relative (ADR-0096 §6): `build` writes next to the recipe file, so bare
+names like the ones above are correct as-is — never repeat the recipe's own directory name as a
+leading `dirname/` prefix (lint `W016`).
 
 Use `tiled` for editor grids, `atlasJson` for runtime names, and singles for quick spot checks. Do
 not stop at standalone PNGs if the deliverable is a set.

@@ -33,7 +33,7 @@ draw volcano 256x192:
   ashHi    = #26222e
 
   # ---- sky -------------------------------------------------------------
-  grad sky = linear(90, skyTop, skyMid, skyWarm)
+  gradient sky = linear(90, skyTop, skyMid, skyWarm)
   bg sky
 
   # stars in the upper sky
@@ -50,11 +50,11 @@ draw volcano 256x192:
   profile ridgeFar 0..w ridgeB fill
   profile ridgeMid 0..w ridgeF fill
   # warm horizon haze — seats the ridges in depth, fades up into the night
-  grad haze = linear(90, skyWarm.alpha(0%), skyWarm.alpha(32%))
+  gradient haze = linear(90, skyWarm.alpha(0%), skyWarm.alpha(32%))
   rect haze 0:118 (w-1):150 fill
 
   # ---- ash plume (behind the peak, lit from below) ---------------------
-  grad ash = linear(90, ashHi, ashLo)
+  gradient ash = linear(90, ashHi, ashLo)
   mask plume = curvePoly(122:72, 96:46, 106:16, 130:6, 158:20, 152:54)
   fill ash plume
   circle ashHi 118:20 12 fill
@@ -65,7 +65,7 @@ draw volcano 256x192:
 
   # ---- volcano mass ----------------------------------------------------
   mask volcano = poly(28:156, 62:112, 106:66, 122:78, 150:60, 196:114, 228:156)
-  grad rock = linear(90, rockWarm, rockBase, rockCool)
+  gradient rock = linear(90, rockWarm, rockBase, rockCool)
   fill rock volcano
 
   grain volcano 0.09 11 rockShad
@@ -84,15 +84,15 @@ draw volcano 256x192:
     px lavaDeep.alpha(0.12 + rand(7, g.x + g.y) * 0.32) g
   # crater light spilling down from the summit — a vertical warm wash, fading downslope
   # (a linear alpha ramp dithers as soft bands; nested ellipses would ring the face)
-  grad face = linear(90, lavaDeep.alpha(24%), lavaDeep.alpha(0%))
+  gradient face = linear(90, lavaDeep.alpha(24%), lavaDeep.alpha(0%))
   mask volcano:
     rect face 0:62 (w-1):150 fill
 
   # ---- lava flows down the slopes --------------------------------------
-  grad lavaR = linear(90, lavaCore, lavaMid, lavaDeep, lavaDark)
+  gradient lavaR = linear(90, lavaCore, lavaMid, lavaDeep, lavaDark)
   curve lavaR 124:76 138:92 148:112 162:132 176:150 w3
   curve lavaHot 124:76 138:92 148:112 162:132 176:150 w1
-  grad lavaL = linear(90, lavaHot, lavaDeep, lavaDark)
+  gradient lavaL = linear(90, lavaHot, lavaDeep, lavaDark)
   curve lavaL 120:78 110:98 102:120 96:140 92:151 w2
   curve lavaHot 120:78 110:98 102:120 96:140 92:151 w1
   # hotspots where flows reach the base
@@ -115,7 +115,7 @@ draw volcano 256x192:
 
   # ---- foreground ground (irregular rocky rim) -------------------------
   mask ground = profile(0..w, groundY)
-  grad soil = linear(90, rockBase, rockShad)
+  gradient soil = linear(90, rockBase, rockShad)
   fill soil ground
   grain ground 0.12 17 rockShad
   rim ground 0:1 lavaDark 1
@@ -124,7 +124,7 @@ draw volcano 256x192:
   mask crust = ellipse(120:180, 40:9)
   fill rockShad crust
   mask pool = ellipse(120:180, 32:6)
-  grad poolGrad = radial(lavaCore, lavaDeep)
+  gradient poolGrad = radial(lavaCore, lavaDeep)
   fill poolGrad pool
   ripple pool 0.4 21 lavaHot.alpha(60%)
   lightRegion ground 120:180 lavaMid 0.34
@@ -138,15 +138,15 @@ draw volcano 256x192:
   # ---- foreground boulders (rim-lit by the glow) -----------------------
   mask rk1 = curvePoly(26:176, 42:160, 64:168, 70:187, 30:191)
   fill rockShad rk1
-  ambientOcclusion rk1 rockShad 0.5
+  ao rk1 rockShad 0.5
   rim rk1 0:1 lavaMid.alpha(80%) 1
   mask rk2 = curvePoly(198:176, 216:166, 234:174, 234:191, 200:191)
   fill rockShad rk2
-  ambientOcclusion rk2 rockShad 0.5
+  ao rk2 rockShad 0.5
   rim rk2 0:1 lavaMid.alpha(80%) 1
   mask rk3 = curvePoly(176:184, 186:178, 198:184, 194:191, 176:191)
   fill rockShad rk3
-  ambientOcclusion rk3 rockShad 0.5
+  ao rk3 rockShad 0.5
   rim rk3 0:1 lavaDeep.alpha(85%) 1
 
   # scattered rim-lit rubble on the floor (avoids pool + boulders)

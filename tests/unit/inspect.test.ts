@@ -18,7 +18,7 @@ const render = (src: string, drawing: string): Sprite => {
 describe('inspectSprite', () => {
   test('reports size, colors, bbox, opaque/transparent counts, palette, and occupancy', () => {
     const s = render(
-      'draw box 4x4:\n  pal k=#1a1a1a  r=#c04040\n  pixels:\n    ....\n    .kr.\n    .rk.\n    ....\n',
+      'draw box 4x4:\n  palette k=#1a1a1a  r=#c04040\n  pixels:\n    ....\n    .kr.\n    .rk.\n    ....\n',
       'box',
     )
     const info = inspectSprite(s)
@@ -37,7 +37,7 @@ describe('inspectSprite', () => {
   })
 
   test('alphaCoverageBBox is null and occupancy is empty for a fully transparent sprite', () => {
-    const s = render('draw empty 3x3:\n  pal k=#000000\n', 'empty')
+    const s = render('draw empty 3x3:\n  palette k=#000000\n', 'empty')
     const info = inspectSprite(s)
     expect(info.width).toBe(3)
     expect(info.height).toBe(3)
@@ -66,7 +66,7 @@ describe('inspectSprite', () => {
     const blankRow = '.'.repeat(24)
     const firstRow = `${'.'.repeat(5)}xxx${'.'.repeat(16)}`
     const rows = [firstRow, blankRow, blankRow, blankRow, blankRow, blankRow, blankRow, blankRow]
-    const src = `draw grid 24x8:\n  pal x=#ffffff\n  pixels:\n${rows.map((r) => `    ${r}`).join('\n')}\n`
+    const src = `draw grid 24x8:\n  palette x=#ffffff\n  pixels:\n${rows.map((r) => `    ${r}`).join('\n')}\n`
     const s = render(src, 'grid')
     const info = inspectSprite(s)
     expect(info.width).toBe(24)

@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildModule } from '../../src/build.js'
+import { buildModule, validateExport } from '../../src/build.js'
 import { DrawsticError } from '../../src/diagnostic.js'
 import { Engine } from '../../src/eval.js'
 
@@ -55,5 +55,79 @@ describe('build export paths', () => {
     }
     expect(caught).toBeInstanceOf(DrawsticError)
     expect((caught as DrawsticError).code).toBe('E018')
+  })
+})
+
+describe('validateExport — recipe-relative path grammar (ADR-0096 §6)', () => {
+  const check = (basePath: string): void => {
+    const engine = new Engine(process.cwd())
+    const mod = engine.loadSource(
+      `${DOT}\nexport dot ${basePath}:\n  png\n`,
+      `${process.cwd()}\\mem-export-path.drw`,
+      'mem-export-path.drw',
+    )
+    validateExport(engine, mod, mod.exports[0] as (typeof mod.exports)[number])
+  }
+
+  test('a plain single-segment path passes', () => {
+    expect(() => check('gem')).not.toThrow()
+  })
+
+  test('a plain multi-segment path passes', () => {
+    expect(() => check('icons/finance')).not.toThrow()
+  })
+
+  test('a `..` segment escapes the output directory (E018)', () => {
+    expect(() => check('../x/y')).toThrow(DrawsticError)
+    try {
+      check('../x/y')
+      expect(false).toBe(true)
+    } catch (e) {
+      expect(e).toBeInstanceOf(DrawsticError)
+      if (e instanceof DrawsticError) {
+        expect(e.code).toBe('E018')
+        expect(e.message).toBe("export path '../x/y' escapes the output directory")
+      }
+    }
+  })
+
+  test('a leading `/` escapes the output directory (E018)', () => {
+    try {
+      check('/gem')
+      expect(false).toBe(true)
+    } catch (e) {
+      expect(e).toBeInstanceOf(DrawsticError)
+      if (e instanceof DrawsticError) {
+        expect(e.code).toBe('E018')
+        expect(e.message).toBe("export path '/gem' escapes the output directory")
+      }
+    }
+  })
+
+  test('a `.` segment escapes the output directory (E018)', () => {
+    try {
+      check('./gem')
+      expect(false).toBe(true)
+    } catch (e) {
+      expect(e).toBeInstanceOf(DrawsticError)
+      if (e instanceof DrawsticError) {
+        expect(e.code).toBe('E018')
+      }
+    }
+  })
+
+  test('a file extension is rejected — the format line appends it (E018)', () => {
+    try {
+      check('gem.png')
+      expect(false).toBe(true)
+    } catch (e) {
+      expect(e).toBeInstanceOf(DrawsticError)
+      if (e instanceof DrawsticError) {
+        expect(e.code).toBe('E018')
+        expect(e.message).toBe(
+          "export path 'gem.png' must not carry a file extension — the format line appends it",
+        )
+      }
+    }
   })
 })

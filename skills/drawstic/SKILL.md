@@ -10,7 +10,7 @@ same recipe, pixel-identical output on every platform. Recipes are token-optimiz
 self-verifiable text: you can read one and predict the pixels.
 
 This file teaches the **one canonical path** and the language on it. The **floor / escape hatch**
-(raw `shadeRegion`/`rim`/`lightRegion`, `scatter`, `mirror`, hand `pixels:`/`pal:` work, filter
+(raw `shadeRegion`/`rim`/`lightRegion`, `scatter`, `mirror`, hand `pixels:`/`palette:` work, filter
 internals) lives in [reference.md](reference.md) — load it when the canonical path doesn't cover a
 need, or for any construct not shown here.
 
@@ -30,9 +30,9 @@ the light coherence, and the pixel contact, so you declare intent instead of han
 2. **Materials** — `material NAME = COLOR RESPONSE` (response = the *physics*: `metal`/`skin`/`cloth`/
    `glass`/`glow`/`flat`, never the colour) `[drape] [spread N%]`.
 3. **Parts** — each mass is a `Region` binding from a primitive or an **organic constructor**
-   (`dome`/`lobe`/`crescent`/`band`); a modular part declares its seams as **`pin`s**.
+   (`dome`/`lobe`/`crescent`/`ribbon`); a modular part declares its seams as **`pin`s**.
 4. **Assembly** — `fit` (contact-guaranteed placement) with `behind`/`front` (z-order), `aim` (orient a
-   held prop), `fit … shadow` (plant on the ground), `fit … tint` (push a far limb back). For a
+   held prop), `fit … ground` (plant on the ground), `fit … tint` (push a far limb back). For a
    multi-view figure, declare one `skeleton` and make each view a `pose` (auto-Z from bone depth) —
    `fit part.pin bone JOINT` (ADR-0095).
 5. **Shade** — `model REGION MAT` (smooth, form-following, the default) or `cel REGION MAT N` (crisp
@@ -91,8 +91,9 @@ Each step is engine-verifiable: `render … --explain` prints the exact primitiv
    looking. `pass:true` is necessary, **not** sufficient. `critique --json` also carries a **construct
    census** (every construct used, `spec-only`/`non-canonical` flags, and four `antiPatterns` counts
    `rawShade`/`manualSpread`/`stampWithPins`/`handShadow` = W012–W015, **target 0**).
-7. **Build** `bunx drawstic build file.drw --out dir --json` → writes every `export`
-   artifact, returns `{diagnostics, artifacts: [{path, bytes}]}`.
+7. **Build** `bunx drawstic build file.drw --json` → writes every `export`
+   artifact next to the recipe file (ADR-0096 §6; `--out dir` overrides), returns
+   `{diagnostics, artifacts: [{path, bytes}]}`.
 
 **Definition of done:** `check` clean · `critique --as <cat>` `pass:true` (or every remaining
 `warning` consciously accepted) · the `critique` **rubric answered by looking** · `build` wrote the
@@ -138,8 +139,8 @@ draw scene 32x24:
 ```
 
 **Hand-pixeled art is the floor**, not the default: a tiny/flat sprite (≤~12px, a flat icon glyph) can
-be a `pixels:` grid with a `pal` (palette keys = one ASCII letter, `.` = transparent). Full `pixels:`/
-`pal` rules: reference.md § Pixel literals / § Palettes.
+be a `pixels:` grid with a `palette` (palette keys = one ASCII letter, `.` = transparent). Full `pixels:`/
+`palette` rules: reference.md § Pixel literals / § Palettes.
 
 ## Core syntax
 
@@ -168,7 +169,7 @@ be a `pixels:` grid with a `pal` (palette keys = one ASCII letter, `.` = transpa
   build heads/hair/hats from these, **not** hand poly-lists): `dome p c rx:ry [fill]` (upper-half
   ellipse, flat base — skull/helmet/hat crown) · `lobe p base tip w [fill]` (teardrop — ear/nose/
   strand/plume/tassel) · `crescent p c rx:ry thick dir [fill]` (tapering band — fringe/brim/eyelid) ·
-  `band p p0 p1 p2 w [fill]` (width-`w` ribbon through 3 points; **stacked = turban wraps**). Paintless
+  `ribbon p p0 p1 p2 w [fill]` (width-`w` ribbon through 3 points; **stacked = turban wraps**). Paintless
   call = a `Region` (`dome(c, rx:ry)`) for `.union`/`model`/`mask`.
 - **Stamp** `stamp name[(args)] pt [anchor center|bottom|…] [flipx] [flipy] [rot45] [scale2]
   [transform t] [tint p 0.3] [shadow 1:1 #0006] [mask r]`.
@@ -181,7 +182,7 @@ be a `pixels:` grid with a `pal` (palette keys = one ASCII letter, `.` = transpa
   transform** (a left-shoulder pin becomes the correct right shoulder after `flipx`; the fit pin still
   lands exactly) — so mirrored side/back parts and depth-tinted far limbs stay reliable. No contact ⇒
   non-fatal **`W010`** gap (the seam C007 catches); a pin >2px off the part's own ink ⇒ **`W011`**
-  loose-pin. **Ground:** `fit tree.base x:duneY(x/(w-1))` plants a part on a terrain fn; `shadow` flag =
+  loose-pin. **Ground:** `fit tree.base x:duneY(x/(w-1))` plants a part on a terrain fn; `ground` flag =
   auto contact-shadow at the footprint bottom (the feet), not the fit pin.
 - **Occlusion + aim (ADR-0092)** — layer parts declaratively, not by fit order: `behind <part>` /
   `front <part>` trailing clauses on `stamp`/`fit` set the paint order (a slung sword `behind cape`,
@@ -218,8 +219,8 @@ be a `pixels:` grid with a `pal` (palette keys = one ASCII letter, `.` = transpa
   `match x:` · expression `if c then a else b` · `fn f(a, b) = expr`.
 - **Floor constructs** (reach past the canonical path — reference.md): `scatter` (seeded points from a
   region — stars/gravel), `mirror x=n:` (a whole passage + its reflection), raw `shadeRegion`/`rim`/
-  `lightRegion`/`ambientOcclusion` (the hand shading quartet `model` replaces), `quantize` (palette
-  snap — § Import-assist), hand `pixels:`/`pal:` work.
+  `lightRegion`/`ao` (the hand shading quartet `model` replaces), `quantize` (palette
+  snap — § Import-assist), hand `pixels:`/`palette:` work.
 - **Export formats:** `png [@N] [z0-9] [indexed]` · `svg [ids] [classes] [inlineStyles]` ·
   `jpeg [512] [q80]` · `path` · `tiled`/`atlasJson`/`aseprite` (sheets) · `mode pixel|smooth`.
 
@@ -233,7 +234,7 @@ Reach for **import-assist only for a one-off** where an external image generator
 detailed portrait, a texture) and cross-view consistency is not required:
 
 ```drw
-import face = ../gen/portrait.png sha256 <hex>   # pin the external PNG (determinism starts here)
+image face = ../gen/portrait.png sha256 <hex>   # pin the external PNG (determinism starts here)
 pal8 = #1a1420, #e7b088, #a86a44, #47331f, #6b4d2e, #4f7bb0, #fbf6ee, #9a5240
 draw hero 48x48:
   stamp face 0:0
@@ -268,7 +269,7 @@ every object's shade/rim/cast is lowered from it by `model`/`cel`. (2) **terrain
 ground line is a `fn` + `profile`; everything standing `fit`s its base pin to it (no floating). (3)
 paint **back-to-front**: sky → far layer → haze veil → midground → ground (shape gradient far-light→
 near-dark) → texture filters (depth-staggered) → detail marks (≥2px, light/dark pair) → subjects
-(`fit … shadow` for contact) → foreground frame → vignette. (4) each mass: `model REGION MAT` under the
+(`fit … ground` for contact) → foreground frame → vignette. (4) each mass: `model REGION MAT` under the
 theme's `sun` → **then bright accents by hand**.
 
 **Before "done":** `critique --as scene` `pass:true` (+ answer its hero-contrast/no-floating/one-light
@@ -302,11 +303,11 @@ every view + recolor variant shares one world-space source (the "light mirrored 
 oracle so `heads/headW/eyeLine/…` are declared once and read as named guide points (`fig.crown`,
 `fig.eyeL/R`, `fig.side.eye`, `fig.earL/R`, `fig.neckL/R`, `fig.shoulderL/R`) — eyes/ears/neck can't
 drift and the profile eye lands forward. (2) **build head + headwear from the organic constructors and a
-copied archetype scaffold** (character-craft.md § 3) — `dome`/`lobe`/`crescent`/`band`, **stacked bands
+copied archetype scaffold** (character-craft.md § 3) — `dome`/`lobe`/`crescent`/`ribbon`, **stacked bands
 = turban**. (3) **parametric parts** (`draw part(c)`), each declaring its seam rows as **`pin`s**. (4)
 full body **back-to-front via `fit`**: seed the root with `pin torso.shoulder …`, then `fit
 armL.shoulder torso.shoulder` — contact is structural, a seam raises `W010`/C007. Plant a standing
-figure with `fit base … shadow`. (5) **recolor parametrically, never themes**. (6) **redraw pose-leading
+figure with `fit base … ground`. (5) **recolor parametrically, never themes**. (6) **redraw pose-leading
 parts for side AND back — neither is a flip.** Side: reuse pose-invariant limbs, far limb via
 neutral-grey `tint`, orient a held prop with `aim`. Back: its own part set (no face), **declared prop
 z-order** (`behind`/`front` — C013 verifies), **mirrored left-right** attach vs. front. (7) **one bare
@@ -337,9 +338,9 @@ then native **`--png@1`**, then **`--silhouette --png@4`** on the weakest pair. 
 
 ## Gotchas
 
-- Pixel keys: exactly one ASCII letter, declared in a visible `pal`/theme; every row equal
+- Pixel keys: exactly one ASCII letter, declared in a visible `palette`/theme; every row equal
   width; `.` is transparent and never declared. Cells resolve in the **palette namespace only**.
-  `w`/`h` are fine as pal keys (they shadow the canvas-size binding inside the applying draw).
+  `w`/`h` are fine as palette keys (they shadow the canvas-size binding inside the applying draw).
 - A bare comma-sequence IS a list — `f(a, b, c)` is a 3-arg call; to pass one list, bind it
   first (`xs = a, b, c` then `f(xs)`).
 - Every painting command is **paint-first** — `circle k 8:8 6`, `poly` included. `poly` takes `fill`
@@ -355,12 +356,12 @@ then native **`--png@1`**, then **`--silhouette --png@4`** on the weakest pair. 
 - Canvas `WxH` are integer literals, never expressions; scale via `stamp … scale2` or export `@N`.
 - Drawing-level `use themes x` lines must be the first statements of the body.
 - Scope: `draw`/`path`/`fn`/`theme`/`tileset`/`atlas`/`export` are **module-scope only** (E004
-  inside a `draw` body); `mask`/`grad`/`pal`/`light`/`material`/`filter`/bindings may also be
+  inside a `draw` body); `mask`/`gradient`/`palette`/`light`/`material`/`filter`/bindings may also be
   drawing-local. Full table: reference.md § Definition scope.
-- A `theme` body holds **only** `pal:`/`grad NAME=…`/`size`/`mode`/`font`/`light`/`figure:`/`style`/
+- A `theme` body holds **only** `palette:`/`gradient NAME=…`/`size`/`mode`/`font`/`light`/`figure:`/`style`/
   `with`/`filter`/`draw`. A theme `light`/`figure:` folds like `size`/`font` (later wins). A free
   binding there (`accent = #d8a53a`) — or a `material` — is `E004` **at the declaration** (colours go
-  under `pal:`; materials/constants at module scope).
+  under `palette:`; materials/constants at module scope).
 - Theme/host palettes **don't cross a `stamp`/`fit` boundary** — recolour a stamped variant
   **parametrically** (`draw part(c)`) or `tint` it (`replace` was removed, ADR-0094), not by swapping
   the theme.
@@ -376,7 +377,7 @@ then native **`--png@1`**, then **`--silhouette --png@4`** on the weakest pair. 
 - SVG export stays compact for flat/row-uniform fills; scanline-varying gradients, veils, texture,
   and grain explode `<rect>` count — reserve them for PNG targets. Full tradeoffs: reference.md § Export.
 - `radial(c, transparent)` muddies a glow; end on `c.alpha(0%)`. Cross-hue OkLCh blends (`mix`/`tint`/
-  `grad` stops) drift through magenta/grey; use intra-hue ramps or explicit `rgb`/`hsl` stops. Shade
+  `gradient` stops) drift through magenta/grey; use intra-hue ramps or explicit `rgb`/`hsl` stops. Shade
   **warm materials with `darken()`**, never a raw cool `mix` (→ pink). Full colour traps: reference.md.
 - `quad`/`bezier`/`arc` below ~12px rasterize blocky — use `pixels:` or the organic constructors
   (exact at any size). `noise(seed, x, 0)` at integer `x` is high-frequency spikes — sample fractional

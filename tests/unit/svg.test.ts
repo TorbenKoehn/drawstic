@@ -177,7 +177,7 @@ describe('encodeSvg', () => {
   test('a real rendered sprite encodes to structurally valid SVG', () => {
     const engine = new Engine(process.cwd())
     const mod = engine.loadSource(
-      'draw heart 5x5:\n  pal k=#1a1a1a  r=#c04040\n  pixels:\n    .r.r.\n    rrkrr\n    rrrrr\n    .rrr.\n    ..r..\n',
+      'draw heart 5x5:\n  palette k=#1a1a1a  r=#c04040\n  pixels:\n    .r.r.\n    rrkrr\n    rrrrr\n    .rrr.\n    ..r..\n',
       `${process.cwd()}\\mem-svg-real${n++}.drw`,
       'mem.drw',
     )

@@ -207,9 +207,9 @@ describe('parser', () => {
     }
   })
 
-  test('pal inline and block forms', () => {
-    const a = one('draw d 2x2:\n  pal k=#111  r=#c04040\n')
-    const b = one('draw d 2x2:\n  pal:\n    k = #111\n    r = #c04040\n')
+  test('palette inline and block forms', () => {
+    const a = one('draw d 2x2:\n  palette k=#111  r=#c04040\n')
+    const b = one('draw d 2x2:\n  palette:\n    k = #111\n    r = #c04040\n')
     if (a.kind === 'drawDefinition' && b.kind === 'drawDefinition') {
       const pa = a.def.body[0]
       const pb = b.def.body[0]
@@ -222,22 +222,33 @@ describe('parser', () => {
     }
   })
 
-  test('block pal supports explicit destructuring', () => {
-    const s = one('draw d 2x2:\n  pal:\n    a, b, c = #777.tones(-10%, 0%, 10%)\n')
+  test('block palette supports explicit destructuring', () => {
+    const s = one('draw d 2x2:\n  palette:\n    a, b, c = #777.tones(-10%, 0%, 10%)\n')
     if (s.kind === 'drawDefinition') {
-      const pal = s.def.body[0]
-      expect(pal?.kind).toBe('palette')
-      if (pal?.kind === 'palette') {
-        expect(pal.entries[0]?.kind).toBe('destructure')
-        if (pal.entries[0]?.kind === 'destructure') {
-          expect(pal.entries[0].keys).toEqual(['a', 'b', 'c'])
+      const paletteStmt = s.def.body[0]
+      expect(paletteStmt?.kind).toBe('palette')
+      if (paletteStmt?.kind === 'palette') {
+        expect(paletteStmt.entries[0]?.kind).toBe('destructure')
+        if (paletteStmt.entries[0]?.kind === 'destructure') {
+          expect(paletteStmt.entries[0].keys).toEqual(['a', 'b', 'c'])
         }
       }
     }
   })
 
-  test('multi-letter pal key is a positioned error', () => {
-    expect(() => parse('draw d 2x2:\n  pal ink=#111\n', 't.drw')).toThrow(/one ASCII letter/)
+  test('multi-letter palette key is a positioned error', () => {
+    expect(() => parse('draw d 2x2:\n  palette ink=#111\n', 't.drw')).toThrow(/one ASCII letter/)
+  })
+
+  test('old pal spelling errors, naming palette (ADR-0096 §2)', () => {
+    expect(() => parse('draw d 2x2:\n  pal k=#111\n', 't.drw')).toThrow(/renamed to 'palette'/)
+  })
+
+  test('old grad spelling errors, naming gradient (ADR-0096 §2)', () => {
+    expect(() => parse('gradient sky = linear(90, #000, #fff)\n', 't.drw')).not.toThrow()
+    expect(() => parse('grad sky = linear(90, #000, #fff)\n', 't.drw')).toThrow(
+      /renamed to 'gradient'/,
+    )
   })
 
   test('if / else statement and match', () => {
@@ -300,7 +311,7 @@ describe('parser', () => {
 
   test('theme with composition and style', () => {
     const s = one(
-      'theme dusk:\n  with pixelBase, warmPal\n  pal:\n    g = #3a8a3a\n  style "Organic."\n',
+      'theme dusk:\n  with pixelBase, warmPal\n  palette:\n    g = #3a8a3a\n  style "Organic."\n',
     )
     expect(s.kind).toBe('themeDefinition')
     if (s.kind === 'themeDefinition') {
@@ -352,13 +363,17 @@ describe('parser', () => {
     }
   })
 
-  test('image import with sha pin', () => {
-    const s = one('import logo = ../brand/logo.png sha256 abcdef12\n')
-    expect(s.kind).toBe('imageImport')
-    if (s.kind === 'imageImport') {
+  test('image definition with sha pin', () => {
+    const s = one('image logo = ../brand/logo.png sha256 abcdef12\n')
+    expect(s.kind).toBe('image')
+    if (s.kind === 'image') {
       expect(s.path).toBe('../brand/logo.png')
       expect(s.sha256).toBe('abcdef12')
     }
+  })
+
+  test('old import spelling for a loaded image errors, naming image (ADR-0096 §2)', () => {
+    expect(() => one('import logo = ../brand/logo.png\n')).toThrow(/renamed to 'image'/)
   })
 
   test('mask def vs mask block (D7)', () => {

@@ -3,7 +3,7 @@
 # Glyphs are white on the shared blue tile; family identity = shared tile, radius, palette.
 
 theme comms:
-  pal:
+  palette:
     t = #2f6fed          # tile accent (communication blue)
     l = t.lighten(16%)   # top-left light rim
     d = t.darken(22%)    # bottom-right shadow rim + glyph seat

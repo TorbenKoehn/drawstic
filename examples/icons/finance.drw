@@ -9,7 +9,7 @@ green = #4caf6f
 shade = #0b1a2c
 
 theme finTheme:
-  pal t=tile r=tileDark l=tileLight k=ink d=inkDim g=gold o=goldDark n=green s=shade
+  palette t=tile r=tileDark l=tileLight k=ink d=inkDim g=gold o=goldDark n=green s=shade
   size 32x32
   mode pixel
   style """
@@ -25,8 +25,8 @@ theme finTheme:
 
 use finTheme
 
-grad tileGrad = linear(45, tileLight, tileDark)
-grad roofGrad = linear(45, ink.lighten(8%), ink.darken(10%))
+gradient tileGrad = linear(45, tileLight, tileDark)
+gradient roofGrad = linear(45, ink.lighten(8%), ink.darken(10%))
 
 draw tileBg32 32x32:
   mask tileShape = rrect(0:0, 31:31, 6)

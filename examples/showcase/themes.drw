@@ -5,7 +5,7 @@ theme pixelBase:
   style "No AA. 1px black outline. Light from top-left."
 
 theme warmPal:
-  pal:
+  palette:
     k = #1a1a1a
     y = #e0b070
     r = #c04040

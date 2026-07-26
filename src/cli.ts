@@ -12,11 +12,14 @@
 // burns a coordinate overlay into the written PNG only; `--diff` compares the
 // fresh (UNgridded) render against a previous PNG. Neither ever touches
 // `build` exports.
+// `build`'s `--out` defaults to the recipe file's own directory (ADR-0096 §6) — an export path is
+// relative to that, and `--out` only relocates the whole tree; it no longer depends on the caller's
+// cwd.
 // Every command accepts --json; exit code is non-zero iff an error
 // diagnostic was produced.
 
 import { readFileSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import type { DrawDefinition, FormatLine, Statement } from './ast.js'
 import { buildModule, validateExport } from './build.js'
 import { toHexColor } from './color.js'
@@ -804,13 +807,13 @@ const runContext = (cli: CliArguments): number => {
         const params = d.params ? `(${d.params.join(', ')})` : ''
         lines.push(`  ${d.name} ${d.size}${params}`)
         if (d.localPaletteKeys.length > 0 || d.largePreviewHint) {
-          lines.push(`    size: ${d.sizeSource}; pal: ${d.localPaletteKeys.join(', ') || '-'}`)
+          lines.push(`    size: ${d.sizeSource}; palette: ${d.localPaletteKeys.join(', ') || '-'}`)
         }
         if (d.themes.length > 0) {
           lines.push(`    use: ${d.themes.join(', ')}`)
           if (d.themePalette.length > 0) {
             lines.push(
-              `    theme pal: ${d.themePalette.map((p) => `${p.key}=${p.hex} (${p.source})`).join(', ')}`,
+              `    theme palette: ${d.themePalette.map((p) => `${p.key}=${p.hex} (${p.source})`).join(', ')}`,
             )
           }
         }
@@ -856,7 +859,8 @@ const runContext = (cli: CliArguments): number => {
 
 /**
  * Runs `drawstic build`: executes every export in the file via {@link buildModule},
- * writing to `--out` (default cwd). `--json` reports the full
+ * writing to `--out` (default: the recipe file's own directory, ADR-0096 §6 — the recipe alone
+ * decides the layout and `--out` only relocates the whole tree). `--json` reports the full
  * {@link BuiltArtifact} list; otherwise one `wrote <path> (<n> bytes)` line
  * per artifact.
  */
@@ -866,7 +870,7 @@ const runBuild = (cli: CliArguments): number => {
   try {
     const engine = createEngine(cli)
     const mod = engine.loadEntry(file)
-    const outDir = cli.out ?? process.cwd()
+    const outDir = cli.out ?? dirname(mod.file)
     const artifacts = buildModule(engine, mod, outDir)
     // Non-fatal render-time warnings (e.g. a `fit` gap, W010 — ADR-0087) collected during the
     // export renders surface here exactly as `render` surfaces them, in JSON and human output.
@@ -1693,7 +1697,7 @@ usage:
   drawstic check <file> [--json]
   drawstic fmt <file> [--check] [--json]
   drawstic context <file> [--json]
-  drawstic build <file> [--out <dir>] [--json]
+  drawstic build <file> [--out <dir>] [--json]   # --out defaults to the recipe's own directory
   drawstic render <file>#<drawing>[(args)] [--png@N] [--out <path>] [--stdout]
                   [--ascii] [--preview] [--silhouette] [--inspect] [--explain]
                   [--grid N] [--diff <png>] [--mode pixel|smooth] [--json]

@@ -1,7 +1,7 @@
 from std/shapes star4
 
 theme gamesTheme:
-  pal:
+  palette:
     k = #22273a
     b = #4d63d1
     l = b.lighten(20%)
@@ -104,7 +104,7 @@ draw trophy 32x32:
   shadeRegion bowl lightPt32 d 0.3
   lightRegion bowl lightPt32 l 0.18
   stroke k bowl w2
-  grad lipGrad = linear(90, a.lighten(15%), a.darken(12%))
+  gradient lipGrad = linear(90, a.lighten(15%), a.darken(12%))
   rrect lipGrad 7:5 24:8 2 fill
   rrect k 7:5 24:8 2
   stamp trophyHandle 3:6
@@ -145,7 +145,7 @@ draw heart 32x32:
   stroke k body w2
 
 draw heart16 16x16:
-  pal p=a.lighten(12%) q=a.darken(15%)
+  palette p=a.lighten(12%) q=a.darken(15%)
   pixels:
     ................
     ................

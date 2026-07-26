@@ -222,8 +222,8 @@ describe('fit — ground-placement oracle (fit onto a terrain function)', () => 
   })
 })
 
-describe('fit shadow — auto contact-shadow', () => {
-  test('shadow drops a cool pool under the footprint (opt-in)', () => {
+describe('fit ground — auto contact-shadow', () => {
+  test('ground drops a cool pool under the footprint (opt-in)', () => {
     const base = [
       'draw post 12x12:',
       '  fill #7a5a2a rect(0:0, 11:9)', // wide body
@@ -232,7 +232,7 @@ describe('fit shadow — auto contact-shadow', () => {
       'draw scene 30x30:',
       '  fill #3a5a2a rect(0:20, 29:29)',
     ]
-    const withShadow = render([...base, '  fit post.base 15:22 shadow'].join('\n'), 'scene')
+    const withShadow = render([...base, '  fit post.base 15:22 ground'].join('\n'), 'scene')
     const noShadow = render([...base, '  fit post.base 15:22'].join('\n'), 'scene')
     // The foot lands at x15..16; the pool anchors under the footprint bottom (the feet) and spreads
     // out to ~x12 — a shadow-only pixel beside the narrow foot, over bare ground.
@@ -241,7 +241,7 @@ describe('fit shadow — auto contact-shadow', () => {
     expect(px(withShadow, 12, 22)[2]).toBeGreaterThan(px(noShadow, 12, 22)[2])
   })
 
-  test('shadow anchors under the feet (footprint bottom), not the fit pin', () => {
+  test('ground anchors under the feet (footprint bottom), not the fit pin', () => {
     // a leg fitted joint-to-joint: its `hip` pin lands on the torso hip, far above the leg's foot.
     // The contact pool must pool under the FOOT (footprint bottom), not up at the hip pin. The leg
     // has a wide thigh and a narrow shin, so the foot-anchored pool peeks out beside the shin.
@@ -258,7 +258,7 @@ describe('fit shadow — auto contact-shadow', () => {
       '  fill #3a5a2a rect(0:30, 23:39)', // warm-green ground band, low in the canvas
       '  stamp torso 8:6', // torso canvas y6..17
       '  pin torso.hip 12:17',
-      '  fit leg.hip torso.hip shadow', // leg hangs down; foot lands at canvas (12, 32)
+      '  fit leg.hip torso.hip ground', // leg hangs down; foot lands at canvas (12, 32)
     ].join('\n')
     const s = render(src, 'scene')
     // beside the narrow shin at foot level (over ground) the pool reads cooler (bluer) than the
@@ -274,7 +274,7 @@ describe('fit shadow — auto contact-shadow', () => {
 // down-light, minus the region, minus every transparent pixel. It falls on a neighbour region drawn
 // earlier in the same `draw` (a deliberate down-light cast) but never bakes onto empty canvas — a
 // part rendered in isolation therefore casts nothing at model time (no detached grey blob, §5.14).
-// Grounding for assembled figures comes from `fit … shadow`, not a baked material cast
+// Grounding for assembled figures comes from `fit … ground`, not a baked material cast
 // (ADR-0086/0087; language-spec § Light & material).
 describe('material cast is clipped to drawn content (ADR-0086/0087)', () => {
   const PART = [

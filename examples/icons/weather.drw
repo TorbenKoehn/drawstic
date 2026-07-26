@@ -1,7 +1,7 @@
 from std/shapes spark
 
 theme weatherTime:
-  pal:
+  palette:
     k = #26344a           # ink — outlines, dark details, needles
     s = k.lighten(20%)    # inkSoft — secondary lines, minor ticks
     p = #eef2f8           # paper — light faces (dials, glass, cloud, moon)
@@ -196,7 +196,7 @@ export compassSmall weather/compassSmall:
 
 draw weatherDetail 64x64:
   sc = 24:24
-  grad sunGrad = radial(a.lighten(18%), a.darken(8%))
+  gradient sunGrad = radial(a.lighten(18%), a.darken(8%))
   circle sunGrad sc 14 fill
   for i 0..12:
     ang = i * (pi / 6)

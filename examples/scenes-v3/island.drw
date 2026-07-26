@@ -12,14 +12,14 @@ mask seaR = rect(0:55, 191:127)
 mask glitterR = poly(28:56, 46:56, 62:114, 6:114)
 
 draw bird:
-  pal k = #33435c
+  palette k = #33435c
   pixels:
     k...k
     .k.k.
     ..k..
 
 draw boat:
-  pal s = #ffe9c6 d = #d9b98c k = #2e2a33
+  palette s = #ffe9c6 d = #d9b98c k = #2e2a33
   pixels:
     ....k.....
     ...sk.....
@@ -112,7 +112,7 @@ draw frondFg(a, b) 48x44:
 draw island 192x128:
   sun = 36:42
   # ---- sky ----
-  grad skyG = linear(90, (#2c4a80, 0%), (#5c8cba, 42%), (#eeb87e, 84%), (#ffe0ae, 100%))
+  gradient skyG = linear(90, (#2c4a80, 0%), (#5c8cba, 42%), (#eeb87e, 84%), (#ffe0ae, 100%))
   rect skyG 0:0 191:54 fill
   circle #ffc878.alpha(8%) sun 22 fill
   circle #ffc878.alpha(12%) sun 17 fill
@@ -137,7 +137,7 @@ draw island 192x128:
   rim profile(12..66, isleFarY, 55) 0:1 #ffd9a0.alpha(55%) 1
   rect #ffdba6.alpha(25%) 0:50 191:54 fill
   # ---- sea ----
-  grad seaG = linear(90, (#93d2cc, 0%), (#3f8ba6, 36%), (#1f5980, 70%), (#123a5c, 100%))
+  gradient seaG = linear(90, (#93d2cc, 0%), (#3f8ba6, 36%), (#1f5980, 70%), (#123a5c, 100%))
   rect seaG 0:55 191:127 fill
   line #ffe6b8.alpha(65%) 0:55 191:55
   # lagoon shallows around the cay
@@ -184,7 +184,7 @@ draw island 192x128:
   mask rock2R = curvePoly(149:86, 152:82, 156:83, 158:86).intersect(rect(147:81, 160:86))
   fill #9c9184 rockR
   shadeRegion rockR sun #2c2622 26%
-  ambientOcclusion rockR #3a2c1e 22%
+  ao rockR #3a2c1e 22%
   rim rockR.intersect(rect(155:76, 164:86)) 1:0 #e2d3b4 1
   fill #85796b rock2R
   shadeRegion rock2R sun #2c2622 35%

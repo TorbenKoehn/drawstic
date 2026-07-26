@@ -7,13 +7,13 @@ surfaceGlow = #7fd0e0
 upperWater  = #2f86a8
 deepWater   = #0a2a44
 abyss       = #061a2e
-grad water  = linear(90, surfaceGlow, upperWater, deepWater, abyss)
+gradient water  = linear(90, surfaceGlow, upperWater, deepWater, abyss)
 
 # ---- sand seabed --------------------------------------------------------------
 sandLit  = #cbb583
 sandMid  = #a99a6a
 sandDark = #6f6f57
-grad sand = linear(90, sandLit, sandMid, sandDark)
+gradient sand = linear(90, sandLit, sandMid, sandDark)
 
 fn duneY(nx) = 176 + round(noise(7, nx * 3, 0) * 12)
 fn ridgeY(nx) = 158 + round(noise(11, nx * 3.5, 0) * 15)
@@ -32,9 +32,9 @@ fishBlue    = #4a90c0
 haze        = upperWater
 
 # ---- light shafts -------------------------------------------------------------
-grad shaft = linear(90, surfaceGlow.alpha(22%), surfaceGlow.alpha(0%))
-grad hazeBand = linear(90, haze.alpha(0%), haze.alpha(40%), haze.alpha(0%))
-grad vign = radial(abyss.alpha(0%), abyss.alpha(58%))
+gradient shaft = linear(90, surfaceGlow.alpha(22%), surfaceGlow.alpha(0%))
+gradient hazeBand = linear(90, haze.alpha(0%), haze.alpha(40%), haze.alpha(0%))
+gradient vign = radial(abyss.alpha(0%), abyss.alpha(58%))
 
 # ---- coral components (light from top) ---------------------------------------
 # brain coral: shaded mound with wavy grooves

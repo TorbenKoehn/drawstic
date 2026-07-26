@@ -95,7 +95,7 @@ draw hatFront 52x42:
   model cone hatM
   brim = crescent(26:33, 21:5, 5, 0:1)
   model brim hatM
-  band bandC 8:32 26:29 44:32 4 fill
+  ribbon bandC 8:32 26:29 44:32 4 fill
   circle bandC 40:8 3 fill
   pin base 26:33
   pin brimL 6:33
@@ -107,7 +107,7 @@ draw hatSide 52x42:
   model cone hatM
   brim = crescent(22:33, 20:5, 5, 0:1)
   model brim hatM
-  band bandC 6:32 22:29 38:32 4 fill
+  ribbon bandC 6:32 22:29 38:32 4 fill
   circle bandC 34:10 3 fill
   pin base 22:33
   pin brimL 4:33
@@ -119,7 +119,7 @@ draw hatBack 52x42:
   model cone hatM
   brim = crescent(26:33, 21:5, 5, 0:1)
   model brim hatM
-  band bandC 8:32 26:29 44:32 4 fill
+  ribbon bandC 8:32 26:29 44:32 4 fill
   circle bandC 36:8 3 fill
   pin base 26:33
   pin brimL 6:33
@@ -203,7 +203,7 @@ draw staff 18x124:
 
 draw wizardFront 64x128:
   use ro
-  fit robeFront.neck 32:66 shadow
+  fit robeFront.neck 32:66 ground
   fit staff.grip robeFront.gripL front robeFront
   fit headFront.chin robeFront.neck
   fit hatFront.base headFront.crown
@@ -211,7 +211,7 @@ draw wizardFront 64x128:
 
 draw wizardSide 64x128:
   use ro
-  fit robeSide.neck 30:66 shadow
+  fit robeSide.neck 30:66 ground
   fit headSide.chin robeSide.neck
   fit hatSide.base headSide.crown
   fit staff.grip robeSide.gripR front hatSide
@@ -219,7 +219,7 @@ draw wizardSide 64x128:
 
 draw wizardBack 64x128:
   use ro
-  fit robeBack.neck 32:66 shadow
+  fit robeBack.neck 32:66 ground
   fit staff.grip robeBack.gripL behind robeBack
   fit headBack.chin robeBack.neck
   fit hatBack.base headBack.crown
@@ -227,11 +227,11 @@ draw wizardBack 64x128:
 
 # ---------- exports ----------
 
-export wizardFront characters-ro2/wizard-front:
+export wizardFront wizard-front:
   png @1 @4
 
-export wizardSide characters-ro2/wizard-side:
+export wizardSide wizard-side:
   png @1 @4
 
-export wizardBack characters-ro2/wizard-back:
+export wizardBack wizard-back:
   png @1 @4

@@ -128,17 +128,17 @@ describe('e2e', () => {
       expect(names).toContain('badge.png')
       expect(names).toContain('stripes.png')
       // decoded @2x is exactly 2x NN
-      const p1 = decodePng(new Uint8Array(readFileSync(join(out, 'showcase', 'scene.png'))))
-      const p2 = decodePng(new Uint8Array(readFileSync(join(out, 'showcase', 'scene@2x.png'))))
+      const p1 = decodePng(new Uint8Array(readFileSync(join(out, 'scene.png'))))
+      const p2 = decodePng(new Uint8Array(readFileSync(join(out, 'scene@2x.png'))))
       expect(p2.w).toBe(p1.w * 2)
       // svg + jpeg exist and are non-trivial
-      expect(readFileSync(join(out, 'showcase', 'scene.svg'), 'utf8')).toContain('<svg')
-      const jpeg = readFileSync(join(out, 'showcase', 'scene.jpeg'))
+      expect(readFileSync(join(out, 'scene.svg'), 'utf8')).toContain('<svg')
+      const jpeg = readFileSync(join(out, 'scene.jpeg'))
       expect(jpeg[0]).toBe(0xff)
       expect(jpeg[1]).toBe(0xd8)
       // indexed badge decodes to the same pixels as an RGBA render
-      expect(existsSync(join(out, 'showcase', 'badge.png'))).toBe(true)
-      const badge = decodePng(new Uint8Array(readFileSync(join(out, 'showcase', 'badge.png'))))
+      expect(existsSync(join(out, 'badge.png'))).toBe(true)
+      const badge = decodePng(new Uint8Array(readFileSync(join(out, 'badge.png'))))
       const entry = mod.definitions.get('badge')
       if (!entry) {
         throw new Error('no badge')
@@ -195,7 +195,7 @@ describe('e2e', () => {
     try {
       const engine = new Engine(process.cwd())
       const mod = engine.loadSource(
-        'draw swatch:\n  pal:\n    a, b, c = #777.tones(-10%, 0%, 10%)\n  pixels:\n    abc\n\nexport swatch out/ramp:\n  png indexed\n',
+        'draw swatch:\n  palette:\n    a, b, c = #777.tones(-10%, 0%, 10%)\n  pixels:\n    abc\n\nexport swatch out/ramp:\n  png indexed\n',
         join(process.cwd(), 'mem-indexed-ramp.drw'),
         'mem-indexed-ramp.drw',
       )
@@ -334,7 +334,7 @@ describe('e2e', () => {
     try {
       writeFileSync(
         file,
-        'draw part 1x1:\n  bg #000\n\ndraw unused 2x1:\n  pal r=#f00\n  pixels:\n    r.\n\ndraw out 4x4:\n  stamp part 10:10\n\nexport out build/out:\n  png @1 @2\n',
+        'draw part 1x1:\n  bg #000\n\ndraw unused 2x1:\n  palette r=#f00\n  pixels:\n    r.\n\ndraw out 4x4:\n  stamp part 10:10\n\nexport out build/out:\n  png @1 @2\n',
       )
       const check = cli('check', file, '--json', '--rows', '--lint')
       expect(check.exitCode).toBe(0)

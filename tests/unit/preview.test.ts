@@ -28,8 +28,8 @@ const px = (s: Sprite, x: number, y: number): [number, number, number, number] =
 }
 
 describe('spritePreviewStats()', () => {
-  test('100% palette coverage when every painted pixel matches a pal entry', () => {
-    const s = render('draw d 2x2:\n  pal k=#000000\n  pixels:\n    kk\n    kk\n', 'd')
+  test('100% palette coverage when every painted pixel matches a palette entry', () => {
+    const s = render('draw d 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n', 'd')
     expect(spritePreviewStats(s)).toEqual({
       unknownPixelCount: 0,
       unknownColorCount: 0,
@@ -37,11 +37,11 @@ describe('spritePreviewStats()', () => {
     })
   })
 
-  test('raw colors painted outside the pal block count as unknown', () => {
-    // px 1:0 paints a raw hex that was never declared in `pal`, so it isn't
+  test('raw colors painted outside the palette block count as unknown', () => {
+    // px 1:0 paints a raw hex that was never declared in `palette`, so it isn't
     // in sprite.pal and must be counted as unknown coverage.
     const s = render(
-      'draw d 2x2:\n  pal k=#000000\n  px k 0:0\n  px #ff0000 1:0\n  px k 0:1\n',
+      'draw d 2x2:\n  palette k=#000000\n  px k 0:0\n  px #ff0000 1:0\n  px k 0:1\n',
       'd',
     )
     expect(spritePreviewStats(s)).toEqual({
@@ -52,7 +52,7 @@ describe('spritePreviewStats()', () => {
   })
 
   test('fully transparent sprite reports 100% coverage (nothing painted)', () => {
-    const s = render('draw d 2x2:\n  pal k=#000000\n', 'd')
+    const s = render('draw d 2x2:\n  palette k=#000000\n', 'd')
     expect(spritePreviewStats(s)).toEqual({
       unknownPixelCount: 0,
       unknownColorCount: 0,
@@ -64,7 +64,7 @@ describe('spritePreviewStats()', () => {
 describe('cropSprite()', () => {
   const base = (): Sprite =>
     render(
-      'draw d 4x4:\n  pal a=#111111 b=#222222 c=#333333 d=#444444\n  pixels:\n    aabb\n    aabb\n    ccdd\n    ccdd\n',
+      'draw d 4x4:\n  palette a=#111111 b=#222222 c=#333333 d=#444444\n  pixels:\n    aabb\n    aabb\n    ccdd\n    ccdd\n',
       'd',
     )
 
@@ -155,19 +155,19 @@ describe('spriteToAscii()', () => {
   test('transparent and opaque-black pixels both render as the sparsest glyph (space)', () => {
     // No visual difference between "no paint" and "painted pure black" on a
     // dark terminal — both are luminance 0.
-    const s = render('draw d 2x1:\n  pal k=#000000\n  pixels:\n    .k\n', 'd')
+    const s = render('draw d 2x1:\n  palette k=#000000\n  pixels:\n    .k\n', 'd')
     expect(spriteToAscii(s)).toBe('  \n')
   })
 
   test('opaque white maps to the densest glyph', () => {
-    const s = render('draw d 2x1:\n  pal p=#ffffff\n  pixels:\n    .p\n', 'd')
+    const s = render('draw d 2x1:\n  palette p=#ffffff\n  pixels:\n    .p\n', 'd')
     expect(spriteToAscii(s)).toBe(' @\n')
   })
 
   test('a dark scene reads sparse and a bright motif embedded in it stands out dense', () => {
     // Regression for the ink-density bug (TODO-IMP §3.1): a near-black night
     // sky used to invert to dense glyphs while the bright moon vanished.
-    const s = render('draw d 4x1:\n  pal n=#0a0a14 m=#fefef0\n  pixels:\n    nnmn\n', 'd')
+    const s = render('draw d 4x1:\n  palette n=#0a0a14 m=#fefef0\n  pixels:\n    nnmn\n', 'd')
     const ascii = spriteToAscii(s)
     const rows = ascii.split('\n')
     const row = rows[0] ?? ''
@@ -181,7 +181,7 @@ describe('spriteToAscii()', () => {
   test('mid-saturation red is not maximally dense (true relative luminance, not raw ink)', () => {
     // Pure red has WCAG relative luminance ~0.21 — nowhere near white's 1.0 —
     // so it must not map to the densest glyph the way naive luma/ink-density did.
-    const s = render('draw d 1x1:\n  pal r=#ff0000\n  pixels:\n    r\n', 'd')
+    const s = render('draw d 1x1:\n  palette r=#ff0000\n  pixels:\n    r\n', 'd')
     expect(spriteToAscii(s)).not.toBe('@\n')
   })
 })
@@ -189,7 +189,7 @@ describe('spriteToAscii()', () => {
 describe('spriteToAnsi()', () => {
   test('a fully-painted row pair uses top+bottom 24-bit color and a half-block', () => {
     const s = render(
-      'draw d 2x2:\n  pal a=#112233 b=#445566 c=#778899 d=#aabbcc\n  pixels:\n    ab\n    cd\n',
+      'draw d 2x2:\n  palette a=#112233 b=#445566 c=#778899 d=#aabbcc\n  pixels:\n    ab\n    cd\n',
       'd',
     )
     expect(spriteToAnsi(s)).toBe(
@@ -199,17 +199,17 @@ describe('spriteToAnsi()', () => {
   })
 
   test('bottom-only-painted pixel pair uses the lower half-block glyph', () => {
-    const s = render('draw d 1x2:\n  pal r=#ff0000\n  pixels:\n    .\n    r\n', 'd')
+    const s = render('draw d 1x2:\n  palette r=#ff0000\n  pixels:\n    .\n    r\n', 'd')
     expect(spriteToAnsi(s)).toBe('\x1b[0m\x1b[38;2;255;0;0m▄\x1b[0m\n')
   })
 
   test('top-only-painted pixel pair uses the upper half-block glyph', () => {
-    const s = render('draw d 1x2:\n  pal g=#00ff00\n  pixels:\n    g\n    .\n', 'd')
+    const s = render('draw d 1x2:\n  palette g=#00ff00\n  pixels:\n    g\n    .\n', 'd')
     expect(spriteToAnsi(s)).toBe('\x1b[0m\x1b[38;2;0;255;0m▀\x1b[0m\n')
   })
 
   test('a fully-transparent pixel pair renders as a plain reset space', () => {
-    const s = render('draw d 1x2:\n  pal k=#000000\n', 'd')
+    const s = render('draw d 1x2:\n  palette k=#000000\n', 'd')
     expect(spriteToAnsi(s)).toBe('\x1b[0m \x1b[0m\n')
   })
 

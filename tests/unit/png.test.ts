@@ -139,7 +139,7 @@ let n = 0
 const renderHeart = (): { w: number; h: number; data: Uint8Array; pal: Color[] } => {
   const engine = new Engine(process.cwd())
   const mod = engine.loadSource(
-    'draw heart 5x5:\n  pal k=#1a1a1a  r=#c04040\n  pixels:\n    .r.r.\n    rrkrr\n    rrrrr\n    .rrr.\n    ..r..\n',
+    'draw heart 5x5:\n  palette k=#1a1a1a  r=#c04040\n  pixels:\n    .r.r.\n    rrkrr\n    rrrrr\n    .rrr.\n    ..r..\n',
     `${process.cwd()}\\mem-png-heart${n++}.drw`,
     'mem.drw',
   )

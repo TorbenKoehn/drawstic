@@ -5,7 +5,7 @@
 theme productivity:
   size 32x32
   mode pixel
-  pal:
+  palette:
     b = #3d7de0
     r = #e0493c
     a = #e5942f

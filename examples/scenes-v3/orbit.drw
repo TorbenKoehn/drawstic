@@ -41,16 +41,16 @@ draw shuttle 28x15:
   px #ff8a3a 1:7
   px #ffbf72 0:7
 
-draw scene 384x256:
+draw orbit 384x256:
   light = 470:-70
 
   # --- deep space backdrop -------------------------------------------------
-  grad space = linear(90, #0a0b22, #04040c)
+  gradient space = linear(90, #0a0b22, #04040c)
   bg space
 
   # faint nebula washes (stacked translucent masses, cool + warm)
-  grad neb1 = radial(#3a1f66.alpha(40%), #3a1f66.alpha(0%))
-  grad neb2 = radial(#123f52.alpha(34%), #123f52.alpha(0%))
+  gradient neb1 = radial(#3a1f66.alpha(40%), #3a1f66.alpha(0%))
+  gradient neb2 = radial(#123f52.alpha(34%), #123f52.alpha(0%))
   fill neb1 ellipse(300:60, 120:70)
   fill neb2 ellipse(70:150, 110:80)
 
@@ -66,7 +66,7 @@ draw scene 384x256:
 
   # --- planet (huge sphere; we see its upper-right limb curving the base) ---
   pl = circle(120:430, 300)
-  grad ocean = linear(90, #1f5da0, #123a70)
+  gradient ocean = linear(90, #1f5da0, #123a70)
   fill ocean pl
 
   # continents (organic masses, clipped to the sphere)
@@ -107,7 +107,7 @@ draw scene 384x256:
   cy = 106
   metal = #9aa0ad
   rimLit = #fff4dc
-  grad hullG = linear(90, #d6dbe4, #3c414f)
+  gradient hullG = linear(90, #d6dbe4, #3c414f)
 
   ring = ellipse(cx:cy, 120:46).subtract(ellipse(cx:cy, 98:34))
   backRing = ring.intersect(rect(0:0, 383:cy))
@@ -143,7 +143,7 @@ draw scene 384x256:
   lightRegion ring light #ffffff 0.26
   shadeRegion ring light #10131d 0.6
   shadeRegion hub light #14171f 0.30
-  ambientOcclusion ring #0d0f16 0.5
+  ao ring #0d0f16 0.5
   # directional sun rim: only the upper-right outer edge
   rim ring.intersect(rect(cx:44, 340:cy)) -1:1 rimLit 2
   # planetshine: faint cool bounce light from the planet below on undersides
@@ -211,5 +211,5 @@ draw scene 384x256:
   line #fff6e0.alpha(50%) 356:6 356:38
   px #ffffff 356:22
 
-export scene scenes-v3/orbit:
+export orbit orbit:
   png @1 @4

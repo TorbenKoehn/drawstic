@@ -12,7 +12,7 @@ Runner prefix (`bunx` / `npx` / `pnpm dlx` / `yarn dlx`) omitted below.
 | `drawstic check <file> [--lint] [--rows] [--json]` | parse + semantic validation. `--lint` adds authoring warnings; `--rows` adds per-`pixels:`-block row-width metadata (find ragged rows). |
 | `drawstic fmt <file> [--check] [--stdout] [--diff] [--json]` | canonical formatter. Default rewrites in place; `--check` fails (no write) if unformatted; `--stdout` prints instead; `--diff` adds first-changed-line metadata to `--check --json`. |
 | `drawstic context <file> [--json]` | resolved design brief: merged theme palette (key→hex+source), merged style guide, theme default light (`theme.light`, ADR-0086), available drawings (name, WxH, ASCII preview), functions (signatures), export plans, per-drawing facts (size source, palette keys, draw-local `themes` (its `use` names) + effective `themePalette`, fitted-preview hints). Read before editing files with imports/themes. |
-| `drawstic build <file> [--out <dir>] [--json]` | run every `export`, write artifacts (default: cwd). JSON: `{diagnostics, artifacts: [{path, bytes}]}`. |
+| `drawstic build <file> [--out <dir>] [--json]` | run every `export`, write artifacts (`--out` defaults to the recipe file's own directory, ADR-0096 §6 — an explicit `--out` relocates the whole tree). JSON: `{diagnostics, artifacts: [{path, bytes}]}`. |
 | `drawstic render <file>#<drawing>[(args)] …` | ad-hoc render of one drawing (see below). |
 | `drawstic help` (or `--help`, `-h`, no args) | usage text, exit 0. Works as a flag after a subcommand too (`render --help`). |
 | `drawstic version` (or `--version`, `-v`) | the installed package version, exit 0. |
@@ -65,9 +65,9 @@ Render outputs (mutually exclusive):
 
 Every render kind's JSON also carries `render.stats = {unknownPixelCount,
 unknownColorCount, paletteCoveredPercent}`: how much of the painted (non-transparent)
-sprite is covered by its own declared `pal` artifact vs. colors that only came from
+sprite is covered by its own declared `palette` artifact vs. colors that only came from
 rendering. **`paletteCoveredPercent` is near-meaningless for procedural scenes today** —
-gradients/filters/`mix` routinely paint colors no `pal` key ever declared, so a low score
+gradients/filters/`mix` routinely paint colors no `palette` key ever declared, so a low score
 is normal, not a defect. For a gradient/procedural scene a high `unknownColorCount`, a low
 `paletteCoveredPercent`, and a lopsided per-key `opaquePixelShare` are **all expected** (nothing to
 fix); read them as rough attribution, not an error signal. `--inspect`'s per-key `opaquePixelShare`
@@ -98,7 +98,7 @@ silhouette as PNG or `--preview`. Never reaches `build`.
   legibility — use `--png@4`+ to read them). High-contrast strategy: every overlay pixel is
   a full color invert of the pixel underneath, forced opaque — visible over any scene.
 - `--diff <png>` → compares the fresh render against a previous PNG (decoded via the
-  `import`-path decoder), reporting `render.diff = {identical, changedPixelCount,
+  `image`-path decoder), reporting `render.diff = {identical, changedPixelCount,
   totalPixelCount, changedBBox: {x, y, width, height} | null}` under `--json`, or a
   `diff: N/M px changed, bbox x:y WxH` line otherwise — the machine/human answer to "did
   this edit touch only the region I meant to?". The comparison always uses the fresh
@@ -130,7 +130,7 @@ tile's top-left in **unscaled** sheet coordinates (× `--png@N` for output pixel
 
 | Code | Fires on |
 |---|---|
-| W001 | unused local `pal` key |
+| W001 | unused local `palette` key |
 | W002 | drawing never `export`ed, `stamp`ed, nor a `fit` target |
 | W003 | stamp's literal target at a literal point lands fully off-canvas |
 | W004 | *retired* — never emitted |
@@ -143,7 +143,8 @@ tile's top-left in **unscaled** sheet coordinates (× `--png@N` for output pixel
 | W012 | raw `rim`/`shadeRegion`/`lightRegion` in a `model`/`cel`-shaded drawing → raise the material's `rim`/`spread` (ADR-0094) |
 | W013 | a `litTone`/`shadowTone` `fill` clipped by `.intersect(rect)` on a modeled region → use `spread N%` (ADR-0094) |
 | W014 | a `stamp` of a part that declares attach `pin`s (not a pin-seeded root) → `fit` it, or drop the pins if decoration (ADR-0094) |
-| W015 | a semi-transparent `fill … ellipse(…)` in the foot zone of a `fit`-using drawing → use the root `fit … shadow` (ADR-0094) |
+| W015 | a semi-transparent `fill … ellipse(…)` in the foot zone of a `fit`-using drawing → use the root `fit … ground` (ADR-0094) |
+| W016 | an `export` base path's first segment repeats the recipe's own directory name → drop the redundant `<dirname>/` prefix (ADR-0096 §6) |
 
 Full detail: `docs/language-spec.md` § Lint warnings.
 
@@ -165,8 +166,8 @@ from gems gem as ruby            # alias on collision
 from ../shared/parts eye         # parent dir ok; never escapes project root
 from std/shapes dot              # bundled std (always available, version-pinned)
 use themes dusk                  # apply theme to this file (2 tokens: module `themes` + name `dusk`)
-import logo = ../brand/logo.png  # external PNG as a drawing (lossless; JPEG rejected)
-import logo = ../brand/logo.png sha256 <hex>   # optional content pin
+image logo = ../brand/logo.png  # external PNG as a drawing (lossless; JPEG rejected)
+image logo = ../brand/logo.png sha256 <hex>   # optional content pin
 ```
 
 **`use` grammar — arity picks the meaning, not any keyword:**
@@ -202,10 +203,10 @@ concrete, author it locally or copy from the motif cookbook — `std` stays abst
 |---|---|---|---|
 | `draw` `path` `fn` `theme` `tileset` `atlas` `export` | yes | **no** — E004 | order-independent; may forward-reference each other |
 | `filter` | yes | **yes** | module-level `filter name:` is order-independent like `fn`; a `filter name:` written inside a `draw` body is drawing-local and must precede its `apply name` |
-| `mask` `grad` `light` `material` `pal` / any binding (`=`) | yes | yes | sequential, not order-independent — a drawing-local one must be written before it is used (`light`/`material` = ADR-0086) |
+| `mask` `gradient` `light` `material` `palette` / any binding (`=`) | yes | yes | sequential, not order-independent — a drawing-local one must be written before it is used (`light`/`material` = ADR-0086) |
 
 Writing `fn`/`path` (or `draw`/`theme`/`tileset`/`atlas`/`export`) inside a `draw` body is a
-positioned `E004`. `mask`/`grad`/`light`/`material`/`pal`/`filter`/bindings have no such restriction — they read
+positioned `E004`. `mask`/`gradient`/`light`/`material`/`palette`/`filter`/bindings have no such restriction — they read
 identically at module or drawing-local scope; only their *position* changes what's already in
 scope when they run.
 
@@ -240,7 +241,7 @@ No implicit cursor; `rel` prefixes exist only inside `path` bodies.
 draw name(params) WxH:    # params optional; size optional (resolution order below)
   use themes t            # leading lines only: theme for this drawing
   title "…"               # optional; emitted to SVG <title>/<desc>
-  pal …                   # local palette
+  palette …                   # local palette
   pixels: …               # explicit rows
   <commands / stamps / expressions / loops>
 ```
@@ -252,11 +253,11 @@ inferred from `pixels:` → `size WxH` default (module- or theme-scope directive
 ## Pixel literals
 
 `pixels:` = raw rows, one char per pixel, until dedent. Keys: one ASCII letter each,
-resolved in the **palette namespace only** — a visible single-letter `pal`/theme entry (a plain
+resolved in the **palette namespace only** — a visible single-letter `palette`/theme entry (a plain
 value binding of the same letter is never a cell); a letter with no palette entry = `E007`.
 `.` = built-in transparent (declaring it = error). Equal row widths (header mismatch = error;
 rows define size when header omitted). No trailing comments on rows. Rows and commands may
-coexist — rows first, then draw on top. `w`/`h` are legal pal keys (they shadow the canvas-size
+coexist — rows first, then draw on top. `w`/`h` are legal palette keys (they shadow the canvas-size
 binding in that draw — ADR-0073).
 
 ## Primitives
@@ -286,7 +287,7 @@ stroking command **except `poly`** (see its row).
 | `dome` | `dome <paint> <c> <rx>:<ry> [fill]` — upper half of the same-param `ellipse`, flat bottom edge (rows `cy−ry … cy−1`; `c` = flat base midpoint) — skull/helmet/hat crown (ADR-0093) |
 | `lobe` | `lobe <paint> <base> <tip> <w> [fill]` — teardrop: round cap (Ø`w`) at `base` tapering to a point at `tip` — ear/hair strand/nose/plume/tassel |
 | `crescent` | `crescent <paint> <c> <rx>:<ry> <thick> <dir> [fill]` — outer ellipse minus inner (`thick` px smaller, shifted `thick` toward `dir`); thickest opposite `dir`, tapers to 0 on the `dir` side — fringe/brim/eyelid |
-| `band` | `band <paint> <p0> <p1> <p2> <w> [fill]` — width-`w` ribbon along the arc through the 3 points; **stacked = turban wraps**; curved hat band/belt |
+| `ribbon` | `ribbon <paint> <p0> <p1> <p2> <w> [fill]` — width-`w` ribbon along the arc through the 3 points; **stacked = turban wraps**; curved hat band/belt |
 | `fill` | `fill <paint> <region>` — rasterize any region solid |
 | `stroke` | `stroke <paint> <region> [w<N>]` — inner boundary, width N; on a region whose **short axis is ≤2N px** the border spans the whole region and the fill shows 0 % (an 8×2 bar stroked `w1` is 100 % stroke colour) — fill thin bars/bones/blades, don't stroke them |
 | `text` | `text <paint> <pt> <string> [font <name>]` — top-left at pt |
@@ -331,7 +332,7 @@ or hard-code the span (`profile(0..64, …)`) if you need it at module scope. Th
 likewise defaults to the canvas bottom `h−1`, a draw-scope value.
 
 Shapes are region constructors (`rect`/`rrect`/`circle`/`ellipse`/`poly`/`curvePoly` + the organic
-`dome`/`lobe`/`crescent`/`band`): with a leading paint at statement position they draw (`circle k 8:8
+`dome`/`lobe`/`crescent`/`ribbon`): with a leading paint at statement position they draw (`circle k 8:8
 5` ≡ `stroke k circle(8:8, 5)`; `… fill` ≡ `fill k circle(8:8, 5)`); without a paint, the call is a
 Region expression (`mask blob = curvePoly(4:12, 12:3, 20:12, 12:21)`; `mask cap = dome(8:8, 6:6)`). A
 paintless shape *statement* is an error. The four organic constructors are exact analytic tests
@@ -426,8 +427,8 @@ quarter-turns, integer shifts/scales are lossless; non-invertible transforms are
 
 ```drw
 pin <key> <pt>                                     # attach point in this drawing's own space
-fit <partB>[.<pin>] <partA>.<pin> [flags] [rel] [aim <pin> <pt>] [shadow]  # land partB's pin on partA's placed pin
-fit <partB>.<pin> <x:y> [flags] [rel] [shadow]     # ground oracle: land the pin on a computed point
+fit <partB>[.<pin>] <partA>.<pin> [flags] [rel] [aim <pin> <pt>] [ground]  # land partB's pin on partA's placed pin
+fit <partB>.<pin> <x:y> [flags] [rel] [ground]     # ground oracle: land the pin on a computed point
 stamp <part> <pt> [flags] [rel]                    # rel = behind <part> | front <part>
 ```
 
@@ -459,7 +460,7 @@ stamp <part> <pt> [flags] [rel]                    # rel = behind <part> | front
   with its own `fit … flipx`, never via a figure-wide flip.
 - **Ground oracle:** a computed-point source plants on terrain — `fit tree.base x:duneY(x/(w-1))`
   (needs a named target pin) → floating/sinking impossible.
-- **`shadow`** flag: auto contact-shadow ellipse anchored at the footprint bottom (the feet), not
+- **`ground`** flag: auto contact-shadow ellipse anchored at the footprint bottom (the feet), not
   the fit pin — a joint-to-joint fit still pools under the feet, never at the hip. Drawn first (feet
   cover it), cool from the light in scope.
 - **Occlusion relations (ADR-0092)** — `behind <part>` / `front <part>` trailing clauses on `stamp`
@@ -495,7 +496,7 @@ pose front over body:                   # module scope: an angle set over a skel
 draw front 64x128:
   pose front                            # solve the rig over this canvas + figure oracle
   fit torso.neck bone chest             # land the pin on joint `chest`, inherit its pose orientation
-  fit legL.hip  bone hipL shadow
+  fit legL.hip  bone hipL ground
 ```
 
 - **`skeleton NAME:`** — a joint per line: `NAME at POINT` (anchored — usually a `fig` guide point, so
@@ -541,10 +542,10 @@ mirror x=8: …             # draw body + its reflection across x=8 (§ Mirror)
 Operators: `+ - * / //` (floored int division) · `mod` keyword (floored, sign of divisor) ·
 `> < >= <= == !=` · `& | !` · `( )` grouping. `%` is only the percent suffix.
 `draw`/`path`/`fn`/`theme`/`tileset`/`atlas`/`export` are module-level, order-independent
-definitions; `mask`/`grad`/`pal`/`filter`/bindings run top-to-bottom eagerly and may also be
+definitions; `mask`/`gradient`/`palette`/`filter`/bindings run top-to-bottom eagerly and may also be
 drawing-local (§ Definition scope above). One namespace, lexically scoped; palette names are
 const and reserved. Collision rule is asymmetric (ADR-0073): a value binding may **not** shadow
-a live palette entry (error), but a `pal` key **may** shadow a non-palette binding (`w`/`h`, a
+a live palette entry (error), but a `palette` key **may** shadow a non-palette binding (`w`/`h`, a
 gradient, an outer `let`) — the palette wins.
 **`name = expr` reassigns an existing mutable binding visible in the enclosing draw scope**
 (ADR-0081), declaring a fresh local only when none is reachable — so an accumulator inside a
@@ -552,7 +553,7 @@ gradient, an outer `let`) — the palette wins.
 matching `+=`). The search stops at the draw body: a block never mutates module-scope state, and
 `const`/palette/canvas-`w`/`h` are never reassignment targets (there `=` shadow-declares as before).
 Every builtin/command/filter name is reserved and unshadowable, uniformly (ADR-0096 §5) — binding
-or `pal`-keying any of them (`rim`, `shadow`, `tint`, `grain`, `dither`, `outline`, `speckle`,
+or `palette`-keying any of them (`rim`, `shadow`, `tint`, `grain`, `dither`, `outline`, `speckle`,
 `ripple`, `model`, `cel`, `ramp`, `litTone`, `shadowTone`, …) is a clean `E007` at the
 **declaration**, not a later use-site surprise; also avoid `pi`/`tau`/`w`/`h`.
 UFCS: `x.f(a)` ≡ `f(x, a)`; zero-arg may drop parens (`n.floor`).
@@ -634,7 +635,7 @@ draw butterfly 32x24:
 Ops (call- or method-style): `lighten darken saturate desaturate hue alpha mix`. (`grayscale(c)`
 was removed — ADR-0096 §1 — it was exactly `desaturate(c, 100%)`; say that instead.)
 Ramps: `tones(base, …amounts)` and `mixes(a, b, count[, space])` return color lists —
-`pal: a, b, c = #ccc.tones(-12%, 0%, 12%)`.
+`palette: a, b, c = #ccc.tones(-12%, 0%, 12%)`.
 Shading (ADR-0086, call- or method-style): `base.litTone(light, amt)` mixes toward the light
 colour (warm highlight — not chalky `lighten`); `base.shadowTone(cool, amt[, darken])` darkens
 (by `darken`, default `amt`, but never below 35% of the base lightness → a **dark base keeps
@@ -651,7 +652,7 @@ ADR-0096 §7); pipeline (oklch↔sRGB, gamut map, shorter-arc hue,
 **Cross-hue `mix`/`tint` rotates hue along the short OkLCh arc (silent).** Blending toward a
 *chromatic* colour swings the hue — a warm skin tone toward a cool blue runs through **magenta/rose**
 (`#e0a878.mix(#3a6fd8, 30%)` → `#e0828c`, pink; `tint #3a6fd8 40%` likewise). Same trap as the
-cross-hue `grad`. Shade **warm materials with `darken()`** (a small cool `mix` stays warm:
+cross-hue `gradient`. Shade **warm materials with `darken()`** (a small cool `mix` stays warm:
 `skin.darken(25%).mix(cool, 12%)` reads as a cooler brown, not pink); reach for a depth-`tint` **only
 with an exactly neutral grey** (`R==G==B`, chroma 0 — an achromatic endpoint adopts the base hue, so
 no rotation). A **near-neutral** cast is not safe: `tint #2a2b2f 40%` (a faint blue bias) still swings
@@ -660,25 +661,25 @@ use `#2b2b2b`, not `#2a2b2f`.
 
 ## Palettes
 
-`pal` defines const color bindings in the enclosing scope (draw or theme). Key = exactly one
+`palette` defines const color bindings in the enclosing scope (draw or theme). Key = exactly one
 ASCII letter (a–z, A–Z; ≤52 per scope by design — split into stamped parts for more), usable
 in `pixels:` cells, expressions, and paint slots. Any letter is a legal key, including `w`/`h`
-— a `pal w=…` shadows the canvas-size binding in the applying draw, in **both** drawing-local
+— a `palette w=…` shadows the canvas-size binding in the applying draw, in **both** drawing-local
 (ADR-0073) and **theme** (ADR-0081) palettes, resolving to the colour in expressions, paint slots,
 and `pixels:` cells alike. Forms: inline
-`pal k=#1a1a1a r=#c04040`,
-block `pal:` + indented entries (may derive from earlier ones; may destructure a list).
+`palette k=#1a1a1a r=#c04040`,
+block `palette:` + indented entries (may derive from earlier ones; may destructure a list).
 Multi-char color names = plain bindings (`ink = #1a1a1a`), fine for rendering — indexed
-exports collect actual framebuffer colors; the authored `pal` only sets priority order.
+exports collect actual framebuffer colors; the authored `palette` only sets priority order.
 Keys never cross stamp scopes; the host artifact folds: own entries, then stamped drawings'
 entries in first-stamp order, deduplicated by color.
 
 ## Gradients & filters
 
 ```drw
-grad sky  = linear(90, #4060ff, #ffd080)                     # angle°, stops; 90 = top→bottom
-grad fire = linear(0, (#000, 0%), (#f00, 60%), (#ff0, 100%)) # (color, position) stops
-grad glow = radial(#fff, #fff.alpha(0%))                     # fade to zero alpha, not `transparent` (see below)
+gradient sky  = linear(90, #4060ff, #ffd080)                     # angle°, stops; 90 = top→bottom
+gradient fire = linear(0, (#000, 0%), (#f00, 60%), (#ff0, 100%)) # (color, position) stops
+gradient glow = radial(#fff, #fff.alpha(0%))                     # fade to zero alpha, not `transparent` (see below)
 ```
 
 A gradient is a paint; it spans the bounding box of what it paints. Pixel mode
@@ -706,9 +707,9 @@ the four texture filters take an optional leading region scope (ADR-0071):
 `outline [k] [2]` (silhouette outline; colour+width both optional — bare `outline` = 1px derived-dark ink; builds the silhouette from ≥50%-alpha pixels, so it ignores soft shadows/AA and never eats thin features — ADR-0090) · `tint p 0.3` · `shadow dx:dy p` (whole-frame drop) ·
 `shadow r 2:3 p` (local, region-first) · `grain [r] amount seed p` ·
 `speckle [r] density seed p` · `ripple [r] strength seed p` · `dither [r] a b threshold` ·
-`quantize [r] palette` (remap opaque pixels to the nearest palette colour — OkLab, first-declared wins ties; `palette` is a colour list; import-assist: `import … sha256` → `quantize` → `outline` → `critique`, ADR-0093) ·
+`quantize [r] palette` (remap opaque pixels to the nearest palette colour — OkLab, first-declared wins ties; `palette` is a colour list; import-assist: `image … sha256` → `quantize` → `outline` → `critique`, ADR-0093) ·
 `shadeRegion r lightPt base amount` · `lightRegion r lightPt paint amount` ·
-`rim r dir p width` · `ambientOcclusion r p amount`.
+`rim r dir p width` · `ao r p amount`.
 
 **Compositing semantics (silent — `check` never flags a wrong effect here):**
 
@@ -730,7 +731,7 @@ the four texture filters take an optional leading region scope (ADR-0071):
   if you need a side edge lit, cut the region larger than the visible edge or apply `rim` before the
   clip. The band is 1px per `w`, so on a ~20px sprite it barely registers, and on a ~300px region it
   is nearly invisible even at high `w` (raise `w`, or skip it and rely on a lit cap zone).
-- `ambientOcclusion r p amount` = a 1px **inner-boundary stroke** of `r` at `p`'s alpha ×
+- `ao r p amount` = a 1px **inner-boundary stroke** of `r` at `p`'s alpha ×
   `amount` — not a soft gradient.
 - `outline [k] [w]` rings the **outer silhouette** of everything painted so far (dilate `w`px,
   paint the outside ring). Run it **once as the last statement of the assembly draw**, over the
@@ -776,7 +777,7 @@ draw gem: …
 
 The **default** shading path — one named light drives every dose, so shade, rim, and cast can't
 drift apart, and one `model`/`cel` per object replaces the hand-dosed
-`shadeRegion`+`lightRegion`+`rim`+`ambientOcclusion`+`shadow` quartet above (which stays the
+`shadeRegion`+`lightRegion`+`rim`+`ao`+`shadow` quartet above (which stays the
 **floor / escape hatch**).
 
 ```drw
@@ -828,7 +829,7 @@ then reads the theme light; the explicit arg is for overriding it on one command
   crushes to `#000000` (keeps ≥35 % lightness). The **cast is clipped to already-drawn content**
   (silhouette offset down-light, minus the region, minus every transparent pixel): within one draw it
   lands on an earlier-drawn opaque neighbour but never bakes onto empty canvas, so an isolated part
-  casts nothing (no floating blob). Ground assembled figures with `fit … shadow`, not a baked
+  casts nothing (no floating blob). Ground assembled figures with `fit … ground`, not a baked
   material cast. **`over UNION`** builds the height field from `UNION` (a region, usually
   `partA.union(partB)`) but tones only `REGION`, so stacked parts (leg + boot, arm + glove) co-shade as
   **one continuous limb** instead of restarting the field at the seam — each part keeps its own material.
@@ -839,7 +840,7 @@ then reads the theme light; the explicit arg is for overriding it on one command
   glossy response adds a **hard specular glint**. `--explain` shows one `form` step carrying the band count.
 - **`render <file>#<draw> --explain`** prints the exact primitive expansion of every `model`/`cel`
   (CLI § above) — predict the pixels, or copy the sequence to hand-tune with the raw primitives.
-- `light`/`material` bindings live at **module scope or drawing-local** (like `grad`/`mask`).
+- `light`/`material` bindings live at **module scope or drawing-local** (like `gradient`/`mask`).
   `model`/`cel` are command verbs; `light`/`material`/`model`/`cel` all stay ordinary bindable
   names outside these shapes.
 
@@ -848,8 +849,8 @@ then reads the theme light; the explicit arg is for overriding it on one command
 ```drw
 theme dusk:
   with pixelBase, warmPal   # ordered fold, later wins; no inheritance
-  pal: …                    # adds/overrides by name
-  grad sky = …
+  palette: …                    # adds/overrides by name
+  gradient sky = …
   size 16x16                # default canvas for size-less draws
   mode pixel                # pixel (crisp) | smooth (AA); export line may override
   font small                # default text face
@@ -857,7 +858,7 @@ theme dusk:
   style """…"""             # natural-language style guide — read it via `context`
 ```
 
-A theme body holds **only** `pal:` / `grad NAME = …` / `size` / `mode` / `font` / `light` / `figure:` /
+A theme body holds **only** `palette:` / `gradient NAME = …` / `size` / `mode` / `font` / `light` / `figure:` /
 `style` / `with` / `filter` / `draw` (ADR-0081/0086/0093). A theme `light NAME = …` folds like
 `size`/`mode`/`font` (later wins) → the drawing's outermost light (§ Light & material resolution
 order); the bound name is decorative. Surfaced by `context` (`## lighting`).
@@ -872,16 +873,16 @@ numbers (`fig.side.eye`, `fig.back.earL`); `fig.NAME(view)` also works. Crown at
 `h/heads`; **side faces `+x`** (eye forward off centre, ear toward the back). Surfaced by `context`
 (`## figure`). A free binding there (`accent = #d8a53a`) — or a
 `material NAME = …` (materials live in module/draw scope, not the theme) — is `E004` **at the
-declaration** (hint: put colours under `pal:`, move other constants/materials to module scope) — a
+declaration** (hint: put colours under `palette:`, move other constants/materials to module scope) — a
 theme carries no non-colour design tokens (radius/margin/alpha), so keep those at module scope above
 the theme. Apply: `use themes dusk` at file level, or as the leading line(s) of one `draw` body.
-Fold order: file `use` → drawing `use` → drawing-local `pal`/`grad`/`filter` (last wins).
+Fold order: file `use` → drawing `use` → drawing-local `palette`/`gradient`/`filter` (last wins).
 Style guides concatenate (sectioned by source, deduplicated).
 
-**A theme palette does not cross a `stamp` boundary.** A stamped `draw` resolves its own `pal` keys
+**A theme palette does not cross a `stamp` boundary.** A stamped `draw` resolves its own `palette` keys
 in its own scope (keys never cross stamp scopes, § Palettes) — a key that is not defined there is a
 static `E007`, not a fall-through to the host theme. Recolour a stamped variant **parametrically**
-(`draw part(c)` + `pal a=c`, or derived shades `c.darken(…)`), or `tint` it on `stamp`/`fit` — the one
+(`draw part(c)` + `palette a=c`, or derived shades `c.darken(…)`), or `tint` it on `stamp`/`fit` — the one
 recolor path (the `replace` exact-swap filter was removed, ADR-0094) — never by swapping the applied theme.
 
 ## Text & fonts
@@ -934,13 +935,23 @@ Sheet sidecars (tileset/atlas exports): `png` (the sheet) · `tiled` (`.tsj`; `t
 `.tsx`; tileset only) · `atlasJson` (`.json` frames map — TexturePacker/Phaser/Pixi) ·
 `aseprite` (`.aseprite.json`).
 
+**Base path is recipe-relative** (ADR-0096 §6): `build` defaults `--out` to the recipe file's own
+directory, and the base path is relative to that — the recipe alone decides the layout; an
+explicit `--out` only relocates the whole tree. Grammar: `SEGMENT { "/" SEGMENT }` — no leading
+`/`, no `.`/`..` segment, no file extension (the format line appends the real one); a violation is
+a positioned `E018`, caught by `check` (not `build`). Above, `icons/gem` is a *family/name* prefix
+inside some other recipe directory (e.g. `examples/icons/games.drw` exporting `games/dice`) — never
+repeat the recipe's own directory name as the leading segment (`export scene showcase/scene:`
+inside `showcase/showcase.drw`); `build` already writes next to the recipe, so that prefix is
+always redundant (lint `W016`).
+
 **SVG size — pixel mode merges *horizontal* same-color runs into `<rect width=run height=1>`, so
 colour that varies along a scanline explodes the file.** A horizontal or radial gradient, a
 `shadeRegion`/`lightRegion` veil (distance-based, so it varies in both axes), `grain`/`speckle`, or
 `dither` paints (nearly) every pixel a distinct colour → ~1 `<rect>` per pixel (measured: a flat
 32×32 tile 28 rects / 1.8 KB vs. the same tile + `grain` 369 rects / 22 KB — ~12×; icon runs saw
 5–25× and a 64px `camera` 1928 rects / 115 KB). A purely **vertical** (row-uniform) gradient stays
-compact — one rect per row. For an **SVG** export target, prefer flat fills or a few discrete `pal`
+compact — one rect per row. For an **SVG** export target, prefer flat fills or a few discrete `palette`
 zones (or `mode smooth`, which emits shapes, not per-pixel rects); reserve scanline-varying
 gradients / veils / texture for **PNG-only** targets. Counter-check after `build`: `<rect>` count ≪
 pixel count.

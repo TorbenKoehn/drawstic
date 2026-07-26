@@ -92,7 +92,7 @@ draw partial 4x4:
   px rgb(40, 50, 60) 1:1
 
 draw swatch 3x1:
-  pal:
+  palette:
     a, b, c = #777.tones(-10%, 0%, 10%)
   pixels:
     abc
@@ -634,7 +634,7 @@ describe('buildModule — imported image content', () => {
       writeFileSync(join(srcDir, 'image.png'), encodePngRgba(data, w, h))
       writeFileSync(
         join(srcDir, 'mod.drw'),
-        'import img = image.png\n\nexport img out/img:\n  png\n',
+        'image img = image.png\n\nexport img out/img:\n  png\n',
       )
       const engine = new Engine(srcDir)
       const mod = engine.loadEntry(join(srcDir, 'mod.drw'))

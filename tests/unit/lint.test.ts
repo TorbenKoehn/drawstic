@@ -12,7 +12,9 @@ const load = (src: string): { engine: Engine; mod: ModuleRecord } => {
 
 describe('lintModule', () => {
   test('W002: flags a drawing that is neither exported, stamped, nor fitted', () => {
-    const { engine, mod } = load('draw orphan 2x2:\n  pal k=#000000\n  pixels:\n    kk\n    kk\n')
+    const { engine, mod } = load(
+      'draw orphan 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n',
+    )
     const diags = lintModule(engine, mod)
     expect(diags).toHaveLength(1)
     expect(diags[0]).toMatchObject({
@@ -26,7 +28,7 @@ describe('lintModule', () => {
 
   test('W002 is avoided by exporting a drawing or by stamping it from another', () => {
     const { engine, mod } = load(
-      'draw dot 2x2:\n  pal k=#000000\n  pixels:\n    kk\n    kk\n\ndraw scene 4x4:\n  stamp dot 1:1\n\nexport scene icons/scene:\n  png\n',
+      'draw dot 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n\ndraw scene 4x4:\n  stamp dot 1:1\n\nexport scene icons/scene:\n  png\n',
     )
     expect(lintModule(engine, mod)).toEqual([])
   })
@@ -60,7 +62,7 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       [
         'draw snowflake 2x2:',
-        '  pal w=#ffffff',
+        '  palette w=#ffffff',
         '  pixels:',
         '    ww',
         '    ww',
@@ -82,13 +84,13 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       [
         'draw wing 2x2:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kk',
         '    kk',
         '',
         'draw bird 2x2:',
-        '  pal b=#3366aa',
+        '  palette b=#3366aa',
         '  pixels:',
         '    bb',
         '    bb',
@@ -111,13 +113,13 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       [
         'draw snowflake 2x2:',
-        '  pal w=#ffffff',
+        '  palette w=#ffffff',
         '  pixels:',
         '    ww',
         '    ww',
         '',
         'draw unused 2x2:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kk',
         '    kk',
@@ -144,7 +146,7 @@ describe('lintModule', () => {
 
   test('W001: flags unused local palette keys declared via both entry and destructured pal forms', () => {
     const { engine, mod } = load(
-      'draw swatch 3x1:\n  pal k=#111111  r=#ff0000\n  pal:\n    a, b, c = #cccccc.tones(-12%, 0%, 12%)\n  pixels:\n    kab\n\nexport swatch ui/swatch:\n  png\n',
+      'draw swatch 3x1:\n  palette k=#111111  r=#ff0000\n  palette:\n    a, b, c = #cccccc.tones(-12%, 0%, 12%)\n  pixels:\n    kab\n\nexport swatch ui/swatch:\n  png\n',
     )
     const diags = lintModule(engine, mod)
     expect(diags).toHaveLength(2)
@@ -174,7 +176,7 @@ describe('lintModule', () => {
 
   test('W003: flags a stamp whose footprint lands completely outside the host canvas', () => {
     const { engine, mod } = load(
-      'draw dot 2x2:\n  pal k=#000000\n  pixels:\n    kk\n    kk\n\ndraw offscreen 4x4:\n  stamp dot 10:10\n\nexport offscreen icons/offscreen:\n  png\n',
+      'draw dot 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n\ndraw offscreen 4x4:\n  stamp dot 10:10\n\nexport offscreen icons/offscreen:\n  png\n',
     )
     const diags = lintModule(engine, mod)
     expect(diags).toHaveLength(1)
@@ -206,7 +208,7 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       [
         'draw box2 2x2:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kk',
         '    kk',
@@ -249,15 +251,15 @@ describe('lintModule', () => {
         'mask localMask = circle(5:5, 3)',
         '',
         'draw dot2 2x2:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kk',
         '    kk',
         '',
         'draw richDraw 10x10:',
-        '  pal k=#222222 m=#333333 n=#444444 o=#555555',
-        '  pal p=#666666 q=#777777 s=#888888 t=#999999 u=#aaaaaa',
-        '  pal v=#bbbbbb z=#cccccc',
+        '  palette k=#222222 m=#333333 n=#444444 o=#555555',
+        '  palette p=#666666 q=#777777 s=#888888 t=#999999 u=#aaaaaa',
+        '  palette v=#bbbbbb z=#cccccc',
         '  cols = k, m',
         '  idx = cols[0]',
         '  dx = cols.0',
@@ -321,7 +323,7 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       [
         'draw fox 4x4:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kkkk',
         '    kkkk',
@@ -329,7 +331,7 @@ describe('lintModule', () => {
         '    kkkk',
         '',
         'draw igloo 6x6:',
-        '  pal b=#ffffff',
+        '  palette b=#ffffff',
         '  pixels:',
         '    bbbbbb',
         '    bbbbbb',
@@ -361,7 +363,7 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       [
         'draw fox 4x4:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kkkk',
         '    kkkk',
@@ -389,7 +391,7 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       [
         'draw fox 4x4:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kkkk',
         '    kkkk',
@@ -538,7 +540,7 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       [
         'draw part 4x4:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kkkk',
         '    kkkk',
@@ -567,7 +569,7 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       [
         'draw part 4x3:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kkkk',
         '    kkkk',
@@ -586,7 +588,7 @@ describe('lintModule', () => {
     const firstRow = load(
       [
         'draw part 4x4:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    ....',
         '    kkkk',
@@ -605,7 +607,7 @@ describe('lintModule', () => {
     const lastCol = load(
       [
         'draw part 4x4:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kkk.',
         '    kkk.',
@@ -741,6 +743,25 @@ describe('canonical-path lints + construct census (W012–W015, ADR-0094)', () =
     expect(censusModule(engine, mod)).toEqual(census)
   })
 
+  test('census flags `ao` (was `ambientOcclusion`, ADR-0096 §2) as spec-only, like its raw-shade siblings', () => {
+    const { engine, mod } = load(
+      'draw part 12x12:\n  r = rect(1:1, 10:10)\n  fill #808080 r\n  ao r #000000 0.3\n\nexport part p/part:\n  png\n',
+    )
+    const census = censusModule(engine, mod)
+    const ao = census.constructs.find((c) => c.construct === 'ao')
+    expect(ao?.count).toBe(1)
+    expect(ao?.specOnly).toBe(true)
+  })
+
+  test('census counts the `palette` construct under its current name (was `pal`, ADR-0096 §2)', () => {
+    const { engine, mod } = load(
+      'draw part 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n\nexport part p/part:\n  png\n',
+    )
+    const census = censusModule(engine, mod)
+    expect(census.constructs.find((c) => c.construct === 'palette')?.count).toBe(1)
+    expect(census.constructs.some((c) => c.construct === 'pal')).toBe(false)
+  })
+
   test('census flags a retired construct so a stale recipe is diagnosed without rendering it (ADR-0096 §1)', () => {
     // `castShadow` has its own statement shape (a call); `grayscale` (call- and UFCS-form) has
     // none of its own — both still load and census fine even though rendering either would now
@@ -764,5 +785,52 @@ describe('canonical-path lints + construct census (W012–W015, ADR-0094)', () =
     const grayscale = census.constructs.find((c) => c.construct === 'grayscale')
     expect(grayscale?.count).toBe(2) // the bare call and the UFCS chain, one statement each
     expect(grayscale?.retired).toBe(true)
+  })
+})
+
+describe("W016: export path repeats the recipe's own directory (ADR-0096 §6)", () => {
+  /** Like `load`, but places the recipe in a directory named `dir` so the W016 check has something
+   *  to compare the export path's first segment against. */
+  const loadIn = (dir: string, src: string): { engine: Engine; mod: ModuleRecord } => {
+    const engine = new Engine(process.cwd())
+    const mod = engine.loadSource(src, `${process.cwd()}\\${dir}\\recipe${n++}.drw`, 'recipe.drw')
+    return { engine, mod }
+  }
+
+  test('flags an export path whose first segment repeats the recipe directory name', () => {
+    const { engine, mod } = loadIn(
+      'showcase',
+      'draw scene 2x2:\n  bg #fff\n\nexport scene showcase/scene:\n  png\n',
+    )
+    const diags = lintModule(engine, mod)
+    expect(diags).toContainEqual({
+      severity: 'warning',
+      code: 'W016',
+      message: "export path 'showcase/scene' repeats the recipe's own directory 'showcase'",
+      file: 'recipe.drw',
+      line: 4,
+      column: 1,
+      endLine: 4,
+      endColumn: 7,
+      hint: "build writes next to the recipe — drop the 'showcase/' prefix",
+    })
+  })
+
+  test('a bare export path (no repeated prefix) does not fire', () => {
+    const { engine, mod } = loadIn(
+      'showcase',
+      'draw scene 2x2:\n  bg #fff\n\nexport scene scene:\n  png\n',
+    )
+    expect(lintModule(engine, mod).some((d) => d.code === 'W016')).toBe(false)
+  })
+
+  test('a family-style prefix that differs from the recipe directory does not fire', () => {
+    // examples/icons/communication.drw exporting 'communication/chat' — the recipe directory is
+    // 'icons', not 'communication', so this is the intended family/name convention, not a repeat.
+    const { engine, mod } = loadIn(
+      'icons',
+      'draw chat 2x2:\n  bg #fff\n\nexport chat communication/chat:\n  png\n',
+    )
+    expect(lintModule(engine, mod).some((d) => d.code === 'W016')).toBe(false)
   })
 })

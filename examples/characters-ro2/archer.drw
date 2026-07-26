@@ -248,7 +248,7 @@ draw figFront 64x128:
   use archer
   pose front
   fit torsoFront.neck bone chestJ
-  fit leg.hip bone hipLJ shadow
+  fit leg.hip bone hipLJ ground
   fit leg.hip bone hipRJ
   fit armBow.shoulder bone shLJ
   fit armRelax.shoulder bone shRJ
@@ -262,7 +262,7 @@ draw figSide 64x128:
   pose side
   fit torsoSide.neck bone chestJ
   fit leg.hip bone hipLJ tint #2b2b2b 45%
-  fit leg.hip bone hipRJ shadow
+  fit leg.hip bone hipRJ ground
   fit armRelax.shoulder bone shLJ tint #2b2b2b 45%
   fit armBow.shoulder bone shRJ
   fit headSide.chin bone headJ
@@ -274,7 +274,7 @@ draw figBack 64x128:
   use archer
   pose back
   fit torsoBack.neck bone chestJ
-  fit leg.hip bone hipLJ shadow
+  fit leg.hip bone hipLJ ground
   fit leg.hip bone hipRJ
   fit armRelax.shoulder bone shLJ
   fit armRelax.shoulder bone shRJ flipx

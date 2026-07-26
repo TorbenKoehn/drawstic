@@ -1,5 +1,5 @@
 theme arcanaSet:
-  pal:
+  palette:
     k = #241820
     s = #98a7bc
     h = #eef4fb

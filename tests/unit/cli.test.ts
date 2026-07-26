@@ -94,13 +94,13 @@ describe('check', () => {
         file,
         [
           'draw a 2x2:',
-          '  pal k=#000000',
+          '  palette k=#000000',
           '  pixels:',
           '    kk',
           '    kk',
           '',
           'draw b 2x2:',
-          '  pal r=#ff0000',
+          '  palette r=#ff0000',
           '  pixels:',
           '    rr',
           '    rr',
@@ -137,7 +137,7 @@ describe('check', () => {
   test('--rows reports ragged pixel-row metadata and E002', () => {
     withTmpDir((dir) => {
       const file = join(dir, 'ragged.drw')
-      writeFileSync(file, 'draw ragged 3x2:\n  pal k=#000000\n  pixels:\n    kkk\n    kk\n')
+      writeFileSync(file, 'draw ragged 3x2:\n  palette k=#000000\n  pixels:\n    kkk\n    kk\n')
       const r = runJson('check', file, '--json', '--rows')
       expect(r.exitCode).toBe(1)
       const body = r.json as {
@@ -166,7 +166,7 @@ describe('check', () => {
   test('--rows infers size from pixel rows when the header is absent', () => {
     withTmpDir((dir) => {
       const file = join(dir, 'headerless.drw')
-      writeFileSync(file, 'draw hl:\n  pal k=#000000\n  pixels:\n    kk\n    kk\n')
+      writeFileSync(file, 'draw hl:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n')
       const r = runJson('check', file, '--json', '--rows')
       expect(r.exitCode).toBe(0)
       const body = r.json as {
@@ -193,7 +193,7 @@ describe('check', () => {
   test('--rows without --json reports diagnostics to stderr and prints nothing to stdout', () => {
     withTmpDir((dir) => {
       const file = join(dir, 'ragged.drw')
-      writeFileSync(file, 'draw ragged 3x2:\n  pal k=#000000\n  pixels:\n    kkk\n    kk\n')
+      writeFileSync(file, 'draw ragged 3x2:\n  palette k=#000000\n  pixels:\n    kkk\n    kk\n')
       const r = run('check', file, '--rows')
       expect(r.exitCode).toBe(1)
       expect(r.stdout).toHaveLength(0)
@@ -357,7 +357,7 @@ describe('context', () => {
 
     expect(body.context.exports.find((e) => e.source === 'badge')).toMatchObject({
       source: 'badge',
-      basePath: 'showcase/badge',
+      basePath: 'badge',
     })
     expect(body.context.functions).toContainEqual({ name: 'rowBand', signature: 'rowBand(row)' })
     expect(body.context.functions).toContainEqual({ name: 'ring', signature: 'ring(c, r)' })
@@ -388,9 +388,9 @@ describe('context', () => {
     expect(text).toContain('## style guide')
     expect(text).toContain('## drawings')
     expect(text).toContain('  parametricDot 8x8(c)')
-    expect(text).toContain('    size: pixels; pal: y, r')
+    expect(text).toContain('    size: pixels; palette: y, r')
     expect(text).toContain('## exports')
-    expect(text).toContain('  scene -> showcase/scene')
+    expect(text).toContain('  scene -> scene')
     expect(text).toContain('## functions')
     expect(text).toContain('  rowBand(row)')
   })
@@ -400,7 +400,7 @@ describe('context', () => {
     expect(r.exitCode).toBe(0)
     const text = r.stdout.toString('utf8')
     expect(text).toContain('  island 192x128')
-    expect(text).toContain('    size: header; pal: -')
+    expect(text).toContain('    size: header; palette: -')
     expect(text).toContain(
       '    hint: drawstic render examples/scenes-v3/island.drw#island --preview --fit 80x40',
     )
@@ -497,7 +497,7 @@ describe('context', () => {
         [
           'theme fam:',
           '  size 16x16',
-          '  pal:',
+          '  palette:',
           '    b = #3366cc',
           '    g = #ffffff',
           '',
@@ -535,7 +535,7 @@ describe('context', () => {
 
       const text = run('context', file).stdout.toString('utf8')
       expect(text).toContain('    use: fam')
-      expect(text).toContain('    theme pal: b=#3366cc (fam), g=#ffffff (fam)')
+      expect(text).toContain('    theme palette: b=#3366cc (fam), g=#ffffff (fam)')
     })
   })
 
@@ -588,17 +588,35 @@ describe('build', () => {
     })
   })
 
-  test('defaults --out to the process cwd when omitted', () => {
+  test("defaults --out to the recipe file's own directory, not the process cwd (ADR-0096 §6)", () => {
     const originalCwd = process.cwd()
+    const recipeDir = mkdtempSync(join(tmpdir(), 'drawstic-recipe-'))
+    const cwdDir = mkdtempSync(join(tmpdir(), 'drawstic-cwd-'))
+    try {
+      writeFileSync(join(recipeDir, 'x.drw'), 'draw x 2x2:\n  bg #fff\n\nexport x x:\n  png\n')
+      process.chdir(cwdDir)
+      const r = runJson('build', join(recipeDir, 'x.drw'), '--json')
+      expect(r.exitCode).toBe(0)
+      expect(existsSync(join(recipeDir, 'x.png'))).toBe(true)
+      expect(existsSync(join(cwdDir, 'x.png'))).toBe(false)
+    } finally {
+      process.chdir(originalCwd)
+      rmSync(recipeDir, { recursive: true, force: true })
+      rmSync(cwdDir, { recursive: true, force: true })
+    }
+  })
+
+  test('an explicit --out still overrides the recipe-relative default', () => {
     withTmpDir((dir) => {
-      writeFileSync(join(dir, 'x.drw'), 'draw x 2x2:\n  bg #fff\n\nexport x out/x:\n  png\n')
-      process.chdir(dir)
+      const recipeDir = mkdtempSync(join(tmpdir(), 'drawstic-recipe-'))
       try {
-        const r = runJson('build', 'x.drw', '--json')
+        writeFileSync(join(recipeDir, 'x.drw'), 'draw x 2x2:\n  bg #fff\n\nexport x x:\n  png\n')
+        const r = runJson('build', join(recipeDir, 'x.drw'), '--out', dir, '--json')
         expect(r.exitCode).toBe(0)
-        expect(existsSync(join(dir, 'out', 'x.png'))).toBe(true)
+        expect(existsSync(join(dir, 'x.png'))).toBe(true)
+        expect(existsSync(join(recipeDir, 'x.png'))).toBe(false)
       } finally {
-        process.chdir(originalCwd)
+        rmSync(recipeDir, { recursive: true, force: true })
       }
     })
   })
@@ -792,7 +810,7 @@ describe('render', () => {
         'mask box = rect(2:2, 5:5)',
         '',
         'draw badge 8x8:',
-        '  pal k=#000000  r=#ff0000',
+        '  palette k=#000000  r=#ff0000',
         '  bg k',
         '  mask box:',
         '    bg r',
@@ -871,7 +889,7 @@ describe('render', () => {
         file,
         [
           'draw badge 8x8:',
-          '  pal k=#000000  r=#ff0000',
+          '  palette k=#000000  r=#ff0000',
           '  mask box = rect(2:2, 5:5)',
           '  bg k',
           '  mask box:',

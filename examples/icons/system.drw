@@ -5,7 +5,7 @@ use system
 # bottom darker); glyphs are bold near-white masses, optically centered.
 
 theme system:
-  pal:
+  palette:
     k = #20242c
     l = #f7faff
     s = #6c7789

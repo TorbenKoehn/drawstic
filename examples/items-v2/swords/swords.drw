@@ -1,5 +1,5 @@
 theme swordSet:
-  pal:
+  palette:
     k = #1b1720
     e = #35404e
     m = #9aa8ba

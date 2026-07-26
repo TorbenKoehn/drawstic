@@ -9,7 +9,7 @@ use media                              # local theme (defined below) — family 
 theme media:
   size 32x32
   mode pixel
-  pal:
+  palette:
     k = #20242e                        # ink
     l = #ffffff                        # glyph (white)
     d = #10121a                        # glyph drop-shadow
@@ -33,19 +33,19 @@ theme media:
 
 # ── Tiles (one per native size, parametric on accent) ─────────────────────
 draw tile32(a) 32x32:
-  grad tg = linear(135, a.lighten(16%), a.darken(20%))
+  gradient tg = linear(135, a.lighten(16%), a.darken(20%))
   mask t = rrect(1:1, 30:30, 7)
   fill tg t
   rim t 0:1 a.lighten(40%) 1
 
 draw tile16(a) 16x16:
-  grad tg = linear(135, a.lighten(16%), a.darken(20%))
+  gradient tg = linear(135, a.lighten(16%), a.darken(20%))
   mask t = rrect(1:1, 14:14, 3)
   fill tg t
   rim t 0:1 a.lighten(40%) 1
 
 draw tile64(a) 64x64:
-  grad tg = linear(135, a.lighten(16%), a.darken(20%))
+  gradient tg = linear(135, a.lighten(16%), a.darken(20%))
   mask t = rrect(2:2, 61:61, 14)
   fill tg t
   rim t 0:1 a.lighten(40%) 1

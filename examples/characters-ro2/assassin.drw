@@ -109,9 +109,9 @@ draw headFront 32x38:
   line mouthC 14:31 18:31
   turbCap = dome(16:14, 14:14)
   model turbCap turbM
-  band turbLite 1:15 16:8 31:15 7 fill
-  band turbC 0:19 16:12 32:19 7 fill
-  band turbDark 1:23 16:16 31:23 6 fill
+  ribbon turbLite 1:15 16:8 31:15 7 fill
+  ribbon turbC 0:19 16:12 32:19 7 fill
+  ribbon turbDark 1:23 16:16 31:23 6 fill
   fill turbLite rect(13:11, 19:17)
   circle gemC 16:13 1 fill
   tail = lobe(28:22, 32:33, 4)
@@ -129,9 +129,9 @@ draw headSide 32x38:
   line mouthC 22:32 26:32
   turbCap = dome(14:14, 14:14)
   model turbCap turbM
-  band turbLite 0:15 14:8 29:16 7 fill
-  band turbC 0:19 14:12 30:20 7 fill
-  band turbDark 0:23 14:16 29:24 6 fill
+  ribbon turbLite 0:15 14:8 29:16 7 fill
+  ribbon turbC 0:19 14:12 30:20 7 fill
+  ribbon turbDark 0:23 14:16 29:24 6 fill
   fill turbLite rect(10:11, 17:17)
   circle gemC 14:13 1 fill
   tail = lobe(4:23, 1:34, 4)
@@ -144,9 +144,9 @@ draw headBack 32x38:
   model skull skinM
   turbCap = dome(16:14, 14:14)
   model turbCap turbM
-  band turbLite 1:15 16:8 31:15 7 fill
-  band turbC 0:19 16:12 32:19 7 fill
-  band turbDark 1:23 16:16 31:23 6 fill
+  ribbon turbLite 1:15 16:8 31:15 7 fill
+  ribbon turbC 0:19 16:12 32:19 7 fill
+  ribbon turbDark 1:23 16:16 31:23 6 fill
   fill turbDark rect(13:11, 19:17)
   tail = lobe(24:26, 27:37, 5)
   fill turbDark tail
@@ -265,7 +265,7 @@ draw dagger 6x22:
 
 draw assassinFront 64x128:
   pose front
-  fit legsFront.hip bone hipF shadow
+  fit legsFront.hip bone hipF ground
   fit torsoFront.collar bone chestF
   fit cloakFront.attach bone chestF behind torsoFront
   fit armFront.shoulder bone shLF
@@ -277,7 +277,7 @@ draw assassinFront 64x128:
 
 draw assassinSide 64x128:
   pose side
-  fit legsSide.hip bone hipS shadow
+  fit legsSide.hip bone hipS ground
   fit torsoSide.collar bone chestS
   fit cloakSide.attach bone chestS behind torsoSide
   fit armFront.shoulder bone shS
@@ -287,7 +287,7 @@ draw assassinSide 64x128:
 
 draw assassinBack 64x128:
   pose back
-  fit legsFront.hip bone hipB shadow
+  fit legsFront.hip bone hipB ground
 
   fit torsoBack.collar bone chestB
   fit cloakBack.attach bone chestB front torsoBack
@@ -298,11 +298,11 @@ draw assassinBack 64x128:
   fit headBack.nape bone headB
   outline
 
-export assassinFront characters-ro2/assassin-front:
+export assassinFront assassin-front:
   png @1 @4
 
-export assassinSide characters-ro2/assassin-side:
+export assassinSide assassin-side:
   png @1 @4
 
-export assassinBack characters-ro2/assassin-back:
+export assassinBack assassin-back:
   png @1 @4

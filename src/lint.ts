@@ -4,6 +4,7 @@
 // statically resolve a case (dynamic expressions, parametric drawings) skip
 // it rather than risk a false positive.
 
+import { basename, dirname } from 'node:path'
 import type {
   Argument,
   DrawDefinition,
@@ -48,6 +49,7 @@ const warning = (
  */
 export const lintModule = (engine: Engine, mod: ModuleRecord): Diagnostic[] => {
   const diagnostics: Diagnostic[] = []
+  lintExportPathRepeatsDir(mod, diagnostics)
   const exported = new Set(mod.exports.map((ex) => ex.name))
   const used = new Set<string>()
   const fontCache = new Map<string, FontResolved | null>()
@@ -695,6 +697,32 @@ const lintTransparentLastRow = (
   })
 }
 
+/**
+ * Lint `W016`: an export path's first segment repeats the recipe file's own directory name (e.g.
+ * `export scene showcase/scene:` inside `examples/showcase/showcase.drw`). `build` defaults `--out`
+ * to the recipe's own directory (ADR-0096 §6) and every export path is relative to that, so a
+ * leading `<dirname>/` segment just duplicates what `build` already provides — the historical cause
+ * of the corpus's five different export-path conventions and the duplicated-junk-directory bug the
+ * ADR fixes. Runs once per module (not per drawing), against every declared export.
+ */
+const lintExportPathRepeatsDir = (mod: ModuleRecord, diagnostics: Diagnostic[]): void => {
+  const recipeDir = basename(dirname(mod.file))
+  for (const ex of mod.exports) {
+    const first = ex.basePath.split('/')[0]
+    if (first === recipeDir) {
+      diagnostics.push(
+        warning(
+          'W016',
+          `export path '${ex.basePath}' repeats the recipe's own directory '${recipeDir}'`,
+          mod.displayPath,
+          ex.span,
+          `build writes next to the recipe — drop the '${recipeDir}/' prefix`,
+        ),
+      )
+    }
+  }
+}
+
 // ── W012–W015: the one-canonical-way lints (ADR-0094) ───────────────────────
 //
 // Each pushes toward the single canonical path the declarative pipeline established, and each is
@@ -711,7 +739,7 @@ const SPEC_ONLY_CONSTRUCTS = new Set([
   'rim',
   'shadeRegion',
   'lightRegion',
-  'ambientOcclusion',
+  'ao',
   'scatter',
   'mirror',
   'pixels',
@@ -1076,7 +1104,7 @@ const constructLabel = (stmt: Statement): string | null => {
     case 'use':
       return stmt.kind === 'pixels' ? 'pixels' : stmt.kind
     case 'palette':
-      return 'pal'
+      return 'palette'
     default:
       return null
   }

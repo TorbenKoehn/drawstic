@@ -25,7 +25,7 @@ Build the shared frame first; draw glyphs onto it last. The order that wins on t
 
 ```drw
 theme system:
-  pal:
+  palette:
     k = #20242c
     l = #f7faff
     b = #3b82f0                  # one accent hue per app
@@ -130,7 +130,7 @@ draw **silently inherits the theme `size`** (a real, expensive trap) — its own
 and re-thickened strokes.
 
 - **Paradigm threshold ~12px glyph area:** below it, hand-pixel the whole icon (tile + glyph
-  together) as **one `pixels:` grid** using theme `pal` keys — identical corner cut-outs to its
+  together) as **one `pixels:` grid** using theme `palette` keys — identical corner cut-outs to its
   siblings, no stamp-order pitfalls. Above it, primitives.
 - **64px is a detail redraw, not an enlargement:** add detail (fluting, glints, vents, a modelled
   lens), keep the *same* contract (radius %, light direction, palette).
@@ -141,9 +141,9 @@ and re-thickened strokes.
   so a single recolour flows through the family.
 - **Hue-only oklch** = instant coherence: fix L and C, rotate hue only — `oklch(0.62, 0.15, h)` per
   app (media). Six apps, one line each, guaranteed equal visual weight.
-- `grad` stops **intra-hue** (`x.lighten` ↔ `x.darken` of one base); cross-hue interpolates the
+- `gradient` stops **intra-hue** (`x.lighten` ↔ `x.darken` of one base); cross-hue interpolates the
   short OkLCh arc through magenta/grey (SKILL.md § Gotchas).
-- Theme `pal` keys are single letters — keep a one-line legend in the `style` guide. Never
+- Theme `palette` keys are single letters — keep a one-line legend in the `style` guide. Never
   `w`/`h`/`shadow`/`rim`/`tint`/`grain`/… as keys or bindings (SKILL.md § Gotchas covers the
   reserved-name and theme-scope traps).
 
@@ -152,7 +152,7 @@ and re-thickened strokes.
 Pixel-mode SVG merges *horizontal* runs, so anything varying **along a scanline** — a horizontal or
 135° gradient, a `shadeRegion`/`lightRegion` veil, `grain` — breaks the merge into ~1 `<rect>`/pixel
 (5–25×; measured 3.7 → 50.8 KB for one 32px icon). For SVG-export families use the **flat-tile or
-1px-bevel contract (§2)** or 2–3 discrete `pal` zones; reserve gradient/veil tiles for PNG-only. The
+1px-bevel contract (§2)** or 2–3 discrete `palette` zones; reserve gradient/veil tiles for PNG-only. The
 row-uniform vertical gradient (§2, first option) is the exception — it stays compact. Full detail:
 SKILL.md § Gotchas. **Counter-check `<rect>` count ≪ pixel count after `build`.**
 
@@ -175,8 +175,10 @@ SKILL.md § Gotchas. **Counter-check `<rect>` count ≪ pixel count after `build
 
 ## 10. Export pattern
 
-Every icon: PNG `@1 @2` + `svg`, base path `<family>/<name>`. `svg ids classes` yields CSS-classed,
-`<title>`-tagged output (communication):
+Every icon: PNG `@1 @2` + `svg`, base path `<family>/<name>` (`<family>` = the recipe's own file
+stem, e.g. `productivity.drw` → `productivity/mail` — export paths are recipe-relative, ADR-0096
+§6, so this is never the recipe's *directory* name; don't repeat that as a prefix, lint `W016`).
+`svg ids classes` yields CSS-classed, `<title>`-tagged output (communication):
 
 ```drw
 export mail productivity/mail:

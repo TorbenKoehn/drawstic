@@ -31,7 +31,7 @@ draw badge 16x16:
   stroke k ring(8:8, 7) w2
 
 draw scene 32x24:
-  grad sky = linear(90, oklch(0.62, 0.15, 260), y)
+  gradient sky = linear(90, oklch(0.62, 0.15, 260), y)
   bg sky
   rect k 4:18 27:23 fill
   stamp gem 6:10 scale2
@@ -47,13 +47,13 @@ draw dots 24x8:
   stamp parametricDot(lighten(r, 0.2)) 8:0
   stamp parametricDot(darken(r, 0.2)) 16:0
 
-export scene showcase/scene:
+export scene scene:
   png @1 @2 z9
   svg ids classes
   jpeg q80
 
-export badge showcase/badge:
+export badge badge:
   png indexed
 
-export stripes showcase/stripes:
+export stripes stripes:
   png

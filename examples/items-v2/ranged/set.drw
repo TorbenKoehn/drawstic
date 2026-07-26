@@ -1,5 +1,5 @@
 theme rangedSet:
-  pal:
+  palette:
     k = #241a20
     w = #8f6338
     a = #c29159

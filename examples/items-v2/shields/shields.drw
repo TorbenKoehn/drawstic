@@ -1,5 +1,5 @@
 theme shieldSet:
-  pal:
+  palette:
     k = #241a20
     n = #4d5568
     s = #93a0b5

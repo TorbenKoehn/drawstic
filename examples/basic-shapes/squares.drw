@@ -1,6 +1,6 @@
 # A hand-pixeled square with a border.
 draw squareDeclarative:
-  pal k=#fff y=#e0b070
+  palette k=#fff y=#e0b070
   pixels:
     kkkkkkkk
     kyyyyyyk
@@ -12,12 +12,12 @@ draw squareDeclarative:
     kkkkkkkk
 
 draw squareImperative 8x8:
-  pal k=#fff y=#e0b070
+  palette k=#fff y=#e0b070
   rect k 0:0 7:7
   rect y 1:1 6:6 fill
 
 draw squares 128x16:
-  pal:
+  palette:
     k = #1a1a1a
     a = #c04040
   bg #fff
@@ -27,5 +27,5 @@ draw squares 128x16:
     rect k c-r c+r-1
     rect a c-r+2 c+r-3 fill
 
-export squares out/squares:
+export squares squares:
   png

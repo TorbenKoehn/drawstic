@@ -1,5 +1,5 @@
 theme armorTheme:
-  pal:
+  palette:
     k = #241722
     s = #59687c
     m = #8d9db1

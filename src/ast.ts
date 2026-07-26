@@ -117,7 +117,7 @@ export type Argument =
     }
 
 /**
- * One `pal` line (spec §7). `entry` binds a single key (`k = #235`);
+ * One `palette` line (spec §7). `entry` binds a single key (`k = #235`);
  * `destructure` binds several keys positionally from one list-valued
  * expression (`r, g, b = rgb`) — evaluation requires the list length to
  * match `keys.length`, one key per list item, all colors.
@@ -166,15 +166,15 @@ export type MaterialOverrides = Partial<Record<MaterialOverrideKey, Expression>>
 export type Statement =
   | {
       /**
-       * A `names = expr` binding (plain, incl. destructuring), `grad NAME = expr`, or
+       * A `names = expr` binding (plain, incl. destructuring), `gradient NAME = expr`, or
        * `mask NAME = expr`. `bindKind` records which keyword form produced
-       * the binding — `grad`/`mask` bindings still carry a single name in
+       * the binding — `gradient`/`mask` bindings still carry a single name in
        * `names`.
        */
       readonly kind: 'binding'
       readonly names: string[]
       readonly expression: Expression
-      readonly bindKind: 'plain' | 'grad' | 'mask'
+      readonly bindKind: 'plain' | 'gradient' | 'mask'
       readonly span: TextSpan
     }
   | {
@@ -323,7 +323,7 @@ export type Statement =
     }
   | {
       /**
-       * A `fit TARGET SOURCE [flags] [shadow]` anchored-assembly placement (ADR-0087): places
+       * A `fit TARGET SOURCE [flags] [ground]` anchored-assembly placement (ADR-0087): places
        * `TARGET`'s part so its named pin lands exactly on `SOURCE` — a contact-guaranteed replacement
        * for a hand-computed `stamp` point. `target` names the part (a bare name resolving to a drawing/
        * sprite) and its pin (`undefined` ⇒ auto-match the single pin name shared with the source).
@@ -331,7 +331,8 @@ export type Statement =
        * expression (`point` — the ground-placement oracle: `fit tree.base x:groundY(x)`). `flags` are
        * the same `stamp` transform/paint modifiers (`flipx`/`flipy`/`rotN`/`scaleN`/`transform:`/
        * `tint:`/`mask:`), applied to the part about its footprint centre; the pins ride the same
-       * transform so the fit pin still lands exactly on `SOURCE` (ADR-0087 amendment 2). `shadow`
+       * transform so the fit pin still lands exactly on `SOURCE` (ADR-0087 amendment 2). `ground`
+       * (ADR-0096 §2, was `shadow` — distinct from `stamp … shadow dx:dy p`, which keeps its name)
        * drops an auto contact-shadow ellipse under the footprint first. `fit` is a keyword *only* in
        * this statement position (contextual, D7).
        */
@@ -345,7 +346,7 @@ export type Statement =
         // view depth for auto-Z). `bone` is a contextual keyword in this slot only.
         | { readonly kind: 'bone'; readonly joint: string }
       readonly flags: Argument[]
-      readonly shadow: boolean
+      readonly ground: boolean
       /**
        * Optional occlusion relations (ADR-0092): `behind TARGET` layers this part below the
        * already-placed part `TARGET` in the resolved paint order; `front TARGET` layers it above.
@@ -460,11 +461,12 @@ export type Statement =
   | { readonly kind: 'exportDefinition'; readonly def: ExportDefinition; readonly span: TextSpan }
   | {
       /**
-       * An `import NAME = FILE-PATH [sha256 HEX]` statement — a PNG loaded as a
+       * An `image NAME = FILE-PATH [sha256 HEX]` statement (ADR-0096 §2, was `import` —
+       * `import` means module import everywhere else in the language) — a PNG loaded as a
        * drawing. `sha256`, if present, pins the source file's content
        * hash (checked at build time, E020 on mismatch).
        */
-      readonly kind: 'imageImport'
+      readonly kind: 'image'
       readonly name: string
       readonly path: string
       readonly sha256: string | undefined

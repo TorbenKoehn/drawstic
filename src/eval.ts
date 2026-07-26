@@ -106,7 +106,6 @@ import { STD_GLOBAL_FONTS, STD_MODULES } from './std.js'
 import {
   aboutPoint,
   applyMatrix,
-  bandRegion,
   circleRegion,
   compose,
   crescentRegion,
@@ -151,6 +150,7 @@ import {
   regionTransform,
   regionUnion,
   regionXor,
+  ribbonRegion,
   rotationDeg,
   rotationXDeg,
   rotationYDeg,
@@ -742,7 +742,7 @@ const BUILTIN_NAMES = new Set([
   'dome',
   'lobe',
   'crescent',
-  'band',
+  'ribbon',
   'region',
   'union',
   'intersect',
@@ -791,7 +791,7 @@ const BUILTIN_NAMES = new Set([
   'shadeRegion',
   'lightRegion',
   'rim',
-  'ambientOcclusion',
+  'ao',
 ])
 
 // ── the engine ──────────────────────────────────────────────────────────────
@@ -1357,7 +1357,7 @@ export class Engine {
         case 'atlasDefinition':
           add(s.def.name, { kind: 'atlas', definition: s.def, module: rec }, s.span)
           break
-        case 'imageImport':
+        case 'image':
           add(
             s.name,
             {
@@ -1563,8 +1563,8 @@ export class Engine {
     acc: FoldedTheme,
     state: State,
   ): void {
-    if (item.bindKind !== 'grad') {
-      // A theme body carries only pal/grad/size/mode/font/style/with + filter/draw
+    if (item.bindKind !== 'gradient') {
+      // A theme body carries only palette/gradient/size/mode/font/style/with + filter/draw
       // definitions; a plain (or `mask`) binding here folds into nothing and used to
       // vanish silently, surfacing later as E001 at the use site (ADR-0081). Reject it
       // at the declaration with an actionable hint instead.
@@ -1573,7 +1573,7 @@ export class Engine {
         `a theme body has no place for the binding '${item.names.join(', ')}'`,
         mod.displayPath,
         item.span,
-        'put colours under `pal:` (or use `grad NAME = …`); move other constants to module scope, above the theme',
+        'put colours under `palette:` (or use `gradient NAME = …`); move other constants to module scope, above the theme',
       )
     }
     const env = new Environment(mod.env)
@@ -1584,7 +1584,7 @@ export class Engine {
     if (typeof v !== 'object' || v?.type !== 'grad') {
       throw error(
         ERROR_CODE.typeError,
-        "a 'grad' binding must be a gradient",
+        "a 'gradient' binding must be a gradient",
         mod.displayPath,
         item.span,
       )
@@ -1595,7 +1595,7 @@ export class Engine {
   /**
    * Fold a theme-body `light NAME = …` default (ADR-0086) into `acc.light` — later wins,
    * like `size`/`mode`/`font`. The binding evaluates with the folded palette visible, so a
-   * theme light may reference its own `pal` colours; the bound name is decorative (the value
+   * theme light may reference its own `palette` colours; the bound name is decorative (the value
    * is the theme's single default light, resolved as tier 3 in {@link #requireLight}).
    */
   #foldLight(
@@ -1756,8 +1756,8 @@ export class Engine {
   }
 
   /**
-   * Execute a `let`/`const`/`grad`/`mask` binding, including list
-   * destructuring (`a, b = list`). `grad`/`mask` bindings are additionally
+   * Execute a `let`/`const`/`gradient`/`mask` binding, including list
+   * destructuring (`a, b = list`). `gradient`/`mask` bindings are additionally
    * type-checked (E006) since their declared kind promises a gradient or
    * region respectively.
    */
@@ -1767,10 +1767,10 @@ export class Engine {
     state: State,
   ): void {
     const v = this.evalExpr(stmt.expression, env, state)
-    if (stmt.bindKind === 'grad' && (typeof v !== 'object' || v?.type !== 'grad')) {
+    if (stmt.bindKind === 'gradient' && (typeof v !== 'object' || v?.type !== 'grad')) {
       throw error(
         ERROR_CODE.typeError,
-        "a 'grad' binding must be a gradient",
+        "a 'gradient' binding must be a gradient",
         state.module.displayPath,
         stmt.span,
       )
@@ -2912,7 +2912,7 @@ export class Engine {
   }
 
   /**
-   * Execute a `fit TARGET SOURCE [flags] [shadow]` placement (ADR-0087): solve the translation (and
+   * Execute a `fit TARGET SOURCE [flags] [ground]` placement (ADR-0087): solve the translation (and
    * optional flip/rotate/scale/transform of the part about its footprint centre) that lands the
    * target part's named pin exactly on the source attach point, drop an optional contact shadow,
    * stamp the part, register the part's now-canvas-space pins — each carried through the SAME
@@ -3030,7 +3030,7 @@ export class Engine {
     // 6 — auto contact-shadow (opt-in): an ellipse under the part's (transformed) footprint bottom,
     // painted BEFORE the part so the feet overdraw it. Anchored at the footprint, not the fit pin, so
     // a joint-to-joint fit (leg.hip → torso.hip) still pools under the feet (character-DX §5.6).
-    if (stmt.shadow) {
+    if (stmt.ground) {
       this.#dropContactShadow(draw, sprite, origin, matrix)
     }
 
@@ -3691,11 +3691,11 @@ export class Engine {
   #execDrawStmt(stmt: Statement, env: Environment, state: State): void {
     this.step(stmt.span, state.module.displayPath)
     const draw = state.draw
-    // Shared by every "lives at module scope" E004 below: mask/grad are the
+    // Shared by every "lives at module scope" E004 below: mask/gradient are the
     // two definition-shaped statements that stay legal inside a draw, so
     // that's the natural next question once an author hits this error.
     const moduleScopeHint =
-      'move it to module scope, above the draw — mask and grad definitions may stay drawing-local'
+      'move it to module scope, above the draw — mask and gradient definitions may stay drawing-local'
     switch (stmt.kind) {
       case 'binding':
         this.#execBinding(stmt, env, state)
@@ -3793,10 +3793,10 @@ export class Engine {
           stmt.span,
           moduleScopeHint,
         )
-      case 'imageImport':
+      case 'image':
         throw error(
           ERROR_CODE.syntax,
-          'image imports live at module scope',
+          'image definitions live at module scope',
           state.module.displayPath,
           stmt.span,
           moduleScopeHint,
@@ -3904,7 +3904,7 @@ export class Engine {
           line: row.span.line,
           column: row.span.column + x,
         },
-        `declare it in a 'pal' (e.g. 'pal ${ch}=<color>')`,
+        `declare it in a 'palette' (e.g. 'palette ${ch}=<color>')`,
       )
     }
     const paint = b.value
@@ -4511,7 +4511,7 @@ export class Engine {
         )
         return
       }
-      case 'band': {
+      case 'ribbon': {
         const paint = args.drawPaint(stmt.span)
         const p0 = args.point(draw)
         const p1 = args.point(draw)
@@ -4521,7 +4521,7 @@ export class Engine {
         args.done()
         this.#emitShape(
           ctx,
-          bandRegion(
+          ribbonRegion(
             quantInt(p0.x),
             quantInt(p0.y),
             quantInt(p1.x),
@@ -4535,6 +4535,15 @@ export class Engine {
         )
         return
       }
+      case 'band':
+        // Renamed to `ribbon` (ADR-0096 §2) — `band` already means cel band, ripple band, or
+        // gradient band.
+        throw error(
+          ERROR_CODE.syntax,
+          "'band' was renamed to 'ribbon' — use 'ribbon <paint> <p0> <p1> <p2> <w>'",
+          state.module.displayPath,
+          stmt.span,
+        )
       case 'arc': {
         const paint = args.paint()
         const c = args.point(draw)
@@ -4809,7 +4818,7 @@ export class Engine {
         rimRegion(ctx, region, direction, paint, quantInt(width))
         return
       }
-      case 'ambientOcclusion': {
+      case 'ao': {
         const region = args.region()
         const paint = args.color()
         const amount = args.num()
@@ -4817,6 +4826,16 @@ export class Engine {
         ambientOcclusion(ctx, region, paint, amount)
         return
       }
+      case 'ambientOcclusion':
+        // Renamed to `ao` (ADR-0096 §2) — 4 tokens for a 1px contact-darkening helper. Distinct
+        // from the `ao` material dose override (`material x = c metal ao 20%`, ADR-0091), which
+        // coexists the same way `rim` already does (both a raw command and a material dose key).
+        throw error(
+          ERROR_CODE.syntax,
+          "'ambientOcclusion' was renamed to 'ao' — use 'ao r p amount'",
+          state.module.displayPath,
+          stmt.span,
+        )
       case 'model': {
         // `model REGION MATERIAL [light L]` (ADR-0086): lower a material under one light onto the
         // fixed craft-correct primitive sequence — every shade/rim/AO/cast encoding derived from
@@ -5713,8 +5732,9 @@ export class Engine {
   // ── images (ADR-0045) ─────────────────────────────────────────────────
 
   /**
-   * Load an `import image` definition (ADR-0045) as a plain sprite (empty
-   * palette — imported images aren't required to be palette-clean). PNG
+   * Load an `image NAME = FILE-PATH` definition (ADR-0045; ADR-0096 §2 renamed the keyword from
+   * `import`) as a plain sprite (empty palette — imported images aren't required to be
+   * palette-clean). PNG
    * only: JPEG's lossy, non-bit-exact decoding would break ADR-0007
    * visual determinism. Enforces the sandbox root (E008) and, if the
    * definition pins a `sha256`, verifies it (E020) so a recipe's imported
@@ -7055,12 +7075,12 @@ export class Engine {
         const dir = pt(3) // opening direction vector
         return crescentRegion(quantInt(c.x), quantInt(c.y), r.x, r.y, thick, dir.x, dir.y)
       }
-      case 'band': {
+      case 'ribbon': {
         arity(4)
         const p0 = pt(0)
         const p1 = pt(1)
         const p2 = pt(2)
-        return bandRegion(
+        return ribbonRegion(
           quantInt(p0.x),
           quantInt(p0.y),
           quantInt(p1.x),
@@ -7070,6 +7090,15 @@ export class Engine {
           num(3),
         )
       }
+      case 'band':
+        // Renamed to `ribbon` (ADR-0096 §2) — `band` already means cel band, ripple band, or
+        // gradient band.
+        throw error(
+          ERROR_CODE.syntax,
+          "'band' was renamed to 'ribbon' — use 'ribbon(p0, p1, p2, w)'",
+          file,
+          span,
+        )
       case 'curvePoly': {
         if (args.length < 3) {
           throw error(ERROR_CODE.arity, 'curvePoly needs at least three points', file, span)

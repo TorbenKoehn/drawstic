@@ -70,7 +70,7 @@ const scene = resolveProfile('scene') as CritiqueProfile
 
 describe('C001 empty / near-empty', () => {
   test('a fully transparent sprite fires C001 with measured 0 and null metrics', () => {
-    const d = critique('draw empty 3x3:\n  pal k=#000000\n', 'empty')
+    const d = critique('draw empty 3x3:\n  palette k=#000000\n', 'empty')
     expect(d.bbox).toBeNull()
     expect(d.coveredPixelCount).toBe(0)
     expect(d.luminance).toBeNull()
@@ -81,7 +81,7 @@ describe('C001 empty / near-empty', () => {
 
   test('a tiny subject on a large canvas fires C001 near-empty with the bbox area measured', () => {
     // one pixel at 5:5 on a 10x10 canvas -> bbox area 1, floor = max(4, 2%*100) = 4
-    const d = critique('draw tiny 10x10:\n  pal k=#c04040\n  px k 5:5\n', 'tiny')
+    const d = critique('draw tiny 10x10:\n  palette k=#c04040\n  px k 5:5\n', 'tiny')
     expect(d.bbox).toEqual({ x: 5, y: 5, width: 1, height: 1 })
     expect(d.coveredPixelCount).toBe(1)
     const c = byCode(d.checks, CRITIQUE_CODE.empty)
@@ -94,7 +94,7 @@ describe('C003 optical centering', () => {
   test('an off-center subject fires C003 with the exact x0/x1/sum/target/offset', () => {
     // block in columns 1..3 of an 8-wide canvas: x0+x1 = 4, target = 7, offset = -3
     const row = '.wkw....'
-    const src = `draw off 8x8:\n  pal w=#ffffff  k=#000000\n  pixels:\n${Array(8).fill(`    ${row}`).join('\n')}\n`
+    const src = `draw off 8x8:\n  palette w=#ffffff  k=#000000\n  pixels:\n${Array(8).fill(`    ${row}`).join('\n')}\n`
     const d = critique(src, 'off')
     expect(d.bbox).toEqual({ x: 1, y: 0, width: 3, height: 8 })
     const c = byCode(d.checks, CRITIQUE_CODE.centering)
@@ -104,7 +104,7 @@ describe('C003 optical centering', () => {
 
   test('a centered subject does not fire C003', () => {
     const row = '...ww...'
-    const src = `draw mid 8x8:\n  pal w=#ffffff\n  pixels:\n${Array(8).fill(`    ${row}`).join('\n')}\n`
+    const src = `draw mid 8x8:\n  palette w=#ffffff\n  pixels:\n${Array(8).fill(`    ${row}`).join('\n')}\n`
     const d = critique(src, 'mid')
     expect(byCode(d.checks, CRITIQUE_CODE.centering)).toBeUndefined()
   })
@@ -121,7 +121,7 @@ describe('C004 value / contrast spread', () => {
 
   test('a two-tone fill with real contrast does not fire C004', () => {
     const row = 'kwkwkwkw'
-    const src = `draw duo 8x8:\n  pal k=#202020  w=#e0e0e0\n  pixels:\n${Array(8).fill(`    ${row}`).join('\n')}\n`
+    const src = `draw duo 8x8:\n  palette k=#202020  w=#e0e0e0\n  pixels:\n${Array(8).fill(`    ${row}`).join('\n')}\n`
     const d = critique(src, 'duo')
     expect(byCode(d.checks, CRITIQUE_CODE.valueSpread)).toBeUndefined()
     expect((d.luminance?.spread ?? 0) >= 0.15).toBe(true)
@@ -153,7 +153,7 @@ describe('C008 interior pinholes', () => {
   test('a 1px transparent gap enclosed by paint fires C008 with measured 1', () => {
     const src = [
       'draw hole 5x5:',
-      '  pal k=#101010  w=#f0f0f0',
+      '  palette k=#101010  w=#f0f0f0',
       '  pixels:',
       '    kwkwk',
       '    wkwkw',
@@ -173,7 +173,7 @@ describe('C008 interior pinholes', () => {
   test('a transparent gap open to the border is not a pinhole', () => {
     const src = [
       'draw notch 5x5:',
-      '  pal k=#101010  w=#f0f0f0',
+      '  palette k=#101010  w=#f0f0f0',
       '  pixels:',
       '    kwkwk',
       '    wkwkw',
@@ -192,7 +192,7 @@ describe('C012 dynamic transparent trailing edge row', () => {
     // content in rows 0-2 of an 8-tall canvas: leading 0, trailing 5, tol 1 -> excess 5
     const src = [
       'draw pad 8x8:',
-      '  pal k=#202020  w=#e0e0e0',
+      '  palette k=#202020  w=#e0e0e0',
       '  pixels:',
       '    kwkwkwkw',
       '    wkwkwkwk',
@@ -215,7 +215,7 @@ describe('C012 dynamic transparent trailing edge row', () => {
     // content centered vertically in rows 3-4 of an 8-tall canvas: leading 3, trailing 3
     const src = [
       'draw mid 8x8:',
-      '  pal w=#e0e0e0',
+      '  palette w=#e0e0e0',
       '  pixels:',
       '    ........',
       '    ........',
@@ -235,7 +235,7 @@ describe('C012 dynamic transparent trailing edge row', () => {
 describe('C006 palette / complexity budget', () => {
   test('a two-tone sprite stays under the generous default ceiling', () => {
     const row = 'kwkwkwkw'
-    const src = `draw duo 8x8:\n  pal k=#202020  w=#e0e0e0\n  pixels:\n${Array(8).fill(`    ${row}`).join('\n')}\n`
+    const src = `draw duo 8x8:\n  palette k=#202020  w=#e0e0e0\n  pixels:\n${Array(8).fill(`    ${row}`).join('\n')}\n`
     const d = critique(src, 'duo')
     expect(d.distinctColorCount).toBe(2)
     expect(byCode(d.checks, CRITIQUE_CODE.paletteBudget)).toBeUndefined()
@@ -289,7 +289,7 @@ describe('C006 export-target-aware palette budget (ADR-0085)', () => {
 describe('clean sprite and metric exposure', () => {
   test('a centered, value-varied, edge-to-edge sprite fires no checks but still exposes metrics', () => {
     const rows = Array.from({ length: 8 }, (_, y) => (y % 2 === 0 ? 'abababab' : 'babababa'))
-    const src = `draw ok 8x8:\n  pal a=#303030  b=#d0d0d0\n  pixels:\n${rows.map((r) => `    ${r}`).join('\n')}\n`
+    const src = `draw ok 8x8:\n  palette a=#303030  b=#d0d0d0\n  pixels:\n${rows.map((r) => `    ${r}`).join('\n')}\n`
     const d = critique(src, 'ok')
     expect(d.checks).toEqual([])
     expect(d.bbox).toEqual({ x: 0, y: 0, width: 8, height: 8 })
@@ -446,7 +446,7 @@ describe('C005 stroke width (profile-gated by checkStroke)', () => {
 })
 
 describe('--strict severity promotion', () => {
-  const offCenter = `draw off 8x8:\n  pal w=#ffffff  k=#000000\n  pixels:\n${Array(8)
+  const offCenter = `draw off 8x8:\n  palette w=#ffffff  k=#000000\n  pixels:\n${Array(8)
     .fill('    .wkw....')
     .join('\n')}\n`
 
@@ -495,7 +495,7 @@ describe('critique CLI --strict exit gate', () => {
   test('a must-fix finding (C001) exits 0 by default but 1 under --strict', () => {
     const dir = mkdtempSync(join(tmpdir(), 'drawstic-critique-'))
     const file = join(dir, 'blank.drw')
-    writeFileSync(file, 'draw blank 4x4:\n  pal k=#000000\n')
+    writeFileSync(file, 'draw blank 4x4:\n  palette k=#000000\n')
     try {
       expect(runQuiet(['critique', file, '--json'])).toBe(0)
       expect(runQuiet(['critique', file, '--strict', '--json'])).toBe(1)
@@ -875,7 +875,7 @@ describe('critique CLI family selection + rubric payload', () => {
     writeFileSync(
       file,
       [
-        'grad sky = linear(45, #0040ff, #ff8000)',
+        'gradient sky = linear(45, #0040ff, #ff8000)',
         'draw svgDraw 128x128:',
         '  fill sky rect(0:0, 128:128)',
         'draw pngDraw 128x128:',

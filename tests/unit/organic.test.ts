@@ -1,4 +1,4 @@
-// ADR-0093: organic region constructors (dome/lobe/crescent/band), the figure proportions oracle,
+// ADR-0093: organic region constructors (dome/lobe/crescent/ribbon), the figure proportions oracle,
 // and the `quantize` palette-reduction filter. Region tests pin exact footprints/symmetry and the
 // dome==ellipse-upper-half identity; figure tests pin the derived guide values and theme
 // fold/merge/fingerprint; quantize tests pin determinism and first-declared tie-breaking.
@@ -7,7 +7,6 @@ import { describe, expect, test } from 'bun:test'
 import { DrawsticError } from '../../src/diagnostic.js'
 import { Engine } from '../../src/eval.js'
 import {
-  bandRegion,
   crescentRegion,
   domeRegion,
   ellipseRegion,
@@ -15,6 +14,7 @@ import {
   figureField,
   lobeRegion,
   type Region,
+  ribbonRegion,
   type Sprite,
 } from '../../src/values.js'
 
@@ -102,24 +102,24 @@ describe('crescent', () => {
   })
 })
 
-describe('band', () => {
+describe('ribbon', () => {
   test('follows the 3-point arc and has the requested width', () => {
     // straight horizontal arc y=10 from x=2..22, width 6 → rows 7..12 covered at the centre
-    const band = bandRegion(2, 10, 12, 10, 22, 10, 6)
-    expect(band.has(12, 10)).toBe(true)
-    expect(band.has(12, 7)).toBe(true)
-    expect(band.has(12, 12)).toBe(true)
-    expect(band.has(12, 6)).toBe(false) // just outside the 6px width
-    expect(band.has(12, 13)).toBe(false)
-    expect(band.has(12, 30)).toBe(false) // far from the arc
+    const ribbon = ribbonRegion(2, 10, 12, 10, 22, 10, 6)
+    expect(ribbon.has(12, 10)).toBe(true)
+    expect(ribbon.has(12, 7)).toBe(true)
+    expect(ribbon.has(12, 12)).toBe(true)
+    expect(ribbon.has(12, 6)).toBe(false) // just outside the 6px width
+    expect(ribbon.has(12, 13)).toBe(false)
+    expect(ribbon.has(12, 30)).toBe(false) // far from the arc
   })
 
   test('bulges toward the middle control point', () => {
     // arc through (2,20),(12,4),(22,20): a pixel at the raised middle is inside; the straight-chord
     // midpoint (12,20) is off the arc and outside.
-    const band = bandRegion(2, 20, 12, 4, 22, 20, 5)
-    expect(band.has(12, 4)).toBe(true)
-    expect(band.has(12, 20)).toBe(false)
+    const ribbon = ribbonRegion(2, 20, 12, 4, 22, 20, 5)
+    expect(ribbon.has(12, 4)).toBe(true)
+    expect(ribbon.has(12, 20)).toBe(false)
   })
 })
 

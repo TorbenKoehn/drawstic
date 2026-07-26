@@ -1,6 +1,6 @@
 # parts.drw — shared drawings for the showcase.
 draw gem:
-  pal y=#e0b070  r=#c04040
+  palette y=#e0b070  r=#c04040
   pixels:
     .yy.
     yrry
@@ -8,7 +8,7 @@ draw gem:
     .yy.
 
 draw eye 3x5:
-  pal k=#1a1a1a  e=#ffffff
+  palette k=#1a1a1a  e=#ffffff
   pixels:
     .k.
     kek

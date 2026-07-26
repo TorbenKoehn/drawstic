@@ -1,5 +1,5 @@
 draw circleIcon 16x16:
-  pal:
+  palette:
     k = #1a1a1a
     r = #c04040
   bg #fff
@@ -7,7 +7,7 @@ draw circleIcon 16x16:
   circle r 8:8 5 fill
 
 draw circles 128x16:
-  pal:
+  palette:
     k = #1a1a1a
     r = #c04040
   bg #fff
@@ -17,6 +17,6 @@ draw circles 128x16:
     circle r (8 + i * 16):8 max(1, i - 2) fill
     i += 1
 
-export circleIcon out/circle:
+export circleIcon circle:
   png @1 @2
   svg ids classes

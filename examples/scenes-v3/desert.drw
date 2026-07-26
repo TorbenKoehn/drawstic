@@ -11,7 +11,7 @@ haze = oklch(0.85, 0.06, 75)
 dusk = oklch(0.34, 0.06, 295)
 cloudC = dusk.mix(skyMd, 55%).alpha(70%)
 
-grad sky = linear(90, (skyHi, 0%), (skyMd, 52%), (skyLo, 84%), (gold, 100%))
+gradient sky = linear(90, (skyHi, 0%), (skyMd, 52%), (skyLo, 84%), (gold, 100%))
 
 # Sand — Tiefenstaffelung via mix Richtung Dunst
 sand = oklch(0.74, 0.09, 70)
@@ -21,9 +21,9 @@ d2bc = sand.mix(haze, 33%)
 d3c = sand.mix(haze, 15%)
 d4c = sand.darken(22%).saturate(10%)
 
-grad hazeV = linear(90, haze.alpha(22%), haze.alpha(0%))
-grad d3g = linear(90, d3c.lighten(6%), d3c.darken(14%))
-grad d4g = linear(90, d4c.lighten(4%), d4c.darken(18%))
+gradient hazeV = linear(90, haze.alpha(22%), haze.alpha(0%))
+gradient d3g = linear(90, d3c.lighten(6%), d3c.darken(14%))
+gradient d4g = linear(90, d4c.lighten(4%), d4c.darken(18%))
 
 # Karawane
 camelC = oklch(0.40, 0.055, 60)
@@ -66,7 +66,7 @@ draw camelLoaded(cb, cd, robe, m) 30x28:
     line robe.darken(35%) 10:8 15:8
 
 draw camelFar 12x8:
-  pal f = #6b5540
+  palette f = #6b5540
   pixels:
     ....f.....f.
     ...fff...fff
@@ -78,7 +78,7 @@ draw camelFar 12x8:
     ..f.f..f.f..
 
 draw bird 5x3:
-  pal k = #2a2118
+  palette k = #2a2118
   pixels:
     k...k
     .k.k.

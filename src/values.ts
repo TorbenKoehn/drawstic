@@ -1246,13 +1246,14 @@ export const crescentRegion = (
 }
 
 /**
- * Band / curved ribbon (ADR-0093): a constant-width sweep of `w` px along the quadratic arc that
- * passes through `p0`, `p1` (mid), and `p2` — a curved hat band, a belt, and, stacked, turban wraps.
+ * Ribbon (ADR-0093; ADR-0096 §2 renamed from `band` — `band` already means cel band, ripple
+ * band, gradient band): a constant-width sweep of `w` px along the quadratic arc that passes
+ * through `p0`, `p1` (mid), and `p2` — a curved hat band, a belt, and, stacked, turban wraps.
  * The arc is flattened to a dense polyline (so there is no low-resolution bezier blocking) and
  * membership is the exact min-distance-to-the-polyline test, giving round end caps and a smooth,
  * even-width ribbon at any size. Sampled at the pixel corner for a balanced footprint.
  */
-export const bandRegion = (
+export const ribbonRegion = (
   p0x: number,
   p0y: number,
   p1x: number,

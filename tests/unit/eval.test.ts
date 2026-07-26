@@ -27,7 +27,7 @@ const px = (s: Sprite, x: number, y: number): [number, number, number, number] =
 describe('evaluator', () => {
   test('pixels block renders through the palette', () => {
     const s = render(
-      'draw heart 5x5:\n  pal k=#1a1a1a  r=#c04040\n  pixels:\n    .r.r.\n    rrkrr\n    rrrrr\n    .rrr.\n    ..r..\n',
+      'draw heart 5x5:\n  palette k=#1a1a1a  r=#c04040\n  pixels:\n    .r.r.\n    rrkrr\n    rrrrr\n    .rrr.\n    ..r..\n',
       'heart',
     )
     expect(s.w).toBe(5)
@@ -38,17 +38,17 @@ describe('evaluator', () => {
   })
 
   test('size inferred from pixels; header mismatch is an error', () => {
-    const s = render('draw gem:\n  pal y=#e0b070\n  pixels:\n    .y.\n    yyy\n', 'gem')
+    const s = render('draw gem:\n  palette y=#e0b070\n  pixels:\n    .y.\n    yyy\n', 'gem')
     expect(s.w).toBe(3)
     expect(s.h).toBe(2)
     expect(() =>
-      render('draw bad 4x4:\n  pal y=#e0b070\n  pixels:\n    .y.\n    yyy\n', 'bad'),
+      render('draw bad 4x4:\n  palette y=#e0b070\n  pixels:\n    .y.\n    yyy\n', 'bad'),
     ).toThrow(/pixels row 1 is 3 wide; expected 4/)
   })
 
   test('pixels size diagnostics point at offending rows', () => {
     try {
-      render('draw bad:\n  pal y=#e0b070\n  pixels:\n    yy\n    y\n', 'bad')
+      render('draw bad:\n  palette y=#e0b070\n  pixels:\n    yy\n    y\n', 'bad')
       expect(false).toBe(true)
     } catch (e) {
       expect(e).toBeInstanceOf(DrawsticError)
@@ -63,7 +63,7 @@ describe('evaluator', () => {
       }
     }
     try {
-      render('draw bad 2x3:\n  pal y=#e0b070\n  pixels:\n    yy\n    yy\n', 'bad')
+      render('draw bad 2x3:\n  palette y=#e0b070\n  pixels:\n    yy\n    yy\n', 'bad')
       expect(false).toBe(true)
     } catch (e) {
       expect(e).toBeInstanceOf(DrawsticError)
@@ -85,7 +85,7 @@ describe('evaluator', () => {
 
   test('bg, px, circle fill', () => {
     const s = render(
-      'draw t 16x16:\n  pal k=#1a1a1a  r=#c04040\n  circle k 8:8 7\n  circle r 8:8 5 fill\n  circle k 8:8 2 fill\n',
+      'draw t 16x16:\n  palette k=#1a1a1a  r=#c04040\n  circle k 8:8 7\n  circle r 8:8 5 fill\n  circle k 8:8 2 fill\n',
       't',
     )
     expect(px(s, 8, 8)).toEqual([26, 26, 26, 255]) // centre: inner disc
@@ -96,7 +96,7 @@ describe('evaluator', () => {
 
   test('circle radius has balanced icon padding', () => {
     const s = render(
-      'draw circleIcon 16x16:\n  pal:\n    k = #1a1a1a\n    r = #c04040\n  bg #fff\n  circle k 8:8 7\n  circle r 8:8 5 fill\n',
+      'draw circleIcon 16x16:\n  palette:\n    k = #1a1a1a\n    r = #c04040\n  bg #fff\n  circle k 8:8 7\n  circle r 8:8 5 fill\n',
       'circleIcon',
     )
     expect(px(s, 8, 0)).toEqual([255, 255, 255, 255])
@@ -111,7 +111,7 @@ describe('evaluator', () => {
 
   test('paths: local cursor and rel segments', () => {
     const s = render(
-      'path corner 4x4:\n  move 0:0\n  line rel 3:0\n  line rel 0:3\n\ndraw f 4x4:\n  pal k=#000\n  stroke k corner\n',
+      'path corner 4x4:\n  move 0:0\n  line rel 3:0\n  line rel 0:3\n\ndraw f 4x4:\n  palette k=#000\n  stroke k corner\n',
       'f',
     )
     expect(px(s, 0, 0)[3]).toBe(255)
@@ -122,7 +122,7 @@ describe('evaluator', () => {
 
   test('paths fill, mask, and boolean composition', () => {
     const s = render(
-      'path box 6x6:\n  move 1:1\n  line 5:1\n  line 5:5\n  line 1:5\n  close\n\npath cut 6x6:\n  move 3:1\n  line 5:3\n  line 3:5\n  line 1:3\n  close\n\npath frame = box.subtract(cut)\n\ndraw f 6x6:\n  pal k=#000 r=#f00\n  fill k box\n  mask frame.fill():\n    bg r\n',
+      'path box 6x6:\n  move 1:1\n  line 5:1\n  line 5:5\n  line 1:5\n  close\n\npath cut 6x6:\n  move 3:1\n  line 5:3\n  line 3:5\n  line 1:3\n  close\n\npath frame = box.subtract(cut)\n\ndraw f 6x6:\n  palette k=#000 r=#f00\n  fill k box\n  mask frame.fill():\n    bg r\n',
       'f',
     )
     expect(px(s, 1, 1)).toEqual([255, 0, 0, 255])
@@ -131,7 +131,7 @@ describe('evaluator', () => {
 
   test('loops, lists, fn, floored // and mod', () => {
     const s = render(
-      'fn rowBand(row) = row // 2 mod 2\n\ndraw stripes 4x4:\n  pal k=#000000  y=#ffffff\n  cols = k, y\n  for row 0..h:\n    poly cols[rowBand(row)] 0:row w:row\n',
+      'fn rowBand(row) = row // 2 mod 2\n\ndraw stripes 4x4:\n  palette k=#000000  y=#ffffff\n  cols = k, y\n  for row 0..h:\n    poly cols[rowBand(row)] 0:row w:row\n',
       'stripes',
     )
     expect(px(s, 0, 0)).toEqual([0, 0, 0, 255])
@@ -140,7 +140,7 @@ describe('evaluator', () => {
 
   test('range expressions produce lists and for iterates lists', () => {
     const s = render(
-      'nums = 1..=3\n\ndraw d 5x2:\n  pal k=#000\n  for x nums:\n    px k x:0\n  for x 1, 3:\n    px k x:1\n',
+      'nums = 1..=3\n\ndraw d 5x2:\n  palette k=#000\n  for x nums:\n    px k x:0\n  for x 1, 3:\n    px k x:1\n',
       'd',
     )
     expect(px(s, 0, 0)[3]).toBe(0)
@@ -154,7 +154,7 @@ describe('evaluator', () => {
 
   test('negative // and mod are floored (ADR-0037)', () => {
     const s = render(
-      'draw d 2x2:\n  pal k=#000\n  x = -7 // 2\n  y = -7 mod 2\n  if x == -4 & y == 1:\n    bg k\n',
+      'draw d 2x2:\n  palette k=#000\n  x = -7 // 2\n  y = -7 mod 2\n  if x == -4 & y == 1:\n    bg k\n',
       'd',
     )
     expect(px(s, 0, 0)[3]).toBe(255)
@@ -168,7 +168,7 @@ describe('evaluator', () => {
 
   test('xs.cycle(i) is sugar for xs[i mod len(xs)] (ADR-0079)', () => {
     const s = render(
-      'draw d 2x2:\n  pal k=#000\n  xs = 10, 20, 30\n  if xs.cycle(1) == xs[1]:\n    bg k\n',
+      'draw d 2x2:\n  palette k=#000\n  xs = 10, 20, 30\n  if xs.cycle(1) == xs[1]:\n    bg k\n',
       'd',
     )
     expect(px(s, 0, 0)[3]).toBe(255)
@@ -176,7 +176,7 @@ describe('evaluator', () => {
 
   test('cycle wraps an out-of-range index back to the start', () => {
     const s = render(
-      'draw d 2x2:\n  pal k=#000\n  xs = 10, 20, 30\n  if xs.cycle(3) == 10 & xs.cycle(4) == 20:\n    bg k\n',
+      'draw d 2x2:\n  palette k=#000\n  xs = 10, 20, 30\n  if xs.cycle(3) == 10 & xs.cycle(4) == 20:\n    bg k\n',
       'd',
     )
     expect(px(s, 0, 0)[3]).toBe(255)
@@ -184,7 +184,7 @@ describe('evaluator', () => {
 
   test('cycle wraps a negative index positively (Euclidean mod)', () => {
     const s = render(
-      'draw d 2x2:\n  pal k=#000\n  xs = 10, 20, 30\n  if xs.cycle(-1) == 30 & xs.cycle(-2) == 20:\n    bg k\n',
+      'draw d 2x2:\n  palette k=#000\n  xs = 10, 20, 30\n  if xs.cycle(-1) == 30 & xs.cycle(-2) == 20:\n    bg k\n',
       'd',
     )
     expect(px(s, 0, 0)[3]).toBe(255)
@@ -207,7 +207,7 @@ describe('evaluator', () => {
 
   test('cycle in a for-loop over a color ramp avoids off-by-one (volcano #5)', () => {
     const s = render(
-      'draw stripes 1x4:\n  pal a=#111111 b=#222222 c=#333333\n  cols = a, b, c\n  for row 0..h:\n    px cols.cycle(row) 0:row\n',
+      'draw stripes 1x4:\n  palette a=#111111 b=#222222 c=#333333\n  cols = a, b, c\n  for row 0..h:\n    px cols.cycle(row) 0:row\n',
       'stripes',
     )
     expect(px(s, 0, 0)).toEqual([17, 17, 17, 255])
@@ -398,7 +398,7 @@ describe('evaluator', () => {
 
   test('stamp with flipx mirrors', () => {
     const s = render(
-      'draw eye 3x3:\n  pal k=#000\n  pixels:\n    k..\n    k..\n    k..\n\ndraw face 8x8:\n  stamp eye 0:0\n  stamp eye 5:0 flipx\n',
+      'draw eye 3x3:\n  palette k=#000\n  pixels:\n    k..\n    k..\n    k..\n\ndraw face 8x8:\n  stamp eye 0:0\n  stamp eye 5:0 flipx\n',
       'face',
     )
     expect(px(s, 0, 0)[3]).toBe(255)
@@ -408,7 +408,7 @@ describe('evaluator', () => {
 
   test('stamp scale2 and rot90 are lossless', () => {
     const s = render(
-      'draw dot 2x2:\n  pal k=#000\n  pixels:\n    k.\n    ..\n\ndraw d 8x8:\n  stamp dot 0:0 scale2\n  stamp dot 4:0 rot90\n',
+      'draw dot 2x2:\n  palette k=#000\n  pixels:\n    k.\n    ..\n\ndraw d 8x8:\n  stamp dot 0:0 scale2\n  stamp dot 4:0 rot90\n',
       'd',
     )
     expect(px(s, 0, 0)[3]).toBe(255)
@@ -493,11 +493,11 @@ describe('evaluator', () => {
 
   test('themes fold: later wins, drawing-level use', () => {
     const src = `theme a:
-  pal:
+  palette:
     k = #111111
 theme b:
   with a
-  pal:
+  palette:
     k = #222222
 
 draw d 2x2:
@@ -510,27 +510,29 @@ draw d 2x2:
 
   test('palette collisions are one-directional: a value may not shadow a palette (ADR-0073)', () => {
     // value binding capturing a live palette key stays an error
-    expect(() => render('draw d 2x2:\n  pal k=#111\n  k = 5\n  bg #fff\n', 'd')).toThrow(/palette/)
-    expect(() => render('draw d 2x2:\n  ink = 5\n  pal i=#111\n  bg #fff\n', 'd')).not.toThrow() // different names — fine
+    expect(() => render('draw d 2x2:\n  palette k=#111\n  k = 5\n  bg #fff\n', 'd')).toThrow(
+      /palette/,
+    )
+    expect(() => render('draw d 2x2:\n  ink = 5\n  palette i=#111\n  bg #fff\n', 'd')).not.toThrow() // different names — fine
     // a pal key MAY now shadow a visible non-palette value binding (reverse direction relaxed)
-    expect(() => render('draw d 2x2:\n  i = 5\n  pal i=#111\n  bg i\n', 'd')).not.toThrow()
+    expect(() => render('draw d 2x2:\n  i = 5\n  palette i=#111\n  bg i\n', 'd')).not.toThrow()
   })
 
   test('pal keys may be w/h and shadow the canvas-size bindings (ADR-0073)', () => {
     const s = render(
-      'draw d 4x4:\n  pal w=#ffffff h=#111111\n  pixels:\n    wwww\n    whhw\n    whhw\n    wwww\n',
+      'draw d 4x4:\n  palette w=#ffffff h=#111111\n  pixels:\n    wwww\n    whhw\n    whhw\n    wwww\n',
       'd',
     )
     expect(px(s, 0, 0)).toEqual([255, 255, 255, 255]) // 'w' cell → white
     expect(px(s, 1, 1)).toEqual([17, 17, 17, 255]) // 'h' cell → #111
     // a pal w/h even shadows the size binding in expressions within the draw
-    const s2 = render('draw d 2x2:\n  pal w=#00ff00\n  bg w\n', 'd')
+    const s2 = render('draw d 2x2:\n  palette w=#00ff00\n  bg w\n', 'd')
     expect(px(s2, 0, 0)).toEqual([0, 255, 0, 255])
   })
 
-  test('a pixel cell naming no visible palette entry is E007 with a pal hint', () => {
+  test('a pixel cell naming no visible palette entry is E007 with a palette hint', () => {
     try {
-      render('draw d 2x2:\n  pal k=#111\n  pixels:\n    kk\n    kz\n', 'd')
+      render('draw d 2x2:\n  palette k=#111\n  pixels:\n    kk\n    kz\n', 'd')
       expect(false).toBe(true)
     } catch (e) {
       expect(e).toBeInstanceOf(DrawsticError)
@@ -538,7 +540,7 @@ draw d 2x2:
         expect(e.toDiagnostic()).toMatchObject({
           code: 'E007',
           message: "pixel key 'z' names no visible palette entry",
-          hint: "declare it in a 'pal' (e.g. 'pal z=<color>')",
+          hint: "declare it in a 'palette' (e.g. 'palette z=<color>')",
         })
       }
     }
@@ -547,7 +549,7 @@ draw d 2x2:
   test('a non-palette value binding is never a pixel cell (palette-only namespace, ADR-0073)', () => {
     // module-scope value `z` must NOT satisfy a `z` cell — cells resolve palette-only
     expect(() =>
-      render('z = 5\n\ndraw d 2x2:\n  pal k=#111\n  pixels:\n    kk\n    zk\n', 'd'),
+      render('z = 5\n\ndraw d 2x2:\n  palette k=#111\n  pixels:\n    kk\n    zk\n', 'd'),
     ).toThrow(/names no visible palette entry/)
   })
 
@@ -561,7 +563,7 @@ draw d 2x2:
     expect(px(s, 16, 6)).toEqual([255, 0, 0, 255]) // final loop circle (was transparent)
     // a plain-number accumulator reassigned inside an `if` block persists too
     const s2 = render(
-      'draw d 6x1:\n  pal k=#000\n  n = 0\n  if true:\n    n = 3\n  px k n:0\n',
+      'draw d 6x1:\n  palette k=#000\n  n = 0\n  if true:\n    n = 3\n  px k n:0\n',
       'd',
     )
     expect(px(s2, 3, 0)[3]).toBe(255) // n became 3
@@ -571,14 +573,14 @@ draw d 2x2:
   test('a block-body `=` never reassigns a module-scope binding (barrier, ADR-0081)', () => {
     // determinism: a draw must not mutate module state; `n = 99` shadow-declares draw-locally
     const s = render(
-      'n = 5\n\ndraw d 4x4:\n  pal k=#000\n  for i 0..3:\n    n = 99\n  if n == 5:\n    bg k\n',
+      'n = 5\n\ndraw d 4x4:\n  palette k=#000\n  for i 0..3:\n    n = 99\n  if n == 5:\n    bg k\n',
       'd',
     )
     expect(px(s, 0, 0)).toEqual([0, 0, 0, 255]) // module `n` stayed 5 → bg filled
   })
 
   test('a theme pal key w/h shadows the canvas size, as paint and cell (ADR-0081, extends ADR-0073)', () => {
-    const pal = 'theme t:\n  pal:\n    w = #ffffff\n    k = #1a1a1a\n\n'
+    const pal = 'theme t:\n  palette:\n    w = #ffffff\n    k = #1a1a1a\n\n'
     // as a paint: `w` resolves to the palette white, not the number 8 (was E006/E013)
     const s = render(`${pal}draw a 8x8:\n  use t\n  bg k\n  circle w 4:4 3 fill\n`, 'a')
     expect(px(s, 4, 4)).toEqual([255, 255, 255, 255])
@@ -593,7 +595,7 @@ draw d 2x2:
   test('a free binding in a theme body is rejected at the declaration site (E004, ADR-0081)', () => {
     try {
       render(
-        'theme t:\n  accent = #d8a53a\n  pal:\n    k = #1a1a1a\n\ndraw a 8x8:\n  use t\n  bg k\n',
+        'theme t:\n  accent = #d8a53a\n  palette:\n    k = #1a1a1a\n\ndraw a 8x8:\n  use t\n  bg k\n',
         'a',
       )
       expect(false).toBe(true)
@@ -607,10 +609,10 @@ draw d 2x2:
         })
       }
     }
-    // grad bindings stay legal in a theme body
+    // gradient bindings stay legal in a theme body
     expect(() =>
       render(
-        'theme t:\n  grad sky = linear(90, #000, #fff)\n\ndraw d 2x4:\n  use t\n  bg sky\n',
+        'theme t:\n  gradient sky = linear(90, #000, #fff)\n\ndraw d 2x4:\n  use t\n  bg sky\n',
         'd',
       ),
     ).not.toThrow()
@@ -698,7 +700,7 @@ draw d 2x2:
   })
 
   test('gradients paint across the bbox', () => {
-    const s = render('grad sky = linear(90, #000000, #ffffff)\n\ndraw d 4x8:\n  bg sky\n', 'd')
+    const s = render('gradient sky = linear(90, #000000, #ffffff)\n\ndraw d 4x8:\n  bg sky\n', 'd')
     const top = px(s, 1, 0)
     const bottom = px(s, 1, 7)
     expect(top[0]).toBeLessThan(80)
@@ -742,7 +744,7 @@ draw d 2x2:
     expect(px(textured, 3, 3)).toEqual([0, 0, 0, 255])
 
     const lit = render(
-      'draw d 6x4:\n  r = rect(1:1, 4:2)\n  fill #808080 r\n  shadeRegion r 0:0 #808080 1\n  rim r 1:0 #ffffff 1\n  ambientOcclusion r #000000 0.5\n',
+      'draw d 6x4:\n  r = rect(1:1, 4:2)\n  fill #808080 r\n  shadeRegion r 0:0 #808080 1\n  rim r 1:0 #ffffff 1\n  ao r #000000 0.5\n',
       'd',
     )
     expect(px(lit, 4, 1)[3]).toBe(255)
@@ -827,12 +829,12 @@ draw d 2x2:
 
   test('tileset bakes a grid and members are addressable', () => {
     const src = `draw a 2x2:
-  pal k=#000
+  palette k=#000
   pixels:
     kk
     kk
 draw b 2x2:
-  pal r=#f00
+  palette r=#f00
   pixels:
     rr
     rr
@@ -851,7 +853,7 @@ draw d 4x2:
   test('tile size mismatch is E016', () => {
     expect(() =>
       render(
-        'draw a 2x2:\n  pal k=#000\n  pixels:\n    kk\n    kk\ndraw b 3x2:\n  pal k=#000\n  pixels:\n    kkk\n    kkk\n\ntileset ts 2x2:\n  tiles a, b\n\ndraw d 4x2:\n  stamp ts.0 0:0\n',
+        'draw a 2x2:\n  palette k=#000\n  pixels:\n    kk\n    kk\ndraw b 3x2:\n  palette k=#000\n  pixels:\n    kkk\n    kkk\n\ntileset ts 2x2:\n  tiles a, b\n\ndraw d 4x2:\n  stamp ts.0 0:0\n',
         'd',
       ),
     ).toThrow(/requires 2x2/)
@@ -859,7 +861,7 @@ draw d 4x2:
 
   test('drawing silhouette as region', () => {
     const s = render(
-      'draw gem 2x2:\n  pal y=#e0b070\n  pixels:\n    y.\n    yy\n\ndraw d 4x4:\n  m = gem.region.shift(1:1)\n  fill #ff0000 m\n',
+      'draw gem 2x2:\n  palette y=#e0b070\n  pixels:\n    y.\n    yy\n\ndraw d 4x4:\n  m = gem.region.shift(1:1)\n  fill #ff0000 m\n',
       'd',
     )
     expect(px(s, 1, 1)[3]).toBe(255)
@@ -970,15 +972,17 @@ draw d 4x2:
 
   test('block pal destructures color lists', () => {
     const s = render(
-      'draw d 3x1:\n  pal:\n    a, b, c = #777.tones(-10%, 0%, 10%)\n  pixels:\n    abc\n',
+      'draw d 3x1:\n  palette:\n    a, b, c = #777.tones(-10%, 0%, 10%)\n  pixels:\n    abc\n',
       'd',
     )
     expect(s.pal.map((p) => p.key)).toEqual(['a', 'b', 'c'])
     expect(px(s, 0, 0)[0]).toBeLessThan(px(s, 1, 0)[0])
-    expect(() => render('draw d 1x1:\n  pal:\n    a, b = #fff.tones(0%)\n  bg a\n', 'd')).toThrow(
-      /palette destructuring mismatch/,
+    expect(() =>
+      render('draw d 1x1:\n  palette:\n    a, b = #fff.tones(0%)\n  bg a\n', 'd'),
+    ).toThrow(/palette destructuring mismatch/)
+    expect(() => render('draw d 1x1:\n  palette:\n    a = 1\n  bg a\n', 'd')).toThrow(
+      /must be a color/,
     )
-    expect(() => render('draw d 1x1:\n  pal:\n    a = 1\n  bg a\n', 'd')).toThrow(/must be a color/)
   })
 
   test('point x and y builtins work in prefix and UFCS form', () => {
@@ -1013,13 +1017,13 @@ draw d 4x2:
 describe('evaluator: coverage gap-fill', () => {
   test('atlas packs pinned and auto-packed sprites, shelf-packing around collisions', () => {
     const src = `draw logo 4x4:
-  pal k=#000000
+  palette k=#000000
   bg k
 draw play 3x3:
-  pal r=#ff0000
+  palette r=#ff0000
   bg r
 draw pause 2x2:
-  pal g=#00ff00
+  palette g=#00ff00
   bg g
 
 atlas hud:
@@ -1055,7 +1059,7 @@ draw d 12x12:
     const dir = mkdtempSync(join(tmpdir(), 'drawstic-eval-'))
     try {
       const engine = new Engine(dir)
-      writeFileSync(join(dir, 'shape.drw'), 'draw square 2x2:\n  pal k=#000000\n  bg k\n')
+      writeFileSync(join(dir, 'shape.drw'), 'draw square 2x2:\n  palette k=#000000\n  bg k\n')
       writeFileSync(join(dir, 'main.drw'), 'from shape square\n\ndraw d 2x2:\n  stamp square 0:0\n')
       const mod = engine.loadEntry(join(dir, 'main.drw'))
       const mod2 = engine.loadEntry(join(dir, 'main.drw'))
@@ -1162,24 +1166,24 @@ draw d 12x12:
     }
   })
 
-  test('theme grad bindings fold; a non-gradient grad binding is a type error', () => {
+  test('theme gradient bindings fold; a non-gradient binding is a type error', () => {
     const s = render(
-      'theme t:\n  grad sky = linear(90, #000000, #ffffff)\n\ndraw d 2x4:\n  use t\n  bg sky\n',
+      'theme t:\n  gradient sky = linear(90, #000000, #ffffff)\n\ndraw d 2x4:\n  use t\n  bg sky\n',
       'd',
     )
     expect(px(s, 0, 0)[0]).toBeLessThan(80)
     expect(px(s, 0, 3)[0]).toBeGreaterThan(180)
     expect(() =>
-      render('theme t:\n  grad oops = 5\n\ndraw d 2x2:\n  use t\n  bg #fff\n', 'd'),
-    ).toThrow(/'grad' binding must be a gradient/)
+      render('theme t:\n  gradient oops = 5\n\ndraw d 2x2:\n  use t\n  bg #fff\n', 'd'),
+    ).toThrow(/'gradient' binding must be a gradient/)
   })
 
-  test('sprite cache fingerprints theme gradients (no stale sprite across grad-only themes)', () => {
+  test('sprite cache fingerprints theme gradients (no stale sprite across gradient-only themes)', () => {
     const engine = new Engine(process.cwd())
     const src =
       'size 4x4\n' +
-      'theme ta:\n  grad g = linear(0, #000000, #ffffff)\n' +
-      'theme tb:\n  grad g = linear(0, #ffffff, #000000)\n' +
+      'theme ta:\n  gradient g = linear(0, #000000, #ffffff)\n' +
+      'theme tb:\n  gradient g = linear(0, #ffffff, #000000)\n' +
       'draw d:\n  fill g rect(0:0, 3:3)\n'
     const mod = engine.loadSource(src, `${process.cwd()}\\memgrad${n++}.drw`, 'mem.drw')
     const entry = mod.definitions.get('d')
@@ -1197,9 +1201,9 @@ draw d 12x12:
   })
 
   test('repeat was removed (ADR-0094) — duplicated for; points to it', () => {
-    expect(() => render('draw d 3x1:\n  pal k=#000000\n  repeat 3:\n    px k 0:0\n', 'd')).toThrow(
-      /'repeat' was removed/,
-    )
+    expect(() =>
+      render('draw d 3x1:\n  palette k=#000000\n  repeat 3:\n    px k 0:0\n', 'd'),
+    ).toThrow(/'repeat' was removed/)
   })
 
   test('castShadow was removed (ADR-0096 §1) — byte-identical to shadow', () => {
@@ -1239,7 +1243,7 @@ draw d 12x12:
   })
 
   test('for still iterates a range as the sole loop', () => {
-    const s = render('draw d 3x1:\n  pal k=#000000\n  for x 0..3:\n    px k x:0\n', 'd')
+    const s = render('draw d 3x1:\n  palette k=#000000\n  for x 0..3:\n    px k x:0\n', 'd')
     expect(px(s, 0, 0)[3]).toBe(255)
     expect(px(s, 1, 0)[3]).toBe(255)
     expect(px(s, 2, 0)[3]).toBe(255)
@@ -1290,7 +1294,7 @@ draw d 12x12:
 
   test('font glyph maps to an external drawing, with not-found/parametric errors', () => {
     const s = render(
-      'draw runeA 3x3:\n  pal k=#000000\n  pixels:\n    k.k\n    .k.\n    k.k\n\nfont runic 3x3:\n  glyph "A" runeA\n\ndraw d 6x3:\n  text #ff0000 0:0 "A" font runic\n',
+      'draw runeA 3x3:\n  palette k=#000000\n  pixels:\n    k.k\n    .k.\n    k.k\n\nfont runic 3x3:\n  glyph "A" runeA\n\ndraw d 6x3:\n  text #ff0000 0:0 "A" font runic\n',
       'd',
     )
     expect(px(s, 0, 0)).toEqual([0, 0, 0, 255])
@@ -1312,7 +1316,7 @@ draw d 12x12:
 
   test('font glyphs bulk-maps a tileset to characters, with tileset/coverage errors', () => {
     const s = render(
-      'draw d0 2x2:\n  pal k=#000000\n  bg k\ndraw d1 2x2:\n  pal r=#ff0000\n  bg r\ndraw d2 2x2:\n  pal g=#00ff00\n  bg g\n\ntileset digits 2x2:\n  tiles d0, d1, d2\n  cols 3\n\nfont digitFont 2x2:\n  glyphs digits "012"\n\ndraw d 8x2:\n  text #000000 0:0 "1" font digitFont\n',
+      'draw d0 2x2:\n  palette k=#000000\n  bg k\ndraw d1 2x2:\n  palette r=#ff0000\n  bg r\ndraw d2 2x2:\n  palette g=#00ff00\n  bg g\n\ntileset digits 2x2:\n  tiles d0, d1, d2\n  cols 3\n\nfont digitFont 2x2:\n  glyphs digits "012"\n\ndraw d 8x2:\n  text #000000 0:0 "1" font digitFont\n',
       'd',
     )
     expect(px(s, 0, 0)).toEqual([255, 0, 0, 255])
@@ -1324,7 +1328,7 @@ draw d 12x12:
     ).toThrow(/glyphs tileset 'nope' not found/)
     expect(() =>
       render(
-        'draw d0 2x2:\n  pal k=#000000\n  bg k\ndraw d1 2x2:\n  pal r=#ff0000\n  bg r\n\ntileset digits 2x2:\n  tiles d0, d1\n  cols 2\n\nfont digitFont 2x2:\n  glyphs digits "012"\n\ndraw d 8x2:\n  text #000000 0:0 "2" font digitFont\n',
+        'draw d0 2x2:\n  palette k=#000000\n  bg k\ndraw d1 2x2:\n  palette r=#ff0000\n  bg r\n\ntileset digits 2x2:\n  tiles d0, d1\n  cols 2\n\nfont digitFont 2x2:\n  glyphs digits "012"\n\ndraw d 8x2:\n  text #000000 0:0 "2" font digitFont\n',
         'd',
       ),
     ).toThrow(/tileset has no tile 2 for character "2"/)
@@ -1426,7 +1430,7 @@ draw d 12x12:
 
       const engine = new Engine(dir)
       const mod = engine.loadSource(
-        `import photo = pic.png sha256 ${realSha}\n\ndraw d 2x2:\n  stamp photo 0:0\n`,
+        `image photo = pic.png sha256 ${realSha}\n\ndraw d 2x2:\n  stamp photo 0:0\n`,
         join(dir, 'main.drw'),
         'main.drw',
       )
@@ -1443,7 +1447,7 @@ draw d 12x12:
       const shaEngine = new Engine(dir)
       try {
         const shaMod = shaEngine.loadSource(
-          'import photo = pic.png sha256 deadbeef\n\ndraw d 2x2:\n  stamp photo 0:0\n',
+          'image photo = pic.png sha256 deadbeef\n\ndraw d 2x2:\n  stamp photo 0:0\n',
           join(dir, 'main2.drw'),
           'main2.drw',
         )
@@ -1467,7 +1471,7 @@ draw d 12x12:
       const notFoundEngine = new Engine(dir)
       expect(() => {
         const m = notFoundEngine.loadSource(
-          'import photo = missing.png\n\ndraw d 2x2:\n  stamp photo 0:0\n',
+          'image photo = missing.png\n\ndraw d 2x2:\n  stamp photo 0:0\n',
           join(dir, 'main3.drw'),
           'main3.drw',
         )
@@ -1481,7 +1485,7 @@ draw d 12x12:
       const extEngine = new Engine(dir)
       expect(() => {
         const m = extEngine.loadSource(
-          'import photo = pic.jpg\n\ndraw d 2x2:\n  stamp photo 0:0\n',
+          'image photo = pic.jpg\n\ndraw d 2x2:\n  stamp photo 0:0\n',
           join(dir, 'main4.drw'),
           'main4.drw',
         )
@@ -1495,7 +1499,7 @@ draw d 12x12:
       const escapeEngine = new Engine(dir)
       expect(() => {
         const m = escapeEngine.loadSource(
-          'import photo = ../outside.png\n\ndraw d 2x2:\n  stamp photo 0:0\n',
+          'image photo = ../outside.png\n\ndraw d 2x2:\n  stamp photo 0:0\n',
           join(dir, 'main5.drw'),
           'main5.drw',
         )
@@ -1510,7 +1514,7 @@ draw d 12x12:
       const decodeEngine = new Engine(dir)
       expect(() => {
         const m = decodeEngine.loadSource(
-          'import photo = bad.png\n\ndraw d 2x2:\n  stamp photo 0:0\n',
+          'image photo = bad.png\n\ndraw d 2x2:\n  stamp photo 0:0\n',
           join(dir, 'main6.drw'),
           'main6.drw',
         )
@@ -1587,7 +1591,7 @@ draw d 12x12:
 
   test('fn/path (and other module-only definitions) nested in a draw get a move-to-module-scope hint (E004)', () => {
     const hint =
-      'move it to module scope, above the draw — mask and grad definitions may stay drawing-local'
+      'move it to module scope, above the draw — mask and gradient definitions may stay drawing-local'
     for (const [src, message] of [
       ['draw d 2x2:\n  fn lerp2(a, b) = a + b\n  bg #fff\n', 'fn definitions live at module scope'],
       [
@@ -1595,7 +1599,7 @@ draw d 12x12:
         'path definitions live at module scope',
       ],
       [
-        'draw d 2x2:\n  theme t2:\n    pal k=#000000\n  bg #fff\n',
+        'draw d 2x2:\n  theme t2:\n    palette k=#000000\n  bg #fff\n',
         'theme definitions live at module scope',
       ],
       [
@@ -1615,9 +1619,9 @@ draw d 12x12:
     }
   })
 
-  test('mask/grad definitions stay legal inside a draw (no module-scope error)', () => {
+  test('mask/gradient definitions stay legal inside a draw (no module-scope error)', () => {
     expect(() =>
-      render('draw d 2x2:\n  grad g = linear(90, #000000, #ffffff)\n  bg g\n', 'd'),
+      render('draw d 2x2:\n  gradient g = linear(90, #000000, #ffffff)\n  bg g\n', 'd'),
     ).not.toThrow()
     expect(() =>
       render('draw d 2x2:\n  mask m = rect(0:0, 1:1)\n  fill #ff0000 m\n', 'd'),
@@ -1755,7 +1759,7 @@ draw d 12x12:
 
   test('mirror flips stamps (mirror-with-flip)', () => {
     const src =
-      'draw arrow 4x3:\n  pal a=#ff0000\n  pixels:\n    a...\n    aaaa\n    a...\ndraw d 12x3:\n  mirror x=6:\n    stamp arrow 1:0\n'
+      'draw arrow 4x3:\n  palette a=#ff0000\n  pixels:\n    a...\n    aaaa\n    a...\ndraw d 12x3:\n  mirror x=6:\n    stamp arrow 1:0\n'
     const s = render(src, 'd')
     // left copy: stem on the left (col 1), top row red only at col 1
     expect(px(s, 1, 0)).toEqual([255, 0, 0, 255])

@@ -400,6 +400,46 @@ export const runExport = (
   return artifacts
 }
 
+/** One export path segment: one or more letters/digits/`_`/`-` — no dots, no empty run. */
+const isPlainSegment = (s: string): boolean => /^[A-Za-z0-9_-]+$/.test(s)
+
+/**
+ * Validates an export `basePath` against the recipe-relative grammar (ADR-0096 §6):
+ * `SEGMENT { "/" SEGMENT }` — no leading `/`, no `.`/`..` segment, no file extension (the format
+ * line appends the real one). `build` defaults `--out` to the recipe's own directory and an export
+ * path is relative to that, so a path escaping upward or spelling out an extension is always an
+ * authoring mistake, not a legitimate destination. Tightened here (reached by `check`'s deep
+ * validation via {@link validateExport}) rather than in the parser's `#parsePath`, which is shared
+ * with `from`/`use` module paths that legitimately use `..` and dots.
+ */
+export const validateExportPath = (path: string, mod: ModuleRecord, span: TextSpan): void => {
+  const segments = path.split('/')
+  if (path.startsWith('/') || segments.some((s) => s === '.' || s === '..')) {
+    throw error(
+      ERROR_CODE.exportError,
+      `export path '${path}' escapes the output directory`,
+      mod.displayPath,
+      span,
+    )
+  }
+  if (segments.some((s) => s.includes('.'))) {
+    throw error(
+      ERROR_CODE.exportError,
+      `export path '${path}' must not carry a file extension — the format line appends it`,
+      mod.displayPath,
+      span,
+    )
+  }
+  if (!segments.every(isPlainSegment)) {
+    throw error(
+      ERROR_CODE.exportError,
+      `export path '${path}' must be one or more '/'-separated segments (letters, digits, '_', '-')`,
+      mod.displayPath,
+      span,
+    )
+  }
+}
+
 /**
  * Dry-run counterpart to {@link runExport}: renders and checks every format
  * line's constraints (indexed-palette size, `tiled`/`path` applicability)
@@ -407,6 +447,7 @@ export const runExport = (
  * errors surface before `build` runs.
  */
 export const validateExport = (engine: Engine, mod: ModuleRecord, ex: ExportDefinition): void => {
+  validateExportPath(ex.basePath, mod, ex.span)
   for (const line of ex.formats) {
     const prevMode = engine.modeOverride
     if (line.mode) {

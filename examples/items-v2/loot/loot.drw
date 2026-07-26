@@ -1,5 +1,5 @@
 theme lootSet:
-  pal:
+  palette:
     k = #241912
     s = #69717f
     h = #f1f4fa

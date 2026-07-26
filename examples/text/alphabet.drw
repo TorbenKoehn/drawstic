@@ -1,4 +1,4 @@
 draw digits 140x20:
-  pal k=#f00
+  palette k=#f00
   text k 2:2 "1234567890" font small
   text k 2:10 "The quick brown fox jumps over the lazy dog" font small

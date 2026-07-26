@@ -329,14 +329,22 @@ class Parser {
           return this.#parseFnDef()
         }
         break
-      case 'grad':
+      case 'gradient':
         if (this.#peek(1).kind === 'name' && this.#peek(2).text === '=') {
           this.#next()
           const name = this.#next().text
           this.#next() // =
           const e = this.#parseExprSeq()
           this.#expectNL()
-          return { kind: 'binding', names: [name], expression: e, bindKind: 'grad', span: s }
+          return { kind: 'binding', names: [name], expression: e, bindKind: 'gradient', span: s }
+        }
+        break
+      case 'grad':
+        // `grad NAME = expr` was renamed to `gradient NAME = expr` (ADR-0096 §2) — an abbreviation
+        // that bought nothing. `grad = …` (name binding) is untouched; only the gradient-binding
+        // shape errors, matching the ADR-0094 removal precedent.
+        if (this.#peek(1).kind === 'name' && this.#peek(2).text === '=') {
+          this.#fail("'grad' was renamed to 'gradient' — write 'gradient NAME = expr'", t)
         }
         break
       case 'mask': {
@@ -444,9 +452,21 @@ class Parser {
           return this.#parseFilterDef()
         }
         break
-      case 'import':
+      case 'image':
         if (this.#peek(1).kind === 'name' && this.#peek(2).text === '=') {
-          return this.#parseImageImport()
+          return this.#parseImage()
+        }
+        break
+      case 'import':
+        // `import NAME = FILE-PATH` was renamed to `image NAME = FILE-PATH` (ADR-0096 §2) —
+        // `import` means module import everywhere else in the language (Drawstic's own module
+        // import is `from`). `import = …` (name binding) is untouched; only the image-load shape
+        // errors, matching the ADR-0094 removal precedent.
+        if (this.#peek(1).kind === 'name' && this.#peek(2).text === '=') {
+          this.#fail(
+            "'import' for a loaded image was renamed to 'image' — write 'image NAME = FILE-PATH'",
+            t,
+          )
         }
         break
       case 'tileset':
@@ -468,8 +488,14 @@ class Parser {
           return this.#parseExport()
         }
         break
+      case 'palette':
+        return this.#parsePalette()
       case 'pal':
-        return this.#parsePal()
+        // `pal` was renamed to `palette` (ADR-0096 §2) — an abbreviation that bought nothing.
+        // `pal` is fully reserved at statement position (unlike the contextual keywords above),
+        // so the old spelling always errors here rather than falling through to a shape check.
+        this.#fail("'pal' was renamed to 'palette' — write 'palette k=… …' or 'palette:'", t)
+        break
       case 'pixels':
         if (this.#peek(1).text === ':' && this.#peek(1).blockColon) {
           return this.#parsePixels()
@@ -797,11 +823,13 @@ class Parser {
       return false
     }
     const n1 = this.#peek(1)
-    // bare ref: a lone name ending the line, or a name followed by the trailing `shadow` flag.
+    // bare ref: a lone name ending the line, or a name followed by the trailing `ground` flag
+    // (`shadow` still recognized here so the stale spelling reaches the flags loop below as a
+    // ref, not a misparsed point expression — ADR-0096 §2, was `shadow`).
     if (n1.kind === 'nl' || n1.kind === 'eof' || n1.kind === 'dedent') {
       return true
     }
-    if (n1.kind === 'name' && n1.text === 'shadow') {
+    if (n1.kind === 'name' && (n1.text === 'ground' || n1.text === 'shadow')) {
       return true
     }
     // dotted ref: NAME.NAME (unspaced dot). A point expression (`x:y`, `x+1`) instead has an
@@ -828,12 +856,14 @@ class Parser {
   }
 
   /**
-   * Parses `fit TARGET SOURCE [flags] [shadow]` (§17.4 `fit-stmt`, ADR-0087). `TARGET` is always a
+   * Parses `fit TARGET SOURCE [flags] [ground]` (§17.4 `fit-stmt`, ADR-0087). `TARGET` is always a
    * reference (`NAME`/`NAME.pin`); `SOURCE` is a reference too, or — when it isn't the bare-ref
    * shape — a canvas point expression (the ground-placement oracle). Trailing `flags` are the same
    * `stamp` transform/paint modifiers (`flipx`/`flipy`/`rotN`/`scaleN`/`transform:`/`tint:`/`mask:`,
-   * ADR-0087 amendment 2); the bare `shadow` flag opts into an auto contact-shadow ellipse. `shadow`
-   * is always bare in a `fit` (the auto pool), so it is read here directly rather than as a keyword.
+   * ADR-0087 amendment 2); the bare `ground` flag (ADR-0096 §2, was `shadow` — distinct from
+   * `stamp … shadow dx:dy p`, which keeps its name) opts into an auto contact-shadow ellipse.
+   * `ground` is always bare in a `fit` (the auto pool), so it is read here directly rather than as
+   * a keyword.
    */
   readonly #parseFit = (): Statement => {
     const s = this.#span(this.#peek())
@@ -857,19 +887,24 @@ class Parser {
       source = { kind: 'point', expression: this.#parseCmdArgExpr() }
     }
     // Trailing modifiers: the stamp transform/paint flags (same grammar as a `call`'s arg run) plus
-    // the bare `shadow` boolean and the occlusion/aim clauses (`behind`/`front` NAME, `aim` PIN PT,
+    // the bare `ground` boolean and the occlusion/aim clauses (`behind`/`front` NAME, `aim` PIN PT,
     // ADR-0092) — all special-cased before the keyword check so they never eat stamp-flag args.
     const flags: Argument[] = []
-    let shadow = false
+    let ground = false
     const behind: string[] = []
     const front: string[] = []
     let aim: { readonly pin: string; readonly point: Expression } | undefined
     while (!this.#at('nl') && !this.#at('eof') && !this.#at('dedent')) {
       const f = this.#peek()
-      if (f.kind === 'name' && f.text === 'shadow') {
+      if (f.kind === 'name' && f.text === 'ground') {
         this.#next()
-        shadow = true
+        ground = true
         continue
+      }
+      if (f.kind === 'name' && f.text === 'shadow') {
+        // The bare `shadow` flag on `fit` was renamed to `ground` (ADR-0096 §2) — distinct from
+        // `stamp … shadow dx:dy p`, which keeps its name.
+        this.#fail("'shadow' on 'fit' was renamed to 'ground' — write 'fit … ground'", f)
       }
       if (
         f.kind === 'name' &&
@@ -904,7 +939,7 @@ class Parser {
       flags.push({ kind: 'expression', expression: this.#parseCmdArgExpr(), span: this.#span(f) })
     }
     this.#expectNL()
-    return { kind: 'fit', target, source, flags, shadow, behind, front, aim, span: s }
+    return { kind: 'fit', target, source, flags, ground, behind, front, aim, span: s }
   }
 
   /**
@@ -1299,13 +1334,14 @@ class Parser {
   }
 
   /**
-   * Parses `image-import` (§17.4): `import NAME = FILE-PATH [sha256 HEX]`. The
-   * trailing `sha256` pin is optional and checked against the loaded
-   * file's content hash at build time (E020 on mismatch), not here.
+   * Parses `image-def` (§17.4): `image NAME = FILE-PATH [sha256 HEX]` (ADR-0096 §2, was
+   * `import` — `import` means module import everywhere else in the language; Drawstic's own
+   * module import is `from`). The trailing `sha256` pin is optional and checked against the
+   * loaded file's content hash at build time (E020 on mismatch), not here.
    */
-  readonly #parseImageImport = (): Statement => {
+  readonly #parseImage = (): Statement => {
     const s = this.#span(this.#peek())
-    this.#next() // import
+    this.#next() // image
     const name = this.#next().text
     this.#expect('op', '=')
     const path = this.#parsePath()
@@ -1316,7 +1352,7 @@ class Parser {
       sha = h.text
     }
     this.#expectNL()
-    return { kind: 'imageImport', name, path, sha256: sha, span: s }
+    return { kind: 'image', name, path, sha256: sha, span: s }
   }
 
   // ── draw / theme / font / tileset / atlas / export ───────────────────
@@ -1714,17 +1750,17 @@ class Parser {
     return line
   }
 
-  // ── pal / pixels ──────────────────────────────────────────────────────
+  // ── palette / pixels ──────────────────────────────────────────────────
 
   /**
-   * Parses `pal-stmt` (§17.4): the inline form (`pal k=#235 d=#555`, whitespace-
-   * separated, D2) or the block form (`pal:` + indented entries, one per
+   * Parses `palette-stmt` (§17.4, ADR-0096 §2 — was `pal`): the inline form (`palette k=#235
+   * d=#555`, whitespace-separated, D2) or the block form (`palette:` + indented entries, one per
    * line). Destructuring entries (`r, g, b = rgb`) are accepted only in
    * the block form — the inline form's entries are single-key only.
    */
-  readonly #parsePal = (): Statement => {
+  readonly #parsePalette = (): Statement => {
     const s = this.#span(this.#peek())
-    this.#next() // pal
+    this.#next() // palette
     const entries: PaletteEntry[] = []
     if (this.#at('op', ':') && this.#peek().blockColon) {
       this.#next()
@@ -1733,7 +1769,7 @@ class Parser {
       this.#expect('indent')
       this.#skipNLs()
       while (!this.#at('dedent') && !this.#at('eof')) {
-        entries.push(this.#parsePalEntry(true))
+        entries.push(this.#parsePaletteEntry(true))
         this.#expectNL()
         this.#skipNLs()
       }
@@ -1743,7 +1779,7 @@ class Parser {
     } else {
       // inline form: whitespace-separated key=value entries
       while (!this.#at('nl') && !this.#at('eof')) {
-        entries.push(this.#parsePalEntry(false))
+        entries.push(this.#parsePaletteEntry(false))
       }
       this.#expectNL()
     }
@@ -1751,7 +1787,7 @@ class Parser {
   }
 
   /**
-   * A `pal` entry's key: exactly one ASCII letter (`KEY`, spec §17.2,
+   * A `palette` entry's key: exactly one ASCII letter (`KEY`, spec §17.2,
    * ADR-0049). A longer name fails with {@link ERROR_CODE.paletteCollision}
    * (E007) — reused here for "not a valid key shape", not only for actual
    * name collisions.
@@ -1771,11 +1807,11 @@ class Parser {
   }
 
   /**
-   * Parses `pal-entry` (§17.4, extended): `KEY "=" expr`, or — when
+   * Parses `palette-entry` (§17.4, extended): `KEY "=" expr`, or — when
    * `allowDestructuring` — `KEY {"," KEY} "=" expr` binding several keys
    * positionally from one list-valued expression.
    */
-  readonly #parsePalEntry = (allowDestructuring: boolean): PaletteEntry => {
+  readonly #parsePaletteEntry = (allowDestructuring: boolean): PaletteEntry => {
     const kt = this.#parsePaletteKey()
     const keys = [kt.text]
     while (allowDestructuring && this.#at('op', ',')) {

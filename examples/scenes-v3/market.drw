@@ -9,9 +9,9 @@ glass = #38445c
 glassHi = #57678a
 trimC = #4a3d33
 
-grad skyG = linear(90, #4a6cae, #f3d9a8)
-grad hazeG = linear(90, #e8dfd2.alpha(0%), #e8dfd2.alpha(45%))
-grad plazaG = linear(90, #cbbfa6, #8a7a66)
+gradient skyG = linear(90, #4a6cae, #f3d9a8)
+gradient hazeG = linear(90, #e8dfd2.alpha(0%), #e8dfd2.alpha(45%))
+gradient plazaG = linear(90, #cbbfa6, #8a7a66)
 
 fn sagPt(a, b, t, drop) = (lerp(a.x, b.x, t)):(lerp(a.y, b.y, t) + drop * 4 * t * (1 - t))
 
@@ -147,7 +147,7 @@ draw fountain 85x62:
   rim ellipse(42:48, 40:7) 1:1 stoneL 1
   ellipse waterD 42:48 33:5 fill
   ellipse water 42:47 31:5 fill
-  ambientOcclusion ellipse(42:56, 40:6) #241f33 0.5
+  ao ellipse(42:56, 40:6) #241f33 0.5
   # Saeule + Schalen
   rect stone 38:20 46:47 fill
   rect stoneL 38:20 40:47 fill
@@ -240,7 +240,7 @@ draw cart 26x16:
   ellipse #d9c49a 18:3 2:2 fill
 
 draw pigeon 4x3:
-  pal g=#8a8f9a d=#5a5f6a
+  palette g=#8a8f9a d=#5a5f6a
   pixels:
     .gg.
     gggd

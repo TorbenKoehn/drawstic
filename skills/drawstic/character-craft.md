@@ -24,7 +24,7 @@ Do not reorder:
 3. **Parts** — parametric `draw part(c)`, each declaring its seam rows as **`pin`s**; build the head +
    headwear from the **organic constructors and a copied archetype scaffold** (§3), not hand poly-lists.
 4. **Assembly back-to-front via `fit`** (§5) — pin-anchored, contact-guaranteed; `behind`/`front` sets
-   prop z-order, `aim` orients a held prop, `fit … shadow` plants a standing figure (§6).
+   prop z-order, `aim` orients a held prop, `fit … ground` plants a standing figure (§6).
 5. **One bare `outline`** as the assembly draw's last statement (§6).
 6. **`critique --as character --strict`** → `pass:true`, then answer its rubric by looking (§8).
 
@@ -69,7 +69,7 @@ circle iris fig.side.eye 1    # side: one eye, shifted forward off centre automa
 Drawstic ships **no** character library and **no** `std/chibi` — it gives you mechanism, you own the
 style. Below are **complete, runnable** head/face/headwear templates built from the organic
 constructors (`dome` skull/helmet/crown · `lobe` ear/nose/plume/tassel · `crescent` fringe/brim ·
-`band`; **stacked `band`s over a `dome` = a turban, not a helmet**) and the `fig` oracle. **Copy one
+`ribbon`; **stacked `ribbon`s over a `dome` = a turban, not a helmet**) and the `fig` oracle. **Copy one
 into your project and mutate it** — ownership stays with the project, so there is no shared reference
 and no forced uniformity. Three face archetypes show the range (round chibi · slim/realistic ·
 angular mech) plus a turban headwear scaffold; each is probe-verified front **and** side (`--png@6`).
@@ -77,7 +77,7 @@ angular mech) plus a turban headwear scaffold; each is probe-verified front **an
 **Constructor cheatsheet:** union the skull + ears into one region and `model` it **once** so it shades
 as a single form; paint the face features on top. `dome(c, rx:ry)` is the flat-based upper ellipse
 half; `lobe(base, tip, w)` a teardrop (round cap Ø`w` at `base` → point at `tip`); `crescent(c, rx:ry,
-thick, dir)` a tapering band (fringe/brim); `band(p0, p1, p2, w) fill` a width-`w` ribbon through 3
+thick, dir)` a tapering band (fringe/brim); `ribbon(p0, p1, p2, w) fill` a width-`w` ribbon through 3
 points.
 
 ### 3a. Round chibi (RO) — big round head, big eyes
@@ -193,7 +193,7 @@ draw slimSide 26x38:
   outline
 ```
 
-### 3c. Angular mech — hard `dome` helmet + `band` visor + glowing optic
+### 3c. Angular mech — hard `dome` helmet + `ribbon` visor + glowing optic
 
 ```drw
 theme mechHead:
@@ -218,17 +218,17 @@ draw mechFront 32x36:
   face = poly(4:16, 28:16, 26:29, 16:34, 6:29)        # angular faceplate
   head = crown.union(face)
   cel head steelM 4                                    # crisp metal bands
-  cel band(4:20, 16:18, 28:20, 7) visorM 3            # visor band across the eye line
+  cel ribbon(4:20, 16:18, 28:20, 7) visorM 3            # visor band across the eye line
   fill glowC rect(9:20, 23:22)                         # glowing optic bar
   px #ffffff 11:20
   fill trimC rect(15:3, 17:9)                          # crest fin
   line #4a5464 16:29 16:33                             # jaw seam
   outline
-# side view: same crown+faceplate poly re-shaped for profile, band(...) sweeping to +x,
+# side view: same crown+faceplate poly re-shaped for profile, ribbon(...) sweeping to +x,
 # the optic bar pushed toward the front edge — see examples/characters-ro2 for a full rig.
 ```
 
-### 3d. Turban — stacked `band`s over a `dome` (reads as turban, not helmet)
+### 3d. Turban — stacked `ribbon`s over a `dome` (reads as turban, not helmet)
 
 ```drw
 turbCloth = #6a5aa8
@@ -248,9 +248,9 @@ draw turbanFront 32x34:
   line mouth 14:27 18:27
   turbCap = dome(16:15, 14:12)                          # cloth cap crown
   model turbCap turbM
-  band turbLite 2:15 16:8 30:15 6 fill                 # 3 stacked wraps = turban
-  band turbCloth 1:19 16:12 31:19 6 fill
-  band turbDark 2:22 16:16 30:22 5 fill
+  ribbon turbLite 2:15 16:8 30:15 6 fill                 # 3 stacked wraps = turban
+  ribbon turbCloth 1:19 16:12 31:19 6 fill
+  ribbon turbDark 2:22 16:16 30:22 5 fill
   fill turbLite rect(14:11, 18:16)                      # front knot
   circle gemC 16:13 1 fill                              # jewel
   outline
@@ -263,7 +263,7 @@ The turban scaffold uses `turbCap`.
 
 ## 4. Faction recolor — parametric parts, never themes
 
-A theme *palette* **does not cross a `stamp`/`fit` boundary** (a stamped part resolves its `pal` in its
+A theme *palette* **does not cross a `stamp`/`fit` boundary** (a stamped part resolves its `palette` in its
 own scope). A theme *light* **does** reach the parts (the file-level `use` applies the theme to each
 draw as it renders). So: theme for the light, **parametric params for the recolor**. Pass the 1–2
 variant colours, derive the rest, make a thin non-parametric wrapper per variant — the only export
@@ -300,7 +300,7 @@ draw torso(c) 12x18:
 draw figure(c) 24x60:
   stamp torso(c) 6:16
   pin torso.neck 12:16                 # seeds ALL torso pins in canvas space (pin-seeded root)
-  fit head.chin torso.neck shadow      # contact-guaranteed; `shadow` = auto contact pool
+  fit head.chin torso.neck ground      # contact-guaranteed; `ground` = auto contact pool
   fit armL.shoulder torso.shoulder     # chains off torso's seeded shoulder
 ```
 
@@ -308,7 +308,7 @@ Five rules:
 
 - **(a) Pin each seam in the part's own space; `fit`, don't hand-stamp.** `pin torso.neck …` on a real
   part seeds **all** its pins from the one anchor, so a later `fit …torso.hip` chains without
-  re-declaring. Plant standing figures with the **`shadow` flag** (it pools under the footprint bottom
+  re-declaring. Plant standing figures with the **`ground` flag** (it pools under the footprint bottom
   — the feet — not the fit pin, so a `leg.hip → torso.hip` fit still drops the shadow at the feet), not
   a hand `ellipse` (that idiom is **W015**). Expect a harmless `W010` on an assembly's very first
   (root/ground) fit, since nothing precedes it yet.
@@ -355,7 +355,7 @@ pose front over rig:
 draw figFront 64x128:
   pose front
   fit torsoFront.neck bone chestF      # land the pin on the joint; inherit its pose orientation
-  fit legFront.hip    bone hipLF shadow
+  fit legFront.hip    bone hipLF ground
   fit armFront.shoulder bone shLF
   fit helmFront.chin  bone headF
   outline

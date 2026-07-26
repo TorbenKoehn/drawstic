@@ -1,5 +1,5 @@
 theme potionSet:
-  pal:
+  palette:
     k = #24161f
     g = #a4d7ff
     h = #f2fbff

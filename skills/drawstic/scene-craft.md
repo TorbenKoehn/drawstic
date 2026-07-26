@@ -41,7 +41,7 @@ footY = duneY(cx / (w - 1))                            # place anything standing
 One `fn` gives you three things from one source: **silhouette** (fill), **region** (mask/filter),
 and **placement oracle** (`y = f(x/(w-1))`). Everything standing on the ground calls it for its y, so
 floating/sinking objects are structurally impossible. The oracle is now first-class via **`fit`**
-(ADR-0087): a standing part declares a `pin base`, and `fit tree.base cx:duneY(cx/(w-1)) shadow`
+(ADR-0087): a standing part declares a `pin base`, and `fit tree.base cx:duneY(cx/(w-1)) ground`
 lands that base pin exactly on the terrain line with an auto contact-shadow — the object cannot drift
 from the ground because its y comes from the same `fn` that drew it. Point lists (`curvePoly`) can't
 be a placement oracle — use `profile` for any line that carries objects. Extra shading zones must be
@@ -91,7 +91,7 @@ model rock #6b5a48 cloth light sun            # base + shade/light/rim/AO/cast, 
   by hand before the accents.
 - **The hand quartet is the floor / escape hatch**, not the first move: when a baked material dose
   doesn't fit (an over-bright metal, a custom two-source rim, a sub-~24px object), copy the
-  `--explain` expansion and hand-tune the raw `shadeRegion`/`lightRegion`/`rim`/`ambientOcclusion`/cast
+  `--explain` expansion and hand-tune the raw `shadeRegion`/`lightRegion`/`rim`/`ao`/cast
   calls (§5 doses; reference.md § Light & material).
 
 ## 5. Filter dosage (baked into the material responses; this table is for hand-tuning past them)
@@ -155,8 +155,8 @@ Below ~24px no pixel-mode ramp reads as soft — accept a crisp core, hand-pixel
 
 ## 8. Cast shadows & ground contact
 
-- **Contact first**: plant the object with `fit part.base <groundPt> shadow` (ADR-0087) — the
-  `shadow` flag auto-drops a contact-shadow ellipse at the *actual* resolved contact pixel, cool from
+- **Contact first**: plant the object with `fit part.base <groundPt> ground` (ADR-0087) — the
+  `ground` flag auto-drops a contact-shadow ellipse at the *actual* resolved contact pixel, cool from
   the light in scope, so it can't drift. The hand form (a flat `ellipse … fill` at the foot, shadow
   colour, 25–35% alpha, 1–2px below the base) is the fallback when there is no pin. Every standing
   object needs one or it floats.
@@ -173,7 +173,7 @@ Below ~24px no pixel-mode ramp reads as soft — accept a crisp core, hand-pixel
 ## 9. Water & reflections
 
 ```drw
-grad water = linear(90, surf, deep)
+gradient water = linear(90, surf, deep)
 fill water lake
 refl = peaks.transform(flipy().about(0:horizonY)).intersect(lake)
 fill mountainCol.alpha(35%) refl                 # 30–40% alpha
