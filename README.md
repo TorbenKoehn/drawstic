@@ -377,10 +377,12 @@ of ordered renders (silhouette → ascii → png@4 → sheet) with prompts you a
 looking; `check` verifies grammar, `critique --strict` verifies structure, neither
 verifies craft on its own.
 
-**Full skill** (ships in the npm package): `node_modules/drawstic/skills/drawstic/SKILL.md`
-— the canonical path and core syntax in full, plus `reference.md` (language floor/escape
-hatch) and `character-craft.md`/`icon-craft.md`/`item-craft.md`/`scene-craft.md` (per-category
-workflows) alongside it.
+**Full skill** (ships in the npm package): start at
+`node_modules/drawstic/skills/drawstic/SKILL.md` — it routes you to the rest in its first
+screen. Alongside it: `language.md` (the language surface, every trap tied to its diagnostic
+code), `verify.md` (the loop above as an algorithm, plus a code→fix table), `walkthrough.md`
+(one complete run, request → artifact), four per-category craft guides, `reference.md` as the
+last resort, and `starters/` — runnable, verified recipes to copy rather than retype.
 
 ## CLI commands
 
