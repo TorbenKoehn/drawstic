@@ -1,0 +1,125 @@
+# STARTER — 32x32 inventory item set on the canonical shading path. Copy, rename, restyle.
+#   theme(set contract) -> light -> materials -> shared scaffold fn -> items -> atlas -> export
+# Shading is ONLY `model` (smooth) / `cel` (N crisp bands). Never hand-patch tones with a
+# `litTone(...).intersect(rect …)` corner fill — that is lint W013 / census `manualSpread`.
+
+theme smithKit:
+  palette:
+    k = #221a1e          # the one outline ink for the whole set
+  size 32x32
+  mode pixel
+  style """
+  32x32 transparent inventory sprites, 2-4 px breathing room, no background plate.
+  Light travels down-right (1:1) => every lit edge is up-left, every shade down-right.
+  Long props stand upright on the 15.5 centre line; front items are vertically centred.
+  One outline language: `outline k`, 1px, applied last, after every model/cel.
+  Materials: steel/gold = metal, wood = cloth (there is no `wood` response), brew = glass,
+  enamel = flat. Raise contrast with a material `spread N%`, never with a tone patch.
+  """
+
+use smithKit
+
+# ONE light for the set. No theme light and exactly one module-scope `light` binding, so every
+# `model`/`cel` below resolves it without a `light sun` argument (resolution tier 3).
+light sun = dir 1:1 #ffe6b0 amb #2a3a5e 16%
+
+material steel  = #8f9bb0 metal
+material gold   = #d9a33c metal
+material wood   = #7a5230 cloth spread 150%   # a dark base needs spread, not a hand highlight
+material brew   = #3fc3dc glass
+material enamel = #c1453a flat
+
+# The scaffold three siblings share: one 4px shaft, centred on the 15.5 canvas axis.
+fn haft(cx, y0, y1) = rrect((cx - 2):y0, (cx + 1):y1, 1)
+
+draw sword 32x32:
+  blade  = poly(15:3, 16:3, 19:10, 19:20, 12:20, 12:10)
+  guard  = rrect(8:20, 23:23, 1)
+  grip   = haft(16, 23, 27)
+  pommel = circle(16:28, 2)
+  model blade steel
+  cel guard gold 3
+  model grip wood
+  cel pommel gold 3
+  outline k
+
+draw axe 32x32:
+  handle = haft(12, 7, 29)                    # same scaffold as the sword grip and the key shaft
+  head   = poly(12:5, 21:7, 24:12, 21:17, 12:19).union(rrect(8:8, 12:15, 1))
+  model handle wood
+  cel head steel 4                            # 4 bands read as a ground bevel on a wide blade
+  outline k
+
+draw shield 32x32:
+  body    = rrect(7:4, 24:15, 3).union(poly(7:12, 24:12, 16:28, 15:28))
+  boss    = circle(16:13, 4)
+  chevron = poly(11:17, 16:22, 21:17, 21:20, 16:25, 11:20).intersect(body)
+  model body wood
+  model chevron enamel
+  cel boss steel 3
+  outline k
+
+draw potion 32x32:
+  shell  = rrect(9:14, 22:28, 5).union(rect(13:6, 18:15))
+  liquid = shell.intersect(rect(0:19, 31:27))
+  cork   = rrect(12:3, 19:7, 1)
+  model shell brew
+  model liquid enamel
+  model cork wood
+  outline k
+
+draw key 32x32:
+  bow   = circle(16:8, 5).subtract(circle(16:8, 2))
+  body  = haft(16, 11, 28).union(rect(18:22, 22:24)).union(rect(18:26, 21:28))
+  cel bow gold 3
+  model body gold
+  outline k
+
+draw ring 32x32:
+  band = circle(16:19, 8).subtract(circle(16:19, 5))
+  gem  = poly(16:5, 20:10, 16:14, 12:10)
+  model band gold
+  cel gem brew 3
+  outline k
+
+# TWO atlas modes — ship whichever the consumer needs, or both.
+# WITH `tile`: every member sits in a fixed WxH slot on a `cols`-wide grid. A tilemap editor
+# needs that, and `tiled` accepts NOTHING else.
+atlas kitGrid:
+  sprites sword, axe, shield, potion, key, ring
+  tile 32x32
+  cols 3
+  pad 1
+
+# WITHOUT `tile`: members are shelf-packed to their own bounds, so a sheet of unequal sprites
+# wastes no space. Runtime atlases (TexturePacker/Phaser/Pixi) read frame rects from the JSON.
+atlas kitPacked:
+  sprites sword, axe, shield, potion, key, ring
+  pad 1
+
+export sword kit/sword:
+  png @1 @4
+
+export axe kit/axe:
+  png @1 @4
+
+export shield kit/shield:
+  png @1 @4
+
+export potion kit/potion:
+  png @1 @4
+
+export key kit/key:
+  png @1 @4
+
+export ring kit/ring:
+  png @1 @4
+
+export kitGrid kit/kit-grid:
+  png @1 @4
+  tiled
+  atlasJson
+
+export kitPacked kit/kit-packed:
+  png @1 @4
+  atlasJson

@@ -1,0 +1,95 @@
+# STARTER — 192x128 layered landscape. Copy, rename, restyle; keep the layer order.
+#   theme(ONE light) -> materials -> parts(pin base) -> terrain fns -> back-to-front body -> export
+# Back-to-front is not a style preference: a haze veil only pushes a layer back when it is
+# painted AFTER that layer and BEFORE the next one.
+
+theme dusk:
+  palette:
+    k = #161d2b          # ink — foreground silhouettes
+    h = #b9c8dc          # haze — the ONE colour every far layer mixes/tints toward
+    e = #7d6644          # earth
+  size 192x128
+  mode pixel
+  light sun = dir 1:1 #ffe0ab amb #33405e 18%
+  style """
+  Dusk ridge, sun low up-left; light travels 1:1 so every lit face is up-left.
+  Depth = three levers only: size (a far part is its own smaller draw), haze (mix/tint
+  toward h) and value (near layers darker + more saturated). The light is declared HERE,
+  once — no model/cel below repeats it, so the scene cannot drift out of one light.
+  """
+
+use dusk
+
+material foliage = #4c6f3c cloth spread 220%   # spread is the value-range knob; never patch tones
+material bark    = #4b3626 cloth
+material stone   = #8d8878 cloth
+
+# Terrain is a function. One `fn` yields all three things a layer needs: the silhouette
+# (`profile … fill`), the region (`profile(…)` as a mask) and the placement oracle
+# (`y = groundY(x / (w - 1))`), so an object can neither float nor sink.
+fn ridgeY(nx)  = 62 - round(sin(nx * pi) * (8 + noise(3, nx * 4, 0) * 14))
+fn midY(nx)    = 74 - round(noise(5, nx * 4, 0) * 9)
+fn groundY(nx) = 87 + round(noise(7, nx * 3, 0) * 6)
+fn bankY(nx)   = 114 + round(noise(11, nx * 5, 0) * 5)
+
+draw pine 21x38:
+  trunk = rect(9:26, 11:37)
+  crown = poly(10:1, 16:13, 4:13).union(poly(10:9, 19:27, 1:27))
+  model trunk bark
+  model crown foliage
+  pin base 10:37                    # the contact point, ON the ink — a pin in empty space is W011
+
+# The far pines are a SEPARATE, simpler, smaller draw — never the near pine scaled down.
+draw pineFar 13x22:
+  trunk = rect(5:15, 7:21)
+  crown = poly(6:0, 12:16, 0:16)
+  model trunk bark
+  model crown foliage
+  pin base 6:21
+
+draw rock 18x11:
+  body = ellipse(9:10, 8:6).intersect(rect(0:0, 17:10))
+  model body stone
+  pin base 9:10
+
+draw ridge 192x128:
+  # ---- 1 sky: one gradient, then a soft sun (many fine alpha rings, never 3 fat ones) --
+  gradient sky = linear(90, (#2b3f6e, 0%), (#5d7099, 44%), (#c78d6a, 80%), (#f2c489, 100%))
+  bg sky
+  for i 0..12:
+    circle #ffe9c0.alpha(6%) 46:47 (26 - i * 2) fill
+  circle #fff6e2 46:47 5 fill
+  # ---- 2 far ridge: smallest contrast, strongest haze mix ------------------------------
+  profile h.mix(#3f5578, 58%) 0..191 ridgeY 76 fill
+  # ---- 3 THE haze veil — after the far layer, before the midground ---------------------
+  rect h.alpha(30%) 0:54 191:72 fill
+  # ---- 4 midground hill + the small pines standing on it -------------------------------
+  profile h.mix(#3d5a3c, 30%) 0..191 midY 94 fill
+  fit pineFar.base 26:midY(26 / (w - 1)) tint h 56%
+  fit pineFar.base 42:midY(42 / (w - 1)) tint h 50% flipx
+  fit pineFar.base 160:midY(160 / (w - 1)) tint h 44%
+  # ---- 5 ground plane: the same fn that places every subject below ----------------------
+  gradient soil = linear(90, e.mix(h, 22%), e.darken(38%))
+  profile soil 0..191 groundY 127 fill
+  grain profile(0..191, groundY, 127) 0.09 13 #3a2f22
+  # ---- 6 subjects, back to front. Every base y comes from groundY, so nothing floats ----
+  fit rock.base 108:groundY(108 / (w - 1))
+  fit pine.base 138:groundY(138 / (w - 1)) flipx ground
+  fit pine.base 62:groundY(62 / (w - 1)) ground   # `ground` = auto contact shadow, from the light
+  # ---- 7 detail marks LAST: grain eats 1px marks, so tufts run after the texture --------
+  for i 0..11:
+    gx = 6 + i * 16
+    gy = groundY(gx / (w - 1))
+    line #a9b26c.alpha(55%) gx:(gy + 5) (gx + 1):(gy + 1) w2
+    line #79854a.alpha(55%) (gx + 4):(gy + 6) (gx + 3):(gy + 2) w2
+  # ---- 8 foreground frame: darker, larger, lower detail — it sets the scale -------------
+  profile k.mix(#2f3d2c, 34%) 0..191 bankY 127 fill
+  for i 0..10:
+    rx = 8 + i * 19
+    by = bankY(rx / (w - 1))
+    curve k rx:(by + 4) (rx + 4):(by - 5) (rx + 2):(by - 14) w2
+  # ---- 9 atmosphere last: one gradient veil over the finished frame, <= 12% -------------
+  fill linear(24, #ffd9a0.alpha(11%), #1a2440.alpha(11%)) rect(0:0, 191:127)
+
+export ridge ridge:
+  png @1 @4
