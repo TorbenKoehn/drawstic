@@ -68,7 +68,7 @@ draw headFront 34x42:
 draw headSide 34x42:
   use figHead
   # side view faces +x: nose protrudes at the front, skull mass to the back (left)
-  face = ellipse(15:28, 11:13).union(lobe(19:28, 28:30, 9))
+  face = ellipse(15:28, 11:13).union(lobe(24:33, 28:34, 3))
   model face skinM
   skull = dome(14:20, 13:15).subtract(ellipse(22:32, 8:12))
   model skull hairM
@@ -78,8 +78,8 @@ draw headSide 34x42:
   circle iris fig.side.eye 1 fill
   px #201a1a fig.side.eye
   line #6a4a30 19:23 24:24
-  px skin.darken(24%) 25:31                    # nostril
-  line mouth 20:35 23:35
+  px skin.darken(24%) 27:33                    # nostril
+  line mouth 21:35 25:35
   pin neck 16:40
 
 draw headBack 34x42:

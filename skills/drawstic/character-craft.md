@@ -80,7 +80,9 @@ Shade the skull mass with one `model`/`cel` call so it reads as a single form; l
 top in this order — skin base, hair mass, eyes, brows, nose, mouth (§8 has the exact marks). Copy
 `starters/character-3view.drw`'s `headFront`/`headSide`/`headBack` (34×42, one head tall, both front
 and side verified) as the running template; restyle the silhouette per the table above and keep the
-oracle points (`fig.eyeL`/`fig.earL`/`fig.side.eye`/…) so the face stays on-line automatically.
+oracle points (`fig.eyeL`/`fig.earL`/`fig.side.eye`/…) so the face stays on-line automatically. A
+profile nose belongs strictly between the eye and mouth lines, with a clear gap below the eye first —
+flush against it, any bump reads as a beak, not a nose.
 
 **Trap — verified.** Naming a local binding `cap`, `join`, `mask`, `font`, `anchor`, `transform`,
 `tint`, or `shadow` breaks parsing the moment it is used as an argument — the parser reads it as that
