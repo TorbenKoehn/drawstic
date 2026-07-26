@@ -220,7 +220,7 @@ draw wizardSide 64x128:
 draw wizardBack 64x128:
   use ro
   fit robeBack.neck 32:66 ground
-  fit staff.grip robeBack.gripL behind robeBack
+  fit staff.grip robeBack.gripR behind robeBack     # gripR, not gripL: from behind, the staff hand is on the far side
   fit headBack.chin robeBack.neck
   fit hatBack.base headBack.crown
   outline
