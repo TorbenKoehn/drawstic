@@ -723,6 +723,33 @@ draw d 2x2:
     ).not.toThrow()
   })
 
+  test('any other statement in a theme body is rejected, not silently dropped (E004)', () => {
+    // The parser does not restrict theme bodies, so these all parse and used to fold to nothing
+    // at all — write a helper or an export "in the theme", get no diagnostic and no effect.
+    const cases: readonly (readonly [string, string, number])[] = [
+      ['fn', 'theme t:\n  fn half(x) = x / 2\n  palette:\n    k = #1a1a1a\n', 2],
+      ['export', 'theme t:\n  palette:\n    k = #1a1a1a\n  export a out:\n    png @1\n', 4],
+      ['drawing command', 'theme t:\n  palette:\n    k = #1a1a1a\n  circle k 4:4 3 fill\n', 4],
+      ['control flow', 'theme t:\n  palette:\n    k = #1a1a1a\n  for i 0..2:\n    bg k\n', 4],
+    ]
+    for (const [label, source, line] of cases) {
+      try {
+        render(`${source}\ndraw a 8x8:\n  use t\n  bg k\n`, 'a')
+        throw new Error(`${label} in a theme body was accepted`)
+      } catch (e) {
+        expect(e).toBeInstanceOf(DrawsticError)
+        if (e instanceof DrawsticError) {
+          // The span must land on the offending statement, not on the theme header.
+          expect(e.toDiagnostic()).toMatchObject({
+            code: 'E004',
+            line,
+            message: 'a theme body has no place for this statement',
+          })
+        }
+      }
+    }
+  })
+
   test('alpha compositing is pinned source-over', () => {
     const s = render('draw d 2x2:\n  bg #ffffff\n  rect #00000080 0:0 1:1 fill\n', 'd')
     // 50.2% black over white: 255*(1-128/255) = 127 → 127

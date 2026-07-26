@@ -1706,7 +1706,17 @@ export class Engine {
         acc.draws.set(item.def.name, { definition: item.def, module: mod })
         return acc
       default:
-        return acc
+        // Everything a theme can carry is enumerated above. The parser does not restrict theme
+        // bodies, so anything else — `fn`, `export`, `image`, a drawing command, a control-flow
+        // block — parses happily and then has nowhere to fold. It used to vanish without a word;
+        // that is the same footgun `materialBinding` calls out, for every remaining statement kind.
+        throw error(
+          ERROR_CODE.syntax,
+          `a theme body has no place for this statement`,
+          mod.displayPath,
+          item.span,
+          'a theme carries `palette`, `style`, `size`/`mode`/`font`, `light`, `figure:`, filters, draws and plain bindings — everything else belongs in module scope, above the theme',
+        )
     }
   }
 
