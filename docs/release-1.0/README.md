@@ -101,13 +101,51 @@ Status-Legende: `[ ]` offen · `[~]` läuft · `[x]` fertig (verifiziert: `bun t
       Auszüge werden zeilenweise gegen ihre Quelldatei bewiesen (`excerpt-of:`-Marker), vollständige
       Blöcke gegen `check` — beides per Drift-Injektion gegengeprüft.
 
-### W3-4b — C009-Plate-Blindheit
-- [~] C009 silhouettiert die volle Deckungsmaske; bei einer undurchsichtigen Icon-Platte *ist* die
-      Maske die Platte, also kollabieren alle Geschwister auf Distanz 0 — obwohl `icon-craft.md`
-      die gemeinsame Platte vorschreibt. Der Quellkommentar dokumentiert den Defekt und den Fix
-      (Platte vor dem Signieren abziehen). Solange er offen ist, trägt das Done-Gate eine
-      C009-Ausnahme — genau die Hintertür, die Audit-Befund #3 anprangert. Nach dem Fix: Ausnahme
-      aus `SKILL.md`/`verify.md` entfernen.
+### W3-4b — C009: zwei Defekte, drei Runden `[x]`
+
+C009 feuerte auf praktisch jede Icon-Familie — die Hintertür, die Audit-Befund #3 anprangert. Es
+steckten **zwei unabhängige Defekte** dahinter, beide gefunden, indem der Starter geprüft wurde, den
+der Skill jedem Agenten zum Kopieren gibt, statt nur der Beispiel-Korpus:
+
+- [x] **Platten-Blindheit** (`9067e93`, `9d88267`). C009 signiert die volle Deckungsmaske; bei einer
+      undurchsichtigen Icon-Platte *ist* die Maske die Platte. Fix: Platte per Pixel-Evidenz erkennen
+      und vor dem Signieren abziehen. Runde 1 war nur gegen die Gradienten-Platten in
+      `examples/icons/` kalibriert und scheiterte am Starter, der den *anderen* kanonischen
+      Licht-Kontrakt benutzt (Flachfüllung + 2px-Kantenband über `face.edge(1:1, 2)`). Gemessen an
+      dessen gerendertem `mail`: Band→Innenfläche 0,1298, Innenfläche→Glyphe 0,4041 — Faktor 3
+      Abstand. `PLATE_STEP_TOLERANCE` 0,06 → 0,13, im verifizierten Fenster [0,125; 0,15).
+- [x] **Cross-Size-Vergleich** (`7b1c3e2`). `silhouetteSignature` ist konstruktionsbedingt
+      *skaleninvariant* (Box-Resampling auf ein festes 32×32-Raster). Eine korrekt gebaute
+      Größenleiter — der 16px-Handnachbau neben seinem 32/64px-Master, genau was `icon-craft.md`
+      vorschreibt — signiert dann zwangsläufig gleich. Der Vergleich über Canvas-Größen hinweg war
+      also ein Kategorienfehler: **15 von 23** verbliebenen Befunden waren Cross-Size-Paare mit
+      bedeutungsloser Distanz. Fix: die `nearest`-Suche vergleicht nur noch Geschwister gleicher
+      `sprite.w`×`sprite.h` — strukturell, ohne Namenssuffix-Liste. Die vier gleichgroßen Befunde
+      (`chat16`/`phone16` 0 · `map`/`dice` 0,0813 · `video`/`gallery` 0,075 · `calculator`/`clock`
+      0,0851) sind echte Craft-Signale und bleiben stehen.
+- **Die Ausnahme im Done-Gate bleibt** — anders als vor der Messung geplant. `items-v2` kollabiert
+      legitim bei gleicher Canvas-Größe (potions 4, shields 4, armor 3, swords 2): ein Rundschild,
+      ein Buckler und eine Magiebarriere *teilen* nun mal eine kreisrunde Silhouette. Entfernt wurde
+      nur die icon-spezifische Lehre, die ausschließlich *wegen* der Defekte stimmte („erwarte
+      Distanz 0 zwischen jedem Paar") und „Größenvariante" als Rechtfertigung, die es nicht mehr
+      geben kann. C011 wurde auf denselben Kategorienfehler geprüft und **nicht** geändert: feuert
+      korpusweit null Mal, schlechteste Cross-Size-Ratio 5,52× unter dem 6×-Gate.
+
+### W3-4c — Back-View-Prop-Spiegelung `[x]`
+- [x] Starter (`615be5a`) und beide Flaggschiff-Charaktere (`761347d`) hielten ihr Prop in Front-
+      *und* Back-View auf der Betrachter-Linken — eine um 180° gedrehte Figur, die heimlich die Hand
+      wechselt. `bodyBack` hatte den `grip`-Pin von `bodyFront` wörtlich übernommen (knight `6:52`
+      → `42:52`), der Magier fittete den Stab an `gripL`, obwohl das Rezept `gripR` bereitstellt.
+      Archer (Bogen im Rücken-Sling) und Assassin (symmetrisches Dolchpaar mit `flipx`) sind korrekt.
+      `character-craft.md` nannte die Regel nur in der Skeleton-Fassung („swap which pin it fits
+      to"), was einen monolithischen Body-Part nicht abdeckt — Pin-Koordinaten-Fall mit Zahlen ergänzt.
+      README-Hero neu gerendert.
+- **Verworfen: automatische Spiegel-Paritäts-Prüfung.** Idee war, den horizontalen Tinten-Schwerpunkt
+      von Front- und Back-View zu vergleichen (gegenläufige Vorzeichen = korrekt gespiegelt).
+      Gemessen an genau den Fällen, die sie fangen müsste: Magier ja (−1,06/−1,37), **Ritter nein**
+      (−0,13/−0,13 — das dünne Schwert verschwindet gegen den symmetrischen Umhang), Archer
+      Fehlalarm (0,89/0,73, konstruktionsbedingt asymmetrisch). Einer von zwei echten Fällen bei
+      einem Fehlalarm ist kein Test. Diese Defektklasse bleibt Sache des Auges — siehe W3-5.
 
 ### Bewusst NICHT im 1.0 — mit Begründung
 
