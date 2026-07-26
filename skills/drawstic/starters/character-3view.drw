@@ -183,10 +183,11 @@ draw bodyBack 48x86:
   model rect(20:0, 28:13) skinM                 # neck
   pin neck 24:2
   # MIRROR THE GRIP. The figure is turned 180 degrees, so the hand that held the prop in
-  # front view is now on the far side of the canvas: 48 - 7 = 41, the centre of handR.
+  # front view is now on the far side of the canvas: 47 - 7 = 40 (the engine mirrors about
+  # (w-1)/2, exactly like `flipx`), which lands on handR.
   # Copying `pin grip 7:52` from bodyFront is the single most common back-view bug — the
   # prop stays on the viewer's left and the character silently swaps hands.
-  pin grip 41:52
+  pin grip 40:52
   pin hip  24:52
 
 # ================= PROP =================
@@ -221,7 +222,7 @@ draw heroBack 64x128:
   use figThree
   fit bodyBack.neck 32:43
   fit headBack.neck bodyBack.neck
-  fit staff.grip bodyBack.grip aim tip 52:16 behind bodyBack   # aim target mirrors too: 64 - 12
+  fit staff.grip bodyBack.grip aim tip 51:16 behind bodyBack   # aim target mirrors too: 63 - 12
   outline
 
 draw heroSheet 200x140:

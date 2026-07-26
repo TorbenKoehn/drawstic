@@ -212,7 +212,7 @@ draw bodyBack 48x88:
   cel rect(19:0, 29:4) steelM 3
   pin neck   24:2
   pin capeAnchor 24:6
-  pin grip   42:52                                  # mirrored: 48 - 6, the same hand seen from behind
+  pin grip   41:52                                  # mirrored: 47 - 6, the same hand seen from behind
   pin hip    24:52
 
 draw bodySide 34x88:
@@ -266,7 +266,7 @@ draw knightBack 64x128:
   fit bodyBack.neck 32:43                            # root
   fit headBack.neck bodyBack.neck
   fit cape.attach bodyBack.capeAnchor front bodyBack    # cape over the back
-  fit sword.grip bodyBack.grip aim tip 55:34 behind cape # slung sword behind the cape (aim mirrors: 64 - 9)
+  fit sword.grip bodyBack.grip aim tip 54:34 behind cape # slung sword behind the cape (aim mirrors: 63 - 9)
   outline
 
 # ================= SHEET =================
