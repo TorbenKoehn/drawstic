@@ -163,15 +163,20 @@ draw magicBarrier:
   stroke a body w1
   stroke c core w1
 
-# ADR-0096 §3: the former `tileset shieldsGrid` (grid, cols 3, no gutter) and `atlas shieldsAtlas`
-# (shelf-pack, pad 1) baked the same six members twice, differing only by `pad` — folded into one
-# uniform-tile atlas. `shields-grid.png`/`shields-atlas.png` are now the same bake (byte-identical
-# to each other); the sidecars keep both consumers (Tiled + TexturePacker/Phaser/Pixi) working off
-# it, `pad`'s 1px gutter now also carried into `tiled`'s `spacing`.
-atlas shieldsSheet:
+# One construct, two layouts — this set is where the corpus shows both.
+# With `tile`: every member sits in a fixed WxH slot on a `cols`-wide grid. That is what a
+# tilemap editor needs, and it is the only form `tiled` accepts.
+atlas shieldsGrid:
   sprites roundShield, heraldShield, towerShield, buckler, woodShield, magicBarrier
   tile 64x64
   cols 3
+  pad 1
+
+# Without `tile`: members are shelf-packed to their own bounds, so a sheet of unequal sprites
+# wastes no space. Runtime atlases (TexturePacker/Phaser/Pixi) read the frame rects from the
+# JSON and do not care about a grid.
+atlas shieldsAtlas:
+  sprites roundShield, heraldShield, towerShield, buckler, woodShield, magicBarrier
   pad 1
 
 export roundShield round-shield:
@@ -192,10 +197,10 @@ export woodShield wood-shield:
 export magicBarrier magic-barrier:
   png @1 @4
 
-export shieldsSheet shields-grid:
+export shieldsGrid shields-grid:
   png @1 @4
   tiled
 
-export shieldsSheet shields-atlas:
+export shieldsAtlas shields-atlas:
   png @1 @4
   atlasJson
