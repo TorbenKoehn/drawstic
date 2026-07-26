@@ -21,18 +21,18 @@ materials, shapes — and the Drawstic CLI renders it. No canvas, no editor, no 
 </tr>
 <tr>
 <td align="center"><img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/hero-characters.png" width="260" alt="Knight character sheet, front/side/back views"></td>
-<td align="center"><img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/hero-icons.png" width="260" alt="Games icon family contact sheet"></td>
+<td align="center"><img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/hero-icons.png" width="260" alt="Productivity icon family contact sheet: mail, calendar, notes, calculator, clock, todo at 16, 32 and 64 px"></td>
 <td align="center"><img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/hero-scenes.png" width="260" alt="Island scene at sunset"></td>
 </tr>
 <tr>
 <td align="center"><code>knight.drw#knightSheet</code></td>
-<td align="center"><code>drawstic sheet games.drw</code></td>
+<td align="center"><code>drawstic sheet productivity.drw</code></td>
 <td align="center"><code>island.drw#island</code></td>
 </tr>
 </table>
 
 Sources: [`examples/characters-ro2/knight.drw`](examples/characters-ro2/knight.drw) ·
-[`examples/icons/games.drw`](examples/icons/games.drw) ·
+[`examples/icons/productivity.drw`](examples/icons/productivity.drw) ·
 [`examples/scenes-v3/island.drw`](examples/scenes-v3/island.drw) — one recipe file each,
 rendered as-is.
 

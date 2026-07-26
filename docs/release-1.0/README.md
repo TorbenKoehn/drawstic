@@ -83,6 +83,17 @@ Status-Legende: `[ ]` offen · `[~]` läuft · `[x]` fertig (verifiziert: `bun t
 - [~] Skill-Neubau (D5): Kern (SKILL/walkthrough/language/verify/`starters`) + Craft-Guides/Referenz.
 - [~] README-Neubau (D6) mit gerenderten Beispielgrafiken.
 
+### Bewusst NICHT im 1.0 — mit Begründung
+
+- **`small` (5×7) kann keine Unterlängen.** `p`/`q`/`y`/`g` sind eine Zeile höher gezeichnet als die
+  x-Höhen-Buchstaben und benutzen Zeile 6–7 als Pseudo-Unterlänge, weil unter der Grundlinie in einer
+  7-Zeilen-Zelle kein Platz ist. Sichtbarer Effekt: sie lesen als Versalien — `sheet` beschriftet
+  „map" als „maP", „trophy" als „troPhy". `micro` (3×5) ist ein echter Versalfont und in Ordnung.
+  **Nicht angefasst**, weil jede Korrektur gerenderten Output ändert und der eigentliche Fix neue
+  Metriken braucht (x-Höhe 4 + echte Unterlänge → eine 5×8-Zelle, also ein *neuer* Font neben
+  `small`, kein Umbau von `small`). Umgangen wurde es nur im README-Hero: dort steht jetzt die
+  `productivity`-Familie, deren Namen keine Unterlängen-Buchstaben enthalten.
+
 ### W3-5 — Verifikation
 - [ ] 3 Blind-Builds (Charakter / Icon-Familie / Szene) durch frische Agenten gegen den neuen Skill.
 - [ ] Befunde daraus fixen; danach Version stampfen und Release-Workflow scharf schalten.
