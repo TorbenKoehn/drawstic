@@ -79,9 +79,29 @@ Status-Legende: `[ ]` offen · `[~]` läuft · `[x]` fertig (verifiziert: `bun t
       gepolsterte Grid-Sheet statt Grid- vs. Shelf-Pack-Layout).
 - [ ] Spec-Grammatik-Sync (pin/fit, behind/front, quantize, organische Konstruktoren, CLI-Tabelle, E026).
 
-### W3-4 — Product-Skill + README
-- [~] Skill-Neubau (D5): Kern (SKILL/walkthrough/language/verify/`starters`) + Craft-Guides/Referenz.
-- [~] README-Neubau (D6) mit gerenderten Beispielgrafiken.
+### W3-4 — Product-Skill + README `[x]`
+- [x] Skill-Neubau (D5), zwei Wellen (`8a35f31` Kern, `0d776e5` Craft/Referenz). Neue Struktur:
+      `SKILL.md` (`<start_here>` → Routing → kanonischer Pfad → EIN vollständiges Rezept → Done-Gate),
+      `language.md`, `verify.md`, `walkthrough.md`, vier Craft-Guides, `reference.md` (jetzt mit
+      Inhaltsverzeichnis), lauffähige `starters/*.drw`.
+      **Gemessene Ladepfade** (cl100k_base, SKILL + Craft-Guide + Starter) gegen 14 200 Tokens vorher:
+      Charakter **9 956** · Szene **8 123** · Item **6 802** · Icon **6 643**. `SKILL.md` allein
+      8 828 → 2 914 (−67 %).
+      Verifiziert: 0 ADR-Tokens, 0 tote `examples/`-Zeiger, kein entferntes Konstrukt wird gelehrt
+      (nur als „gibt's nicht mehr"-Falle genannt); das Vorzeigerezept besteht sein eigenes Gate
+      (`check --lint` `[]`, `critique --as item --strict` `pass:true`, `build` schreibt beide PNGs
+      mit den dokumentierten Bytezahlen).
+- [x] README-Neubau (D6) mit gerenderten Beispielgrafiken (`fdd70c4`, `bd9115a`, `b1a5034`, `7d86104`).
+      Auszüge werden zeilenweise gegen ihre Quelldatei bewiesen (`excerpt-of:`-Marker), vollständige
+      Blöcke gegen `check` — beides per Drift-Injektion gegengeprüft.
+
+### W3-4b — C009-Plate-Blindheit
+- [~] C009 silhouettiert die volle Deckungsmaske; bei einer undurchsichtigen Icon-Platte *ist* die
+      Maske die Platte, also kollabieren alle Geschwister auf Distanz 0 — obwohl `icon-craft.md`
+      die gemeinsame Platte vorschreibt. Der Quellkommentar dokumentiert den Defekt und den Fix
+      (Platte vor dem Signieren abziehen). Solange er offen ist, trägt das Done-Gate eine
+      C009-Ausnahme — genau die Hintertür, die Audit-Befund #3 anprangert. Nach dem Fix: Ausnahme
+      aus `SKILL.md`/`verify.md` entfernen.
 
 ### Bewusst NICHT im 1.0 — mit Begründung
 
