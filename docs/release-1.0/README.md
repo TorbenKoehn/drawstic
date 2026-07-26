@@ -73,11 +73,17 @@ Status-Legende: `[ ]` offen · `[~]` läuft · `[x]` fertig (verifiziert: `bun t
 - [x] `scenes-v3` — 74 Aufrufe migriert (`e4fe7c6`). Die fünf geschützten Szenen sind
       pixel-erhaltend (arctic/desert/island/market Δmax 2, reef Δmax 8, jeweils reines
       Quantisierungsrauschen des Gradient-Pfades); volcano + orbit bewusst verbessert.
-- [x] `items-v2` — 7 `tileset`s auf `atlas … tile WxH` migriert (byte-identische Sheets/Sidecars);
-      `shields.drw`s doppeltes `tileset`+`atlas` (nur `pad` unterschiedlich) zu einem `atlas
-      shieldsSheet` gefaltet (bewusste Änderung: beide Export-Blöcke backen jetzt dieselbe
-      gepolsterte Grid-Sheet statt Grid- vs. Shelf-Pack-Layout).
-- [ ] Spec-Grammatik-Sync (pin/fit, behind/front, quantize, organische Konstruktoren, CLI-Tabelle, E026).
+- [x] `items-v2` — 7 `tileset`s auf `atlas … tile WxH` migriert (byte-identische Sheets/Sidecars).
+      `shields.drw` hatte die Migration zuerst zu *einem* `atlas` gefaltet — die Begründung „beide
+      unterschieden sich nur im `pad`" war falsch, sie unterschieden sich im **Packmodus**. Damit
+      war der grid-lose Shelf-Pack korpusweit unbelegt und ein Beispiel zu zwei Namen für dieselbe
+      Sheet geworden. Zurückgeholt (`6ea87eb`): `shieldsGrid` (mit `tile 64x64`, für `tiled`) neben
+      `shieldsAtlas` (ohne `tile`, shelf-gepackt für `atlasJson`) — Shelf-PNG und JSON wieder
+      byte-identisch zum Stand vor der Migration.
+- [x] Spec-Grammatik-Sync (pin/fit, behind/front, quantize, organische Konstruktoren, CLI-Tabelle,
+      E026) + PNG-Decode-Diagnostik `E027` (`d1b6237`); Theme-Body-Guard `E004` (`bd1fe03`) —
+      ein `fn`/`export`/Zeichenkommando/`for` im Theme-Rumpf fiel vorher stillschweigend auf den
+      Boden, jetzt positionierter Fehler auf dem Statement.
 
 ### W3-4 — Product-Skill + README `[x]`
 - [x] Skill-Neubau (D5), zwei Wellen (`8a35f31` Kern, `0d776e5` Craft/Referenz). Neue Struktur:

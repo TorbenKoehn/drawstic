@@ -162,7 +162,11 @@ mirrored copy of one draw — `flipx`/`flipy` only swap left/right *within* one 
   front part.
 - **Front and back mirror left↔right at the shoulder/hip attach**, not the part itself: reuse the
   identical arm part and swap which pin it fits to (`armA.shoulder → torso.shoulderL` in front becomes
-  `→ torso.shoulderR` in back). This also collapses `critique`'s `C009` sibling-silhouette check by
+  `→ torso.shoulderR` in back). When the body is one draw rather than separate limbs, the same rule is
+  a **mirrored pin coordinate** — `pin grip 7:52` in a 48-wide front body becomes `pin grip 41:52`
+  (`48 - 7`) in the back body, and the `aim` target mirrors with it (`12:16` → `52:16` on a 64-wide
+  canvas). Copying the front pin verbatim is the classic back-view bug: the prop stays on the viewer's
+  left, so the character silently swaps hands between views. This also collapses `critique`'s `C009` sibling-silhouette check by
   construction for a subject's own views — it never fires between `…Front`/`…Side`/`…Back` of one name
   stem.
 - **A dominating prop is an explicit layer, not auto-order.** A slung sword or a back cape doesn't ride
