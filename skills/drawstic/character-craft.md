@@ -23,7 +23,7 @@ clean `critique --strict` verifies structure, not craft.
 4. **Assembly by `fit`** (§4) — a root `fit` seeds every pin that follows; contact is engine-checked,
    not eyeballed. `behind`/`front` order props, `aim` orients a held one.
 5. **One bare `outline`**, last statement of the assembly draw.
-6. **`critique --as character --strict`** → `pass:true`, then answer its rubric by looking (§9).
+6. **`critique --as character --strict`** → exit 0, then answer its rubric by looking (§9).
 
 Three views (§5) and faction recolor (§6) repeat steps 1–5 with the same theme and the same parts.
 
@@ -84,11 +84,11 @@ oracle points (`fig.eyeL`/`fig.earL`/`fig.side.eye`/…) so the face stays on-li
 profile nose belongs strictly between the eye and mouth lines, with a clear gap below the eye first —
 flush against it, any bump reads as a beak, not a nose.
 
-**Trap — verified.** Naming a local binding `cap`, `join`, `mask`, `font`, `anchor`, `transform`,
-`tint`, or `shadow` breaks parsing the moment it is used as an argument — the parser reads it as that
-keyword's own argument slot and raises a confusing `E011 missing argument` far from the real cause
-(`cap = dome(16:15, 14:12)` then `model cap turbM` fails this way). Pick a longer name (`turbCap`,
-`hoodMask`) instead.
+**Trap — verified.** Never name a binding `transform`, `tint`, `mask`, `font`, `cap`, `join`,
+`sha256`, `anchor` or `shadow`: the parser reads it as that keyword's own argument slot the moment
+you pass it as one (`cap = dome(16:15, 14:12)` then `model cap turbM`). `E011` names the hijacked
+keyword and suggests a rename, so it is a one-render detour rather than a mystery — but a qualified
+name (`turbCap`, `hoodMask`) skips it entirely.
 
 ## 4. Seam contract — no floating limbs (`pin`/`fit`)
 
@@ -260,7 +260,7 @@ A face at chibi part-scale reads as "two dots" if you stop at pupils. In order, 
 structure, not craft (the render you look at is the actual gate). Beyond the loop in
 [verify.md](verify.md), a figure adds:
 
-0. **Gate:** `critique --as character --strict --json` → `pass:true` (`C007` catches a floating/seamed
+0. **Gate:** `critique --as character --strict --json` → exit 0 (`C007` catches a floating/seamed
    part; `C009` never fires between a subject's own front/side/back, nor across canvas sizes — it
    does fire between different same-size characters, which is expected), then answer its
    `seam-contact` rubric item by looking.

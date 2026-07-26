@@ -214,8 +214,8 @@ scatter under the light source is what turns a flat fill into water.
 
 Beyond the loop in [verify.md](verify.md), a scene adds:
 
-- **Gate:** `critique --as scene --strict --json` → `pass:true`, then answer its rubric
-  (`hero-contrast`/`no-floating`/`one-light`) by looking — `pass:true` is necessary, not sufficient.
+- **Gate:** `critique --as scene --strict --json` → exit 0, then answer its rubric
+  (`hero-contrast`/`no-floating`/`one-light`) by looking — a clean exit is necessary, not sufficient.
 - New object or contact: `--crop @6-8` on the contact zone (object + shadow + ground).
 - Before "done": look at the whole `@4` image — it shows what `@1` swallows (ghost shapes, outline
   seams).

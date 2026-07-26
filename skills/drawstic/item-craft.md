@@ -161,7 +161,7 @@ above are correct as-is; never repeat the recipe's own directory name as a leadi
 
 Beyond the loop in [verify.md](verify.md), an item set adds:
 
-0. **Gate:** `critique --as item --strict --json` → `pass:true` (`C009` flags a sibling reading like
+0. **Gate:** `critique --as item --strict --json` → exit 0 (`C009` flags a sibling reading like
    another — differentiate it, or, for a deliberate recolor/shared-shell, confirm the pair and reason in
    your final message), then answer its `pair-confusion` rubric item by looking.
 1. **`sheet file.drw --png@4`** first — the family-drift and pair-confusion judge.
