@@ -1665,7 +1665,12 @@ const detectPlateFigure = (
   return bbox ? { mask: figure, bbox } : null
 }
 
-/** One sibling's family facts: covered mass, content bbox, and nearest-silhouette neighbour. */
+/**
+ * One sibling's family facts: covered mass, content bbox, and nearest-silhouette neighbour.
+ * `nearest` is scoped to same-canvas-size siblings only (C009's category-error fix, below) — a
+ * different-size sibling is never named here even if its raw distance would be smaller;
+ * `distanceMatrix` on {@link FamilyMetrics} still carries every pair, same-size or not.
+ */
 export type FamilyMember = {
   readonly name: string
   readonly coveredPixelCount: number
@@ -1777,7 +1782,7 @@ const viewLandmarkChecks = (
 
 /**
  * Compares a group of sibling drawings (≥2) and returns the family findings:
- * C009 (sibling-silhouette collapse — a member whose nearest neighbour's
+ * C009 (sibling-silhouette collapse — a member whose nearest *same-canvas-size* neighbour's
  * scale-/position-invariant 32×32 silhouette signature sits within
  * {@link COLLAPSE_DISTANCE}) and C011 (family weight parity — a member whose
  * covered mass deviates from the family median by more than
@@ -1786,6 +1791,17 @@ const viewLandmarkChecks = (
  * advisory `warning`. Each member's signature is signed off {@link detectPlateFigure}'s
  * figure mask when a plate is detected on that sprite, else off its full covered mask
  * (C009-Plate-Blindheit fix) — a non-plate character/item sprite is unaffected.
+ *
+ * **C009 is scoped to same-canvas-size siblings** (release 1.0 hardening, round 3):
+ * {@link silhouetteSignature} is scale-invariant by construction, so a correctly-built size
+ * ladder (`icon-craft.md` §6 "redraw, never scale" — a 16×16 hand-pixel redraw alongside its
+ * 32×32/64×64 masters) signs near-identically *by design*. Comparing across canvas sizes is
+ * therefore a category error, not a collapse: the check asks "do two *different* subjects read
+ * the same at the *same* size", and a scale-invariant signature has no way to see scale at all.
+ * Restricting the `nearest` computation (not `distanceMatrix`, which stays raw pairwise data over
+ * every member) to same-`sprite.w`×`sprite.h` peers fixes this structurally — it needs no name
+ * suffix list and handles every differently-named size variant the corpus has (`compassSmall`,
+ * `mailSmall`, `chat16`, `settings64`) plus cross-subject same-size collapses uniformly.
  */
 export const critiqueFamily = (
   members: readonly { readonly name: string; readonly sprite: Sprite }[],
@@ -1803,6 +1819,8 @@ export const critiqueFamily = (
       : silhouetteSignature(covered, m.sprite.w, metrics.bbox)
     return {
       name: m.name,
+      canvasW: m.sprite.w,
+      canvasH: m.sprite.h,
       coveredPixelCount: metrics.coveredPixelCount,
       bbox: metrics.bbox,
       signature,
@@ -1824,12 +1842,23 @@ export const critiqueFamily = (
   for (let i = 0; i < n; i++) {
     const fi = facts[i]
     const row: number[] = []
+    // C009's `nearest` is scoped to same-canvas-size siblings only: `silhouetteSignature` is
+    // scale-invariant by construction (ADR-0085 §3), so a correctly-built size ladder (a 16×16
+    // hand-pixel redraw and its 32×32/64×64 masters, `icon-craft.md` §6 "redraw, never scale")
+    // signs near-identically *by design* — comparing across sizes is a category error the
+    // scale-invariant signature cannot see, not a collapse. `distanceMatrix` stays the full
+    // pairwise matrix (raw data, every size); only the *finding* is restricted.
     let nearest: { name: string; distance: number } | null = null
     for (let j = 0; j < n; j++) {
       const d = flat[i * n + j] ?? 0
       row.push(d)
       const fj = facts[j]
-      if (j !== i && fj && (nearest === null || d < nearest.distance)) {
+      const sameSize =
+        fj !== undefined &&
+        fi !== undefined &&
+        fj.canvasW === fi.canvasW &&
+        fj.canvasH === fi.canvasH
+      if (j !== i && fj && sameSize && (nearest === null || d < nearest.distance)) {
         nearest = { name: fj.name, distance: d }
       }
     }

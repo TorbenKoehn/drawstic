@@ -48,9 +48,11 @@ STAGE 5 — ship
 the must-fix subset (C001 empty, C007 character seam, C013 occlusion parity, plus C003 centering for
 the icon profile) to errors, so a clean exit code can still carry advisory findings.
 `critique.pass` goes `false` on *any* fired check — read it, but it is not the gate: a family of
-icons sharing one plate silhouette, or a set of size variants, fires `C009` **by design** and can
-never reach `pass: true`. `C009` is the one code you may leave standing, and only with a stated
-reason. Everything else in `failedCodes` gets fixed.
+icons/items sharing one scaffold silhouette on purpose (a plate, a bottle, a shield) fires `C009`
+**by design** and can never reach `pass: true`. Size variants are never compared at all — C009
+only pairs siblings of the same canvas size — so a size ladder never fires it. `C009` is the one
+code you may leave standing, and only with a stated reason. Everything else in `failedCodes` gets
+fixed.
 
 ## Which render mode answers which question
 
@@ -129,7 +131,7 @@ are self-describing — the record's `message` and `hint` name the fix directly.
 | `C006` | distinct-colour sprawl over the profile ceiling | advisory; matters for `indexed` PNG and SVG size |
 | `C007` | a detached component overlapping the body bbox — a seam | must-fix under `--strict` for `character`: fix the pin geometry |
 | `C008` | 1–3 px transparent pinholes enclosed by paint | widen the overlap where two regions join |
-| `C009` | two siblings collapse to the same silhouette | differentiate them — **or**, when the shared silhouette *is* the point (size variant, faction recolor, shared plate/bottle/shield scaffold), leave it and say which pair and why. The only code you may leave standing |
+| `C009` | two same-canvas-size siblings collapse to the same silhouette (never compares across sizes) | differentiate them — **or**, when the shared silhouette *is* the point (faction recolor, shared plate/bottle/shield scaffold), leave it and say which pair and why. The only code you may leave standing |
 | `C011` | one sibling's covered mass is far off the family average | advisory |
 | `C012` | a transparent trailing edge row | trim or balance the margin |
 | `C013` | a declared `behind`/`front` relation is not visible in the composite | must-fix under `--strict`: the occluder does not actually cover |

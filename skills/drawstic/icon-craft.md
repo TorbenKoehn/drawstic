@@ -146,9 +146,9 @@ check after `build`: `<rect>` count should stay far below pixel count.
 Beyond the loop in [verify.md](verify.md), an icon family adds:
 
 0. **Gate:** `critique --as icon --strict --json` → must-fix `C003` (centering) is clean; then answer
-   the rubric it prints (misread test + merge trap) by looking. A shared tile/plate legitimately
-   collapses `C009` between every pair — that check names it as the one you may leave standing
-   ([verify.md](verify.md)); differentiate the *glyphs*, not the tile.
+   the rubric it prints (misread test + merge trap) by looking. The shared tile/plate is detected and
+   subtracted before `C009` signs, so a finding there means two *glyphs* genuinely collapse
+   ([verify.md](verify.md)) — differentiate them.
 1. **`sheet file.drw --png@4`** first — the family contact sheet, every exported icon size-normalized
    and labeled in one grid. This is the cross-sibling judge for radius/stroke/grey-value/hue drift.
 2. `render …#name --png@1` — the truth at native zoom; `--png@4` for form.

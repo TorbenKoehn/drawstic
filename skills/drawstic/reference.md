@@ -195,7 +195,7 @@ do want it compared). Need ≥2 members:
 
 | Code | Fires when |
 |---|---|
-| C009 | sibling-silhouette collapse: scale-/position-invariant 32×32 signatures, mass-normalized L1 < 0.12. Under `--as character`, never fires between two views that share a front/side/back name stem (e.g. `knightFront`/`knightBack`); still fires between different characters/items |
+| C009 | sibling-silhouette collapse: scale-/position-invariant 32×32 signatures, mass-normalized L1 < 0.12, compared only between same-canvas-size siblings (a scale-invariant signature can't see scale, so a size ladder is never compared). Under `--as character`, never fires between two views sharing a front/side/back name stem; still fires between different characters/items |
 | C011 | weight parity: a sibling >6× off the family median mass |
 
 **Severity and `--strict`.** All findings default to `warning` (exit 0, never blocking). `--strict`

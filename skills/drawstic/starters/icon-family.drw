@@ -28,9 +28,10 @@ use appIcons
 # The plate carries radius, margin and the light contract for the whole family, so
 # they cannot drift over six icons. Parametric => `critique` skips it; the icons carry it.
 #
-# Expect `critique --as icon` to report C009 (sibling silhouette collapse) with distance 0
-# between every pair: the plate IS the silhouette, on purpose. C009 is the one check you may
-# leave standing — name the pair and the reason, as here. `--strict` still exits 0.
+# `critique --as icon --strict` passes clean on this starter: the shared plate is detected and
+# subtracted before C009 signs a silhouette, so the five glyphs are compared on their own shapes,
+# never on the tile they share. A C009 finding here means two glyphs genuinely read alike —
+# differentiate them, don't wave it off.
 draw plate(t) 32x32:
   face = rrect(2:2, 29:29, 6)
   fill t face

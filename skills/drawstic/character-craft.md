@@ -258,9 +258,9 @@ structure, not craft (the render you look at is the actual gate). Beyond the loo
 [verify.md](verify.md), a figure adds:
 
 0. **Gate:** `critique --as character --strict --json` → `pass:true` (`C007` catches a floating/seamed
-   part; `C009` never fires between a subject's own front/side/back — it does fire between different
-   characters or size variants, which is expected), then answer its `seam-contact` rubric item by
-   looking.
+   part; `C009` never fires between a subject's own front/side/back, nor across canvas sizes — it
+   does fire between different same-size characters, which is expected), then answer its
+   `seam-contact` rubric item by looking.
 1. **Part fragment `--png@6-8`** — each part isolated with literal args before assembly.
 2. **Composite `--png@4`** — light contract + proportions read here.
 3. **`--silhouette --png@4`** — seam contact + archetype signal, colour stripped, every view including

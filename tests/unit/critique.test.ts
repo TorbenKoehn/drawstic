@@ -683,6 +683,34 @@ describe('C009 sibling-silhouette collapse (critiqueFamily)', () => {
     expect(fam?.checks.some((c) => c.code === CRITIQUE_CODE.siblingCollapse)).toBe(true)
   })
 
+  test('a cross-size pair never fires C009 even at near-zero raw distance; a same-size pair still does (category-error fix, round 3)', () => {
+    // `silhouetteSignature` is scale-invariant by construction, so the same shape at 16x16 and
+    // 32x32 signs near-identically -- that is the signature working as documented (icon-craft.md
+    // §6 "redraw, never scale"), not a collapse. `nearest` must never name a different-size
+    // sibling even when its raw distance is the smallest in the matrix.
+    const shape16 = (name: string, c: Px) =>
+      synthSprite(name, 16, 16, (x, y) => (triangle(16, 16)(x, y) ? c : null))
+    const shape32 = (name: string, c: Px) =>
+      synthSprite(name, 32, 32, (x, y) => (triangle(32, 32)(x, y) ? c : null))
+    const fam = critiqueFamily([
+      { name: 'small', sprite: shape16('small', DARK) },
+      { name: 'smallTwin', sprite: shape16('smallTwin', LIGHT) },
+      { name: 'big', sprite: shape32('big', DARK) },
+    ])
+    const members = fam?.metrics.members ?? []
+    const idxSmall = members.findIndex((m) => m.name === 'small')
+    const idxBig = members.findIndex((m) => m.name === 'big')
+    // distanceMatrix stays raw pairwise data: the cross-size pair reads as near-identical there.
+    expect(fam?.metrics.distanceMatrix[idxSmall]?.[idxBig]).toBeLessThan(0.05)
+    // ...but `nearest` is scoped to same-canvas-size peers: 'small' pairs with 'smallTwin', never 'big'.
+    expect(members[idxSmall]?.nearest?.name).toBe('smallTwin')
+    // 'big' has no same-size sibling in this family, so it gets no nearest neighbour at all.
+    expect(members[idxBig]?.nearest).toBeNull()
+    const c9 = fam?.checks.filter((c) => c.code === CRITIQUE_CODE.siblingCollapse) ?? []
+    expect(c9.map((c) => c.target).sort()).toEqual(['small', 'smallTwin'])
+    expect(c9.some((c) => c.target === 'big')).toBe(false)
+  })
+
   test('familyMetrics exposes a symmetric distance matrix (zero diagonal), nearest, and median', () => {
     const fam = critiqueFamily([
       { name: 'a', sprite: synthSprite('a', 16, 16, () => LIGHT) },

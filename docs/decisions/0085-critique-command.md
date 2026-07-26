@@ -85,6 +85,42 @@ pass/fail:
   > populations. See `PLATE_STEP_TOLERANCE`'s doc comment in `src/critique.ts` for the full
   > measurement, and `tests/unit/critique.test.ts`'s `edgeBandPlateFamily` fixture for the
   > regression coverage.
+  >
+  > **Round 3 -- C009 is scoped to same-canvas-size siblings.** After round 2, the starter still
+  > failed `--strict` on one pair (`mail` 32x32 <-> `mailSmall` 16x16, distance 0.026) -- a
+  > *different* category of defect, not plate-blindness. `silhouetteSignature` is scale-invariant
+  > by construction (box-resampled onto the fixed 32x32 grid, section 3 above): a correctly-built
+  > size ladder (`icon-craft.md` section 6 "redraw, never scale" -- a 16x16 hand-pixel redraw
+  > beside its 32x32/64x64 masters) signs near-identically *by design*, so comparing across canvas
+  > sizes is a category error the check cannot see, not a collapse. Measured on the full corpus:
+  > **15 of the 23** pre-round-3 findings were cross-size (`settings`<->`settings64`,
+  > `compass`<->`compassSmall`, `dice`<->`dice16`, `controller`<->`controller64`,
+  > `heart`<->`heart16`, `camera`<->`camera64`, `clock16`<->`clock64`, `contacts`<->`chat16`,
+  > `videocall64`<->`chat16`, `mail`<->`mailSmall`, and their mirror pairs) -- a scale-invariant
+  > signature guaranteed every one of them would fire, and the distance it reported was
+  > meaningless (it cannot see scale). Fixed structurally, not by name: the `nearest`-neighbour
+  > search `critiqueFamily` (`src/critique.ts`) uses for the C009 finding is restricted to peers
+  > sharing the same `sprite.w`x`sprite.h`; `distanceMatrix` stays the full raw pairwise matrix
+  > over every member, size included, since it is data, not a finding. This needs no suffix list
+  > (unlike the `character` profile's `viewSubjectStem` front/side/back exemption) and uniformly
+  > covers every differently-named size variant in the corpus plus the cross-subject same-size
+  > pairs. **The four remaining same-size findings are real craft signals and were kept**
+  > (`chat16`<->`phone16` 0, `map`<->`dice` 0.0813, `video`<->`gallery` 0.075,
+  > `calculator`<->`clock` 0.0851) -- two icons that genuinely share a silhouette at the *same*
+  > size is exactly what C009 exists to catch. `examples/items-v2/*` (same-canvas-size sets
+  > throughout) is unaffected: potions (4 findings), shields (4), armor (3), swords (2) are
+  > unchanged, byte-identical -- legitimate same-size shared-scaffold collapses (a round shield, a
+  > buckler and a magic barrier share a circular silhouette), not the defect this round fixes.
+  >
+  > **C011 checked for the same category error, not changed.** `coveredPixelCount` compared
+  > against a median pooled across canvas sizes has the same structural risk (a 64px icon's mass
+  > is ~4x a same-subject 32px one purely from area scaling). Measured: C011 fires **zero** times
+  > anywhere in the bundled corpus (`examples/icons/*`, `characters-ro2/*`, `items-v2/*`) both
+  > before and after this round. The worst measured cross-size ratios stay under the
+  > `PARITY_FACTOR` (6x) gate -- `games.drw#controller64` 5.20x, `weather.drw#weatherDetail`
+  > 5.52x -- close but not crossing it. Per "measure first, don't fix on theory alone", C011's
+  > median is left pooled across sizes unchanged; the closeness of those two ratios is worth
+  > re-measuring if a future family pushes the size spread further.
 - **C011** family weight parity · **C012** the rendered form of `W009` — an *asymmetric* bottom
   gap (trailing transparent rows exceeding the top margin beyond the centering tolerance), measured
   from pixels rather than the static `pixels:` grid; symmetric breathing room is never flagged.

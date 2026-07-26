@@ -815,6 +815,39 @@ _(Findings aus `bun run test` und craft-eval-Läufen hier als neue Checkboxen an
   Characters/Items/Scenes-Regression erneut byte-identisch geprüft. Neue Testabdeckung:
   `edgeBandPlateFamily`-Fixture in `tests/unit/critique.test.ts` (mirrort den Starter-Kontrakt
   exakt).
+  **Runde 3 (Koordinator-Review): C009 auf gleiche Canvas-Groesse beschraenkt.** Nach Runde 2
+  scheiterte der Starter noch an einem Paar (`mail` 32x32 vs. `mailSmall` 16x16, Distanz 0.026) --
+  ein *anderer* Fehlertyp, keine Plate-Blindheit. `silhouetteSignature` ist per Konstruktion
+  skaleninvariant (Box-Resample auf das feste 32x32-Raster): eine korrekt gebaute Groessenleiter
+  (`icon-craft.md` Abschnitt 6 "Redraw, nie skalieren" -- ein 16x16-Handpixel-Redraw neben seinen
+  32x32/64x64-Mastern) signiert *by design* fast identisch, Vergleich ueber Canvas-Groessen hinweg
+  ist also ein Kategoriefehler, den der Check nicht sehen kann, kein Kollaps. Gemessen am vollen
+  Korpus: **15 von 23** Findings vor Runde 3 waren cross-size (`settings`/`settings64`,
+  `compass`/`compassSmall`, `dice`/`dice16`, `controller`/`controller64`, `heart`/`heart16`,
+  `camera`/`camera64`, `clock16`/`clock64`, `contacts`/`chat16`, `videocall64`/`chat16`,
+  `mail`/`mailSmall`, plus Spiegel-Paare) -- eine skaleninvariante Signatur garantierte, dass jedes
+  davon feuert, und die gemeldete Distanz war bedeutungslos. Strukturell gefixt, nicht namensbasiert:
+  die `nearest`-Nachbarsuche in `critiqueFamily` (`src/critique.ts`) ist auf Peers mit identischem
+  `sprite.w`x`sprite.h` beschraenkt; `distanceMatrix` bleibt die volle rohe Paarmatrix ueber alle
+  Mitglieder (Daten, kein Finding). Kein Suffix-Namensliste noetig (anders als das
+  `viewSubjectStem`-Exemption fuer Character-Views) und deckt jede unterschiedlich benannte
+  Groessenvariante im Korpus uniform ab. **Die vier verbleibenden Same-Size-Findings sind echte
+  Craft-Signale und blieben erhalten**: `chat16`/`phone16` (0), `map`/`dice` (0.0813),
+  `video`/`gallery` (0.075), `calculator`/`clock` (0.0851). `examples/items-v2/*`
+  (durchgehend gleiche Canvas-Groesse pro Set) unveraendert, byte-identisch: potions 4, shields 4,
+  armor 3, swords 2 -- legitime Same-Size-Shared-Scaffold-Kollapse (ein rundes Schild, ein Buckler
+  und eine Magic Barrier teilen sich eine Kreissilhouette), nicht der in dieser Runde gefixte
+  Fehler. **C011 auf denselben Kategoriefehler geprueft, nicht geaendert**: `coveredPixelCount`
+  gegen einen ueber Canvas-Groessen gepoolten Median hat dasselbe strukturelle Risiko (ein
+  64px-Icon hat rein aus Flaechenskalierung ~4x die Masse eines gleichnamigen 32px-Icons).
+  Gemessen: C011 feuert **null Mal** im gesamten gebuendelten Korpus (`examples/icons/*`,
+  `characters-ro2/*`, `items-v2/*`), vor und nach dieser Runde. Die schlechtesten gemessenen
+  Cross-Size-Ratios bleiben unter dem `PARITY_FACTOR`-Gate (6x) -- `games.drw#controller64` 5.20x,
+  `weather.drw#weatherDetail` 5.52x -- knapp, aber nicht drueber. Nach der Vorgabe "erst messen,
+  nicht auf Theorie hin aendern" bleibt C011s Median ueber Canvas-Groessen gepoolt unveraendert;
+  die Naehe dieser beiden Ratios ist eine erneute Messung wert, falls eine kuenftige Familie die
+  Groessenspreizung weiter treibt. Neue Testabdeckung: Cross-Size-Paar, das nicht feuern darf, und
+  Same-Size-Paar, das feuern muss, in `tests/unit/critique.test.ts`.
 - [x] **1c-followup C011-Margin** → **gelöst = bewusst advisory**: Verhalten/Thresholds bewusst NICHT
   geändert (gleiche Begründung wie C009). Als dokumentierte bekannte Limitation geschlossen: Kommentar
   an `PARITY_FACTOR` in `src/critique.ts` (C011 gated nur Gewicht via Covered-Count-Ratio; Margin ist

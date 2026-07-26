@@ -156,11 +156,12 @@ All four, every time. There is no fifth condition and no "accepted anyway" claus
 1. `drawstic check file.drw --lint --json` → `diagnostics` is `[]` **and** all three
    `census.antiPatterns` counters are `0`.
 2. `drawstic critique file.drw --as <profile> --strict --json` → **exit code 0**, and
-   `critique.failedCodes` is empty. Exactly one code may remain: **`C009`**, and only when the two
-   siblings it names share a silhouette *on purpose* — a size variant, a faction recolor, a shared
-   plate or bottle shell. It is the one check that cannot distinguish a deliberate variant from a
-   duplicate. If it remains, name the pair and the reason in your final message. Every other code
-   is fixed, never explained away — each carries a `fix` field that tells you how.
+   `critique.failedCodes` is empty. Exactly one code may remain: **`C009`** (never across canvas
+   sizes — it only compares same-size siblings), and only when the two it names share a silhouette
+   *on purpose* — a faction recolor, a shared plate or bottle shell. It is the one check that
+   cannot distinguish a deliberate variant from a duplicate. If it remains, name the pair and the
+   reason in your final message. Every other code is fixed, never explained away — each carries a
+   `fix` field that tells you how.
 3. Every item in `critique.rubric.items` answered **by looking at a rendered image**, not by
    reasoning about the recipe. A clean `critique` verifies structure; only your eyes verify craft.
 4. `drawstic build file.drw --json` → every artifact in the list has `bytes > 0`.
