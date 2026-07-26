@@ -3,7 +3,7 @@
 How to build a **modular game figure** (48–64px, or 64×128 chibi with front/side/back — ADR-0089/0090)
 that reads as the archetype on the **first attempt with few iterations**. SKILL.md § Characters gives
 the mandatory order + checklist; this is the detail. Every rule comes from a shipped, check-clean
-recipe (`examples/characters-ro/*.drw`) or a rendered probe. `check` verifies grammar only — **seam
+recipe (`examples/characters-ro2/*.drw`) or a rendered probe. `check` verifies grammar only — **seam
 contact, silhouette legibility, a genuine side view, and archetype/sex reading are 100 % visual and
 silent to `check`; the render, the `--silhouette` black-out, and a per-joint `--crop` are the only
 judges, and a clean `critique --strict` verifies structure, not craft.**
@@ -225,7 +225,7 @@ draw mechFront 32x36:
   line #4a5464 16:29 16:33                             # jaw seam
   outline
 # side view: same crown+faceplate poly re-shaped for profile, band(...) sweeping to +x,
-# the optic bar pushed toward the front edge — see examples/characters-ro for a full rig.
+# the optic bar pushed toward the front edge — see examples/characters-ro2 for a full rig.
 ```
 
 ### 3d. Turban — stacked `band`s over a `dome` (reads as turban, not helmet)
@@ -372,7 +372,7 @@ draw figFront 64x128:
   cape stays an explicit `behind`/`front` layer (§6b) — auto-Z orders the body, overrides handle props.
 
 The rest of §6 is the detail this path builds on: what to redraw per view (§6a), the back-view rules
-and explicit prop z-order (§6b). See `examples/characters-ro/*.drw` for four full skeleton rigs.
+and explicit prop z-order (§6b). See `examples/characters-ro2/*.drw` for four full skeleton rigs.
 
 ### 6a. Front vs. side — a different pose, not a mirror
 
@@ -466,7 +466,7 @@ Three material knobs replace every hand tone patch (all trailing on the `materia
 
 - **`spread N%`** — widens `hi`+`shade` symmetrically. **This is the canonical fix for a dark base's
   C004 value range** — never a hand `litTone(…).intersect(rect…)` corner patch (that reads as a
-  rectangular block, is **W013**, and is CI-rejected in `examples/characters-ro`). *Caveat:* `model`
+  rectangular block, is **W013**, and is CI-rejected in `examples/characters-ro2`). *Caveat:* `model`
   (smooth) on a **dark monochrome** part only reaches C004's `p90` at the peak pixel, so `spread` runs
   **high** (assassin cloth ~780–900 %) and lifting a near-black base off the floor
   (`#2a2333`→`#37304a`) helps; `cel`'s flat top band reaches `p90` far cheaper — prefer `cel` for

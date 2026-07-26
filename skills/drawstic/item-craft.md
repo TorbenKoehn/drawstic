@@ -3,7 +3,7 @@
 How to build a **32x32 game-item set** (weapons, shields, armor parts, potions, loot) that reads as
 one production family on the **first attempt with few iterations**. SKILL.md § Items gives the
 mandatory order + checklist; this is the detail. Every rule here comes from shipped, check-clean
-recipes in `examples/items/*.drw`. `check` verifies grammar only — **set drift, weak silhouette
+recipes in `examples/items-v2/*/*.drw`. `check` verifies grammar only — **set drift, weak silhouette
 splits, and mushy materials are 100 % visual and silent to `check`; the render, the `sheet`, the
 native `@1`, and the built sidecars are the only judges.**
 

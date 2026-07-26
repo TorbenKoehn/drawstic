@@ -1,5 +1,9 @@
 # Runbook - Item and Equipment Sets with Atlas Export
 
+*Recipes consolidated for the 1.0 release — this run's `examples/items/` output lives in git
+history; the V2 rerun's `examples/items-v2/` output is unaffected. See `docs/release-1.0/README.md`
+(D3).*
+
 Status: completed on 2026-07-09. Procedure: `.claude/skills/craft-eval/SKILL.md`. Output: `examples/items/`. Evaluation report: `docs/item-dx-evaluation-2026-07-09.md`. Craft guide: `skills/drawstic/item-craft.md`.
 
 V2 rerun completed on 2026-07-09 with 64x64 items in `examples/items-v2/`. Evaluation report: `docs/item-dx-v2-evaluation-2026-07-09.md`. Model tiers used GPT labels instead of legacy labels: `fable -> gpt-5.5`, `opus -> gpt-5.4`, `sonnet -> gpt-5.4-mini`.

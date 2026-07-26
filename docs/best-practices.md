@@ -332,9 +332,9 @@ For one-off scenes, local bindings and local `pal` entries are usually clearer.
 Agents should verify recipes through the CLI before claiming success:
 
 ```sh
-bun run src/cli.ts check examples/scenes/island.drw --json
-bun run src/cli.ts render examples/scenes/island.drw#island --preview
-bun run src/cli.ts render examples/scenes/island.drw#island --png@4 --out out.png
+bun run src/cli.ts check examples/scenes-v3/island.drw --json
+bun run src/cli.ts render examples/scenes-v3/island.drw#island --preview
+bun run src/cli.ts render examples/scenes-v3/island.drw#island --png@4 --out out.png
 bun run test
 ```
 

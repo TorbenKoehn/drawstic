@@ -364,7 +364,7 @@ describe('context', () => {
   })
 
   test('--json gives an oversized drawing a largePreviewHint and no inline preview', () => {
-    const r = runJson('context', 'examples/scenes/island.drw', '--json')
+    const r = runJson('context', 'examples/scenes-v3/island.drw', '--json')
     expect(r.exitCode).toBe(0)
     const body = r.json as {
       context: {
@@ -374,7 +374,7 @@ describe('context', () => {
     const island = body.context.drawings.find((d) => d.name === 'island')
     expect(island?.preview).toBeNull()
     expect(island?.largePreviewHint).toBe(
-      'drawstic render examples/scenes/island.drw#island --preview --fit 80x40',
+      'drawstic render examples/scenes-v3/island.drw#island --preview --fit 80x40',
     )
   })
 
@@ -396,13 +396,13 @@ describe('context', () => {
   })
 
   test('text mode prints a hint line (no inline preview) for oversized drawings', () => {
-    const r = run('context', 'examples/scenes/island.drw')
+    const r = run('context', 'examples/scenes-v3/island.drw')
     expect(r.exitCode).toBe(0)
     const text = r.stdout.toString('utf8')
-    expect(text).toContain('  island 160x96')
+    expect(text).toContain('  island 192x128')
     expect(text).toContain('    size: header; pal: -')
     expect(text).toContain(
-      '    hint: drawstic render examples/scenes/island.drw#island --preview --fit 80x40',
+      '    hint: drawstic render examples/scenes-v3/island.drw#island --preview --fit 80x40',
     )
   })
 

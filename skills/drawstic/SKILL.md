@@ -197,7 +197,7 @@ be a `pixels:` grid with a `pal` (palette keys = one ASCII letter, `.` = transpa
   **`z` depth drives auto-Z** — the body's paint order falls out of the pose (no hand `behind`/`front`
   on limbs; explicit `behind`/`front` stays the override for props). A delta past a joint's `limit` is
   a positioned error. `render --explain` prints solved joints + the paint order. See
-  character-craft.md §6·0 and `examples/characters-ro/*.drw`.
+  character-craft.md §6·0 and `examples/characters-ro2/*.drw`.
 - **Declarative light + material** (default shading path, ADR-0086) — one named light drives
   everything, so encodings can't drift: `light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%` (travel dir;
   source up-left ⇒ up-left edge lit) or `light torch = at 12:8 #ffb060 gain 1.4` (point source; `amb

@@ -148,7 +148,9 @@ recipes drop it; the C004 spread now comes from the material's own `spread` (dar
 lifted slightly off the floor so `spread` reaches `p90−p10 ≥ 0.15` without a patch — this is a
 **W013-lint preview**: `litTone/shadowTone` clipped to a sub-rect on a modelled region is the
 anti-pattern, material `spread` the canonical replacement). A CI guard
-(`tests/unit/examples-critique.test.ts`) fails if the idiom reappears in `examples/characters-ro`.
+(`tests/unit/examples-critique.test.ts`) fails if the idiom reappears in `examples/characters-ro2`
+(the `characters-ro` generation was consolidated away for the 1.0 release, see
+[docs/release-1.0/README.md](../release-1.0/README.md) D3; the guard now watches its successor).
 
 Known limit (recorded, not fixed here): reaching C004 on a **dark monochrome** part via *smooth*
 `model` needs a high `spread` (assassin `~780–820 %`) because the form gradient lifts only the peak

@@ -1,5 +1,8 @@
 # Runbook - Modular Game Figures
 
+*Recipes consolidated for the 1.0 release — this run's recipes live in git history; see
+`docs/release-1.0/README.md` (D3).*
+
 Status: completed on 2026-07-09. Procedure: `.claude/skills/craft-eval/SKILL.md`. Output: `examples/characters/`. Evaluation report: `docs/character-dx-evaluation-2026-07-09.md`. Craft guide: `skills/drawstic/character-craft.md`.
 
 ## Goal

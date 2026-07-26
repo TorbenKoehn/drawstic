@@ -20,10 +20,10 @@ const categoryOf = (file: string): string | null => {
   if (p.includes('/icons/')) {
     return 'icon'
   }
-  if (p.includes('/characters/')) {
+  if (p.includes('/characters-ro2/')) {
     return 'character'
   }
-  if (p.includes('/items/') || p.includes('/items-v2/')) {
+  if (p.includes('/items-v2/')) {
     return 'item'
   }
   if (p.includes('/scenes')) {
@@ -69,16 +69,16 @@ describe('examples pass `critique --strict` (CI regression gate)', () => {
 // W2-1b: the RO characters must draw their C004 value spread from the material `spread`/form
 // shading, never from the retired hand corner-patch idiom (a `fill` of a lit/shadow tone clipped to
 // a rectangle). This guards the recipes against regressing to `fill hi(c) region.intersect(rect…)`.
-describe('characters-ro recipes are free of the manual value-spread corner-patch idiom (W2-1b)', () => {
+describe('characters-ro2 recipes are free of the manual value-spread corner-patch idiom (W2-1b)', () => {
   /** A `fill` line clipping a *tone-shifted* colour to a sub-rect — the value-spread patch. */
   const CLIPPED_FILL = /^\s*fill\b.*\.intersect\(/
   const TONE_SHIFT = /litTone|shadowTone|\bhi\(|\blo\(|capeHi|capeDeep/
   const FN_RAMP = /^\s*fn\s+(hi|lo)\s*\(/
 
   const roFiles = (): string[] =>
-    readdirSync(join(EXAMPLES, 'characters-ro'), { encoding: 'utf8' })
+    readdirSync(join(EXAMPLES, 'characters-ro2'), { encoding: 'utf8' })
       .filter((f) => f.endsWith('.drw'))
-      .map((f) => join(EXAMPLES, 'characters-ro', f))
+      .map((f) => join(EXAMPLES, 'characters-ro2', f))
 
   test('no `fill <tone>.intersect(rect)` patch and no `fn hi/lo` ramp survives', () => {
     const offenders: string[] = []

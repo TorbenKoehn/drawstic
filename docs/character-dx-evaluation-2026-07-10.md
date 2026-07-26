@@ -1,5 +1,8 @@
 # Character-DX Evaluation — RO-Style Chibi, Declarative Pipeline (2026-07-10)
 
+*Recipes consolidated for the 1.0 release — this run's recipes live in git history; see
+`docs/release-1.0/README.md` (D3).*
+
 This rerun rebuilt the modular-character task under the **new declarative shade pipeline as the
 default** (`light` / `material` / `lit` / `model` / `cel`, `pin`/`fit` assembly, and
 `critique --as character --strict` as the done-gate). Four builders each authored a

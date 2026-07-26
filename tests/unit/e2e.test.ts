@@ -402,26 +402,24 @@ describe('e2e', () => {
     const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
     try {
       const engine = new Engine(process.cwd())
-      const mod = engine.loadEntry('examples/scenes/island.drw')
+      const mod = engine.loadEntry('examples/scenes-v3/island.drw')
       const entry = mod.definitions.get('island')
       if (!entry) {
         throw new Error('no island')
       }
       const sprite = engine.defToSprite(entry, { line: 1, column: 1 })
-      expect(sprite.w).toBe(160)
-      expect(sprite.h).toBe(96)
+      expect(sprite.w).toBe(192)
+      expect(sprite.h).toBe(128)
       const stats = spriteStats(sprite)
       expect(stats.distinctOpaqueColorCount).toBeGreaterThan(20)
-      expect(stats.coverageBBox).toEqual({ width: 160, height: 96 })
+      expect(stats.coverageBBox).toEqual({ width: 192, height: 128 })
       const artifacts = buildModule(engine, mod, out)
       const names = artifacts.map((a) => a.path.replace(/\\/g, '/').split('/').slice(-1)[0])
       expect(names).toContain('island.png')
-      expect(names).toContain('island@2x.png')
       expect(names).toContain('island@4x.png')
-      expect(names).toContain('island.svg')
-      const png = decodePng(new Uint8Array(readFileSync(join(out, 'scenes', 'island.png'))))
-      expect(png.w).toBe(160)
-      expect(png.h).toBe(96)
+      const png = decodePng(new Uint8Array(readFileSync(join(out, 'island.png'))))
+      expect(png.w).toBe(192)
+      expect(png.h).toBe(128)
     } finally {
       rmSync(out, { recursive: true, force: true })
     }
