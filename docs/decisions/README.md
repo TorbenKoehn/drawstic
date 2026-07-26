@@ -7,14 +7,14 @@ add an ADR here and reflect it in [AGENTS.md](../../AGENTS.md) and the affected 
 | # | Decision | Status |
 |---|----------|--------|
 | [0001](0001-framebuffer-first-core.md) | Framebuffer-first rendering core | Accepted |
-| [0002](0002-hybrid-primitives-and-indexed-palette.md) | Hybrid primitives + indexed single-char palette | Accepted |
+| [0002](0002-hybrid-primitives-and-indexed-palette.md) | Hybrid primitives + indexed single-char palette | Accepted (colour-model aspect superseded by 0009) |
 | [0003](0003-themes-as-style-guides.md) | Themes are style guides (machine + LLM dual artifact) | Accepted |
 | [0004](0004-total-not-turing-complete.md) | Total language, not Turing-complete (runtime budget) | Accepted |
 | [0005](0005-theme-composition-by-fold.md) | Theme composition by ordered fold, not inheritance | Accepted (refined by 0081) |
 | [0006](0006-modules-and-content-output-separation.md) | Modules: all public; content/output separation (`export`) | Accepted |
 | [0007](0007-visual-not-byte-determinism.md) | Visual (pixel) determinism, not byte determinism | Accepted (refined by 0027, 0028, 0029) |
 | [0008](0008-cli-design-brief.md) | CLI design brief (`context`) for agent ergonomics | Accepted (refined by 0030, 0031) |
-| [0009](0009-first-class-colours-gradients-filters.md) | First-class colours, gradients & filters (supersedes 0002 colour model) | Accepted (1-bit part superseded by 0025; residual resolved by 0033) |
+| [0009](0009-first-class-colours-gradients-filters.md) | First-class colours, gradients & filters (supersedes 0002 colour model) | Accepted (refined by 0025; residual resolved by 0033) |
 | [0010](0010-ufcs-method-style-calls.md) | UFCS — method-style calls (`x.f(a)` ≡ `f(x, a)`) for readable composition | Accepted |
 | [0011](0011-cursor-and-relative-motion.md) | The cursor and `to`/`by` relative motion (no relative-point literal) | Superseded by 0061 |
 | [0012](0012-masks-and-path-combination.md) | Masks & path combination as coverage buffers (UFCS set-ops) | Accepted |

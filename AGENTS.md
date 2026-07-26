@@ -32,7 +32,7 @@ This is a single library project.
 
 ```
 package.json    # Library package.json (bin: drawstic → dist/bin.js; subpath exports, no barrel — ADR-0065)
-tsconfig.json   # Strict TypeScript config (src + bench + tests)
+tsconfig.json   # Strict TypeScript config (src + tests)
 tsconfig.build.json # Emit config for dist/ (per-file ESM + .d.ts via plain tsc — ADR-0065)
 biome.json      # Formatter/linter config
 AGENTS.md       # This file - project rules and structure
@@ -69,8 +69,6 @@ src/            # Main library code (also code when importing from BunJS/Deno)
 dist/           # Compiled library output (bun run build; only in NPM package)
 tests/          # Tests
   unit/           # lexer/parser/dmath/eval/fmt + e2e (render → PNG → decode → assert)
-    bench/         # Tests for the bench dev tooling
-bench/          # token-efficiency bench suite (see bench/README.md)
 examples/
   basic-shapes/   # circle.drw, square.drw
   showcase/       # showcase.drw + parts.drw + themes.drw — full-surface e2e example
@@ -113,7 +111,7 @@ skills/          # User-facing agent skills, consumable by LLM agents (the actua
 - [Recipe examples](docs/dsl-examples.md) — worked Recipes showing the language in use.
 - [Motif cookbook](docs/motif-cookbook.md) — tested, copyable snippets for recurring scene motifs (palm, cloud, water, night lighting, dunes, starfield).
 - [Code style](docs/code-style.md) — detailed code style rules.
-- [Bench suite](bench/README.md) — token-efficiency + readability/editability benchmarking.
+- [Release 1.0 Programme](docs/release-1.0/README.md) — Release-1.0-Programm: Audits, Entscheidungen, Phasen.
 - [Scene-DX Evaluation 2026-07-08](docs/scene-dx-evaluation-2026-07-08.md) - first multi-agent LLM-authoring evaluation for seven scenes; overall grade 1.9; main gaps were lighting ergonomics, organic closed shapes, verification workflow, and composition guidance.
 - [Scene-DX Rerun Evaluation 2026-07-08](docs/scene-dx-rerun-evaluation-2026-07-08.md) - blind rebuild of all seven scenes after the first fix wave; overall grade improved from 1.9 to 1.7, with clear gains in lighting and diagnostics.
 - [Scene-DX Masterpiece Evaluation 2026-07-08](docs/scene-dx-masterpiece-evaluation-2026-07-08.md) - larger-canvas scene rebuild with masks, transforms, and richer composition; overall grade improved to 1.6; remaining gaps shifted from syntax to craft discipline.
