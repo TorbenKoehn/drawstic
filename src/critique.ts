@@ -1563,6 +1563,16 @@ const viewLandmarkChecks = (
  * figure mask when a plate is detected on that sprite, else off its full covered mask
  * (C009-Plate-Blindheit fix) — a non-plate character/item sprite is unaffected.
  *
+ * **Calls `detectPlateFigure` in `'loose'` mode (release 1.0 hardening, round 2 — see
+ * {@link PlateDetectionMode}'s doc comment for the full two-tolerance rationale).** `render
+ * --silhouette` reuses the same detector under its own stricter `'strict'` mode; briefly sharing
+ * one calibration regressed this exact check — `communication.drw`'s `phone`/`contacts`/`feed`
+ * (thin glyphs on a shared plate) fell back to signing their full mask and collapsed to distance 0,
+ * the original plate-blindness bug, because `'strict'`'s extra gates (tuned for `--silhouette`'s
+ * different cost trade-off) also rejected their genuine, if small, plate. `'loose'` is the base
+ * checks only (edge-touch, area dominance, the absolute figure-count floor) — unchanged from
+ * before that round, verified byte-identical against the pre-round corpus C009 counts.
+ *
  * **C009 is scoped to same-canvas-size siblings** (release 1.0 hardening, round 3):
  * {@link silhouetteSignature} is scale-invariant by construction, so a correctly-built size
  * ladder (`icon-craft.md` §6 "redraw, never scale" — a 16×16 hand-pixel redraw alongside its
@@ -1584,7 +1594,7 @@ export const critiqueFamily = (
   const facts = members.map((m) => {
     const { covered, luminances } = scanCoverage(m.sprite)
     const metrics = computeCritiqueMetrics(m.sprite, luminances)
-    const plateFigure = detectPlateFigure(m.sprite, covered)
+    const plateFigure = detectPlateFigure(m.sprite, covered, 'loose')
     const signature = plateFigure
       ? silhouetteSignature(plateFigure.mask, m.sprite.w, plateFigure.bbox)
       : silhouetteSignature(covered, m.sprite.w, metrics.bbox)

@@ -302,14 +302,49 @@ export type PlateFigure = {
 }
 
 /**
+ * {@link detectPlateFigure}'s two calibrations (release 1.0 hardening, round 2). `'strict'`
+ * (`render --silhouette`'s caller) adds the fully-opaque exclusion, {@link PLATE_ROW_SPAN_MIN} and
+ * {@link PLATE_MIN_FIGURE_FRACTION} on top of the base checks — measured to close every non-icon
+ * false positive in the bundled corpus (characters, items, scenes, parts included), at the cost of
+ * a few thin real icon glyphs (`chat16`, `phone`, `contacts`, `feed`, `bank`, `bank64`) falling back
+ * to the full mask. `'loose'` (C009's caller) is the base checks only — edge-touch, area dominance,
+ * the absolute {@link PLATE_MIN_FIGURE_FLOOR} — unchanged from before this release's hardening.
+ *
+ * Both calibrations share one flood-fill implementation; only the acceptance gates differ. This is
+ * a deliberate two-tolerance design, not an unresolved compromise: a `--silhouette` false positive
+ * costs one confusing image, so it can afford to also lose a few thin true positives to close every
+ * false one; a C009 false *negative* silently un-fixes the plate-blindness bug this detector exists
+ * for (two distinct glyphs on the same plate/tile collapsing to one signature — `communication.drw`'s
+ * `phone`/`contacts`/`feed` did exactly this at distance 0 the one release `'strict'` briefly covered
+ * both call sites), which is worse. A single stricter-than-necessary threshold that "fixes" one call
+ * site by quietly breaking the other is not an acceptable trade; see the two calibrations' own
+ * corpus numbers in their constants' doc comments.
+ *
+ * **Why not a single sharper discriminator instead of two tolerances:** measured first. The
+ * hypothesis that a real glyph's bbox sits *strictly interior* to the plate's bbox (inset ≥ 1–2px on
+ * all four sides, unlike a scene-prop accent that runs to the prop's own edge) does not separate the
+ * populations either — `market.drw#barrel`'s minimum inset (2px) ties `communication.drw#phone`'s
+ * (2px), and `characters-ro2/assassin.drw#legsFront` (min inset 9px) and `wizard.drw#robeSide` (min
+ * inset 8px) are *more* interior than several genuine thin glyphs. A left/right-vs-top/bottom
+ * symmetry variant fares no better: `cloakFront`/`cloakBack`'s asymmetry (34–49px) is an extreme
+ * outlier a threshold could catch, but `legsFront`/`robeSide`/`archerSheet`'s asymmetry (2–14px)
+ * overlaps real glyphs' own optical-centering asymmetry (`contacts` top/bottom differs by 10px,
+ * `cart` left/right by 3px) — no threshold separates them without also cutting the real glyphs it
+ * must keep. Recorded so a future attempt at one shared threshold starts from this measurement
+ * rather than re-discovering it.
+ */
+export type PlateDetectionMode = 'loose' | 'strict'
+
+/**
  * Detects a "plate" (an opaque background tile filling the canvas to its margin, per
  * `icon-craft.md`'s mandatory tile/plate build order) from pixel evidence alone — never assumed
  * from a `--as` profile — and returns the covered-mask subset that is genuinely the *figure* (the
  * glyph stamped onto the plate). Two callers sign/silhouette the returned figure instead of the
- * raw covered mask: `critique.ts`'s C009 sibling-silhouette check (the original
- * C009-Plate-Blindheit fix — an icon's covered mask *is* the plate, so every glyph on it used to
- * collapse to one signature) and `render --silhouette` (ADR-0083 amendment — the same plate
- * dominates the alpha mask, so silhouetting it produced a featureless black rounded square).
+ * raw covered mask, each under its own {@link PlateDetectionMode} (see its doc comment):
+ * `critique.ts`'s C009 sibling-silhouette check (`'loose'`, the original C009-Plate-Blindheit fix —
+ * an icon's covered mask *is* the plate, so every glyph on it used to collapse to one signature)
+ * and `render --silhouette` (`'strict'`, ADR-0083 amendment — the same plate dominates the alpha
+ * mask, so silhouetting it produced a featureless black rounded square).
  *
  * Seeds a tolerant flood fill from every covered pixel within the {@link PLATE_EDGE_BAND_FRACTION}
  * canvas-edge band — the plate's own thin margin — growing through covered neighbours whose OkLab
@@ -318,7 +353,7 @@ export type PlateFigure = {
  * and order-independent), not a single fixed reference colour: it follows a shaded/gradient
  * plate's own smooth colour drift all the way across the tile while stopping cold at a genuinely
  * different-coloured glyph, so an anti-aliased plate edge or a shaded plate still counts as plate
- * without ever bleeding into the silhouette it carries.
+ * without ever bleeding into the silhouette it carries. Shared by both modes.
  *
  * A flood region counts as a plate only when **both** hold: (a) the seed band touches *all four*
  * canvas edges — a rectangular tile reaches every margin, where a framed character/item/icon
@@ -327,26 +362,31 @@ export type PlateFigure = {
  * outlined character/item silhouette, which floods just its own outline) never qualifies. Both
  * conditions are load-bearing: several non-plate icons touch 2–3 edges without ever reaching
  * dominance, and a solid single-hue prop can flood to 100 % without ever touching all four edges.
+ * Shared by both modes.
  *
- * Returns `null` when no plate is detected (the common case), when subtracting the detected plate
- * would leave fewer than {@link PLATE_MIN_FIGURE_FLOOR}px or less than {@link
- * PLATE_MIN_FIGURE_FRACTION} of the covered mass (a flat plate-only sprite, or a large solid part
- * with only a tiny escaped fragment — neither a distinguishable glyph), or when the plate's own
- * rows don't {@link PLATE_ROW_SPAN_MIN} span its full width (an organic figure, not a filled tile)
- * — the caller falls back to the full covered mask, exactly as before this fix. Also declines
- * outright for a fully-opaque sprite (a full-bleed `scene`, painted edge to edge with no
- * transparent margin at all): `icon-craft.md`'s plate/tile contract always leaves a transparent
+ * Returns `null` when no plate is detected (the common case) or when subtracting the detected
+ * plate would leave fewer than {@link PLATE_MIN_FIGURE_FLOOR}px (a flat plate-only sprite with no
+ * distinguishable glyph) — the caller falls back to the full covered mask, exactly as before this
+ * fix. Under `'strict'` mode only, also declines when less than {@link PLATE_MIN_FIGURE_FRACTION}
+ * of the covered mass survives (a large solid part with only a tiny escaped fragment), when the
+ * plate's own rows don't {@link PLATE_ROW_SPAN_MIN} span its full width (an organic figure, not a
+ * filled tile), or for a fully-opaque sprite (a full-bleed `scene`, painted edge to edge with no
+ * transparent margin at all — `icon-craft.md`'s plate/tile contract always leaves a transparent
  * canvas margin around it, so a sprite with zero transparent pixels cannot structurally be that
- * kind of plate, no matter how the flood chains.
+ * kind of plate, no matter how the flood chains).
  */
-export const detectPlateFigure = (sprite: Sprite, covered: Uint8Array): PlateFigure | null => {
+export const detectPlateFigure = (
+  sprite: Sprite,
+  covered: Uint8Array,
+  mode: PlateDetectionMode = 'strict',
+): PlateFigure | null => {
   const w = sprite.w
   const h = sprite.h
   let coveredCount = 0
   for (let p = 0; p < covered.length; p++) {
     coveredCount += covered[p] ?? 0
   }
-  if (coveredCount === 0 || coveredCount === covered.length) {
+  if (coveredCount === 0 || (mode === 'strict' && coveredCount === covered.length)) {
     return null
   }
   const lab: (Lab | undefined)[] = new Array(covered.length)
@@ -433,9 +473,11 @@ export const detectPlateFigure = (sprite: Sprite, covered: Uint8Array): PlateFig
   if (plateCount / coveredCount < PLATE_AREA_DOMINANCE_MIN) {
     return null
   }
-  const plateBBox = maskBBox(plate, w, h)
-  if (!plateBBox || !rowSpanFraction(plate, w, plateBBox, PLATE_ROW_SPAN_TOLERANCE_FRACTION)) {
-    return null
+  if (mode === 'strict') {
+    const plateBBox = maskBBox(plate, w, h)
+    if (!plateBBox || !rowSpanFraction(plate, w, plateBBox, PLATE_ROW_SPAN_TOLERANCE_FRACTION)) {
+      return null
+    }
   }
   const figure = new Uint8Array(covered.length)
   let figureCount = 0
@@ -447,7 +489,7 @@ export const detectPlateFigure = (sprite: Sprite, covered: Uint8Array): PlateFig
   }
   if (
     figureCount < PLATE_MIN_FIGURE_FLOOR ||
-    figureCount / coveredCount < PLATE_MIN_FIGURE_FRACTION
+    (mode === 'strict' && figureCount / coveredCount < PLATE_MIN_FIGURE_FRACTION)
   ) {
     return null
   }
@@ -472,14 +514,18 @@ export type SilhouetteResult = {
  * before any output kind, so it composes with `--ascii`/`--preview`/`--inspect`/PNG and with
  * `--crop`/`--fit`/`--grid`.
  *
- * **Plate-aware (ADR-0083 amendment, reuses {@link detectPlateFigure}):** an icon built the
- * canonical way (`icon-craft.md`) stamps its glyph onto an opaque plate/tile, so the covered mask
- * *is* the plate — silhouetting it produced a featureless black rounded square, zero shape
- * information. When a plate is detected, the mask is the subtracted *figure* instead of the full
- * covered mask; `plateDetected` tells the caller this happened, so it can say so rather than
- * silently showing a different image than the naive full-mask one would. A non-plate sprite (a
- * character/item silhouette on transparent canvas) is unaffected — `detectPlateFigure` returns
- * `null` and the full covered mask silhouettes exactly as before this fix.
+ * **Plate-aware (ADR-0083 amendment, reuses {@link detectPlateFigure} in `'strict'` mode — see
+ * {@link PlateDetectionMode}'s doc comment):** an icon built the canonical way (`icon-craft.md`)
+ * stamps its glyph onto an opaque plate/tile, so the covered mask *is* the plate — silhouetting it
+ * produced a featureless black rounded square, zero shape information. When a plate is detected,
+ * the mask is the subtracted *figure* instead of the full covered mask; `plateDetected` tells the
+ * caller this happened, so it can say so rather than silently showing a different image than the
+ * naive full-mask one would. A non-plate sprite (a character/item silhouette on transparent
+ * canvas) is unaffected — `detectPlateFigure` returns `null` and the full covered mask silhouettes
+ * exactly as before this fix. `'strict'` mode is deliberate here (unlike C009's `'loose'`): a
+ * `--silhouette` false positive corrupts the one image the caller is looking at, so it is worth
+ * losing a few thin real plates (falling back to the full mask, still correct, just less precise)
+ * to close every false positive measured on non-icon content.
  */
 export const silhouetteSprite = (sprite: Sprite): SilhouetteResult => {
   const covered = new Uint8Array(sprite.w * sprite.h)
@@ -488,7 +534,7 @@ export const silhouetteSprite = (sprite: Sprite): SilhouetteResult => {
       covered[p] = 1
     }
   }
-  const plateFigure = detectPlateFigure(sprite, covered)
+  const plateFigure = detectPlateFigure(sprite, covered, 'strict')
   const mask = plateFigure ? plateFigure.mask : covered
   const data = new Uint8Array(sprite.data.length)
   for (let p = 0; p < mask.length; p++) {

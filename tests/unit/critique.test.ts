@@ -892,6 +892,41 @@ draw iconC:
     const direct = signatureDistance(sigOf(solidPlate), sigOf(tri))
     expect(fam?.metrics.distanceMatrix[0]?.[1]).toBe(direct)
   })
+
+  // Regression (release 1.0 hardening, round 2): `detectPlateFigure` briefly shared one
+  // calibration between C009 and `render --silhouette`; the `--silhouette`-tuned gates (added to
+  // close non-icon false positives, see `PlateDetectionMode` in src/preview.ts) also rejected
+  // several thin real icon plates, so C009 signed their *full* covered mask again and these three
+  // real, distinct glyphs on `examples/icons/communication.drw`'s shared plate collapsed back to
+  // distance 0 — the exact plate-blindness bug this describe block exists to fix. `critiqueFamily`
+  // must call `detectPlateFigure` in `'loose'` mode (unchanged from before that round) so this never
+  // silently returns; `tests/unit/examples-critique.test.ts` additionally pins the exact C009 count
+  // per bundled icon/item family.
+  test("communication.drw's phone/contacts/feed (thin glyphs on a shared plate) never collapse to distance 0", () => {
+    const engine = new Engine(process.cwd())
+    const mod = engine.loadEntry(join(process.cwd(), 'examples/icons/communication.drw'))
+    const renderReal = (name: string): Sprite => {
+      const entry = mod.definitions.get(name)
+      if (entry?.kind !== 'draw') {
+        throw new Error(`no drawing ${name} in communication.drw`)
+      }
+      return engine.renderFragment(entry, name, null, { line: 1, column: 1 })
+    }
+    const fam = critiqueFamily([
+      { name: 'phone', sprite: renderReal('phone') },
+      { name: 'contacts', sprite: renderReal('contacts') },
+      { name: 'feed', sprite: renderReal('feed') },
+    ])
+    const idx = (name: string): number =>
+      fam?.metrics.members.findIndex((m) => m.name === name) ?? -1
+    const distance = (a: string, b: string): number | undefined =>
+      fam?.metrics.distanceMatrix[idx(a)]?.[idx(b)]
+    expect(distance('phone', 'contacts')).toBeGreaterThan(0)
+    expect(distance('phone', 'feed')).toBeGreaterThan(0)
+    expect(distance('contacts', 'feed')).toBeGreaterThan(0)
+    const c9 = fam?.checks.filter((c) => c.code === CRITIQUE_CODE.siblingCollapse) ?? []
+    expect(c9).toEqual([])
+  })
 })
 
 describe('C011 family weight parity', () => {
