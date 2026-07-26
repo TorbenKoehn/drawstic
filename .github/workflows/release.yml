@@ -40,8 +40,29 @@ jobs:
       - name: Stamp version from tag
         run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
 
+      # Catches a broken files/exports/bin/shebang before it reaches users:
+      # packs the real tarball, installs it into a scratch project like a
+      # consumer would, and runs the CLI under Node (not Bun).
+      - name: Pre-publish packaging smoke test (Node, not Bun)
+        run: |
+          set -euo pipefail
+          SMOKE_DIR="$(mktemp -d)"
+          npm pack --pack-destination "$SMOKE_DIR"
+          TARBALL="$(ls "$SMOKE_DIR"/drawstic-*.tgz)"
+          pushd "$SMOKE_DIR" >/dev/null
+          npm init -y >/dev/null
+          npm install "$TARBALL"
+          npx drawstic help
+          printf 'draw tinyIcon 4x4:\n  bg #ff0000\n' > tiny.drw
+          npx drawstic render tiny.drw#tinyIcon --out tiny.png
+          test -s tiny.png
+          echo "packed CLI smoke OK: $(wc -c < tiny.png) bytes"
+          popd >/dev/null
+
       - name: Publish to npm
-        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
 
       - name: Create GitHub Release
         env:

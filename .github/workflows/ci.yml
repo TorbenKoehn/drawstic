@@ -50,6 +50,26 @@ jobs:
           node dist/bin.js render examples/basic-shapes/circles.drw#circleIcon --out /tmp/ci-circle.png
           test -s /tmp/ci-circle.png && echo "rendered $(wc -c < /tmp/ci-circle.png) bytes"
 
+      # Catches a broken files/exports/bin/shebang before it reaches users:
+      # packs the real tarball, installs it into a scratch project like a
+      # consumer would, and runs the CLI under Node (not Bun). Mirrors the
+      # release.yml pre-publish smoke test so packaging regressions fail on PRs.
+      - name: Packed tarball smoke test (Node, not Bun)
+        run: |
+          set -euo pipefail
+          SMOKE_DIR="$(mktemp -d)"
+          npm pack --pack-destination "$SMOKE_DIR"
+          TARBALL="$(ls "$SMOKE_DIR"/drawstic-*.tgz)"
+          pushd "$SMOKE_DIR" >/dev/null
+          npm init -y >/dev/null
+          npm install "$TARBALL"
+          npx drawstic help
+          printf 'draw tinyIcon 4x4:\n  bg #ff0000\n' > tiny.drw
+          npx drawstic render tiny.drw#tinyIcon --out tiny.png
+          test -s tiny.png
+          echo "packed CLI smoke OK: $(wc -c < tiny.png) bytes"
+          popd >/dev/null
+
   # Coverage gate: enforces bunfig.toml's coverageThreshold (bun test exits
   # non-zero below it) and surfaces the per-file table on the PR — both as a
   # job summary and a sticky comment, so reviewers see it without opening logs.
