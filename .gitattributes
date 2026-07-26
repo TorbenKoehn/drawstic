@@ -1,0 +1,14 @@
+# The repo is LF-only. Contributors on Windows would otherwise commit CRLF and turn a
+# two-line recipe edit into a whole-file diff — which is exactly what happened to
+# examples/scenes-v3/*.drw before this file existed.
+* text=auto eol=lf
+
+# Recipes are text and must diff line by line, whatever the extension heuristics think.
+*.drw text eol=lf
+
+# Rendered artifacts and fonts are binary; never touch their bytes.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ttf binary
+*.otf binary

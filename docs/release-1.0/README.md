@@ -48,25 +48,30 @@ Status-Legende: `[ ]` offen · `[~]` läuft · `[x]` fertig (verifiziert: `bun t
 ### W3-0 — Shading-Rauschen `[x]`
 - [x] Dither aus beiden Shading-Pfaden entfernt (`c34d432`), ADR-0091-Amendment, Korpus neu gerendert.
 
-### W3-1 — Aufräumen ohne Sprachbruch (parallel)
-- [ ] **A** Design-Entscheid Roh-Shading-Quartett + `tileset`/`atlas`-Merge-Form (Probe-Renders).
-- [ ] **B** Packaging/CI: `NODE_AUTH_TOKEN`, `--provenance`, `npm pack`-Smoke-Test unter Node.
-- [ ] **C** ADR-Index-Korrekturen + AGENTS.md-Doks-Index.
-- [ ] **E** Korpus-Konsolidierung (D3) inkl. Test-/Doc-Referenzen.
+### W3-1 — Aufräumen ohne Sprachbruch (parallel) `[x]`
+- [x] **A** Design-Entscheid Roh-Shading-Quartett → ADR-0097 (`bbc5caf`); `atlas`-Merge-Form → ADR-0096 §3.
+- [x] **B** Packaging/CI: `NODE_AUTH_TOKEN`, `--provenance`, `npm pack`-Smoke-Test (`7cb4631`).
+- [x] **C** ADR-Index-Korrekturen + AGENTS.md-Doks-Index (`d91ba1a`).
+- [x] **E** Korpus-Konsolidierung (D3) inkl. Test-/Doc-Referenzen (`184657c`).
 
 ### W3-2 — Sprach-Freeze (sequenziell, Kern-Dateien)
-- [ ] Entfernungen (D1) + `fit anchor`-Fehler + `pin`-Transform-Bug + `mix`-Enum-Fix.
-- [ ] Umbenennungen (D1) über Parser/Eval/Lint/Spec/Skill/Beispiele.
-- [ ] `tileset`/`atlas`-Merge + Builtin-Reservierung vereinheitlichen + Export-Pfad-Konvention (D7).
-- [ ] Roh-Shading-Quartett nach Entscheid A.
+- [x] Entfernungen (D1) + `fit anchor`-Fehler + `mix`-Enum-Fix (`32cd0c3`).
+- [x] Umbenennungen (D1) über Parser/Eval/Lint/Spec/Skill/Beispiele (`8a2b488`).
+- [x] Export-Pfad-Konvention (D7) + Lint `W016` (`8a2b488`); Pfadkollision → `E018` (`0aaf5d9`).
+- [x] Roh-Shading-Quartett raus, `REGION.edge()` rein (`eb91eac`, ADR-0097).
+- [~] `atlas`-Merge + Builtin-Reservierung + Licht-Auflösungsregel + `pin`-Transform-Bug.
 
 ### W3-3 — Beispiele auf den kanonischen Pfad
-- [ ] `scenes-v3` (221 Roh-Shading-Aufrufe), `icons`, `items-v2` auf `light`/`material`/`model`.
-- [ ] Spec-Grammatik-Sync (pin/fit, behind/front, quantize, organische Konstruktoren, CLI-Tabelle).
+- [x] `icons` auf `light`/`material`/`model` (`eb91eac`).
+- [x] `scenes-v3` — 74 Aufrufe migriert (`e4fe7c6`). Die fünf geschützten Szenen sind
+      pixel-erhaltend (arctic/desert/island/market Δmax 2, reef Δmax 8, jeweils reines
+      Quantisierungsrauschen des Gradient-Pfades); volcano + orbit bewusst verbessert.
+- [~] `items-v2` (läuft mit dem `atlas`-Merge).
+- [ ] Spec-Grammatik-Sync (pin/fit, behind/front, quantize, organische Konstruktoren, CLI-Tabelle, E026).
 
 ### W3-4 — Product-Skill + README
-- [ ] Skill-Neubau (D5) mit `starters/*.drw`, XML-Sektionen, Verifikations-Algorithmus, Done-Gate.
-- [ ] README-Neubau (D6) mit gerenderten Beispielgrafiken.
+- [~] Skill-Neubau (D5): Kern (SKILL/walkthrough/language/verify/`starters`) + Craft-Guides/Referenz.
+- [~] README-Neubau (D6) mit gerenderten Beispielgrafiken.
 
 ### W3-5 — Verifikation
 - [ ] 3 Blind-Builds (Charakter / Icon-Familie / Szene) durch frische Agenten gegen den neuen Skill.
