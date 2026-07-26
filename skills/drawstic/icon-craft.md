@@ -83,9 +83,10 @@ draw mail 32x32:
   stamp mailGlyph 6:9 shadow 0:1 k.alpha(35%)
 ```
 
-**Run the mis-reading test before rendering.** Every glyph can collapse into a wrong reading at native
-size — mic→wine glass, play→arrow, tag→gem. Name the wrong reading, then add the one feature that kills
-it (mic cradle, note beam, camera lens hole).
+**Run the mis-reading test with `--silhouette --png@6`** (the plate auto-detects and subtracts, leaving
+just the glyph). Every glyph can collapse into a wrong reading at native size — mic→wine glass,
+play→arrow, tag→gem. Name it, then add the one feature that kills it (mic cradle, note beam, camera lens
+hole).
 
 **Merge trap:** two abutting filled sub-forms of equal height/width fuse into one silhouette (a body +
 wedge reads as an arrow). Make the appended sub-form visibly narrower, or split it off with one

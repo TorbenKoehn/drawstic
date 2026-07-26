@@ -683,6 +683,18 @@ describe('render', () => {
     return file
   }
 
+  // A uniform full-canvas fill: unlike `bigFixture` (a white plate-shaped bg with a
+  // contrasting black rect stamped on it — genuinely plate-shaped pixel evidence, so
+  // `--silhouette` now detects and subtracts it, see ADR-0083's amendment), this fixture
+  // is one flat colour edge-to-edge, so the plate flood fill consumes the whole canvas,
+  // leaves no distinguishable figure, and degenerately falls back to the full covered mask
+  // — the generic (non-plate) `--silhouette` branch.
+  const flatFixture = (dir: string): string => {
+    const file = join(dir, 'flat.drw')
+    writeFileSync(file, 'draw flat 20x10:\n  bg #808080\n')
+    return file
+  }
+
   test('--ascii --json with --crop reports the cropped dimensions', () => {
     withTmpDir((dir) => {
       const file = bigFixture(dir)
@@ -1269,11 +1281,11 @@ describe('render', () => {
 
     test('composes with --png@N — the whole opaque sprite becomes opaque black', () => {
       withTmpDir((dir) => {
-        const file = bigFixture(dir)
+        const file = flatFixture(dir)
         const out = join(dir, 'sil@2.png')
         const r = runJson(
           'render',
-          `${file}#big`,
+          `${file}#flat`,
           '--silhouette',
           '--png@2',
           '--out',
@@ -1282,13 +1294,20 @@ describe('render', () => {
         )
         expect(r.exitCode).toBe(0)
         const body = r.json as {
-          render: { kind: string; width: number; height: number; silhouette: boolean }
+          render: {
+            kind: string
+            width: number
+            height: number
+            silhouette: boolean
+            plateDetected: boolean
+          }
         }
         expect(body.render).toMatchObject({
           kind: 'png',
           width: 40,
           height: 20,
           silhouette: true,
+          plateDetected: false,
         })
         const decoded = decodePng(new Uint8Array(readFileSync(out)))
         for (let i = 0; i < decoded.data.length; i += 4) {
@@ -1304,30 +1323,99 @@ describe('render', () => {
 
     test('composes with --inspect --json, collapsing the sprite to a single black colour', () => {
       withTmpDir((dir) => {
-        const file = bigFixture(dir)
-        const r = runJson('render', `${file}#big`, '--silhouette', '--inspect', '--json')
+        const file = flatFixture(dir)
+        const r = runJson('render', `${file}#flat`, '--silhouette', '--inspect', '--json')
         expect(r.exitCode).toBe(0)
         const body = r.json as {
-          render: { kind: string; silhouette: boolean; inspect: { distinctColorCount: number } }
+          render: {
+            kind: string
+            silhouette: boolean
+            plateDetected: boolean
+            inspect: { distinctColorCount: number }
+          }
         }
         expect(body.render.kind).toBe('inspect')
         expect(body.render.silhouette).toBe(true)
+        expect(body.render.plateDetected).toBe(false)
         expect(body.render.inspect.distinctColorCount).toBe(1)
       })
     })
 
     test('surfaces the silhouette flag under --ascii --json; omits it without the flag', () => {
       withTmpDir((dir) => {
-        const file = bigFixture(dir)
-        const on = runJson('render', `${file}#big`, '--silhouette', '--ascii', '--json')
+        const file = flatFixture(dir)
+        const on = runJson('render', `${file}#flat`, '--silhouette', '--ascii', '--json')
         expect(on.exitCode).toBe(0)
         const onBody = on.json as { render: { kind: string; silhouette?: boolean } }
         expect(onBody.render.kind).toBe('ascii')
         expect(onBody.render.silhouette).toBe(true)
 
-        const off = runJson('render', `${file}#big`, '--ascii', '--json')
+        const off = runJson('render', `${file}#flat`, '--ascii', '--json')
         const offBody = off.json as { render: { silhouette?: boolean } }
         expect(offBody.render.silhouette).toBeUndefined()
+      })
+    })
+
+    // ADR-0083 amendment: `--silhouette` reuses `detectPlateFigure` (src/preview.ts, shared with
+    // critique's C009 check) so a plated sprite (`icon-craft.md`'s canonical opaque tile/plate
+    // stamped with a glyph) silhouettes the *figure*, not the plate that dominates its alpha mask.
+    describe('plate-aware (ADR-0083 amendment)', () => {
+      test('subtracts a detected plate: only the figure silhouettes, the plate area goes transparent', () => {
+        withTmpDir((dir) => {
+          // icon-craft.md's own contract: a plate/tile is inset from the canvas edge by its own
+          // transparent margin (never edge-to-edge like `bigFixture`'s full-bleed `bg` — that's
+          // structurally a scene, not a plate, and `detectPlateFigure` now declines it precisely
+          // because it has no margin at all) — a white plate 1:1..18:8 on a 20x10 canvas, with a
+          // black glyph rect stamped in its interior.
+          const file = join(dir, 'plated.drw')
+          writeFileSync(
+            file,
+            'draw plated 20x10:\n  rect #ffffff 1:1 18:8 fill\n  rect #000000 7:3 12:6 fill\n',
+          )
+          const out = join(dir, 'plate-sil.png')
+          const r = run('render', `${file}#plated`, '--silhouette', '--out', out, '--json')
+          expect(r.exitCode).toBe(0)
+          expect(r.stderr).toContain(
+            'plate detected — showing the glyph silhouette, not the full alpha mask',
+          )
+          const body = JSON.parse(r.stdout.toString('utf8')) as {
+            render: { silhouette: boolean; plateDetected: boolean }
+          }
+          expect(body.render.silhouette).toBe(true)
+          expect(body.render.plateDetected).toBe(true)
+          const decoded = decodePng(new Uint8Array(readFileSync(out)))
+          const px = (x: number, y: number): number[] => {
+            const i = (y * decoded.w + x) * 4
+            return [...decoded.data.subarray(i, i + 4)]
+          }
+          // Plate area (inside the white rect but outside the glyph, e.g. its top-left corner) is
+          // subtracted — no longer painted at all, not even a transparent-black leftover.
+          expect(px(2, 2)).toEqual([0, 0, 0, 0])
+          // Figure area (inside the black rect, `8:4 11:6`) still silhouettes solid black.
+          expect(px(9, 5)).toEqual([0, 0, 0, 255])
+        })
+      })
+
+      test('an unplated sprite silhouettes byte-identical to before this fix (plateDetected: false)', () => {
+        withTmpDir((dir) => {
+          // A rect on a transparent canvas never touches all four edges, so it can never be
+          // mistaken for a plate — `detectPlateFigure` bails on the edge-touch gate alone.
+          const file = join(dir, 'unplated.drw')
+          writeFileSync(file, 'draw unplated 20x10:\n  rect #ff00ff 4:3 17:7 fill\n')
+          const r = runJson('render', `${file}#unplated`, '--silhouette', '--inspect', '--json')
+          expect(r.exitCode).toBe(0)
+          const body = r.json as {
+            render: {
+              silhouette: boolean
+              plateDetected: boolean
+              inspect: { distinctColorCount: number; opaquePixelCount: number }
+            }
+          }
+          expect(body.render.silhouette).toBe(true)
+          expect(body.render.plateDetected).toBe(false)
+          // The full 14x5 rect silhouettes solid, exactly as the pre-fix full-mask transform did.
+          expect(body.render.inspect.opaquePixelCount).toBe(14 * 5)
+        })
       })
     })
   })

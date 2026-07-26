@@ -121,6 +121,57 @@ pass/fail:
   > 5.52x -- close but not crossing it. Per "measure first, don't fix on theory alone", C011's
   > median is left pooled across sizes unchanged; the closeness of those two ratios is worth
   > re-measuring if a future family pushes the size spread further.
+  >
+  > **Round 4 -- `detectPlateFigure` moved to `src/preview.ts` and reused by `render --silhouette`
+  > (ADR-0083 amendment).** `--silhouette` silhouetted a plated icon's *full* alpha mask -- which
+  > **is** the plate -- as a featureless black rounded square, carrying zero shape information; a
+  > blind usability run confirmed the consequence (a "sun" icon that actually reads as a
+  > life-ring/aperture rendered as a black square and self-graded as passing). `detectPlateFigure`
+  > was the proven fix for the identical root cause in C009, so it was moved (function + its `Lab`/
+  > flood-fill helpers, unchanged logic) from `src/critique.ts` to `src/preview.ts` -- the home of
+  > every other `render` post-pass sprite transform -- and exported for both callers; `critique.ts`
+  > now imports it. `silhouetteSprite` signs the subtracted *figure* when a plate is detected,
+  > else the untouched full mask exactly as before; a detected plate is announced on stderr
+  > (`plate detected -- showing the glyph silhouette, not the full alpha mask`) and surfaced as
+  > `plateDetected` alongside `silhouette: true` under `--json` -- the caller must never see a
+  > different image than expected without a reason it can read off the output alone.
+  >
+  > **The move surfaced two defects C009 never measured**, because C009's `nearest` is advisory
+  > (`warning`, never `--strict`) and its default family is exported top-level views only
+  > (`selectCritiqueFamily`) -- so a bad figure split never failed a test. `--silhouette` draws the
+  > split as pixels for *any* named drawing, parts included, so both became visible immediately:
+  >
+  > 1. An assembled figure or a full-bleed `scene` legitimately touches all four edge margins (hair/
+  >    feet, sky/ground) with the chained OkLab tolerance then bridging most of its own cel-shaded
+  >    mass -- every `characters-ro2` view and every bundled scene mis-fired. Closed with two new
+  >    gates: a fully-opaque sprite (zero transparent pixels -- a `scene`, painted edge to edge) is
+  >    declined outright, since a plate's own margin ([icon-craft.md](../../skills/drawstic/icon-craft.md))
+  >    always leaves some transparent canvas; and `PLATE_ROW_SPAN_MIN` (0.8) requires the plate's own
+  >    rows to span its full width (a filled tile), not the sparse edge-touching network an organic
+  >    figure's flood produces -- measured 100 % separation between the corpus's real plates (>=93 %,
+  >    `icon-family.drw#mailSmall` the one exception at 86.7 %) and every assembled-figure/scene false
+  >    positive (<=65.3 %, `wizard.drw#wizardFront`).
+  > 2. A lone character/item/scene-prop **part** rendered standalone -- `bodyFront`, `cloakFront`,
+  >    `legsFront`, `market.drw#barrel` -- is *itself* a large solid mass with only a tiny
+  >    high-contrast trim escaping the flood, passing every gate above (the row-span fix does not
+  >    catch it: a solid part's rows genuinely do span its own bbox). This is the debug case
+  >    `character-craft.md` names for `--silhouette` explicitly, so it is not a corner case. Closed
+  >    with `PLATE_MIN_FIGURE_FRACTION` (0.15): the subtracted figure must keep at least 15 % of the
+  >    covered mass, not just the pre-existing 4px absolute floor. Measured over the *entire* bundled
+  >    corpus with `all: true` (229 drawings -- every non-parametric draw, parts and scene props
+  >    included, not just the exported views): the worst part-level false positive keeps 13.7 %
+  >    (`market.drw#barrel`); the thinnest real icon glyph below that line is `finance.drw#bank` at
+  >    13.5 %. 0.15 sits just above both -- trading a handful of thin glyphs (`chat16`, `phone`,
+  >    `contacts`, `feed`, `bank`, `bank64`, which fall back to the full mask, unchanged from
+  >    pre-fix `--silhouette`) for closing every measured non-icon false positive in the corpus.
+  >
+  > **Verified byte-identical** (both gates return `null`, unchanged from pre-fix `--silhouette`):
+  > every `examples/characters-ro2/*` view *and* part, every `examples/items-v2/*/*` item, every
+  > `examples/scenes-v3/*` scene, diffed pixel-for-pixel against the pre-change build. `tests/unit/
+  > preview.test.ts` pins both new gates directly against `detectPlateFigure`/`silhouetteSprite`
+  > (a synthetic solid-organic-part-with-accent fixture, independent of the example corpus);
+  > `tests/unit/cli.test.ts` covers the `render --silhouette` surface (message, `--json` field,
+  > both branches).
 - **C011** family weight parity · **C012** the rendered form of `W009` — an *asymmetric* bottom
   gap (trailing transparent rows exceeding the top margin beyond the centering tolerance), measured
   from pixels rather than the static `pixels:` grid; symmetric breathing room is never flagged.

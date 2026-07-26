@@ -76,3 +76,19 @@ those stats describe the silhouette (e.g. a fully-opaque sprite collapses to
 - Covered by `tests/unit/cli.test.ts` (`render` → `--silhouette` describe): PNG
   black-out + transparency preservation, `--png@N` composition, `--inspect`
   single-colour collapse, and `--ascii --json` flag surfacing.
+
+## Amendment (release 1.0 hardening): plate-aware
+
+`silhouetteSprite` no longer signs the full covered mask unconditionally: it reuses
+`detectPlateFigure` (`src/preview.ts`, originally the C009 sibling-silhouette
+plate-blindness fix — see [ADR-0085](0085-critique-command.md) §C009 "Round 4") to
+detect an opaque plate/tile from pixel evidence and, when found, silhouette the
+*figure* stamped on it instead — otherwise a canonically-built icon (`icon-craft.md`'s
+mandatory opaque plate) silhouettes as a featureless black square, exactly the failure
+a blind usability run hit. A detected plate is announced on stderr and via `--json`'s
+new `plateDetected` field, so the caller is never silently shown a different image
+than expected. A non-plate sprite (every character/item/scene in the bundled corpus,
+parts included) is unaffected — `detectPlateFigure` returns `null` and the full
+covered mask silhouettes byte-identical to before this amendment. Full rationale,
+the two false-positive classes this closed, and the calibration evidence live in
+[ADR-0085](0085-critique-command.md).

@@ -930,9 +930,10 @@ const namedMasksOf = (mod: ModuleRecord): { readonly name: string; readonly regi
  * {@link Engine.renderFragment}. `--grid`/`--diff` (P3 drawing aids) only
  * affect the PNG output kind — both are silently inert under `--ascii`/
  * `--preview`/`--inspect`, same as every other PNG-only flag. `--silhouette`
- * (ADR-0083) is a pure per-pixel transform of the rendered framebuffer applied
- * before every output kind, so it composes with all of them and with
- * `--crop`/`--fit`/`--grid`.
+ * (ADR-0083, plate-aware per its amendment) is a pure per-pixel transform of the
+ * rendered framebuffer applied before every output kind, so it composes with all
+ * of them and with `--crop`/`--fit`/`--grid`; a detected plate is announced on
+ * stderr and surfaced as `plateDetected` under `--json`.
  */
 const runRender = (cli: CliArguments): number => {
   const target = cli.target ?? ''
@@ -980,9 +981,20 @@ const runRender = (cli: CliArguments): number => {
     })
     // Silhouette is a pure per-pixel transform of the rendered framebuffer,
     // applied before any output kind — so it composes with `--ascii`/`--preview`/
-    // `--inspect`/PNG and downstream `--crop`/`--fit`/`--grid` (ADR-0083).
+    // `--inspect`/PNG and downstream `--crop`/`--fit`/`--grid` (ADR-0083). Plate-aware
+    // (ADR-0083 amendment): a detected plate is subtracted before the mask is drawn, and the
+    // caller must never be silently surprised by a different image than expected, so a detected
+    // plate is announced on stderr regardless of output kind or `--json`.
+    let plateDetected = false
     if (cli.silhouette) {
-      sprite = silhouetteSprite(sprite)
+      const result = silhouetteSprite(sprite)
+      sprite = result.sprite
+      plateDetected = result.plateDetected
+      if (plateDetected) {
+        process.stderr.write(
+          'plate detected — showing the glyph silhouette, not the full alpha mask\n',
+        )
+      }
     }
     let crop: {
       readonly x: number
@@ -1020,7 +1032,7 @@ const runRender = (cli: CliArguments): number => {
                 ...(cli.fit
                   ? { fit: { ...cli.fit, fitted, width: sprite.w, height: sprite.h } }
                   : {}),
-                ...(cli.silhouette ? { silhouette: true } : {}),
+                ...(cli.silhouette ? { silhouette: true, plateDetected } : {}),
               },
             },
             null,
@@ -1050,7 +1062,7 @@ const runRender = (cli: CliArguments): number => {
                 ...(cli.fit
                   ? { fit: { ...cli.fit, fitted, width: sprite.w, height: sprite.h } }
                   : {}),
-                ...(cli.silhouette ? { silhouette: true } : {}),
+                ...(cli.silhouette ? { silhouette: true, plateDetected } : {}),
               },
             },
             null,
@@ -1078,7 +1090,7 @@ const runRender = (cli: CliArguments): number => {
                 stats: spritePreviewStats(sprite),
                 inspect: inspection,
                 ...(crop ? { crop } : {}),
-                ...(cli.silhouette ? { silhouette: true } : {}),
+                ...(cli.silhouette ? { silhouette: true, plateDetected } : {}),
               },
             },
             null,
@@ -1162,7 +1174,7 @@ const runRender = (cli: CliArguments): number => {
               ...(crop ? { crop } : {}),
               original: originalSize,
               ...(cli.grid ? { grid: cli.grid } : {}),
-              ...(cli.silhouette ? { silhouette: true } : {}),
+              ...(cli.silhouette ? { silhouette: true, plateDetected } : {}),
               ...(diff ? { diff } : {}),
             },
           },
