@@ -111,7 +111,10 @@ blob = curvePoly(4:12, 12:3, 20:12, 12:21)
 ```
 
 Set ops `.union .intersect .subtract .xor` · placement `.shift(pt) .scale(n) .transform(t)` ·
-`drawing.region` = any drawing's silhouette.
+`drawing.region` = any drawing's silhouette, **in that drawing's own space, not where a `fit` or
+`stamp` put it**. To reuse it over a placed part — a reflection, a light pool, a contact band —
+`.shift()` it by the placement offset yourself (`part.region.shift(landedX - pinX : landedY - pinY)`,
+and `render --explain --json` prints each `fit`'s `landed` point).
 
 **`REGION.edge(DX:DY [, N])`** is the one-sided edge band, `N` px wide (default 1), at uniform
 coverage. **The direction is where the light travels**, so `0:1` is the **top** edge and `1:0` the

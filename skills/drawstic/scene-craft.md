@@ -196,6 +196,29 @@ export scene scene:
 Mirror across `flipy().about(0:horizonY)`; keep `ripple` on the reflection/lake mask only; the glitter
 scatter under the light source is what turns a flat fill into water.
 
+**A boat floats on three things, none of them automatic.** `ground` (§7) drops a contact shadow for
+*solid* ground and has no waterline equivalent, so a moored object needs all three by hand:
+
+```drw
+draw boat 34x22:
+  hull = curvePoly(2:8, 17:4, 32:8, 28:18, 6:18)
+  model hull woodM
+  fill #0a1220.alpha(35%) hull.edge(0:-1, 2)   # 1. waterline: dark band on the underside
+  pin keel 17:20                                # 2. lowest hull row, the point you plant
+
+draw harbour 192x128:
+  mask waterMask = rect(0:58, 191:103)
+  fit boat.keel 52:74                           # plant the keel AT the waterline y, not above it
+  # 3. region is in the part's OWN space (language.md §5) — shift it onto the placement first
+  refl = boat.region.shift(35:54).transform(flipy().about(0:74)).intersect(waterMask)
+  fill #8a5a3c.alpha(30%) refl                  # mirror about the keel's own y, clipped to water
+```
+
+The shift is `landed - pin` (`52-17 : 74-20`); `render --explain --json` prints every `landed`.
+Skip the waterline band and the hull reads as pasted on top of the water; skip the reflection and it
+reads as a sticker. A hull `model`led as one convex mass inflates to a smooth pillow — subtract an
+inset well (`outerHull.subtract(innerWell)`) so an open boat shows a dark interior.
+
 ## 9. Atmospheric colour & focus
 
 - **Depth out of one base:** mix each layer's colour toward the horizon/haze colour
