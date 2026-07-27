@@ -3,6 +3,11 @@
 Concrete backlog for agents. Work top-down unless a task explicitly says it is independent.
 Material language or CLI decisions need an ADR in `docs/decisions/` before implementation.
 
+**Read the status line under a heading before implementing it.** Sections 4-7 shipped in
+2026-07; several of them were then reshaped by a later ADR, so the task text above a `Shipped`
+line describes the original intent, not the current surface. Verify against the code before
+touching anything here.
+
 ## Contents
 
 - 4: context and lint.
@@ -17,6 +22,8 @@ Material language or CLI decisions need an ADR in `docs/decisions/` before imple
 
 ### 4.1 Extend `context`
 
+**Shipped.** `context --json` carries `exports` plus per-drawing facts (`src/cli.ts` `buildBrief`).
+
 - Add `exports` to the context brief:
   - source name
   - output base path
@@ -30,6 +37,8 @@ Material language or CLI decisions need an ADR in `docs/decisions/` before imple
 
 ### 4.2 Add opt-in authoring lint
 
+**Shipped.** `check --lint`, stable `W###` codes in `src/lint.ts`.
+
 - Add `drawstic check <file> --lint`.
 - Emit warnings, never failing the command:
   - unused local palette key
@@ -40,6 +49,8 @@ Material language or CLI decisions need an ADR in `docs/decisions/` before imple
 - Done when warnings use stable `W###` codes and JSON shape.
 
 ### 4.3 Add row-width metadata
+
+**Shipped.** `check --rows` (`src/cli.ts` `rowMetadata`).
 
 - Add either `drawstic check <file> --rows` or include row metadata in `check --json` behind a flag.
 - Emit for each `pixels:` block:
@@ -52,6 +63,8 @@ Material language or CLI decisions need an ADR in `docs/decisions/` before imple
 - Done when agents can repair row counts without manual character counting.
 
 ### 4.4 Improve `fmt --check --json`
+
+**Shipped.** `fmt --check --json` diff metadata plus `--stdout` and `--diff`.
 
 - Add formatter diff metadata:
   - first changed line
@@ -73,6 +86,8 @@ Material language or CLI decisions need an ADR in `docs/decisions/` before imple
 
 ### 5.2 Add first generic mark set
 
+**Shipped.** Nine marks in `src/std/shapes.drw.ts` (`spark`, `star4`, `dash`, `arcMark`, `zig`, `blob`, `capsule`, `leaf`, `tri`).
+
 - Add roughly 8-12 generic drawings, not motif names.
 - Candidate names:
   - `spark`
@@ -92,6 +107,8 @@ Material language or CLI decisions need an ADR in `docs/decisions/` before imple
 
 ### 6.1 Add scoped shadow/cast-shadow support
 
+**Shipped** as `shadow` (ADR-0070); `castShadow` was later removed as a duplicate spelling (ADR-0096 §1).
+
 - Add an ADR first.
 - Support local shadowing for regions or stamps, not only whole-frame `apply shadow`.
 - Candidate syntax to decide in ADR:
@@ -103,6 +120,8 @@ Material language or CLI decisions need an ADR in `docs/decisions/` before imple
 - Done when object-level shadows no longer require duplicating manual geometry.
 
 ### 6.2 Add deterministic texture filters
+
+**Shipped** (ADR-0071, argument order unified in ADR-0080).
 
 - Add deterministic, explicit texture commands before considering texture paints.
 - Candidate filters:
@@ -116,6 +135,8 @@ Material language or CLI decisions need an ADR in `docs/decisions/` before imple
 
 ### 6.3 Design explicit local lighting helpers
 
+**Shipped**, then largely superseded: `model`/`cel` + `material` is the canonical path (ADR-0086, ADR-0089, ADR-0091, ADR-0097). `ambientOcclusion` is now `ao` (ADR-0096 §2).
+
 - Add an ADR first.
 - Do not add hidden auto-lighting.
 - Candidate helpers:
@@ -127,6 +148,8 @@ Material language or CLI decisions need an ADR in `docs/decisions/` before imple
 - Done when simple circle/rect fixtures pin deterministic highlights/shadows.
 
 ### 6.4 Add stamp anchors
+
+**Shipped** (ADR-0072).
 
 - Add an ADR first.
 - Keep top-left stamp placement as default.
@@ -141,6 +164,8 @@ Material language or CLI decisions need an ADR in `docs/decisions/` before imple
 
 ### 7.1 Add scene smoke tests
 
+**Shipped.** `tests/unit/e2e.test.ts` renders and exports `examples/scenes-v3/island.drw`.
+
 - Render selected examples and assert:
   - dimensions
   - non-background color count above a loose threshold
@@ -151,6 +176,8 @@ Material language or CLI decisions need an ADR in `docs/decisions/` before imple
 - Done when visual regressions in representative scenes fail fast.
 
 ### 7.2 Fix docs/index drift
+
+**Shipped.** `AGENTS.md` and `CLAUDE.md` name `src/diagnostic.ts`.
 
 - Update project structure docs where they reference stale file names.
 - Known drift: `AGENTS.md` mentions `src/diag.ts`; actual file is `src/diagnostic.ts`.
@@ -193,6 +220,65 @@ of the image in grayscale. There should be no ANSI sequences in the output, it's
 Superseded/merged by `scene-dx-improvements.md` §3.1 — ramp now maps true sRGB relative luminance (alpha-composited over an implied black backdrop), fixing the ink-density inversion; implemented in `src/preview.ts`.
 
 ### 9.2. AA for Stamps and hand-drawn (`pixels:`) sprites
+
+**Shipped.** Decided in ADR-0099 and implemented as the opt-in `aa` flag on `stamp` and `fit`:
+a 16-tap filtered resampler that is byte-identical to nearest-neighbour on lattice transforms
+(`W018` flags the no-op case). Feathering a silhouette at integer position was rejected there.
+`pixels:` sprites are not a second mechanism; they are ordinary sprites and only differ under
+a non-lattice transform.
+
+### 9.3. Multiple `export`
+
+**Shipped.** Decided in ADR-0098 and implemented: optional output path, comma-separated
+targets, `dir` and a quoted `file` template with six inflectors (snake, camel, pascal, kebab,
+upper, lower) and `\{` / `\}` escapes. Two deliberate cuts from the sketch below: `{ext}` and
+`{full}` are gone because `file` renders a stem and the format line owns the extension (`E028`),
+and date functions are gone because they break determinism. `plural`/`singular`/`title` were
+rejected in the same ADR. The example corpus was rewritten onto the new form: 145 export
+statements became 40 blocks with byte-identical artifact paths.
+
+1. Allow omitting the file name to default to the recipe name, e.g. `export island` instead of `export island island`.
+2. Allow export of multiple items separated with commas
+
+  ```
+  export pickaxe, axe, key:
+    png @1 @2
+  ```
+
+  export pickaxe assets/pick-axe, axe assets/axe, key assets/key:
+    png @1 @2
+  ```
+3. Add `dir` and `names` declarations to `export` block:
+   
+  ```
+  export pickaxe, axe, key, coinPouch:
+    dir "assets/items"
+    file "{snake base}_{date YY-MM-DD}.{ext}"
+    png
+
+    # Yields:
+    #  - assets/items/pickaxe_2024-06-01.png
+    #  - assets/items/axe_2024-06-01.png
+    #  - assets/items/key_2024-06-01.png
+    #  - assets/items/coin_pouch_2024-06-01.png
+    # Available variables inside `file`:
+    #  - base: the name of the exported drawable (e.g. `pickaxe`, `axe`, `key`, `coinPouch`)
+    #  - full: the full name of the exported drawable (e.g. `coinPouch.png`)
+    #  - ext: the file extension of the exported drawable (e.g. `png`)
+    # New functions:
+    #  - Inflectors (snake, camel, pascal, kebab, upper, lower, title, plural, singular)
+    #  - Dates (date, date YY-MM-DD, date YYYY-MM-DD, date YYYYMMDD)
+    # New syntax:
+    #  - String Interpolation (ie `"{a} and {upper b}"` yields `"test and TOAST"` if a="test" and b="toast")
+    #  - String Escaping (ie `"{a} and \{b\}"` yields `"test and {b}"` if a="test" and b="toast"), but also common \n, \t, \\, \", etc.
+  ```
+
+Existing syntax is still possible:
+
+```
+export pickaxe assets/pick-axe:
+  png @1 @2
+```
 
 ## Verification rule
 
