@@ -771,6 +771,198 @@ describe('render', () => {
     })
   })
 
+  test('--explain without --json reports the empty case for a drawing with nothing to explain', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'plain.drw')
+      writeFileSync(file, 'draw plain 4x4:\n  bg #ffffff\n')
+      const r = run('render', `${file}#plain`, '--explain')
+      expect(r.exitCode).toBe(0)
+      expect(r.stdout.toString('utf8')).toBe('plain: no model/cel commands or fits to explain\n')
+    })
+  })
+
+  test('--explain without --json prints the model/cel primitive expansion, incl. cel bands', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'lit.drw')
+      writeFileSync(
+        file,
+        [
+          'light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%',
+          'material steel = #8a95a5 metal',
+          'draw blade 16x16:',
+          '  body = rect(2:2, 13:13)',
+          '  model body steel light sun',
+          '  band = rect(2:2, 13:13)',
+          '  cel band steel 3 light sun',
+          '',
+        ].join('\n'),
+      )
+      const r = run('render', `${file}#blade`, '--explain')
+      expect(r.exitCode).toBe(0)
+      expect(r.stdout.toString('utf8')).toBe(
+        [
+          'model body (light -14.5:-14.5)',
+          '  form #8a95a5 dir -0.62:-0.62 warm #ffe6b0 cool #2a3a5e z0.482 shade 0.5 hi 0.3 spec 0.5 specPow 16 puff 1.5 amb 0.15',
+          '  rim #c1d6b999 dir 0.707:0.707 w1',
+          '  ao #181e29 amount 0.28',
+          '  cast #181e2840 offset 1:1',
+          'cel band (light -14.5:-14.5)',
+          '  form #8a95a5 dir -0.62:-0.62 warm #ffe6b0 cool #2a3a5e z0.482 shade 0.5 hi 0.3 spec 0.5 specPow 16 puff 1.5 amb 0.15 bands 3',
+          '',
+        ].join('\n'),
+      )
+    })
+  })
+
+  test('--explain without --json prints a glow material as a bare fill + self-light "at" step', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'glow.drw')
+      writeFileSync(
+        file,
+        [
+          'light sun = dir 1:1 #ffe6b0',
+          'material glowMat = #ffcc00 glow',
+          'draw orb 8x8:',
+          '  core = ellipse(4:4, 3:3)',
+          '  model core glowMat light sun',
+          '',
+        ].join('\n'),
+      )
+      const r = run('render', `${file}#orb`, '--explain')
+      expect(r.exitCode).toBe(0)
+      expect(r.stdout.toString('utf8')).toBe(
+        [
+          'model core (light -6.5:-6.5)',
+          '  fill #ffcc00',
+          '  light #ffdc87 amount 0.45 at 3.5:3.5',
+          '',
+        ].join('\n'),
+      )
+    })
+  })
+
+  test('--explain without --json prints pose joints and fit placements (aim, transformed, loose pin)', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'rig.drw')
+      writeFileSync(
+        file,
+        [
+          'skeleton rig:',
+          '  jointA at 10:10',
+          '  jointB at 30:10',
+          '',
+          'pose pose1 over rig:',
+          '  view front',
+          '  jointA 15 z 2',
+          '  jointB 0 z 0',
+          '',
+          'draw partA 6x6:',
+          '  fill #ff0000 rect(0:0, 5:5)',
+          '  pin p 3:3',
+          '',
+          'draw partB 6x6:',
+          '  fill #00ff00 rect(0:0, 5:5)',
+          '  pin p 3:3',
+          '',
+          'draw needle 4x8:',
+          '  fill #202020 rect(1:0, 2:7)',
+          '  pin grip 2:6',
+          '  pin tip 2:0',
+          '',
+          'draw loose 6x6:',
+          '  fill #0000ff rect(0:0, 2:2)',
+          '  pin far 5:5',
+          '',
+          'draw fig 40x40:',
+          '  pose pose1',
+          '  fit partA.p bone jointA',
+          '  fit partB.p bone jointB flipx',
+          '  fit needle.grip partA.p aim tip 20:0',
+          '  fit loose.far partB.p',
+          '',
+        ].join('\n'),
+      )
+      const r = run('render', `${file}#fig`, '--explain')
+      expect(r.exitCode).toBe(0)
+      expect(r.stdout.toString('utf8')).toBe(
+        [
+          'pose pose1 (view front):',
+          '  jointA at 10:10 angle 15° Δ15° z2',
+          '  jointB at 30:10 angle 0° Δ0° z0',
+          'fit partA.p ← bone jointA: lands 10:10 (source 10:10) coincident pin-to-ink 0px transformed',
+          'fit partB.p ← bone jointB: lands 30:10 (source 30:10) coincident pin-to-ink 0px transformed',
+          'fit needle.grip ← partA.p: lands 10:10 (source 10:10) coincident pin-to-ink 0px aim 45° transformed',
+          'fit loose.far ← partB.p: lands 30:10 (source 30:10) coincident pin-to-ink 3px (LOOSE — join floats)',
+          'paint order (bottom → top):',
+          '  1. partB [z0]',
+          '  2. needle',
+          '  3. loose',
+          '  4. partA [z2]',
+          '',
+        ].join('\n'),
+      )
+    })
+  })
+
+  test('--explain without --json prints paint order reasons and every occlusion verdict', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'assembly.drw')
+      writeFileSync(
+        file,
+        [
+          'draw red 8x8:',
+          '  fill #ff0000 rect(0:0, 7:7)',
+          'draw blue 8x8:',
+          '  fill #0000ff rect(0:0, 7:7)',
+          'draw green 8x8:',
+          '  fill #00ff00 rect(0:0, 7:7)',
+          'draw yellow 8x8:',
+          '  fill #ffff00 rect(0:0, 7:7)',
+          'draw cyan 6x6:',
+          '  fill #00ffff rect(0:0, 5:5)',
+          'draw magenta 6x6:',
+          '  fill #ff00ff rect(0:0, 5:5)',
+          'draw orange 4x4:',
+          '  fill #ff8800 rect(0:0, 3:3)',
+          'draw purple 4x4:',
+          '  fill #8800ff rect(0:0, 3:3)',
+          '',
+          'draw assembly 40x40:',
+          '  stamp red 2:2',
+          '  stamp blue 6:6 behind red',
+          '  stamp green 20:2',
+          '  fill #000000 rect(0:0, 0:0)',
+          '  stamp yellow 24:6 behind green',
+          '  stamp cyan 2:30',
+          '  stamp magenta 4:30 behind cyan',
+          '  stamp orange 2:36',
+          '  stamp purple 30:2 behind orange',
+          '',
+        ].join('\n'),
+      )
+      const r = run('render', `${file}#assembly`, '--explain')
+      expect(r.exitCode).toBe(0)
+      expect(r.stdout.toString('utf8')).toBe(
+        [
+          'paint order (bottom → top):',
+          '  1. blue [behind red]',
+          '  2. red',
+          '  3. green',
+          '  4. yellow [behind green]',
+          '  5. magenta [behind cyan]',
+          '  6. cyan',
+          '  7. purple [behind orange]',
+          '  8. orange',
+          'occlusion blue behind red: overlap 16px, violating 0px — ok',
+          'occlusion yellow behind green: overlap 16px, violating 16px — VIOLATED',
+          'occlusion magenta behind cyan: overlap 24px, violating 0px — ok',
+          'occlusion purple behind orange: overlap 0px, violating 0px — no overlap',
+          '',
+        ].join('\n'),
+      )
+    })
+  })
+
   test('--preview --json with --fit reports a shrunk, fitted size', () => {
     withTmpDir((dir) => {
       const file = bigFixture(dir)
