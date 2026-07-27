@@ -4,14 +4,11 @@
 [![npm](https://img.shields.io/npm/v/drawstic.svg)](https://www.npmjs.com/package/drawstic)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Deterministic graphics from text recipes: the same recipe renders a pixel-identical
-PNG/SVG/JPEG on every machine.** You write a compact **Recipe** (`.drw`) — theme, light,
-materials, shapes — and the Drawstic CLI renders it. No canvas, no editor, no drift.
+Drawstic draws pictures from text files. You write a short recipe (a `.drw` file) that says
+what to draw, and the Drawstic CLI turns it into a PNG, SVG or JPEG. The same recipe produces
+the same pixels on every machine, every time.
 
-- **Deterministic** — bundled fixed-point math + a pinned colour pipeline: pixel-identical output on every OS/CPU in `mode pixel`.
-- **Token-efficient DSL** — Recipes are designed for LLM agents to write, read and verify cheaply.
-- **Zero runtime dependencies** — plain ESM, no `dependencies` in `package.json`; Node ≥ 20 or Bun.
-- **CLI-first** — every command is scriptable: `--json` diagnostics, non-zero exit on error, everywhere.
+The name is a play on *drastic* and *draw deterministic*.
 
 <table>
 <tr>
@@ -31,22 +28,104 @@ materials, shapes — and the Drawstic CLI renders it. No canvas, no editor, no 
 </tr>
 </table>
 
-Sources: [`examples/characters-ro2/knight.drw`](examples/characters-ro2/knight.drw) ·
-[`examples/icons/productivity.drw`](examples/icons/productivity.drw) ·
-[`examples/scenes-v3/island.drw`](examples/scenes-v3/island.drw) — one recipe file each,
-rendered as-is.
+Each of those is one recipe file, rendered as it is committed:
+[`examples/characters-ro2/knight.drw`](examples/characters-ro2/knight.drw),
+[`examples/icons/productivity.drw`](examples/icons/productivity.drw),
+[`examples/scenes-v3/island.drw`](examples/scenes-v3/island.drw).
 
-## What it looks like
+## Why it exists
 
-Everything below comes from the example corpus in this repo, and a test keeps it that way:
-each complete recipe shown is `check`-clean, each excerpt is proved line-by-line against the
-file it came from, and every image is rendered from exactly the recipe beside it.
+Coding agents are good at writing text and bad at drawing. Image models can make a picture,
+but not the same picture twice, and you cannot ask them to nudge one pixel. Graphics editors
+need a human with a mouse.
 
-### A — light, material, model: shading is declarative
+Drawstic moves graphics onto ground where an agent is already strong: a small text file it can
+write, read back, diff and repair. And because the output follows entirely from the recipe, a
+sprite belongs in git right next to the code that uses it. Change one colour, rerun the build,
+review the diff like any other change.
 
-One named `light`, materials that pick the *physics* (`metal`/`cloth`/…, never the colour),
-and `model`/`cel` lower them onto a shape — smooth shading or crisp bands, always
-coherent with the one light.
+## How it works
+
+A recipe declares a theme (one light source, a palette), materials that say how a surface
+responds to light (metal, cloth, skin, glass), and drawings built from regions: rectangles,
+circles, polygons, organic shapes. Shading is derived from the light and the material, so you
+never pick highlight and shadow colours by hand. Larger things are assembled from smaller
+drawings that carry named attach points, so a figure is parts that snap together instead of
+coordinates you compute yourself.
+
+The CLI does the rest:
+
+```sh
+npx drawstic render icon.drw#circleIcon --out icon.png
+```
+
+Every command takes `--json`, reports problems with a code, a line and a column, and exits
+non-zero when something is wrong. Nothing fails quietly.
+
+## Install
+
+Drawstic is built to be operated by a coding agent, so install it as an agent skill:
+
+```sh
+npx skills add torbenkoehn/drawstic
+```
+
+Non-interactive, only this skill:
+
+```sh
+npx skills add torbenkoehn/drawstic --skill drawstic -y
+```
+
+Or simply tell your agent:
+
+```
+Install the Drawstic skill from GitHub: torbenkoehn/drawstic
+```
+
+The skill is what the agent actually reads. `SKILL.md` is the entry point and routes to
+`language.md` (the language surface, with every trap tied to the error code it produces),
+`verify.md` (the verification loop as an algorithm, plus a code to fix table),
+`walkthrough.md` (one complete run from request to finished artifact), craft guides for
+icons, scenes, characters and items, `reference.md` as the full CLI and language reference,
+and `starters/`, a set of runnable recipes to copy instead of retype.
+
+The CLI needs no separate install. It runs straight from the registry with `npx drawstic`,
+`bunx drawstic`, `pnpm dlx drawstic` or `yarn dlx drawstic`, on Node 20 or newer, or on Bun.
+
+## Your first recipe
+
+Put this in `icon.drw`:
+
+```drw
+draw circleIcon 16x16:
+  palette:
+    k = #1a1a1a
+    r = #c04040
+  bg #fff
+  circle k 8:8 7
+  circle r 8:8 5 fill
+```
+
+Then check it and render it:
+
+```sh
+drawstic check icon.drw --json      # [] means clean
+drawstic render icon.drw#circleIcon --out circle.png
+```
+
+<img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/quickstart-circle.png" width="90" alt="A red circle icon with a black outline on white">
+
+## What recipes look like
+
+Everything below comes from the example corpus in this repository, and a test keeps it that
+way: each complete recipe shown is `check`-clean, each excerpt is proved line by line against
+the file it came from, and every image was rendered from exactly the recipe beside it.
+
+### Shading comes from the light, not from you
+
+There is one named `light`. Materials pick the physics (`metal`, `cloth`, `skin`, and so on)
+and never the colour. `model` and `cel` then lower a material onto a shape, smooth or in crisp
+bands, always consistent with that one light.
 
 <img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/shading-sword.png" width="90" alt="A shaded sword: cel-banded steel blade, metal guard, modelled leather grip">
 
@@ -78,20 +157,17 @@ draw sword 14x66:
 
 Rendered with `drawstic render sword.drw#sword --png@4`. The `sword` draw is unchanged from
 [`examples/characters-ro2/knight.drw`](examples/characters-ro2/knight.drw); the `ro` theme's
-`figure:` block and the draw's two trailing `pin` lines are omitted here — the sword needs
-neither to render.
+`figure:` block and the draw's two trailing `pin` lines are left out here, because the sword
+renders without them.
 
-### B — pin/fit + skeleton/pose: a figure is modular parts, assembled
+### A figure is parts that snap together
 
-Each body part is its own `draw` with named `pin` attach points. A `skeleton` declares the
-rig once; a `pose` sets each joint's angle and paint depth for one view. `fit` then places
-every part with a **contact guarantee** — no hand-computed offsets.
+Each body part is its own `draw` with named `pin` attach points. A `skeleton` declares the rig
+once, a `pose` sets each joint's angle and paint depth for one view, and `fit` places every
+part with a contact guarantee. No offset is computed by hand, and `aim` and `behind` state
+what a part points at and what covers it instead of hiding that in coordinates.
 
 <img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/figure-archer.png" width="130" alt="An archer figure assembled from separate head, torso and leg parts">
-
-The assembly is the whole pitch — the rig, one pose per view, and a `fit` per part. No
-offset is computed by hand, and `aim`/`behind` say what a part points at and what hides it
-instead of encoding that in coordinates:
 
 <!-- excerpt-of: examples/characters-ro2/archer.drw -->
 ```drw
@@ -126,11 +202,11 @@ draw figFront 64x128:
   outline
 ```
 
-Every line above is verbatim from the committed recipe (a test enforces that). The parts it
-assembles are ordinary `draw`s with `pin`s — here is the complete, runnable figure:
+Every line above is verbatim from the committed recipe, and a test enforces that. The parts it
+assembles are ordinary `draw`s with `pin`s:
 
 <details>
-<summary><strong>Full recipe</strong> — theme, figure oracle, parts, rig, pose, assembly</summary>
+<summary><strong>Full recipe</strong>: theme, figure oracle, parts, rig, pose, assembly</summary>
 
 ```drw
 theme archer:
@@ -255,16 +331,17 @@ export figFront archer-front:
 
 </details>
 
-Rendered with `drawstic render archer.drw#figFront --png@4`. Every line of the full recipe
-is unchanged from [`examples/characters-ro2/archer.drw`](examples/characters-ro2/archer.drw);
-only the arm, bow and quiver parts are left out, which is why its assembly is three `fit`s
-shorter than the excerpt above. The committed file renders all three views.
+Rendered with `drawstic render archer.drw#figFront --png@4`. Every line of the full recipe is
+unchanged from [`examples/characters-ro2/archer.drw`](examples/characters-ro2/archer.drw); only
+the arm, bow and quiver parts are left out, which is why its assembly is three `fit`s shorter
+than the excerpt above. The committed file renders all three views.
 
-### C — an icon family with `export`: repeatable, multi-artifact
+### One export block, several files
 
-One theme, one material, two sizes of the same icon. `export` writes PNG at every `@N`
-scale plus SVG in one pass — the family stays consistent because the shading path is
-shared, not redrawn per size.
+One theme, one material, two sizes of the same icon. A single `export` block names every
+drawing it covers, `dir` gives them a shared output directory, and each format line applies to
+all of them. The family stays consistent because the shading path is shared rather than
+redrawn per size.
 
 <img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/icon-family-dice.png" width="110" alt="A blue die icon with orange pips, shaded via model">
 
@@ -302,173 +379,154 @@ draw dice16 16x16:
   circle a 4:11 1 fill
   circle a 11:11 1 fill
 
-export dice games/dice:
-  png @1 @2
-  svg ids classes
-
-export dice16 games/dice16:
+export dice, dice16:
+  dir games
   png @1 @2
   svg ids classes
 ```
 
-Rendered with `drawstic render games.drw#dice --png@4`; `drawstic build games.drw` writes
+Rendered with `drawstic render games.drw#dice --png@4`. `drawstic build games.drw` writes
 `games/dice.png`, `games/dice@2x.png`, `games/dice.svg` and the same trio for `dice16`.
-Trimmed from [`examples/icons/games.drw`](examples/icons/games.drw) (same theme, same
-`dice`/`dice16` draws, unrelated icons in that file omitted here).
+Trimmed from [`examples/icons/games.drw`](examples/icons/games.drw): same theme, same
+`dice` and `dice16` draws, unrelated icons in that file omitted.
 
-## Install & quickstart
+## Does the model matter?
+
+Same brief, same skill, three model tiers, four categories. Each cell was drawn by an agent
+that could read only the shipped skill, with no sight of this repository's examples and no
+sight of any other model's work. The briefs and the twelve recipes are committed under
+[`evals/model-comparison/`](evals/model-comparison/), and a recipe there is frozen once
+rendered, so nothing was quietly cleaned up afterwards.
+
+<table>
+<tr>
+<th></th>
+<th align="center">Haiku 4.5</th>
+<th align="center">Sonnet 5</th>
+<th align="center">Opus 5</th>
+</tr>
+<tr>
+<td><strong>Icon</strong><br><sub>32x32</sub></td>
+<td align="center"><img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/model-eval/icon-haiku.png" width="96" alt="Compass rose icon drawn by Haiku 4.5"></td>
+<td align="center"><img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/model-eval/icon-sonnet.png" width="96" alt="Compass rose icon drawn by Sonnet 5"></td>
+<td align="center"><img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/model-eval/icon-opus.png" width="96" alt="Compass rose icon drawn by Opus 5"></td>
+</tr>
+<tr>
+<td><strong>Item</strong><br><sub>48x48</sub></td>
+<td align="center"><img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/model-eval/item-haiku.png" width="96" alt="Healing potion drawn by Haiku 4.5"></td>
+<td align="center"><img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/model-eval/item-sonnet.png" width="96" alt="Healing potion drawn by Sonnet 5"></td>
+<td align="center"><img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/model-eval/item-opus.png" width="96" alt="Healing potion drawn by Opus 5"></td>
+</tr>
+<tr>
+<td><strong>Character</strong><br><sub>64x128</sub></td>
+<td align="center"><img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/model-eval/character-haiku.png" width="72" alt="Chibi blacksmith drawn by Haiku 4.5"></td>
+<td align="center"><img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/model-eval/character-sonnet.png" width="72" alt="Chibi blacksmith drawn by Sonnet 5"></td>
+<td align="center"><img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/model-eval/character-opus.png" width="72" alt="Chibi blacksmith drawn by Opus 5"></td>
+</tr>
+<tr>
+<td><strong>Scene</strong><br><sub>192x108</sub></td>
+<td align="center"><img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/model-eval/scene-haiku.png" width="190" alt="Lighthouse scene drawn by Haiku 4.5"></td>
+<td align="center"><img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/model-eval/scene-sonnet.png" width="190" alt="Lighthouse scene drawn by Sonnet 5"></td>
+<td align="center"><img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/model-eval/scene-opus.png" width="190" alt="Lighthouse scene drawn by Opus 5"></td>
+</tr>
+</table>
+
+What it cost each of them to get there:
+
+| | Icon | Item | Character | Scene |
+|---|---|---|---|---|
+| **Haiku 4.5** | first `check` failed, 2 rounds | 1 round | clean, 0 rounds | first `check` failed, 1 round |
+| **Sonnet 5** | clean, 0 rounds | clean, 0 rounds | 0 forced, 2 after looking | clean, 0 rounds |
+| **Opus 5** | 0 forced, 6 after looking | 0 forced, 2 after looking | 9 rounds | 7 rounds, 1 of them forced |
+
+All twelve end in the same place: `check` clean, and `critique --as <category> --strict`
+exiting 0. The gate does not separate them at all. What separates them is what they got stuck
+on. Haiku's failures were language failures, a Unicode minus sign in a light direction and
+names colliding between a theme and a drawing. Sonnet and Opus wrote valid recipes immediately
+and then spent their rounds on the picture: a moustache that merged into a black blob, a hammer
+that read as an axe and buried the arm, a cliff that came out looking like brickwork. Opus used
+the most rounds because it was the only tier that kept working against its own render instead
+of against the gate.
+
+That is also the honest limit of the tooling. `check` verifies grammar, `critique` verifies
+structure, and neither one can tell you the hammer looks like an axe. Somebody still has to
+look at the picture.
+
+Round counts are self-reported by the drawing agent, and one cell contradicted itself, so treat
+them as indicative. The `check` and `critique` verdicts are not self-reported: they were re-run
+centrally over all twelve recipes afterwards.
+
+## Checking your work
+
+An agent cannot see its own output, so Drawstic checks everything a program can check and is
+explicit about the rest. Run these in order, fix what they report, repeat:
 
 ```sh
-npm i -D drawstic
-# bun add -D drawstic · pnpm add -D drawstic · yarn add -D drawstic
-bunx drawstic help
+drawstic check file.drw --json                         # [] is clean, else {code,message,line,col,hint}
+drawstic render file.drw#name --ascii                  # shape sanity, no colour
+drawstic render file.drw#name --png@4 --out check.png  # look at it before claiming it works
+drawstic critique file.drw --as icon --strict --json   # pixel-based quality checks
+drawstic build file.drw --json                         # writes every export artifact
 ```
 
-A recipe (`icon.drw`, copied from
-[`examples/basic-shapes/circles.drw`](examples/basic-shapes/circles.drw)):
-
-```drw
-draw circleIcon 16x16:
-  palette:
-    k = #1a1a1a
-    r = #c04040
-  bg #fff
-  circle k 8:8 7
-  circle r 8:8 5 fill
-```
-
-```sh
-drawstic check icon.drw --json                        # [] = clean
-drawstic render icon.drw#circleIcon --out circle.png   # → circle.png
-```
-
-<img src="https://raw.githubusercontent.com/TorbenKoehn/drawstic/main/docs/images/quickstart-circle.png" width="90" alt="A red circle icon with a black outline on white">
-
-<!-- for LLM agents -->
-
-## For LLM agents
-
-Drawstic is built to be operated by an agent from the command line — every command
-accepts `--json` and reports positioned diagnostics, never a silent failure.
-
-**Canonical path** (full detail in the shipped skill, pointer below):
-
-1. **Theme** — one `light` (the only shading source of truth) + a `figure:` oracle for characters; `use` it everywhere.
-2. **Materials** — `material NAME = COLOR RESPONSE` — response is the physics (`metal`/`skin`/`cloth`/`glass`/`glow`/`flat`), never the colour.
-3. **Parts** — each mass is a `Region` (a primitive or an organic constructor: `dome`/`lobe`/`crescent`/`ribbon`); a modular part declares `pin`s.
-4. **Assembly** — `fit` for contact-guaranteed placement (`behind`/`front`, `aim`, `ground`); for multi-view figures, one `skeleton` + one `pose` per view.
-5. **Shade** — `model REGION MAT` (smooth default) or `cel REGION MAT N` (N crisp bands).
-6. **`outline`** — one bare pass, last statement; it rings the sprite against transparency, so a full-bleed scene skips it.
-7. **`critique --as <cat> --strict`** until it exits 0, then answer the rubric it prints by looking.
-8. **`build`** — writes every `export` artifact next to the recipe.
-
-**Verification loop** — run in this order, fix, repeat:
-
-```sh
-drawstic check file.drw --json                          # [] = clean, else fix {code,message,line,col,hint}
-drawstic render file.drw#name --ascii                    # shape sanity, no colour
-drawstic render file.drw#name --png@4 --out check.png    # look at it — never claim success unrendered
-drawstic critique file.drw --as icon|scene|character|item --strict --json   # pixel-based craft gate
-drawstic build file.drw --json                           # writes every export artifact
-```
-
-Exit 0 means the must-fix subset is clean. Codes outside it are advisory by design — each has a
-real exception — so they are meant to be read and either fixed or justified, not driven to zero:
-17 of the 29 recipes bundled here ship with one standing. `critique` also prints a `rubric` of
-ordered renders (silhouette → ascii → png@4 → sheet) with prompts you answer by looking.
-`check` verifies grammar, `critique --strict` verifies structure, neither verifies craft on its own.
-
-**Full skill** (ships in the npm package): start at
-`node_modules/drawstic/skills/drawstic/SKILL.md` — it routes you to the rest in its first
-screen. Alongside it: `language.md` (the language surface, every trap tied to its diagnostic
-code), `verify.md` (the loop above as an algorithm, plus a code→fix table), `walkthrough.md`
-(one complete run, request → artifact), four per-category craft guides, `reference.md` as the
-last resort, and `starters/` — runnable, verified recipes to copy rather than retype.
+`check` verifies grammar and validation. `critique --strict` verifies structure and exits
+non-zero while the must-fix subset is dirty, which makes it a usable CI gate. Neither of them
+verifies craft, which is why `critique` also prints a rubric of ordered renders (silhouette,
+ascii, png@4, contact sheet) with questions you answer by looking at the image. Codes outside
+the must-fix subset stay advisory on purpose, because each has a real exception. They are meant
+to be read and then either fixed or justified, not driven to zero.
 
 ## CLI commands
 
-Every command accepts `--json` (stable diagnostic records; exit code is non-zero iff an
-error diagnostic fired), `--budget N` (evaluation-step budget) and `--mode pixel|smooth`
-(override the recipe's render mode) — omitted from the table below. An unrecognized flag
-is a positioned `E026` error, never silently ignored.
+Every command accepts `--json` (stable diagnostic records, non-zero exit if an error fired),
+`--budget N` (evaluation-step budget) and `--mode pixel|smooth` (override the recipe's render
+mode), so those are left out of the table. An unrecognized flag is a positioned `E026` error
+rather than something silently ignored.
 
 | Command | Flags | Does |
 |---|---|---|
-| `check <file>` | `--lint` `--rows` | Parse + deep-validate (renders every drawing, validates every export). `--lint` adds authoring warnings; `--rows` reports per-drawing pixel-row widths. |
-| `fmt <file>` | `--check` `--stdout` `--diff` | Canonical formatter, idempotent. `--check` exits non-zero on unformatted input (no write); `--stdout` prints without writing; bare rewrites in place. |
-| `context <file>` | — | Resolved design brief: palette, style guide, theme light/figure, importable drawings + ASCII previews, functions, export plans. |
-| `build <file>` | `--out <dir>` | Runs every `export`, writing artifacts next to the recipe by default (`--out` relocates the whole tree). |
-| `render <file>#<drawing>[(args)]` | `--png@N` `--out <path>` `--stdout` `--ascii` `--preview` `--silhouette` `--inspect` `--explain` `--fit WxH` `--crop x:y WxH` `--grid N` `--diff <png>` | Ad-hoc render of one drawing. Output kind precedence `--ascii` > `--preview` > `--inspect` > `--explain` > PNG. `--silhouette` flattens ink to opaque black. `--explain` prints every `model`/`cel`'s lowered primitives and every `fit`'s placement instead of an image. `--grid`/`--diff` are PNG-only debug aids, never part of `build`. |
-| `sheet <file>` | `--all` `--cols N` `--png@N` `--out <path>` `--stdout` `--ascii` `--preview` | One labeled, size-normalized contact sheet of the selected drawings (exported ones by default, or every non-parametric drawing with `--all`) — family QA. |
-| `critique <file>` | `--as icon\|scene\|character\|item` `--family a,b,c` `--strict` `--all` | Pixel-based, vision-free quality checks plus family checks across siblings. `--as` enables category thresholds; `--strict` promotes the must-fix subset to `error` (exit 1), the CI gate. |
-| `help` / `--help` / `-h` | — | This text. |
-| `version` / `--version` / `-v` | — | The installed package version. |
+| `check <file>` | `--lint` `--rows` | Parse and deep-validate: renders every drawing, validates every export. `--lint` adds authoring warnings, `--rows` reports per-drawing pixel-row widths. |
+| `fmt <file>` | `--check` `--stdout` `--diff` | Canonical formatter, idempotent. `--check` exits non-zero on unformatted input without writing, `--stdout` prints without writing, bare rewrites in place. |
+| `context <file>` | | Resolved design brief: palette, style guide, theme light and figure, importable drawings with ASCII previews, functions, export plans. |
+| `build <file>` | `--out <dir>` | Runs every `export`, writing artifacts next to the recipe by default. `--out` relocates the whole tree. |
+| `render <file>#<drawing>[(args)]` | `--png@N` `--out <path>` `--stdout` `--ascii` `--preview` `--silhouette` `--inspect` `--explain` `--fit WxH` `--crop x:y WxH` `--grid N` `--diff <png>` | Ad-hoc render of one drawing. Output kind precedence is `--ascii`, `--preview`, `--inspect`, `--explain`, then PNG. `--silhouette` flattens ink to opaque black. `--explain` prints every `model` and `cel` as lowered primitives and every `fit` placement instead of an image. `--grid` and `--diff` are PNG-only debug aids and never part of `build`. |
+| `sheet <file>` | `--all` `--cols N` `--png@N` `--out <path>` `--stdout` `--ascii` `--preview` | One labeled, size-normalized contact sheet of the selected drawings (exported ones by default, every non-parametric drawing with `--all`). Useful for reviewing a family at once. |
+| `critique <file>` | `--as icon\|scene\|character\|item` `--family a,b,c` `--strict` `--all` | Pixel-based quality checks that need no vision, plus family checks across siblings. `--as` enables category thresholds, `--strict` promotes the must-fix subset to `error` and exits 1. |
+| `help` / `--help` / `-h` | | This text. |
+| `version` / `--version` / `-v` | | The installed package version. |
 
-## Library usage
+## What determinism buys you
 
-Drawstic exposes one subpath per public module (no barrel) — compiled ESM + `.d.ts` under
-`dist/`. Import exactly what you need:
+In `mode pixel`, the same recipe renders the same framebuffer on every operating system,
+engine and CPU. That holds because the engine works for it:
 
-```ts
-import { Engine } from 'drawstic/engine'       // also the default: 'drawstic'
-import { encodePngRgba } from 'drawstic/png'
-import { writeFileSync } from 'node:fs'
+- fixed-point math bundled with the library, never the host's `Math.*`
+- a pinned colour pipeline (oklch to sRGB with gamut mapping) and integer source-over compositing
+- pinned rasterization rules, such as inclusive line endpoints and even-diameter circles
+- no wall clock, no locale, no unseeded randomness
+- a step and pixel-write budget, so no recipe can hang
 
-const recipe = `draw icon 16x16:
-  bg #fff
-  circle #c04040 8:8 6 fill
-`
+The guarantee is about pixels, not bytes: PNG and JPEG output depends on the encoder, so the
+golden tests compare decoded pixels. What you get in practice is that a rebuild produces an
+empty diff unless you actually changed the recipe.
 
-const engine = new Engine(process.cwd())
-const mod = engine.loadSource(recipe, '<memory>', 'icon.drw')
-const entry = mod.definitions.get('icon')
-if (entry?.kind !== 'draw') throw new Error('no drawing named icon')
+## Documentation
 
-const sprite = engine.renderDraw(entry, [], entry.definition.span)
-writeFileSync('icon.png', encodePngRgba(sprite.data, sprite.w, sprite.h))
-```
+- [Language spec](docs/language-spec.md): the full Recipe DSL grammar and semantics.
+- [Best practices](docs/best-practices.md): idiomatic authoring, from colour to composition.
+- [Motif cookbook](docs/motif-cookbook.md): tested snippets for recurring scene motifs.
+- [Architectural decisions](docs/decisions/): the ADRs behind the language and the pipeline.
+- [Example corpus](examples/): characters, icons, items, scenes, showcase and text, the source
+  of every image in this README.
 
-| Import | Module | Highlights |
-|--------|--------|------------|
-| `drawstic` / `drawstic/engine` | evaluator | `Engine`, `defaultBudget` |
-| `drawstic/parser` | parser | `parse` |
-| `drawstic/lexer` | lexer | `lex` |
-| `drawstic/ast` | AST | `Module`, `Statement`, `Expression`, node types |
-| `drawstic/color` | colour pipeline | `Color`, `mix`, `oklch`, `parseHexColor`, … |
-| `drawstic/diagnostics` | diagnostics | `Diagnostic`, `DrawsticError`, `formatDiagnostic` |
-| `drawstic/values` | runtime values | `Sprite`, `Region`, `Path`, transforms |
-| `drawstic/framebuffer` | framebuffer | `Framebuffer` |
-| `drawstic/png` | PNG codec | `encodePngRgba`, `encodePngIndexed`, `decodePng` |
-| `drawstic/jpeg` | JPEG encoder | `encodeJpeg` |
-| `drawstic/svg` | SVG writer | `encodeSvg`, `encodePathSvg` |
-| `drawstic/preview` | ASCII/ANSI preview | `spriteToAscii`, `spriteToAnsi` |
-| `drawstic/fmt` | formatter | `format`, `formatDiff` |
-| `drawstic/build` | export runner | `buildModule`, `runExport` |
-| `drawstic/cli` | CLI | `main(argv)` |
-
-`docs/`, `examples/` and `src/` are repository-only — the published package ships `dist/`,
-`skills/`, `README.md` and `LICENSE` only, so don't rely on those paths existing after
-`npm install`.
-
-## Why deterministic
-
-Drawstic guarantees **pixel** determinism in `mode pixel` (not byte-identical PNG/JPEG —
-compression varies by encoder; golden tests compare pixels): the same recipe renders the
-same framebuffer on every OS, engine and CPU. This is engineered, not assumed —
-bundled fixed-point transcendental math (never host `Math.*`), a pinned oklch↔sRGB +
-gamut-mapping colour pipeline, integer source-over compositing, pinned rasterization
-(inclusive line endpoints, even-diameter circles), no wall-clock/locale input, and
-pure-seeded randomness only. A step + pixel-write budget keeps every render total — no
-recipe can hang.
-
-- [Language spec](docs/language-spec.md) — the full Recipe DSL grammar and semantics.
-- [Architectural decisions](docs/decisions/) — the ADRs behind the language and pipeline.
-- [Example corpus](examples/) — characters, icons, items, scenes, showcase, text — the
-  source of every image in this README.
+Those paths exist in this repository. The published npm package ships `dist/`, `skills/`,
+`README.md` and `LICENSE` only, so do not rely on `docs/`, `examples/` or `src/` after an
+install.
 
 ## Development
 
-Drawstic is built with [Bun](https://bun.com) (≥ 1.3). See [CONTRIBUTING.md](CONTRIBUTING.md).
+Drawstic is built with [Bun](https://bun.com) (1.3 or newer). See
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```sh
 bun install
