@@ -29,6 +29,18 @@ use themes dusk              # apply a theme from ./themes.drw at file level
 Imports resolve relative to the recipe and may not escape the project root (the CLI's working
 directory). A drawing-level `use` must be the first statement of the draw body.
 
+**Trap.** Every name shares **one namespace**, but only `draw`/`path`/`theme`/`fn`/`atlas`/
+`skeleton`/`pose` are collision-checked at declaration — a repeat there is a clear `E007 duplicate
+definition of 'name'`. `mask`/`material`/`gradient`/`light`/plain bindings are not checked against
+each other: a later one silently **overwrites** the earlier same-named one, and the only trace is a
+confusing type error wherever the stale name is next used — a region `liquid` clobbered by a later
+`material liquid`, or a `mask tower` by a later `material tower`, fail exactly this way. Never reuse
+a name across kinds; give each its own stem (`liquidMask`/`liquidMat`). `check --lint` catches this
+as `W020`: it fires when a name rebinds to a different KIND than an earlier binding reachable in the
+same scope, but stays silent on rebinding the SAME kind (loop accumulators, ADR-0081) and on a
+draw-local name shadowing a module-level one (a fresh, intentional local binding, not an overwrite)
+— run `--lint` before shipping a recipe with more than a couple of these bindings.
+
 ## 2 — Values and coordinates
 
 | | |
@@ -155,6 +167,10 @@ cel   REGION MAT N [over UNION] [light L]  # the same form body rendered as N cr
 `MAT` is a `material` value **or** an inline `COLOR [RESPONSE]`. `over UNION` builds the height
 field from `UNION` (e.g. `leg.union(boot)`) but paints only `REGION`, so stacked parts co-shade as
 one continuous limb.
+
+**Trap.** The second slot is always `MAT`, never a second region — co-shading a union is the
+keyworded `over UNION`, not a bare positional one. `model leg boot` reads `boot` as the material
+and fails `expected a material or a colour, got region`; write `model leg legMat over leg.union(boot)`.
 
 **Light resolution — three tiers, first match wins:**
 

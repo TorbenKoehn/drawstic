@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { DrawsticError } from '../../src/diagnostic.js'
 import { lex } from '../../src/lexer.js'
 
 const kinds = (src: string): string[] =>
@@ -124,6 +125,44 @@ describe('lexer', () => {
 
   test('unexpected character is a syntax error', () => {
     expect(() => lex('x = $1\n', 't.drw')).toThrow(/unexpected character/)
+  })
+
+  const catchLexError = (src: string): DrawsticError => {
+    try {
+      lex(src, 't.drw')
+    } catch (e) {
+      expect(e).toBeInstanceOf(DrawsticError)
+      return e as DrawsticError
+    }
+    throw new Error('expected lex to throw')
+  }
+
+  test('a Unicode minus-sign lookalike names the character and its ASCII replacement', () => {
+    const err = catchLexError('light −45\n')
+    expect(err.message).toContain('U+2212')
+    expect(err.hint).toContain('U+2212 MINUS SIGN')
+    expect(err.hint).toContain("'-'")
+  })
+
+  test('the full dash family, curly quotes, NBSP, and full-width colon are all named lookalikes', () => {
+    const cases: ReadonlyArray<readonly [string, string, string]> = [
+      ['x = ‐1\n', 'U+2010', 'HYPHEN'],
+      ['x = ‑1\n', 'U+2011', 'NON-BREAKING HYPHEN'],
+      ['x = ‒1\n', 'U+2012', 'FIGURE DASH'],
+      ['x = –1\n', 'U+2013', 'EN DASH'],
+      ['x = —1\n', 'U+2014', 'EM DASH'],
+      ['x = ―1\n', 'U+2015', 'HORIZONTAL BAR'],
+      ['x = ‘a’\n', 'U+2018', 'LEFT SINGLE QUOTATION MARK'],
+      ['x = a’\n', 'U+2019', 'RIGHT SINGLE QUOTATION MARK'],
+      ['x = “a”\n', 'U+201C', 'LEFT DOUBLE QUOTATION MARK'],
+      ['pixels：\n', 'U+FF1A', 'FULLWIDTH COLON'],
+      ['x = 1\n', 'U+00A0', 'NO-BREAK SPACE'],
+    ]
+    for (const [src, codepoint, name] of cases) {
+      const err = catchLexError(src)
+      expect(err.message).toContain(codepoint)
+      expect(err.hint).toContain(`${codepoint} ${name}`)
+    }
   })
 
   test('mid-line "#" is a comment when not a valid color literal', () => {

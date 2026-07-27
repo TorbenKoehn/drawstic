@@ -159,6 +159,14 @@ mirrored copy of one draw — `flipx`/`flipy` only swap left/right *within* one 
   the hand and `aim` rotates the whole prop about it, so the blade/bow always points the right way. A
   blanket `stamp prop … flipy` per view points it backwards in side/back. `starters/character-3view.drw`
   does exactly this for its staff: `fit staff.grip bodyFront.grip aim tip 12:16 front bodyFront`.
+- **A chunky prop (hammer, mace, wide axe head) is the hardest thing to get right.** A wide flat
+  head misreads as the wrong tool (hammer→axe) unless its proportions commit hard, and `aim`'s
+  arbitrary rotation shears that same head thin, reading as a blade — reserve `aim` for slender
+  props (staff, bow, sword) and give a chunky head its own literal orientation per view instead.
+  Lengthen the shaft so the head clears the shoulder line, and give the prop an explicit
+  `behind`/`front` — an unlayered haft plows through the forearm and hides the hand. Check every fix
+  in a cropped `--silhouette`, not the colour render: value and material hide a geometry collision
+  that a black silhouette shows immediately.
 - **Back view: no face.** Build the back head from the same skull/hair mass, minus every eye/brow/mouth
   mark — a front-posed limb redrawn "facing front" from behind is the tell that gives away a reused
   front part.

@@ -104,6 +104,14 @@ const STROKE_DOMINATION = 0.85
 const MIN_PART_FRACTION = 0.01
 const MIN_PART_FLOOR = 4
 
+/**
+ * Cap on individual pinhole coordinates C008 reports in `detail.locations` — bounded so a
+ * pathological sprite with hundreds of holes doesn't blow up the payload. Always present in
+ * `detail` alongside the list, so a capped list is never mistaken for the full set; `measured`
+ * (the true total pinhole count) is unaffected by the cap.
+ */
+const PINHOLE_LOCATION_CAP = 8
+
 /** Rounds a fraction to 4 decimal places (matches inspect.ts' round4 convention). */
 const round4 = (v: number): number => Math.round(v * 10000) / 10000
 
@@ -184,10 +192,16 @@ const PROFILES: Record<CritiqueCategory, CritiqueProfile> = {
 export const resolveProfile = (name: string | null | undefined): CritiqueProfile | null =>
   name != null && name in PROFILES ? PROFILES[name as CritiqueCategory] : null
 
+/** One located pixel a check reports as evidence — e.g. a C008 pinhole's `(x,y)`. */
+export type CritiqueLocation = { readonly x: number; readonly y: number }
+
 /**
  * A single critique finding: the standard diagnostic fields plus the auditable
  * `{measured, threshold, fix}` triple (ADR-0085 §2). `detail` carries any extra
- * scalars a check reports (e.g. C003's `x0/x1/sum/target`).
+ * scalars a check reports (e.g. C003's `x0/x1/sum/target`), or — for a check with
+ * several per-pixel findings (C008's pinholes) — a bounded `locations` list
+ * alongside the cap that bounded it, so the JSON payload always states the
+ * count and cap the human line abbreviates.
  */
 export type CritiqueCheck = {
   readonly code: string
@@ -196,7 +210,7 @@ export type CritiqueCheck = {
   readonly measured: number
   readonly threshold: number
   readonly fix: string
-  readonly detail?: Readonly<Record<string, number>>
+  readonly detail?: Readonly<Record<string, number | readonly CritiqueLocation[]>>
 }
 
 /**
@@ -291,10 +305,18 @@ const percentile = (sorted: readonly number[], q: number): number => {
  * paint boundary fully encloses. `pinholeCount` counts holes of 1–3px (almost
  * always an unpainted-pixel bug, C008); `largestInteriorHole` is the biggest
  * enclosed gap (informative only — a deliberate window/handle can be large).
+ * `locations` carries one representative pixel per pinhole-sized hole (its
+ * topmost, then leftmost, transparent pixel — deterministic and, for a true
+ * 1px pinhole, exactly the hole itself), in raster-scan order, uncapped —
+ * callers (C008) bound the list they surface.
  */
 const interiorHoles = (
   sprite: Sprite,
-): { readonly pinholeCount: number; readonly largestInteriorHole: number } => {
+): {
+  readonly pinholeCount: number
+  readonly largestInteriorHole: number
+  readonly locations: readonly CritiqueLocation[]
+} => {
   const w = sprite.w
   const h = sprite.h
   const n = w * h
@@ -336,6 +358,7 @@ const interiorHoles = (
   const seen = new Uint8Array(n)
   let pinholeCount = 0
   let largestInteriorHole = 0
+  const locations: CritiqueLocation[] = []
   const comp: number[] = []
   for (let start = 0; start < n; start++) {
     if (seen[start] === 1 || outside[start] === 1 || !isTransparent(start)) {
@@ -372,9 +395,12 @@ const interiorHoles = (
     largestInteriorHole = Math.max(largestInteriorHole, size)
     if (size >= 1 && size <= 3) {
       pinholeCount++
+      const x = start % w
+      const y = (start - x) / w
+      locations.push({ x, y })
     }
   }
-  return { pinholeCount, largestInteriorHole }
+  return { pinholeCount, largestInteriorHole, locations }
 }
 
 /** Fully-transparent rows above (`leading`) and below (`trailing`) the content (C012 support); both `0` for an empty sprite. */
@@ -632,20 +658,34 @@ const checkPaletteBudget = (
   }
 }
 
-/** C008: interior pinholes — flags 1–3px transparent gaps enclosed by paint (near-certain bugs). */
-const checkPinholes = (sprite: Sprite): CritiqueCheck | null => {
-  const { pinholeCount, largestInteriorHole } = interiorHoles(sprite)
+/**
+ * C008: interior pinholes — flags 1–3px transparent gaps enclosed by paint (near-certain bugs).
+ * Reports where: the message names the first hole's pixel, the fix bakes a ready `--crop` command
+ * centered on it, and `detail.locations` carries up to {@link PINHOLE_LOCATION_CAP} `{x,y}` pairs
+ * (the cap itself always present, so a capped list is never mistaken for the full set) — closing
+ * the gap where an agent could see *that* C008 fired but not *where*, without vision.
+ */
+const checkPinholes = (name: string, sprite: Sprite): CritiqueCheck | null => {
+  const { pinholeCount, largestInteriorHole, locations } = interiorHoles(sprite)
   if (pinholeCount === 0) {
     return null
   }
+  const first = locations[0] as CritiqueLocation
+  const shown = locations.slice(0, PINHOLE_LOCATION_CAP)
+  const pad = 3
+  const cx = Math.max(0, first.x - pad)
+  const cy = Math.max(0, first.y - pad)
+  const cw = Math.min(sprite.w - cx, pad * 2 + 1)
+  const ch = Math.min(sprite.h - cy, pad * 2 + 1)
+  const more = pinholeCount > 1 ? `; ${pinholeCount} total, see --json for the rest` : ''
   return {
     code: CRITIQUE_CODE.pinhole,
     severity: 'warning',
-    message: `${pinholeCount} interior pinhole(s): 1–3px transparent gap(s) enclosed by paint`,
+    message: `${pinholeCount} interior pinhole(s): 1–3px transparent gap(s) enclosed by paint, first at (${first.x},${first.y})`,
     measured: pinholeCount,
     threshold: 0,
-    fix: 'fill the enclosed pinhole(s) — usually an unpainted pixel inside a solid region',
-    detail: { largestInteriorHole },
+    fix: `fill the pinhole(s) — first at (${first.x},${first.y}); render #${name} --crop ${cx}:${cy} ${cw}x${ch} to see it${more}`,
+    detail: { largestInteriorHole, locationCap: PINHOLE_LOCATION_CAP, locations: shown },
   }
 }
 
@@ -1122,7 +1162,7 @@ export const critiqueSprite = (
   push(checkCentering(metrics))
   push(checkValueSpread(metrics))
   push(checkPaletteBudget(metrics, options.paletteTarget ?? 'unbudgeted', profile?.colorCeiling))
-  push(checkPinholes(sprite))
+  push(checkPinholes(name, sprite))
   push(checkTrailingEdgeRow(metrics))
   push(checkOcclusionParity(sprite))
 

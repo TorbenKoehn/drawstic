@@ -6,6 +6,10 @@ be reproduced or contested. Decided in [ADR-0100](../../docs/decisions/0100-mode
 **A recipe in this tree is frozen once rendered.** Improving a weak result afterwards would turn
 a measurement into a portfolio piece. A rerun is a new dated directory, not an edit.
 
+**Run of 2026-07-27**, against the product skill as committed in `a399a8b`. What the builders got
+stuck on was folded back into the skill immediately afterwards, so a rerun against a later skill
+is measuring a different product and its numbers are not comparable to these.
+
 ## Protocol
 
 Every builder gets exactly this, and nothing else:

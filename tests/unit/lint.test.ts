@@ -1064,3 +1064,157 @@ describe('W018: aa on a provably exact placement is a no-op (ADR-0099, amended 2
     expect(codes(src)).not.toContain('W018')
   })
 })
+
+describe('W020: a name is rebound to a different kind than an earlier binding', () => {
+  const codes = (src: string): string[] => {
+    const { engine, mod } = load(src)
+    return lintModule(engine, mod).map((d) => d.code)
+  }
+
+  test('fires: a mask is overwritten by a same-named material in the same drawing', () => {
+    const src = [
+      'draw d 8x8:',
+      '  mask liquid = rect(0:0, 3:3)',
+      '  material liquid = #3388cc metal',
+      '  fill #ffffff rect(0:0, 7:7)',
+      '',
+    ].join('\n')
+    const { engine, mod } = load(src)
+    const diags = lintModule(engine, mod).filter((d) => d.code === 'W020')
+    expect(diags).toHaveLength(1)
+    expect(diags[0]).toMatchObject({
+      severity: 'warning',
+      code: 'W020',
+      message:
+        "'liquid' rebinds a mask (line 2) as a material — different kinds sharing a name silently overwrite each other",
+      hint: "give one of them its own name — only 'draw'/'path'/'theme'/'fn'/'atlas'/'skeleton'/'pose' collide loudly (E007); every other kind of binding silently overwrites",
+    })
+    // positioned on the SECOND (overwriting) binding's own line, not the first.
+    expect(diags[0]?.line).toBe(3)
+  })
+
+  test('fires: a mask is overwritten by a same-named material even at module scope', () => {
+    const src = [
+      'mask spot = rect(0:0, 3:3)',
+      'material spot = #3388cc metal',
+      '',
+      'draw d 8x8:',
+      '  bg #ffffff',
+      '',
+    ].join('\n')
+    const { engine, mod } = load(src)
+    const diags = lintModule(engine, mod).filter((d) => d.code === 'W020')
+    expect(diags).toHaveLength(1)
+    expect(diags[0]).toMatchObject({
+      code: 'W020',
+      message:
+        "'spot' rebinds a mask (line 1) as a material — different kinds sharing a name silently overwrite each other",
+    })
+    expect(diags[0]?.line).toBe(2)
+  })
+
+  test('fires again on a further rebind back to the original kind — every kind change is reported', () => {
+    const src = [
+      'draw d 8x8:',
+      '  mask spot = rect(0:0, 3:3)',
+      '  material spot = #3388cc metal',
+      '  mask spot = rect(0:0, 5:5)',
+      '  fill #ffffff spot',
+      '',
+    ].join('\n')
+    expect(codes(src).filter((c) => c === 'W020')).toHaveLength(2)
+  })
+
+  test('fires: a nested branch overwrites an outer name with a different kind (assignLocal reaches outward)', () => {
+    const src = [
+      'draw d 8x8:',
+      '  mask spot = rect(0:0, 3:3)',
+      '  if true:',
+      '    material spot = #3388cc metal',
+      '  fill #ffffff rect(0:0, 7:7)',
+      '',
+    ].join('\n')
+    const { engine, mod } = load(src)
+    const diags = lintModule(engine, mod).filter((d) => d.code === 'W020')
+    expect(diags).toHaveLength(1)
+    expect(diags[0]?.message).toBe(
+      "'spot' rebinds a mask (line 2) as a material — different kinds sharing a name silently overwrite each other",
+    )
+    expect(diags[0]?.line).toBe(4)
+  })
+
+  test('fires: two different kinds collide within the same loop body', () => {
+    const src = [
+      'draw d 8x8:',
+      '  for i 0..3:',
+      '    mask spot = rect(0:0, 3:3)',
+      '    material spot = #3388cc metal',
+      '  fill #ffffff rect(0:0, 7:7)',
+      '',
+    ].join('\n')
+    expect(codes(src).filter((c) => c === 'W020')).toHaveLength(1)
+  })
+
+  test('stays silent on a same-kind loop-persistent rebind (ADR-0081 accumulator idiom)', () => {
+    const src = [
+      'draw gear 20x12:',
+      '  g = circle(4:6, 2)',
+      '  for i 0..3:',
+      '    g = g.union(circle((8 + i * 4):6, 2))',
+      '  fill #c0c0c0 g',
+      '',
+    ].join('\n')
+    expect(codes(src)).not.toContain('W020')
+  })
+
+  test('stays silent on a plain sequential same-kind rebind outside any loop', () => {
+    const src = [
+      'draw d 8x8:',
+      '  mask m = rect(0:0, 3:3)',
+      '  mask m = rect(0:0, 5:5)',
+      '  fill #ffffff m',
+      '',
+    ].join('\n')
+    expect(codes(src)).not.toContain('W020')
+  })
+
+  test('stays silent when mutually exclusive if/else branches each freshly introduce the same new name as different kinds', () => {
+    const src = [
+      'draw d 8x8:',
+      '  if true:',
+      '    mask spot = rect(0:0, 3:3)',
+      '  else:',
+      '    material spot = #3388cc metal',
+      '  fill #ffffff rect(0:0, 7:7)',
+      '',
+    ].join('\n')
+    expect(codes(src)).not.toContain('W020')
+  })
+
+  test('stays silent when two match arms each freshly introduce the same new name as different kinds', () => {
+    const src = [
+      'draw d 8x8:',
+      '  x = 1',
+      '  match x:',
+      '    1: mask spot = rect(0:0, 3:3)',
+      '    else: material spot = #3388cc metal',
+      '  fill #ffffff rect(0:0, 7:7)',
+      '',
+    ].join('\n')
+    expect(codes(src)).not.toContain('W020')
+  })
+
+  test('stays silent on a drawing-local name shadowing a module-level binding of a different kind', () => {
+    // `assignLocal` never crosses the draw's own barrier out to module scope (ADR-0081) — a
+    // draw-local re-declaration is a fresh, intentional local binding, not a silent overwrite.
+    const src = [
+      'material accent = #223344 metal',
+      '',
+      'draw d 8x8:',
+      '  mask accent = rect(0:0, 3:3)',
+      '  fill #ffffff accent',
+      '',
+    ].join('\n')
+    expect(codes(src)).not.toContain('W020')
+  })
+})

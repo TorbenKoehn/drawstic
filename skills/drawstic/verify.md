@@ -58,6 +58,11 @@ baseline, `C004` for a near-black subject, `C002` for an object that touches the
 Of the 29 recipes bundled with this engine, 17 ship with at least one advisory code standing, and
 every one is a decision, not an oversight. What is never acceptable is a code you did not read.
 
+In the twelve-cell model-comparison eval, two cells shipped a visibly broken drawing with `check`
+and `critique --strict` both green — a clean gate never proved the render was right. STAGE 2's look
+and STAGE 4's rubric are what would have caught it; skipping either because STAGE 1/3 passed is
+exactly the failure mode.
+
 ## Which render mode answers which question
 
 You almost always want the first row. Reach past it only for the specific question in column 2.

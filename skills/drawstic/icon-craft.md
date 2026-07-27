@@ -101,6 +101,11 @@ An even canvas puts the visual centre on a half-pixel:
   ([language.md](language.md) §4 has the full rule; it applies identically to both axes of `ellipse`).
 - A glyph is centred when its bbox satisfies `x0 + x1 = W−1` (=31 on 32px). Confirm with
   `render … --inspect --json`'s `alphaCoverageBBox` — don't eyeball it.
+- A hand-built `poly`/`curvePoly` (a compass rose, dial ticks) gets none of `circle`'s automatic
+  half-pixel handling — every vertex is a literal coordinate, so a shape authored around a guessed
+  integer centre inherits its bias wholesale and sits half a pixel off whatever else shares the
+  frame. Build every opposite point pair as a span that sums to `W−1` (not from one centre variable),
+  then confirm with the same bbox check above.
 - A `stamp … shadow 0:1` shifts visual mass ~0.3px down — set an already-centred glyph 1px **higher** to
   compensate (mandatory at 16px, taste at 32).
 - An edge-centred notch/bump (subtract/union circle): keep `r` ≤ ~20% of the block edge, or it gouges a
@@ -115,6 +120,9 @@ An even canvas puts the visual centre on a half-pixel:
   third ornament), then the points.
 - `poly` takes no trailing `w<N>` and `arc`/`quad`/`bezier` rasterize blocky below ~12px — both traps
   and their fixes are in [language.md](language.md) §4.
+- **Small filled circles square off.** `circle c 3 fill` covers a 6×6 box with only its four corner
+  pixels clipped — verified via `--inspect --json`'s `occupancy`, it reads as a black square, not a
+  dot. Below r≈4 don't lean on `circle` for a round accent — size it up, or hand-pixel the mark.
 
 ## 6. Multi-size = redraw, never scale
 

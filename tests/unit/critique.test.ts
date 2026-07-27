@@ -165,7 +165,15 @@ describe('C008 interior pinholes', () => {
     const d = critique(src, 'hole')
     const c = byCode(d.checks, CRITIQUE_CODE.pinhole)
     expect(c).toMatchObject({ code: 'C008', measured: 1, threshold: 0 })
-    expect(c?.detail).toEqual({ largestInteriorHole: 1 })
+    // row 2 ("kw.wk") puts the hole at column 2 -> (2,2)
+    expect(c?.detail).toEqual({
+      largestInteriorHole: 1,
+      locationCap: 8,
+      locations: [{ x: 2, y: 2 }],
+    })
+    expect(c?.message).toContain('first at (2,2)')
+    expect(c?.fix).toContain('first at (2,2)')
+    expect(c?.fix).toContain('render #hole --crop 0:0 5x5')
     // the two-tone body keeps value contrast up, so C008 is isolated here
     expect(byCode(d.checks, CRITIQUE_CODE.valueSpread)).toBeUndefined()
   })
@@ -184,6 +192,27 @@ describe('C008 interior pinholes', () => {
     ].join('\n')
     const d = critique(src, 'notch')
     expect(byCode(d.checks, CRITIQUE_CODE.pinhole)).toBeUndefined()
+  })
+
+  test('several pinholes report a bounded, capped location list plus the true total', () => {
+    // 10 separate 1px holes on row y=1, each isolated by a painted pixel on either side, none
+    // touching the canvas border -> pinholeCount 10, but detail.locations caps at 8 with the cap
+    // stated explicitly (never a silent truncation); the message/fix stay short (first + total).
+    const holesX = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
+    const sprite = synthSprite('holes', 21, 3, (x, y) =>
+      y === 1 && holesX.includes(x) ? null : DARK,
+    )
+    const d = critiqueSprite('holes', sprite)
+    const c = byCode(d.checks, CRITIQUE_CODE.pinhole)
+    expect(c).toMatchObject({ code: 'C008', measured: 10, threshold: 0 })
+    expect(c?.detail).toEqual({
+      largestInteriorHole: 1,
+      locationCap: 8,
+      locations: holesX.slice(0, 8).map((x) => ({ x, y: 1 })),
+    })
+    expect(c?.message).toContain('10 interior pinhole')
+    expect(c?.message).toContain('first at (1,1)')
+    expect(c?.fix).toContain('10 total, see --json for the rest')
   })
 })
 

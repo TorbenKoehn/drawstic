@@ -103,9 +103,11 @@ Item material quality comes from **few explicit marks**, not filters:
   a handful reads better than `grain`'s procedural texture at this scale.
 - **Leather/cloth** (wraps, straps, cloaks): compact 2–4px bands, one highlight line, one dark fold;
   keep warm materials warm in shadow — darken first, then at most a small cool mix.
-- **Glass/liquid** (bottles, vials): shared shell first, ~30–36% body alpha, ~20–24% left highlight
-  strip, ~14–22% right dark strip; the liquid band ~84–90% alpha with one darker meniscus line. Every
-  bottle gets one front sign (cross, diamond, skull, star) so it survives `@1`.
+- **Glass/liquid** (bottles, vials): paint order is part of the contract — shell first (~30–36% body
+  alpha), then the liquid fill (~84–90% alpha, one darker meniscus line), then the front-wall veils
+  and specular **last**: ~20–24% left highlight strip, ~14–22% right dark strip. Liquid painted over
+  those veils buries them and the bottle reads as a tinted blob instead of glass. Every bottle gets
+  one front sign (cross, diamond, skull, star) so it survives `@1`.
 - **Magic/gold/gem accents, not fog:** a magic halo is 2–3 alpha-only circles around 8–20% alpha behind
   the focus — never flood the tile; gold is a warm base + dark edge + 1–2 bright specs, not a flat
   yellow blob.

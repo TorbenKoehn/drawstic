@@ -255,6 +255,7 @@ The metric bundle is a superset of `render --inspect`.
 | W017 | a `Front`/`Back` view pair repeats an off-centre pin's `x` verbatim (not an L/R pair) → mirror it: `x = w-1-x` |
 | W018 | `aa` on a placement that provably resamples exactly — `flipx`/`flipy`/`rot(0\|180)`/`scale<N>` or no transform; `rot(90\|270)` only when the sprite's w and h share a parity → drop it, or use a non-lattice transform (`rot45`, non-integer `scale`, `skew`, `perspective`) |
 | W019 | an `export` block's `dir` is in the wrong place for its shape: (a) ≥2 targets share an explicit-path directory prefix with no block `dir` → hoist it into `dir`; (b) one target + `dir` + no `file` → fold `dir` into the target's own path |
+| W020 | a name rebinds to a different KIND than an earlier binding in the same scope (`mask`/`material`/`gradient`/`light`/plain value — see the namespace trap in [language.md §1](language.md)) → give one of them its own name |
 
 ### Construct census
 

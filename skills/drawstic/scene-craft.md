@@ -46,6 +46,11 @@ is structurally impossible. `fit` reads the oracle directly: a standing part dec
 contact shadow (§8). Extra shading zones must be **terrain-following regions** (a `profile` intersect,
 a silhouette) — never a bare `rect` box, which leaves a visible seam across the scene.
 
+**Trap.** Evenly spaced cracks over parallel strata reads as **masonry**, not rock — a brick wall,
+not a cliff. Jitter each crack's position/length with `noise(seed, i, 0)`, and let the strata lines
+themselves wander (add `noise(seed, x * k, 0)` to each band's y) — the same de-lattice trick as
+`duneY` above. A perfectly regular grid is always the tell.
+
 ## 3. Layer template — back-to-front, filter timing is the point
 
 1. Sky gradient (`bg` / `linear`).

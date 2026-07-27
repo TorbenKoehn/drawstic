@@ -53,6 +53,7 @@ export const lintModule = (engine: Engine, mod: ModuleRecord): Diagnostic[] => {
   lintExportPathRepeatsDir(mod, diagnostics)
   lintExportBlockDirShape(mod, diagnostics)
   lintMirroredViewPin(mod, diagnostics)
+  lintModuleNameKindCollision(mod, diagnostics)
   const exported = new Set(mod.exports.map((ex) => ex.name))
   const used = new Set<string>()
   const fontCache = new Map<string, FontResolved | null>()
@@ -72,6 +73,7 @@ export const lintModule = (engine: Engine, mod: ModuleRecord): Diagnostic[] => {
     lintCoveredStamps(engine, mod, entry.definition, diagnostics)
     lintUnknownGlyphs(engine, mod, entry.definition, diagnostics, fontCache)
     lintTransparentLastRow(entry.definition, mod, diagnostics)
+    lintDrawNameKindCollision(entry.definition, mod, diagnostics)
     diagnostics.push(...canonicalPathChecks(engine, mod, entry.definition))
     // A module with no `export` block is a *library* module: every drawing in it exists to be
     // pulled in elsewhere via `from <module> a, b`, and `check` sees one file at a time, so it can
@@ -1072,6 +1074,178 @@ const lintMirroredViewPin = (mod: ModuleRecord, diagnostics: Diagnostic[]): void
       )
     }
   }
+}
+
+// ── W020: cross-kind name collision ─────────────────────────────────────────
+//
+// `draw`/`path`/`theme`/`fn`/`atlas`/`skeleton`/`pose` share one namespace with everything else
+// (ADR-0046) and are pre-collected up front (`#collectDefs` in `src/eval.ts`), so a repeat throws
+// `E007 duplicate definition` loudly, at the second declaration. `mask`/`gradient`/plain bindings
+// (`Statement.kind === 'binding'`), plus `materialBinding` and `lightBinding`, are NOT
+// collision-checked against each other: each funnels its name through `Environment.assignLocal`/
+// `declare` (`#execBinding`/`#execLightBinding`/`#execMaterialBinding`), which only asks "is this
+// name const/palette-reserved" (`#checkBindable`) — never "does this name already hold a different
+// KIND of thing" — so a second bind of the same name to a different kind just overwrites the first,
+// silently. A twelve-cell model evaluation found this as the single most common first failure; three
+// eval cells hit it directly: a region `liquid` clobbered by a later `material liquid`, and a `mask
+// tower` clobbered by a later `material tower` — in both cases nothing is reported at the overwrite,
+// only a confusing error (or nothing at all) at the next *use* of the clobbered name.
+
+/** The five binding shapes W020 tracks — everything that reaches `assignLocal`/`declare` without a
+ *  kind check (see the section comment above). A plain `binding` (no `gradient`/`mask` keyword) is
+ *  labelled `value` since it carries no keyword of its own. */
+type BindKind = 'mask' | 'material' | 'gradient' | 'light' | 'value'
+
+/**
+ * `stmt`'s W020 binding-kind and the name(s) it binds; `null` for every other statement (a
+ * `draw`/`path`/`theme`/`fn`/`atlas`/`skeleton`/`pose` repeat already throws `E007` at declaration
+ * and needs no lint here — see the section comment above).
+ */
+const bindKindOf = (
+  stmt: Statement,
+): { readonly names: readonly string[]; readonly kind: BindKind } | null => {
+  if (stmt.kind === 'binding') {
+    return { names: stmt.names, kind: stmt.bindKind === 'plain' ? 'value' : stmt.bindKind }
+  }
+  if (stmt.kind === 'materialBinding') {
+    return { names: [stmt.name], kind: 'material' }
+  }
+  if (stmt.kind === 'lightBinding') {
+    return { names: [stmt.name], kind: 'light' }
+  }
+  return null
+}
+
+/**
+ * One lexical scope's own name → kind facts for {@link lintNameKindCollision}, chained to a parent
+ * scope exactly like the runtime `Environment`/`assignLocal` (`src/eval.ts`): a lookup walks
+ * outward through parents, and rebinding a name already owned by an ancestor updates the fact THERE
+ * — not in the current scope — mirroring `assignLocal`'s "reassign the nearest reachable mutable
+ * binding, else declare fresh locally" rule. A fresh root scope has no parent, matching the draw
+ * `barrier` `assignLocal` never crosses outward (ADR-0081) — see the scope note on
+ * {@link lintNameKindCollision}.
+ */
+class KindScope {
+  readonly #own = new Map<string, { readonly kind: BindKind; readonly line: number }>()
+  constructor(private readonly parent: KindScope | null) {}
+
+  #owner(name: string): KindScope | null {
+    if (this.#own.has(name)) {
+      return this
+    }
+    return this.parent ? this.parent.#owner(name) : null
+  }
+
+  /** Records `name` as `kind`; returns the fact it replaced (own or an ancestor's), `null` when
+   *  nothing reachable already owns `name` (a fresh declaration, local to this scope). */
+  record(
+    name: string,
+    kind: BindKind,
+    line: number,
+  ): { readonly kind: BindKind; readonly line: number } | null {
+    const owner = this.#owner(name) ?? this
+    const prev = owner.#own.get(name) ?? null
+    owner.#own.set(name, { kind, line })
+    return prev
+  }
+}
+
+/**
+ * Lint `W020`: a name bound ({@link bindKindOf}) to a DIFFERENT kind than an earlier, still
+ * reachable binding of the same name — the exact footgun the section comment above describes.
+ * Fires once per rebind that changes kind: the recorded kind is updated to the new one every time
+ * ({@link KindScope.record}), so a rebind back to the ORIGINAL kind still fires (it changed again),
+ * while a run of SAME-kind rebinds — the ADR-0081 loop/accumulator idiom, `g = circle(…)` then
+ * `g = g.union(…)` inside a `for` body, both `value` — never does, since the recorded kind never
+ * actually changes. That is the deliberate design point: rebinding to the same kind is legal and
+ * common (loop accumulators, a `mask`/`material` re-declared per branch with the same shape) and
+ * must stay silent, or the lint becomes noise and gets ignored.
+ *
+ * Scope mirrors `Environment` exactly ({@link KindScope}): a nested block (`if`/`match`/`for`/
+ * `scatter`/`mirror`/`mask { }`) gets its own child scope, so a binding inside one CAN collide with
+ * a name from an enclosing scope (the same outward walk `assignLocal` performs) — but a name FIRST
+ * introduced inside a branch is scoped to that branch alone. An `if`/`else` pair (or two `match`
+ * arms) independently introducing the same NEW name as two different kinds is therefore silent: at
+ * runtime at most one branch ever executes, each in its own environment, and neither is visible to
+ * the other or to anything after the statement — not a confusable collision.
+ *
+ * Deliberately OUT of scope: a drawing-local name shadowing a module-level one. `assignLocal` never
+ * crosses the draw's own `barrier` (ADR-0081) — a draw cannot reach or mutate module state — so a
+ * draw-local re-declaration is a fresh, intentional local binding, not a silent overwrite of
+ * anything: every reference inside that draw already means the local one, and nothing outside the
+ * draw can observe the shadowed module binding at all. That is the same shadowing ADR-0073/ADR-0081
+ * already bless for the canvas `w`/`h` and outer module consts, so flagging it here would just be
+ * noise on a legal, idiomatic pattern. Consequently each draw gets its own root {@link KindScope}
+ * with no parent ({@link lintDrawNameKindCollision}), and the module-level pass
+ * ({@link lintModuleNameKindCollision}) is entirely separate — the two never share a scope.
+ */
+const lintNameKindCollision = (
+  statements: readonly Statement[],
+  scope: KindScope,
+  mod: ModuleRecord,
+  diagnostics: Diagnostic[],
+): void => {
+  for (const stmt of statements) {
+    const bound = bindKindOf(stmt)
+    if (bound) {
+      for (const name of bound.names) {
+        const prev = scope.record(name, bound.kind, stmt.span.line)
+        if (prev && prev.kind !== bound.kind) {
+          diagnostics.push(
+            warning(
+              'W020',
+              `'${name}' rebinds a ${prev.kind} (line ${prev.line}) as a ${bound.kind} — different kinds sharing a name silently overwrite each other`,
+              mod.displayPath,
+              stmt.span,
+              "give one of them its own name — only 'draw'/'path'/'theme'/'fn'/'atlas'/'skeleton'/'pose' collide loudly (E007); every other kind of binding silently overwrites",
+            ),
+          )
+        }
+      }
+      continue
+    }
+    switch (stmt.kind) {
+      case 'if':
+        lintNameKindCollision(stmt.thenStatement, new KindScope(scope), mod, diagnostics)
+        if (stmt.elseStatement) {
+          lintNameKindCollision(stmt.elseStatement, new KindScope(scope), mod, diagnostics)
+        }
+        break
+      case 'match':
+        for (const arm of stmt.arms) {
+          lintNameKindCollision(arm.body, new KindScope(scope), mod, diagnostics)
+        }
+        break
+      case 'for':
+      case 'scatter':
+      case 'mirror':
+      case 'maskBlock':
+        lintNameKindCollision(stmt.body, new KindScope(scope), mod, diagnostics)
+        break
+      default:
+        break
+    }
+  }
+}
+
+/** Runs {@link lintNameKindCollision} over one drawing's body, in its own root scope (no parent —
+ *  see the "deliberately out of scope" note there). */
+const lintDrawNameKindCollision = (
+  def: DrawDefinition,
+  mod: ModuleRecord,
+  diagnostics: Diagnostic[],
+): void => {
+  lintNameKindCollision(def.body, new KindScope(null), mod, diagnostics)
+}
+
+/**
+ * Runs {@link lintNameKindCollision} over a module's own top-level statements — flat (module scope
+ * has no `if`/`for`/`match`/etc.), and entirely disjoint from every draw's own pass above: a
+ * `drawDefinition` statement here is opaque to {@link bindKindOf} and isn't one of the recursed
+ * kinds, so this never descends into a draw body.
+ */
+const lintModuleNameKindCollision = (mod: ModuleRecord, diagnostics: Diagnostic[]): void => {
+  lintNameKindCollision(mod.ast.statements, new KindScope(null), mod, diagnostics)
 }
 
 // ── W013–W015: the one-canonical-way lints (ADR-0094) ───────────────────────

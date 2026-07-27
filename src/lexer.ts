@@ -48,6 +48,34 @@ export type Token = {
   blockColon: boolean
 }
 
+/**
+ * Common Unicode lookalikes for ASCII syntax characters that an LLM emits routinely
+ * (smart quotes from prose autocorrect, typographic dashes, a full-width colon from a
+ * CJK input method). An unexpected character hitting one of these gets a hint naming the
+ * character and its ASCII replacement instead of a bare "unexpected character" — the
+ * lexer never *accepts* the character (a recipe stays a pure function of its own bytes),
+ * it only names the problem so the agent doesn't burn a repair round eyeballing it.
+ */
+const UNICODE_LOOKALIKES: Record<string, { readonly name: string; readonly ascii: string }> = {
+  '‐': { name: 'HYPHEN', ascii: '-' },
+  '‑': { name: 'NON-BREAKING HYPHEN', ascii: '-' },
+  '‒': { name: 'FIGURE DASH', ascii: '-' },
+  '–': { name: 'EN DASH', ascii: '-' },
+  '—': { name: 'EM DASH', ascii: '-' },
+  '―': { name: 'HORIZONTAL BAR', ascii: '-' },
+  '−': { name: 'MINUS SIGN', ascii: '-' },
+  '‘': { name: 'LEFT SINGLE QUOTATION MARK', ascii: "'" },
+  '’': { name: 'RIGHT SINGLE QUOTATION MARK', ascii: "'" },
+  '“': { name: 'LEFT DOUBLE QUOTATION MARK', ascii: '"' },
+  '”': { name: 'RIGHT DOUBLE QUOTATION MARK', ascii: '"' },
+  ' ': { name: 'NO-BREAK SPACE', ascii: ' ' },
+  '：': { name: 'FULLWIDTH COLON', ascii: ':' },
+}
+
+/** `U+XXXX`, uppercase hex, zero-padded to 4 digits — matches the Unicode naming convention. */
+const codepointName = (c: string): string =>
+  `U+${(c.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0')}`
+
 const isLetter = (c: string): boolean => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 const isDigit = (c: string): boolean => c >= '0' && c <= '9'
 const isHex = (c: string): boolean => isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
@@ -449,6 +477,17 @@ export const lex = (source: string, file: string): Token[] => {
         spaced = false
         prevWasDot = c === '.'
         continue
+      }
+      const lookalike = UNICODE_LOOKALIKES[c]
+      if (lookalike) {
+        const cp = codepointName(c)
+        throw error(
+          ERROR_CODE.syntax,
+          `unexpected character '${c}' (${cp} ${lookalike.name})`,
+          file,
+          { line: cl + 1, column: i + 1 },
+          `${cp} ${lookalike.name} looks like ASCII '${lookalike.ascii}' — replace it with '${lookalike.ascii}'`,
+        )
       }
       throw error(ERROR_CODE.syntax, `unexpected character '${c}'`, file, {
         line: cl + 1,
