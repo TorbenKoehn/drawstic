@@ -40,7 +40,7 @@ jobs:
 
       # Smoke-test the built dist under Node (not Bun) to prove Node >= 20 support.
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 20
 
