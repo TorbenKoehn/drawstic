@@ -1,0 +1,134 @@
+# Chibi blacksmith, RO-style, front view, 64x128.
+# theme(light + figure oracle) -> materials -> parts(pins) -> fit assembly -> outline -> export
+
+# ---- colours (module scope) ----
+skin     = #d99a6c
+hairCol  = #241c18
+apronCol = #7a4326
+strapCol = #4a2c18
+trouser  = #333a44
+bootCol  = #221c18
+steel    = #99a2ac
+white    = #f6efe4
+iris     = #4a3226
+mouthCol = #7a3d34
+ember    = #ff7a2a
+
+# ---- materials: colour + response ----
+material skinM    = skin skin
+material hairM    = hairCol cloth spread 260%
+material apronM   = apronCol cloth spread 200%
+material strapM   = strapCol cloth
+material trouserM = trouser cloth
+material bootM    = bootCol cloth
+material steelM   = steel metal
+
+# ---- full-body theme: ONE light, figure oracle for a 3-head chibi ----
+theme figThree:
+  mode pixel
+  light sun = dir 1:1 #ffe6b0 amb #2a3a5e 16%
+  figure:
+    heads 3
+    headW 34
+    eyeLine 0.66
+    earLine 0.6
+    eyeSep 12
+
+# ---- head-part theme: same light, heads 1 (the part canvas IS one head) ----
+theme figHead:
+  mode pixel
+  light sun = dir 1:1 #ffe6b0 amb #2a3a5e 16%
+  figure:
+    heads 1
+    headW 22
+    eyeLine 0.64
+    earLine 0.58
+    eyeSep 11
+
+# ================= HEAD (34x42 = one head) =================
+
+draw head 34x42:
+  use figHead
+  face = ellipse(17:28, 10:12)
+  model face skinM
+  skull = dome(17:20, 14:15)
+  model skull hairM
+  earL = lobe(7:27, 4:27, 4)
+  earR = lobe(27:27, 30:27, 4)
+  model earL skinM
+  model earR skinM
+  fill white ellipse(fig.eyeL, 3:3)
+  fill white ellipse(fig.eyeR, 3:3)
+  circle iris fig.eyeL 2 fill
+  circle iris fig.eyeR 2 fill
+  px #201a1a fig.eyeL
+  px #201a1a fig.eyeR
+  line #1c1512 11:23 15:22
+  line #1c1512 19:22 23:23
+  px skin.darken(20%) 17:31
+  line hairCol 14:32 20:32
+  line mouthCol 15:35 19:35
+  pin neck 17:40
+
+# ================= BODY (48x86; feet on the last row) =================
+
+draw body 48x86:
+  use figThree
+  legL = rrect(15:52, 22:78, 3)
+  legR = rrect(26:52, 33:78, 3)
+  model legL trouserM
+  model legR trouserM
+  bootL = rrect(13:76, 24:86, 2)
+  bootR = rrect(24:76, 35:86, 2)
+  model bootL bootM
+  model bootR bootM
+  torso = curvePoly(11:16, 24:10, 37:16, 34:54, 14:54)
+  model torso skinM
+  apron = poly(15:22, 33:22, 31:53, 17:53)
+  model apron apronM
+  strap = poly(21:16, 27:16, 25:22, 23:22)
+  model strap strapM
+  belt = rect(15:48, 33:53)
+  model belt strapM
+  armL = rrect(3:20, 11:50, 3)
+  armR = rrect(37:20, 45:50, 3)
+  model armL skinM
+  model armR skinM
+  cuffL = rrect(2:44, 12:50, 2)
+  cuffR = rrect(36:44, 46:50, 2)
+  cel cuffL steelM 3
+  cel cuffR steelM 3
+  handL = rrect(3:48, 12:56, 2)
+  handR = rrect(36:48, 45:56, 2)
+  model handL skinM
+  model handR skinM
+  model rect(20:0, 28:13) skinM
+  pin neck 24:2
+  pin grip 40:52
+  pin hip  24:52
+
+# ================= PROP =================
+
+draw hammer 16x52:
+  use figThree
+  handle = rect(6:12, 10:50)
+  model handle strapM
+  head = rrect(1:0, 15:12, 2)
+  cel head steelM 3
+  fill ember.alpha(70%) circle(4:9, 2)
+  pin grip 8:46
+  pin tip  8:2
+
+# ================= ASSEMBLY =================
+
+draw blacksmith 64x128:
+  use figThree
+  fit body.neck 32:43
+  fit head.neck body.neck
+  fit hammer.grip body.grip
+  outline
+
+# ================= EXPORT =================
+
+export blacksmith:
+  png @1 @4

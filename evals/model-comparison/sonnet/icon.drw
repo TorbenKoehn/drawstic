@@ -1,0 +1,25 @@
+# Compass rose icon, 32x32, flat plate (icon-craft.md exception: geometry-only
+# light via edge bands, no model/cel). Circular dial reads better than a square
+# tile for a compass motif; light travels 1:1 (down-right) => up-left is lit.
+b = #1c2b45   # dial — deep navy
+l = #f4f7ff   # paper — S/E/W needle wings
+r = #e0483f   # accent — N wing (the one universal "north" cue)
+k = #0d1420   # ink — hub + shade band
+
+draw compass 32x32:
+  face  = circle(16:16, 13)
+  fill b face
+  fill l.alpha(34%) face.edge(1:1, 2)     # up-left bevel, lit
+  fill k.alpha(28%) face.edge(-1:-1, 2)   # down-right bevel, shade
+
+  north = poly(16:6, 20:12, 16:16, 12:12)
+  east  = poly(26:16, 20:20, 16:16, 20:12)
+  south = poly(16:26, 12:20, 16:16, 20:20)
+  west  = poly(6:16, 12:12, 16:16, 12:20)
+
+  fill l east.union(south).union(west)
+  fill r north
+  fill k circle(16:16, 2)                 # hub — reads as the needle's pivot
+
+export compass:
+  png @1 @4

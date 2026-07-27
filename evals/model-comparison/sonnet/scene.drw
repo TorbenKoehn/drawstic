@@ -1,0 +1,80 @@
+light sun = dir 1:1 #ffb27a amb #263257 16%
+
+haze = #caa286
+
+material rock    = #4d4032 cloth spread 160%
+material rockDk  = #1c1712 cloth
+material plaster = #d8d0ba cloth
+material brick   = #7a3430 cloth
+material ironDk  = #23201c metal
+material glazeM  = #cfe6f2 glass
+material lampM   = #ffe6a0 glow
+
+draw tower 24x42:
+  body    = poly(4:41, 20:41, 17:16, 7:16)
+  band1   = rect(0:24, 23:28).intersect(body)
+  band2   = rect(0:32, 23:36).intersect(body)
+  railing = rect(5:14, 19:16)
+  house   = rect(8:6, 16:14)
+  roof    = poly(6:6, 18:6, 12:0)
+  glazing = rect(9:7, 15:9)
+  door    = rect(10:37, 14:41)
+  lamp    = circle(12:11, 2)
+  model body plaster
+  model band1 brick
+  model band2 brick
+  model railing ironDk
+  model house ironDk
+  model roof ironDk
+  model glazing glazeM
+  fill #241a13 door
+  fill #241a13.litTone(#ffcf8a, 22%) door.edge(1:1, 1)
+  for i 0..5:
+    circle #ffe9b8.alpha(7%) 12:11 (7 - i) fill
+  model lamp lampM
+  pin base 12:41
+
+draw lighthouse 192x108:
+  gradient sky = linear(90, (#141a30, 0%), (#37406b, 40%), (#c9754f, 74%), (#f6c584, 100%))
+  bg sky
+
+  for i 0..9:
+    circle #ffdca3.alpha(6%) 114:42 (20 - i * 2) fill
+  circle #fff3d8 114:42 4 fill
+
+  islet = ellipse(58:47, 22:4)
+  fill haze.mix(#2c3f66, 45%) islet
+
+  rect haze.alpha(28%) 0:44 191:58 fill
+
+  gradient seaGrad = linear(90, (#c9926f, 0%), (#5f7592, 30%), (#2c4160, 65%), (#0f1826, 100%))
+  sea = rect(0:52, 191:107)
+  fill seaGrad sea
+
+  fill #ffdca3.alpha(28%) ellipse(114:56, 13:4)
+  scatter g 24 7 rect(28:66, 92:102):
+    px #dfe9f2.alpha(55%) g
+  ripple sea 0.45 6 #ffffff.alpha(28%)
+
+  cliff = poly(104:98, 102:78, 114:72, 105:62, 117:54, 111:48, 126:44, 158:44, 168:52, 180:62, 191:80, 191:98)
+  model cliff rock
+  grain cliff 0.1 11 #241d15
+  line #241a12.alpha(55%) 112:60 118:78 w1
+  line #241a12.alpha(55%) 170:56 176:70 w1
+  waterline = cliff.edge(0:1, 2).intersect(sea)
+  fill #d7e6ee.alpha(38%) waterline
+
+  fit tower.base 142:45 ground
+
+  for i 0..4:
+    fx = 18 + i * 20
+    fy = 96 + round((rand(9, i) - 0.5) * 8)
+    curve #dfe9f2.alpha(45%) fx:fy (fx + 6):(fy - 2) (fx + 12):fy w2
+
+  fgRock = poly(0:107, 0:88, 14:82, 26:90, 30:107)
+  model fgRock rockDk
+
+  fill linear(24, #ffd9a0.alpha(10%), #1a2440.alpha(10%)) rect(0:0, 191:107)
+
+export lighthouse:
+  png @1 @4

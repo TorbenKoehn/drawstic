@@ -78,6 +78,9 @@ examples/         # ONE canonical generation per category (ADR-0096 / release D3
   icons/          # icon families, PNG + SVG
   text/           # font/text surface
   showcase/       # showcase.drw + parts.drw + themes.drw — full-surface e2e example
+evals/           # Measured, as-produced corpora — never craft-gated, never touched up (ADR-0100)
+  model-comparison/ # <model>/<category>.drw + BRIEFS.md; a recipe here is FROZEN once rendered —
+                  # fix a weak result by adding a new dated corpus, never by editing the recipe
 skills/          # User-facing agent skills, consumable by LLM agents (the actual "product"; shipped in the npm package)
   drawstic/      # How an LLM agent uses Drawstic: SKILL.md (workflow, core syntax, idioms) + reference.md (full CLI + language reference)
 .claude/

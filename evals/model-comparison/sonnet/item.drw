@@ -1,0 +1,24 @@
+# Healing potion — 48x48 inventory item. Glass flask, red brew, cork stopper, one light source.
+
+light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%
+
+material glassMat = #cfeee8 glass
+material healBrew = #e0324f glass
+material corkMat  = #8a5a34 cloth
+
+draw potion 48x48:
+  neck     = rect(20:8, 28:19)
+  shoulder = poly(20:19, 28:19, 35:29, 13:29)
+  body     = rrect(9:29, 39:44, 10)
+  shell    = neck.union(shoulder).union(body)
+  liquid   = shell.intersect(rect(0:24, 47:44))
+  cross    = rect(22:31, 26:41).union(rect(18:34, 30:38)).intersect(body)
+  stopper  = rrect(18:2, 30:9, 2)
+  model shell glassMat
+  model liquid healBrew
+  fill #fbeee0.alpha(90%) cross
+  model stopper corkMat
+  outline
+
+export potion:
+  png @1 @4

@@ -1,0 +1,39 @@
+light sun = dir 0.5:-1 #fff8dc amb #2a2d3a 12%
+
+theme rose:
+  palette:
+    k = #2a2a2a
+    l = #f5f5f5
+    r = #d4522d
+  size 32x32
+  mode pixel
+  style """Flat icon tile (radius 6, 2px margin). 4-point compass rose."""
+
+use rose
+
+draw compass 32x32:
+  # Plate background with bevel
+  plate = rrect(2:2, 29:29, 6)
+  fill r plate
+  fill l.alpha(40%) plate.edge(1:1, 2)
+  fill k.alpha(32%) plate.edge(-1:-1, 2)
+
+  # Four cardinal points as triangles
+  north = poly(16:5, 13:11, 19:11)
+  south = poly(16:27, 13:21, 19:21)
+  east = poly(27:16, 21:13, 21:19)
+  west = poly(5:16, 11:13, 11:19)
+
+  # Center circle
+  center = circle(16:16, 2)
+
+  fill l north
+  fill l south
+  fill l east
+  fill l west
+  fill l center
+
+  outline
+
+export compass:
+  png @1 @4

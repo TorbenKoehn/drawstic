@@ -1,0 +1,47 @@
+# Compass rose icon for a maps app. Flat plate contract (icons skip model/cel:
+# an areal shade veil cannot read at 32px). Light travels down-right (1:1), so
+# every up-left facet is lit and every down-right facet takes the shade.
+
+theme mapsIcon:
+  palette:
+    k = #0d1524          # ink — the down-right shade band
+    d = #223253          # dial face
+    l = #f5f9ff          # paper — lit facets
+    s = #8ba3c8          # steel — shaded facets and the bezel
+    r = #f0573a          # accent — the north point
+  size 32x32
+  mode pixel
+  style """
+  One flat icon. Dial = circle r14 at 16:16 => pixels 2..29, margin 2 all round.
+  Light travels 1:1, so the up-left contour is lit and the down-right one shaded.
+  EVERY span is canvas-symmetric (x0 + x1 = 31), because the dial's even diameter
+  puts the visual centre on 15.5 — hence the 2px flat arm tips and the 2px waist
+  straddle. Cardinal arms span 5..26, waist 10..21; bezel is the r12..r13 annulus,
+  so every arm tip keeps one dial-dark pixel between itself and the lit rim band.
+  Each arm splits on its own axis: up-left facet paper, down-right facet steel.
+  North is the accent, and it is the only hue in the icon.
+  Four points only: intercardinal spikes were cut because at 32px the part that
+  clears the notch is a 2px nub and reads as a speck. No ticks, no letters, no
+  centre hub — a 4px hub rasterises to a square and punches a hole in the rose.
+  """
+
+use mapsIcon
+
+draw compass 32x32:
+  dial = circle(16:16, 14)
+  vert = poly(15:5, 16:5, 21:15, 21:16, 16:26, 15:26, 10:16, 10:15)
+  horiz = poly(5:15, 15:10, 16:10, 26:15, 26:16, 16:21, 15:21, 5:16)
+  bezel = circle(16:16, 13).subtract(circle(16:16, 12))
+  fill d dial
+  fill l.alpha(30%) dial.edge(1:1, 2)
+  fill k.alpha(34%) dial.edge(-1:-1, 2)
+  fill s.alpha(38%) bezel
+  fill l horiz.intersect(rect(0:0, 31:15))
+  fill s horiz.intersect(rect(0:16, 31:31))
+  fill r.lighten(22%) vert.intersect(rect(0:0, 15:15))
+  fill r vert.intersect(rect(16:0, 31:15))
+  fill l vert.intersect(rect(0:16, 15:31))
+  fill s vert.intersect(rect(16:16, 31:31))
+
+export compass:
+  png @1 @4

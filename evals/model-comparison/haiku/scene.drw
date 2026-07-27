@@ -1,0 +1,36 @@
+light dusk = dir -1:1 #ffe8cc amb #1a2a4a 20%
+
+material rocky = #6a5a4a metal
+material cream = #f5f5f0 cloth
+material water = #2a4a6a metal
+material beam = #ffff80 glow
+
+draw lighthouse 192x108:
+  # Sky - dusk background
+  fill #6a7a9a rect(0:0, 192:75)
+
+  # Sea - flat water base
+  fill #1a3a5a rect(0:75, 192:108)
+
+  # Rocky cliff - jagged silhouette
+  mask cliff = poly(0:75, 35:60, 65:52, 95:48, 130:58, 160:52, 192:68, 192:108, 0:108)
+  model cliff rocky
+
+  # Lighthouse tower - white/cream structure
+  mask tower = rect(93:38, 107:78)
+  model tower cream
+
+  # Lantern room at top - bright
+  mask lantern = circle(100:33, 5)
+  model lantern beam
+
+  # Light beam shining upward
+  line #ffff80 100:33 100:5
+
+  # Sea waves - add some texture
+  for y 80..105:
+    if (y + 3) mod 8 == 0:
+      line #3a5a7a 0:y 192:y
+
+export lighthouse:
+  png @1 @4

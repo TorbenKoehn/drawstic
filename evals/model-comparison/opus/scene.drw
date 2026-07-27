@@ -1,0 +1,176 @@
+# Lighthouse on a rocky cliff at dusk — 192x108.
+# Layer order is back-to-front and load-bearing: the haze veil only pushes the far
+# shore back because it is painted AFTER it and BEFORE the sea.
+
+theme dusk:
+  palette:
+    k = #0d131f       # ink — foreground silhouettes
+    h = #d9a583       # haze — the ONE colour every far layer mixes toward
+    s = #1d2b48       # deep water
+    f = #ffe9c4       # flare — sun core, lantern, lit windows
+  size 192x108
+  mode pixel
+  light sun = dir 1:1 #ffcf95 amb #2c3a5c 18%
+  style """
+  Dusk seascape, sun low up-left and half sunk into the horizon. It is the ONE light:
+  it travels 1:1, so every lit face in the frame is the up-left one, and the lantern
+  glow is a painted accent, never a second light. Depth uses three levers only: size
+  (far shore and skiff are their own smaller, flatter layers), haze (mix/tint toward h)
+  and value (near layers darker and more saturated).
+  """
+
+use dusk
+
+material rockM  = #6a5d72 cloth spread 210%
+material stoneM = #7d7488 cloth spread 170%
+material towerM = #ece4d6 cloth spread 130%
+material bandM  = #c04a3e cloth spread 150%
+material capM   = #313b54 metal
+material glassM = #f2b348 glow
+
+# Terrain is a function: silhouette (profile … fill), region (profile(…) as mask) and
+# placement oracle (y = cliffY(x / (w - 1))) all come from ONE source, so the tower can
+# neither float nor sink. The flat span is the ledge the lighthouse was built on.
+fn cliffTopX(x) = min(99, 49 + round(pow(clamp((118 - x) / 40, 0, 1), 2) * 56) + round(noise(9, x * 0.11, 0) * 5) + round(noise(13, x * 0.47, 0) * 2))
+fn cliffY(nx)   = if abs(nx * 191 - 129) < 14 then 52 else cliffTopX(nx * 191)
+fn strataA(nx)  = cliffY(nx) + 12 + round(noise(17, nx * 5, 0) * 6)
+fn strataB(nx)  = strataA(nx) + 3
+fn strataC(nx)  = cliffY(nx) + 27 + round(noise(23, nx * 4, 0) * 7)
+fn strataD(nx)  = strataC(nx) + 3
+fn farY(nx)     = 63 - round(clamp(1 - nx * 5.4, 0, 1) * (10 + noise(3, nx * 12, 0) * 6))
+fn far2Y(nx)    = 63 - round(clamp((nx - 0.26) * 4.2, 0, 1) * clamp((0.58 - nx) * 5, 0, 1) * (16 + noise(5, nx * 9, 0) * 7))
+fn frontY(nx)   = 91 + round(sin(nx * pi * 3.2) * 2) + round(noise(21, nx * 6, 0) * 3)
+
+draw tower 24x46:
+  roof    = poly(5:8, 18:8, 12:0, 11:0)
+  lantern = rect(8:8, 15:15)
+  deck    = rect(3:15, 20:17)
+  shaft   = poly(8:17, 15:17, 17:40, 6:40)
+  plinth  = rect(1:40, 22:45)
+  band1   = shaft.intersect(rect(0:21, 23:26))
+  band2   = shaft.intersect(rect(0:32, 23:37))
+  model plinth stoneM
+  model shaft towerM
+  model band1 bandM over shaft
+  model band2 bandM over shaft
+  model deck capM
+  model roof capM
+  model lantern glassM
+  fill #10182c.alpha(65%) deck.edge(0:-1, 1)
+  rect #2b3450 11:40 14:45 fill
+  rect #ffcf83 3:42 4:44 fill
+  rect #ffcf83 19:42 20:44 fill
+  pin base 12:45
+
+# A far object is its own smaller, flatter draw — never the near one scaled down.
+draw skiff 11x10:
+  sailA = poly(5:0, 5:7, 1:7)
+  sailB = poly(6:2, 6:7, 9:7)
+  hull  = poly(0:7, 10:7, 8:9, 2:9)
+  fill #b9aab4 sailA
+  fill #8a7b8a sailB
+  fill #241f2f hull
+  px #241f2f 5:0
+
+draw lighthouse 192x108:
+  # ---- 1 sky ------------------------------------------------------------------
+  gradient sky = linear(90, (#101830, 0%), (#26325a, 20%), (#5b4d7c, 36%), (#a5647a, 46%), (#dd8b5e, 53%), (#ffc78c, 58%))
+  bg sky
+  scatter st 26 43 rect(2:2, 189:30):
+    px #cfd8f0.alpha(45%) st
+  # ---- 2 the sun: many fine rings, then the core ------------------------------
+  for i 0..14:
+    circle #ffd6a2.alpha(5%) 48:62 (32 - i * 2) fill
+  circle f 48:62 5 fill
+  # ---- 3 far shore: smallest contrast, strongest haze mix ---------------------
+  profile h.mix(#3b4a72, 66%) 0..191 far2Y 63 fill
+  profile h.mix(#33436b, 58%) 0..191 farY 63 fill
+  # ---- 4 THE haze veil — after the far layer, before everything nearer --------
+  rect h.alpha(30%) 0:50 191:64 fill
+  # ---- 5 sea -------------------------------------------------------------------
+  mask seaMask = rect(0:62, 191:107)
+  gradient sea = linear(90, (#e8a97a, 0%), (#a3738b, 12%), (#4c5a86, 42%), (s, 76%), (#111a2e, 100%))
+  fill sea seaMask
+  ripple seaMask 0.2 7 #9fb0cc.alpha(22%)
+  # ---- 6 the sun's path: a narrow core column broken into glitter dashes ------
+  for i 0..21:
+    py = 63 + i + round(pow(i, 1.55) * 0.11)
+    pw = 2 + round(pow(i, 1.25) * 0.45)
+    cw = 1 + round(i * 0.16)
+    rect #ffe0b4.alpha(0.34 - i * 0.014) (48 - cw):py (48 + cw):py fill
+    ax = 48 + round((rand(71, i) - 0.5) * 2 * pw)
+    bx = 48 + round((rand(79, i) - 0.5) * 2 * pw)
+    rect #ffd0a0.alpha(0.3 - i * 0.012) ax:py (ax + 1 + round(rand(73, i) * 5)):py fill
+    rect #ffd0a0.alpha(0.3 - i * 0.012) bx:py (bx + 1 + round(rand(83, i) * 4)):py fill
+  scatter g 26 7 rect(34:64, 64:90):
+    px #ffe3bd.alpha(45%) g
+  # ---- 7 mid-sea wave dashes, depth-staggered: far weak, near strong ----------
+  for i 0..25:
+    wx = round(rand(31, i) * 178)
+    wy = 66 + round(pow(rand(37, i), 1.5) * 23)
+    wl = 5 + round(rand(41, i) * 11)
+    line #9db0d0.alpha(0.08 + (wy - 66) * 0.006) wx:wy (wx + wl):wy
+  # ---- 8 midground: the skiff, hazed toward the horizon colour ----------------
+  stamp skiff 60:70 tint h 46%
+  line #16203a.alpha(45%) 61:80 69:80 w2
+  # ---- 9 the cliff: one mass, form-shaded from the same light -----------------
+  mask cliffMask = profile(0..191, cliffY, 99)
+  model cliffMask rockM
+  grain cliffMask 0.1 13 #221b2c
+  fill linear(90, transparent, #140e1c.alpha(52%)) cliffMask
+  fill #1b1424.alpha(22%) poly(152:38, 191:34, 191:99, 136:99).intersect(cliffMask)
+  fill #ffcb90.alpha(12%) poly(84:76, 112:50, 124:52, 100:99, 86:99).intersect(cliffMask)
+  strata = profile(0..191, strataA, 99).subtract(profile(0..191, strataB, 99))
+  fill #241c30.alpha(35%) strata.intersect(cliffMask)
+  strata2 = profile(0..191, strataC, 99).subtract(profile(0..191, strataD, 99))
+  fill #241c30.alpha(28%) strata2.intersect(cliffMask)
+  for i 0..4:
+    ux = 100 + i * 19 + round(rand(67, i) * 10)
+    uy = cliffY(ux / (w - 1))
+    ul = 9 + round(rand(69, i) * 15)
+    fill #1d1727.alpha(30%) poly(ux:(uy + 3), (ux + 2):(uy + 5), (ux - 1):(uy + ul), (ux - 3):(uy + ul - 3)).intersect(cliffMask)
+  fill #ffcb90.alpha(45%) cliffMask.edge(1:1, 2)
+  fill #16101f.alpha(35%) cliffMask.edge(0:-1, 2)
+  # ---- 10 the hero, planted by the same fn that drew the ledge ----------------
+  fit tower.base 128:cliffY(128 / (w - 1)) ground
+  # ---- 11 the lantern: bright accents last, after every shade pass ------------
+  for i 0..9:
+    circle #ffe6b8.alpha(6%) 127:18 (20 - i * 2) fill
+  circle #fff2d2 127:18 2 fill
+  px #ffffff 127:18
+  # ---- 12 near water: painted IN FRONT of the cliff, so its base is submerged --
+  mask frontMask = profile(0..191, frontY, 107)
+  gradient nearSea = linear(90, (#33416a, 0%), (#0d1526, 100%))
+  fill nearSea frontMask
+  refl = cliffMask.transform(flipy().about(0:91)).intersect(frontMask)
+  fill #0c1322.alpha(45%) refl
+  ripple frontMask 0.5 5 #93a9cc.alpha(30%)
+  fill #ffd2a4.alpha(38%) frontMask.edge(0:1, 2)
+  for i 0..17:
+    fx = round(rand(53, i) * 172)
+    fy = 94 + round(rand(59, i) * 12)
+    fl = 7 + round(rand(61, i) * 13)
+    line #b9c8e0.alpha(26%) fx:fy (fx + fl):fy
+  for i 0..7:
+    ly = 93 + i * 2
+    lw = 1 + round(i * 0.6)
+    rect #ffcf90.alpha(0.17 - i * 0.017) (127 - lw):ly (127 + lw):ly fill
+  # ---- 13 foreground frame: darker, larger, lower detail — it sets the scale ---
+  rockA = curvePoly(0:106, 6:93, 20:88, 33:95, 42:107, 0:107).intersect(rect(0:0, 191:107))
+  fill k rockA
+  fill #b98a68.alpha(30%) rockA.edge(1:1, 2)
+  rockB = curvePoly(150:107, 159:99, 173:97, 186:104, 191:107).intersect(rect(0:0, 191:107))
+  fill k.lighten(6%) rockB
+  fill #b98a68.alpha(26%) rockB.edge(1:1, 2)
+  grain rockA.union(rockB) 0.07 29 #2b2438
+  # ---- 14 three birds for scale -------------------------------------------------
+  for i 0..2:
+    bx = 28 + i * 14
+    by = 20 + round(rand(5, i) * 9)
+    line k.alpha(60%) bx:by (bx + 3):(by - 2)
+    line k.alpha(60%) (bx + 3):(by - 2) (bx + 6):by
+  # ---- 15 atmosphere last: one gradient veil over the finished frame, <= 12% ---
+  fill linear(28, #ffc78c.alpha(10%), #141c32.alpha(11%)) rect(0:0, 191:107)
+
+export lighthouse:
+  png @1 @4
