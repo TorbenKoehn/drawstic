@@ -7,7 +7,7 @@ import { censusModule, lintModule } from '../../src/lint.js'
 let n = 0
 const load = (src: string): { engine: Engine; mod: ModuleRecord } => {
   const engine = new Engine(process.cwd())
-  const mod = engine.loadSource(src, `${process.cwd()}\\lint${n++}.drw`, 'lint.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `lint${n++}.drw`), 'lint.drw')
   return { engine, mod }
 }
 

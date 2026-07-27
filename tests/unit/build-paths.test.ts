@@ -63,7 +63,7 @@ describe('validateExport — recipe-relative path grammar (ADR-0096 §6)', () =>
     const engine = new Engine(process.cwd())
     const mod = engine.loadSource(
       `${DOT}\nexport dot ${basePath}:\n  png\n`,
-      `${process.cwd()}\\mem-export-path.drw`,
+      join(process.cwd(), `mem-export-path.drw`),
       'mem-export-path.drw',
     )
     validateExport(engine, mod, mod.exports[0] as (typeof mod.exports)[number])

@@ -1,4 +1,5 @@
 // Phase 2c: `light`/`material` bindings and the `model`/`cel` command verbs (ADR-0086); the light
+import { join } from 'node:path'
 // is supplied by the theme default or an explicit `light L` argument (the `lit L:` block was removed
 // in ADR-0094). End-to-end where it matters (render → read pixels → assert) plus explain-trace and
 // contextual-keyword-discipline checks. The sword recipe from the plan is the shared fixture.
@@ -11,7 +12,7 @@ import type { Sprite } from '../../src/values.js'
 let n = 0
 const render = (src: string, drawing: string): Sprite => {
   const engine = new Engine(process.cwd())
-  const mod = engine.loadSource(src, `${process.cwd()}\\lm${n++}.drw`, 'lm.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `lm${n++}.drw`), 'lm.drw')
   const entry = mod.definitions.get(drawing)
   if (!entry) {
     throw new Error(`no drawing ${drawing}`)
@@ -23,7 +24,7 @@ const render = (src: string, drawing: string): Sprite => {
 const renderWithExplain = (src: string, drawing: string): ExplainRecord[] => {
   const engine = new Engine(process.cwd())
   engine.explain = []
-  const mod = engine.loadSource(src, `${process.cwd()}\\lm${n++}.drw`, 'lm.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `lm${n++}.drw`), 'lm.drw')
   const entry = mod.definitions.get(drawing)
   if (!entry) {
     throw new Error(`no drawing ${drawing}`)

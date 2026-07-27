@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { Engine } from '../../src/eval.js'
 import { missingGlyph } from '../../src/fonts.js'
 import type { Sprite } from '../../src/values.js'
@@ -47,7 +48,7 @@ describe('std micro font glyph coverage (E7 regression)', () => {
   const glyphCell = (char: string, font: string, w: number, h: number): string[] => {
     const engine = new Engine(process.cwd())
     const src = `draw g 8x8:\n  text #000000 0:0 "${char}" font ${font}\n`
-    const mod = engine.loadSource(src, `${process.cwd()}\\glyph.drw`, 'glyph.drw')
+    const mod = engine.loadSource(src, join(process.cwd(), `glyph.drw`), 'glyph.drw')
     const entry = mod.definitions.get('g')
     if (!entry) {
       throw new Error('no drawing g')

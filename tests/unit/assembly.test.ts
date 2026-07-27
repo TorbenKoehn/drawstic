@@ -1,4 +1,5 @@
 // Phase 3a: anchored assembly — `pin` attach-point declarations and `fit` contact-guaranteed
+import { join } from 'node:path'
 // placement (ADR-0087). End-to-end where it matters (render → read pixels → assert): pins export
 // on the sprite, `fit` lands one part's pin on another's with pixel contact, a mis-pinned `fit`
 // warns (W010) instead of failing silently, the ground-placement oracle plants a part exactly on a
@@ -14,7 +15,7 @@ import type { Sprite } from '../../src/values.js'
 let n = 0
 const renderWith = (src: string, drawing: string): { sprite: Sprite; engine: Engine } => {
   const engine = new Engine(process.cwd())
-  const mod = engine.loadSource(src, `${process.cwd()}\\asm${n++}.drw`, 'asm.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `asm${n++}.drw`), 'asm.drw')
   const entry = mod.definitions.get(drawing)
   if (!entry) {
     throw new Error(`no drawing ${drawing}`)
@@ -339,7 +340,7 @@ const renderPlacements = (
 ): { sprite: Sprite; engine: Engine; placements: NonNullable<Engine['placements']> } => {
   const engine = new Engine(process.cwd())
   engine.placements = []
-  const mod = engine.loadSource(src, `${process.cwd()}\\asm${n++}.drw`, 'asm.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `asm${n++}.drw`), 'asm.drw')
   const entry = mod.definitions.get(drawing)
   if (!entry) {
     throw new Error(`no drawing ${drawing}`)

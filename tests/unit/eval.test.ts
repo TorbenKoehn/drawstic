@@ -11,7 +11,7 @@ import type { Sprite } from '../../src/values.js'
 let n = 0
 const render = (src: string, drawing: string): Sprite => {
   const engine = new Engine(process.cwd())
-  const mod = engine.loadSource(src, `${process.cwd()}\\mem${n++}.drw`, 'mem.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `mem${n++}.drw`), 'mem.drw')
   const entry = mod.definitions.get(drawing)
   if (!entry) {
     throw new Error(`no drawing ${drawing}`)
@@ -389,7 +389,7 @@ describe('evaluator', () => {
     const src =
       'draw d 24x24:\n  bg #101020\n  curve #e8c 2:20 12:4 22:14 w2\n  curvePoly #6c9 6:12 18:6 20:18 fill\n'
     const eng = new Engine(process.cwd())
-    const mod = eng.loadSource(src, `${process.cwd()}\\memcurve.drw`, 'mem.drw')
+    const mod = eng.loadSource(src, join(process.cwd(), `memcurve.drw`), 'mem.drw')
     const entry = mod.definitions.get('d')
     if (!entry) {
       throw new Error('no drawing d')
@@ -490,7 +490,7 @@ describe('evaluator', () => {
     const src =
       'fn ridgeY(nx) = 16 + round(noise(3, nx * 4, 0) * 10)\ndraw d 64x32:\n  bg #e8d9b0\n  profile #c9a06b 0..64 ridgeY fill\n'
     const eng = new Engine(process.cwd())
-    const mod = eng.loadSource(src, `${process.cwd()}\\memprofile.drw`, 'mem.drw')
+    const mod = eng.loadSource(src, join(process.cwd(), `memprofile.drw`), 'mem.drw')
     const entry = mod.definitions.get('d')
     if (!entry) {
       throw new Error('no drawing d')
@@ -1435,7 +1435,7 @@ draw d 12x12:
       'theme ta:\n  gradient g = linear(0, #000000, #ffffff)\n' +
       'theme tb:\n  gradient g = linear(0, #ffffff, #000000)\n' +
       'draw d:\n  fill g rect(0:0, 3:3)\n'
-    const mod = engine.loadSource(src, `${process.cwd()}\\memgrad${n++}.drw`, 'mem.drw')
+    const mod = engine.loadSource(src, join(process.cwd(), `memgrad${n++}.drw`), 'mem.drw')
     const entry = mod.definitions.get('d')
     if (entry?.kind !== 'draw') {
       throw new Error('no draw d')
@@ -2011,7 +2011,7 @@ draw d 12x12:
     const eng = new Engine(process.cwd())
     const mod = eng.loadSource(
       'draw d 32x32:\n  scatter p 25 9 rect(0:0, 31:31):\n    px #fff p\n',
-      `${process.cwd()}\\memscatter.drw`,
+      join(process.cwd(), `memscatter.drw`),
       'mem.drw',
     )
     const entry = mod.definitions.get('d')
@@ -2110,7 +2110,7 @@ draw d 12x12:
     const eng = new Engine(process.cwd())
     const mod = eng.loadSource(
       'draw d 16x8:\n  mirror x=8:\n    rect #ff0000 1:1 3:6 fill\n',
-      `${process.cwd()}\\memmirror.drw`,
+      join(process.cwd(), `memmirror.drw`),
       'mem.drw',
     )
     const entry = mod.definitions.get('d')

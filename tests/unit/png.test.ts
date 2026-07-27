@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { deflateSync, inflateSync } from 'node:zlib'
 import { type Color, color } from '../../src/color.js'
 import { Engine } from '../../src/eval.js'
@@ -140,7 +141,7 @@ const renderHeart = (): { w: number; h: number; data: Uint8Array; pal: Color[] }
   const engine = new Engine(process.cwd())
   const mod = engine.loadSource(
     'draw heart 5x5:\n  palette k=#1a1a1a  r=#c04040\n  pixels:\n    .r.r.\n    rrkrr\n    rrrrr\n    .rrr.\n    ..r..\n',
-    `${process.cwd()}\\mem-png-heart${n++}.drw`,
+    join(process.cwd(), `mem-png-heart${n++}.drw`),
     'mem.drw',
   )
   const entry = mod.definitions.get('heart')

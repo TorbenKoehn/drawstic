@@ -1,4 +1,5 @@
 // W2-4: skeleton / pose system (ADR-0095) — named joints with rest angles + length + limits,
+import { join } from 'node:path'
 // deterministic forward kinematics, poses as angle deltas, `fit part.pin bone JOINT` inheriting the
 // solved position + orientation, and auto-Z from bone depth. End-to-end where it matters
 // (render → read pixels / read --explain records → assert) plus the pure FK solver directly.
@@ -12,7 +13,7 @@ import { type Skeleton, type Sprite, solveSkeleton } from '../../src/values.js'
 let n = 0
 const engineFor = (src: string): { engine: Engine; render: (drawing: string) => Sprite } => {
   const engine = new Engine(process.cwd())
-  const mod = engine.loadSource(src, `${process.cwd()}\\skel${n++}.drw`, 'skel.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `skel${n++}.drw`), 'skel.drw')
   const render = (drawing: string): Sprite => {
     const entry = mod.definitions.get(drawing)
     if (!entry) {

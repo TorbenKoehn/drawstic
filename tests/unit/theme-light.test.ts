@@ -1,4 +1,5 @@
 // Phase 2d: theme-level default light (ADR-0086 tier 3). A theme may carry a `light NAME = …`
+import { join } from 'node:path'
 // default; a `use`-applied theme establishes the drawing's outermost light, so every view/variant
 // shares ONE source — structurally closing the "light mirrored per view" character bug. These
 // tests prove that coherence numerically (render → read pixels → assert), plus the resolution
@@ -12,7 +13,7 @@ import type { Sprite } from '../../src/values.js'
 let n = 0
 const render = (src: string, drawing: string): Sprite => {
   const engine = new Engine(process.cwd())
-  const mod = engine.loadSource(src, `${process.cwd()}\\tl${n++}.drw`, 'tl.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `tl${n++}.drw`), 'tl.drw')
   const entry = mod.definitions.get(drawing)
   if (!entry) {
     throw new Error(`no drawing ${drawing}`)
@@ -23,7 +24,7 @@ const render = (src: string, drawing: string): Sprite => {
 const renderWithExplain = (src: string, drawing: string): ExplainRecord[] => {
   const engine = new Engine(process.cwd())
   engine.explain = []
-  const mod = engine.loadSource(src, `${process.cwd()}\\tl${n++}.drw`, 'tl.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `tl${n++}.drw`), 'tl.drw')
   const entry = mod.definitions.get(drawing)
   if (!entry) {
     throw new Error(`no drawing ${drawing}`)

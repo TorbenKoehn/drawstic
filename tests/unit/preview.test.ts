@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { Engine } from '../../src/eval.js'
 import {
   applyGridOverlay,
@@ -16,7 +17,7 @@ import type { Sprite } from '../../src/values.js'
 let n = 0
 const render = (src: string, drawing: string): Sprite => {
   const engine = new Engine(process.cwd())
-  const mod = engine.loadSource(src, `${process.cwd()}\\previewmem${n++}.drw`, 'mem.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `previewmem${n++}.drw`), 'mem.drw')
   const entry = mod.definitions.get(drawing)
   if (!entry) {
     throw new Error(`no drawing ${drawing}`)

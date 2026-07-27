@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { color } from '../../src/color.js'
 import { Engine } from '../../src/eval.js'
 import { attributePaletteShares, inspectNamedMask, inspectSprite } from '../../src/inspect.js'
@@ -7,7 +8,7 @@ import type { Region, Sprite } from '../../src/values.js'
 let n = 0
 const render = (src: string, drawing: string): Sprite => {
   const engine = new Engine(process.cwd())
-  const mod = engine.loadSource(src, `${process.cwd()}\\inspect${n++}.drw`, 'mem.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `inspect${n++}.drw`), 'mem.drw')
   const entry = mod.definitions.get(drawing)
   if (!entry) {
     throw new Error(`no drawing ${drawing}`)

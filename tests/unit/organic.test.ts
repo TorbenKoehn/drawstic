@@ -1,4 +1,5 @@
 // ADR-0093: organic region constructors (dome/lobe/crescent/ribbon), the figure proportions oracle,
+import { join } from 'node:path'
 // and the `quantize` palette-reduction filter. Region tests pin exact footprints/symmetry and the
 // dome==ellipse-upper-half identity; figure tests pin the derived guide values and theme
 // fold/merge/fingerprint; quantize tests pin determinism and first-declared tie-breaking.
@@ -21,7 +22,7 @@ import {
 let n = 0
 const render = (src: string, drawing: string): Sprite => {
   const engine = new Engine(process.cwd())
-  const mod = engine.loadSource(src, `${process.cwd()}\\og${n++}.drw`, 'og.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `og${n++}.drw`), 'og.drw')
   const entry = mod.definitions.get(drawing)
   if (!entry) {
     throw new Error(`no drawing ${drawing}`)

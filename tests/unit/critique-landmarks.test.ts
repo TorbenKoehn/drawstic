@@ -1,4 +1,5 @@
 // C014 — view landmark parity (the cross-view placement check). The same figure drawn front/side/
+import { join } from 'node:path'
 // back must place its head, neck, shoulders and feet at the same *rows*; only widths may change.
 // This is the defect class human review kept finding and every pixel check kept missing ("head
 // floats above the neck", "hat sits too high").
@@ -14,7 +15,7 @@ let n = 0
 /** Renders every named draw of `src` into `{name, sprite}` family members. */
 const family = (src: string, names: string[]): { name: string; sprite: Sprite }[] => {
   const e = engine()
-  const mod = e.loadSource(src, `${process.cwd()}\\c014-${n++}.drw`, 'c014.drw')
+  const mod = e.loadSource(src, join(process.cwd(), `c014-${n++}.drw`), 'c014.drw')
   return names.map((name) => {
     const entry = mod.definitions.get(name)
     if (entry?.kind !== 'draw') {

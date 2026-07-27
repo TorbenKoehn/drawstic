@@ -1,4 +1,5 @@
 // W2-2a: two-phase assembly — `behind`/`front` occlusion relations, the `aim` 1-bone solver, and
+import { join } from 'node:path'
 // the C013 occlusion-parity check (ADR-0092). End-to-end where it matters (render → read pixels →
 // assert): a `behind` clause reorders a later placement below an earlier one, ties keep statement
 // order, a conflicting pair is a positioned E025 cycle, `aim` rotates a part by the exact solved
@@ -14,7 +15,7 @@ import type { Sprite } from '../../src/values.js'
 let n = 0
 const engineFor = (): Engine => new Engine(process.cwd())
 const renderOn = (engine: Engine, src: string, drawing: string): Sprite => {
-  const mod = engine.loadSource(src, `${process.cwd()}\\occ${n++}.drw`, 'occ.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `occ${n++}.drw`), 'occ.drw')
   const entry = mod.definitions.get(drawing)
   if (!entry) {
     throw new Error(`no drawing ${drawing}`)
