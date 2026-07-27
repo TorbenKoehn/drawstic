@@ -122,38 +122,7 @@ draw videocall64 64x64:
 
 # --- exports: png @1 @2 + svg for every icon ---
 
-export chat communication/chat:
-  png @1 @2
-  svg ids classes
-
-export phone communication/phone:
-  png @1 @2
-  svg ids classes
-
-export contacts communication/contacts:
-  png @1 @2
-  svg ids classes
-
-export videocall communication/videocall:
-  png @1 @2
-  svg ids classes
-
-export share communication/share:
-  png @1 @2
-  svg ids classes
-
-export feed communication/feed:
-  png @1 @2
-  svg ids classes
-
-export chat16 communication/chat16:
-  png @1 @2
-  svg ids classes
-
-export phone16 communication/phone16:
-  png @1 @2
-  svg ids classes
-
-export videocall64 communication/videocall64:
+export chat, phone, contacts, videocall, share, feed, chat16, phone16, videocall64:
+  dir communication
   png @1 @2
   svg ids classes

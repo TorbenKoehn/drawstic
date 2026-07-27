@@ -170,22 +170,7 @@ atlas armorSheet:
   tile 64x64
   cols 3
 
-export helm helm:
-  png @1 @4
-
-export breastplate breastplate:
-  png @1 @4
-
-export gloves gloves:
-  png @1 @4
-
-export boots boots:
-  png @1 @4
-
-export belt belt:
-  png @1 @4
-
-export cloak cloak:
+export helm, breastplate, gloves, boots, belt, cloak:
   png @1 @4
 
 export armorSheet armor-set:

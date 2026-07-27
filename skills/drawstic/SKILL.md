@@ -108,7 +108,7 @@ draw sword 32x64:
   cel   pommel #d9a03a metal 3
   outline                                          # one bare pass, last
 
-export sword sword:                                # WITHOUT this block, build writes nothing
+export sword:                                      # path defaults to the name; WITHOUT this block, build writes nothing
   png @1 @4
 ```
 
@@ -136,6 +136,18 @@ Three things that example is teaching:
   [language.md](language.md) before you add a second one.
 - **`export` paths are relative to the recipe's own folder.** `build` writes next to the recipe;
   `--out <dir>` overrides. A path that starts with the recipe's own directory name raises `W016`.
+
+**A family shares one export block** — comma-separated targets, a shared `dir`, one format list:
+
+```drw
+export chat, phone, contacts:   # one block, three drawings
+  dir communication              # shared prefix; a target keeping its own path still wins over it
+  png @1 @2
+```
+
+Add `file "{kebab base}"` only when names need reshaping for the block (e.g. camelCase drawing
+names → kebab-case files) — skip it whenever the drawing name is already the filename you want.
+Full precedence, `dir`/`file` grammar and the six inflectors: [language.md](language.md) §13.
 
 ## Verification default
 

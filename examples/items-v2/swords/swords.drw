@@ -127,25 +127,10 @@ atlas swords:
   tile 64x64
   cols 3
 
-export dagger dagger:
+export dagger, shortsword, longsword, scimitar, twoHander, magicBlade:
   png @1 @4
 
-export shortsword shortsword:
-  png @1 @4
-
-export longsword longsword:
-  png @1 @4
-
-export scimitar scimitar:
-  png @1 @4
-
-export twoHander twoHander:
-  png @1 @4
-
-export magicBlade magicBlade:
-  png @1 @4
-
-export swords swords:
+export swords:
   png @1 @4
   tiled
   atlasJson

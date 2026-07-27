@@ -298,11 +298,5 @@ draw assassinBack 64x128:
   fit headBack.nape bone headB
   outline
 
-export assassinFront assassin-front:
-  png @1 @4
-
-export assassinSide assassin-side:
-  png @1 @4
-
-export assassinBack assassin-back:
+export assassinFront assassin-front, assassinSide assassin-side, assassinBack assassin-back:
   png @1 @4

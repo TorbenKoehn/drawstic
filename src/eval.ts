@@ -570,6 +570,8 @@ type StampFlags = {
   mask: Region | undefined
   anchor: StampAnchor
   shadow: { readonly dx: number; readonly dy: number; readonly color: Color } | undefined
+  /** Opt-in 4×4 area-sampled resampling (ADR-0099) — a no-op on a lattice transform. */
+  aa: boolean
 }
 
 type StampAnchor =
@@ -1442,7 +1444,9 @@ export class Engine {
           )
           break
         case 'exportDefinition':
-          rec.exports.push(s.def)
+          // One block, N resolved targets (ADR-0098 §9): the parser already composed each
+          // target's `basePath`, so `exports` stays a flat list in declaration order.
+          rec.exports.push(...s.defs)
           break
         default:
           break
@@ -3157,7 +3161,16 @@ export class Engine {
     }
 
     // 7 — stamp the part (reuses the stamp path, with the same transform/tint/mask) and fold palette.
-    const ok = stampSprite(draw.context, sprite, origin.x, origin.y, matrix, flags.tint, flags.mask)
+    const ok = stampSprite(
+      draw.context,
+      sprite,
+      origin.x,
+      origin.y,
+      matrix,
+      flags.tint,
+      flags.mask,
+      flags.aa,
+    )
     if (!ok) {
       throw error(
         ERROR_CODE.nonInvertible,
@@ -5229,6 +5242,11 @@ export class Engine {
       f.scale = Number.parseInt(flag.slice(5), 10)
       return true
     }
+    if (flag === 'aa') {
+      args.takeFlag()
+      f.aa = true
+      return true
+    }
     return this.#parseStampKeyword(args, st, span, f, allowAnchor)
   }
 
@@ -5247,6 +5265,7 @@ export class Engine {
       mask: undefined,
       anchor: 'topLeft',
       shadow: undefined,
+      aa: false,
     }
     while (this.#parseOneStampFlag(args, state, span, f, allowAnchor)) {
       // consume flags until none match
@@ -5422,6 +5441,7 @@ export class Engine {
         matrix,
         { color: flags.shadow.color, amount: 1 },
         flags.mask,
+        flags.aa,
       )
       if (!shadowOk) {
         throw error(
@@ -5432,7 +5452,16 @@ export class Engine {
         )
       }
     }
-    const ok = stampSprite(draw.context, sprite, origin.x, origin.y, matrix, flags.tint, flags.mask)
+    const ok = stampSprite(
+      draw.context,
+      sprite,
+      origin.x,
+      origin.y,
+      matrix,
+      flags.tint,
+      flags.mask,
+      flags.aa,
+    )
     if (!ok) {
       throw error(
         ERROR_CODE.nonInvertible,
@@ -7719,7 +7748,7 @@ export class Engine {
 
 // ── argument reader for commands ────────────────────────────────────────────
 
-const FLAG_RE = /^(fill|flipx|flipy|w\d+|rot\d+(\.\d+)?|scale\d+)$/
+const FLAG_RE = /^(fill|flipx|flipy|aa|w\d+|rot\d+(\.\d+)?|scale\d+)$/
 
 /**
  * A consuming cursor over one command call's argument list (spec §8/§9's

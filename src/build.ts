@@ -126,29 +126,63 @@ const contentFromEntry = (
 }
 
 /**
+ * Every artifact path written so far in one `build`, mapped to the export that wrote it. Threaded
+ * across all of a module's exports (ADR-0098 §10) so a collision *between* two exports is caught
+ * too — the per-export list this used to be made that case a silent, last-wins overwrite, which
+ * multi-target blocks and `file` templates make easy to hit.
+ */
+type WriteLedger = Map<string, ExportDefinition>
+
+/**
+ * The `E018` for two artifacts landing on one path. Two format lines of one export can genuinely
+ * collide (`png 8x8 16x16` — every explicit size lands on `<base>.png`; `svg` plus `path` — both
+ * land on `<base>.svg`); so can two separate exports once `dir`/`file` compose their paths. Either
+ * way the symptom is one missing artifact that the artifact list still claims to have produced.
+ * The two are told apart by definition identity, not by name — two blocks can export the same
+ * drawing.
+ */
+const collisionError = (
+  path: string,
+  first: ExportDefinition,
+  second: ExportDefinition,
+  file: string,
+  span: TextSpan,
+): Error =>
+  first === second
+    ? error(
+        ERROR_CODE.exportError,
+        `two export format lines both write '${path}'`,
+        file,
+        span,
+        'give them separate export blocks (each with its own path), or drop one of the formats',
+      )
+    : error(
+        ERROR_CODE.exportError,
+        `two exports both write '${path}' — '${first.name}' and '${second.name}'`,
+        file,
+        span,
+        "give them separate paths — a per-target path, a 'dir', or a 'file' template that keeps their names apart",
+      )
+
+/**
  * Writes `data`, creating parent directories as needed, and records the
  * artifact (byte length via UTF-8 for text, buffer length for binary).
  *
- * A build that would write the **same path twice** is an error, not a silent overwrite: two format
- * lines can genuinely collide (`png 8x8 16x16` — every explicit size lands on `<base>.png`; `svg`
- * plus `path` — both land on `<base>.svg`), and the symptom is one missing artifact that the
- * artifact list still claims to have produced.
+ * A build that would write the **same path twice** is an error, not a silent overwrite — see
+ * {@link collisionError}.
  */
 const write = (
   path: string,
   data: Uint8Array | string,
   out: BuiltArtifact[],
-  at: { readonly file: string; readonly span: TextSpan },
+  ledger: WriteLedger,
+  at: { readonly file: string; readonly span: TextSpan; readonly source: ExportDefinition },
 ): void => {
-  if (out.some((a) => a.path === path)) {
-    throw error(
-      ERROR_CODE.exportError,
-      `two export format lines both write '${path}'`,
-      at.file,
-      at.span,
-      'give them separate export blocks (each with its own path), or drop one of the formats',
-    )
+  const previous = ledger.get(path)
+  if (previous !== undefined) {
+    throw collisionError(path, previous, at.source, at.file, at.span)
   }
+  ledger.set(path, at.source)
   mkdirSync(dirname(path), { recursive: true })
   if (typeof data === 'string') {
     writeFileSync(path, data, 'utf8')
@@ -217,24 +251,35 @@ const indexedPalette = (sprite: Sprite, mod: ModuleRecord, line: FormatLine): Co
       `indexed PNG: tracked palette has ${pal.length} entries (max 256)`,
       mod.displayPath,
       line.span,
+      "aa fringes and gradients each cost palette slots — run 'quantize <palette>' before an indexed export",
     )
   }
   return pal
 }
 
 /**
- * Run one export definition; returns the artifacts written. Content is
+ * Run one export definition; returns **its own** artifacts. Content is
  * re-rendered per format line (not cached across lines) because a line may
  * carry its own `mode pixel`/`mode smooth` override (§13).
+ *
+ * `ledger` is the cross-export write ledger (ADR-0098 §10): {@link buildModule} threads one across
+ * every export of a module so a collision between two of them is an error rather than a silent
+ * overwrite. It defaults to a fresh ledger, so a single export can still be run on its own.
  */
 export const runExport = (
   engine: Engine,
   mod: ModuleRecord,
   ex: ExportDefinition,
   outDir: string,
+  ledger: WriteLedger = new Map(),
 ): BuiltArtifact[] => {
   const artifacts: BuiltArtifact[] = []
   const base = join(resolve(outDir), ex.basePath)
+  // The artifact's own filename, without directories — what the sidecars' `image` field must name.
+  // A validated `basePath` always has a non-empty last segment (ADR-0096 §6).
+  const stem = ex.basePath.slice(ex.basePath.lastIndexOf('/') + 1)
+  const emit = (path: string, data: Uint8Array | string, line: FormatLine): void =>
+    write(path, data, artifacts, ledger, { file: mod.displayPath, span: line.span, source: ex })
   for (const line of ex.formats) {
     // per-line render-mode override (§13)
     const prevMode = engine.modeOverride
@@ -264,10 +309,7 @@ export const runExport = (
                   zl,
                 )
               : encodePngRgba(data, sprite.w * s, sprite.h * s, zl)
-            write(`${base}${suffix}.png`, bytes, artifacts, {
-              file: mod.displayPath,
-              span: line.span,
-            })
+            emit(`${base}${suffix}.png`, bytes, line)
           }
           for (const sz of line.sizes) {
             const nw = sz.width
@@ -282,7 +324,7 @@ export const runExport = (
                   zl,
                 )
               : encodePngRgba(data, nw, nh, zl)
-            write(`${base}.png`, bytes, artifacts, { file: mod.displayPath, span: line.span })
+            emit(`${base}.png`, bytes, line)
           }
           break
         }
@@ -292,7 +334,7 @@ export const runExport = (
             classes: line.svgFlags.includes('classes'),
             inlineStyles: line.svgFlags.includes('inlineStyles'),
           })
-          write(`${base}.svg`, svg, artifacts, { file: mod.displayPath, span: line.span })
+          emit(`${base}.svg`, svg, line)
           break
         }
         case 'path': {
@@ -304,10 +346,7 @@ export const runExport = (
               line.span,
             )
           }
-          write(`${base}.svg`, encodePathSvg(content.path), artifacts, {
-            file: mod.displayPath,
-            span: line.span,
-          })
+          emit(`${base}.svg`, encodePathSvg(content.path), line)
           break
         }
         case 'jpeg': {
@@ -326,10 +365,7 @@ export const runExport = (
             h = sprite.h * sc
             data = scaleBitmap(sprite.data, sprite.w, sprite.h, w, h)
           }
-          write(`${base}.jpeg`, encodeJpeg(data, w, h, q), artifacts, {
-            file: mod.displayPath,
-            span: line.span,
-          })
+          emit(`${base}.jpeg`, encodeJpeg(data, w, h, q), line)
           break
         }
         case 'tiled': {
@@ -342,8 +378,8 @@ export const runExport = (
             )
           }
           const m = content.tileMeta
-          const img = `${ex.basePath.split('/').pop() ?? ex.name}.png`
-          const emit = line.tiledXml
+          const img = `${stem}.png`
+          const sidecar = line.tiledXml
             ? tiledTsx(
                 ex.name,
                 img,
@@ -366,32 +402,25 @@ export const runExport = (
                 m.columns,
                 m.spacing,
               )
-          write(`${base}.${line.tiledXml ? 'tsx' : 'tsj'}`, emit, artifacts, {
-            file: mod.displayPath,
-            span: line.span,
-          })
+          emit(`${base}.${line.tiledXml ? 'tsx' : 'tsj'}`, sidecar, line)
           break
         }
         case 'atlasJson': {
           const frames = content.frames ?? [
             { name: ex.name, x: 0, y: 0, width: sprite.w, height: sprite.h },
           ]
-          const img = `${ex.basePath.split('/').pop() ?? ex.name}.png`
-          write(`${base}.json`, atlasJson(img, sprite.w, sprite.h, frames), artifacts, {
-            file: mod.displayPath,
-            span: line.span,
-          })
+          emit(`${base}.json`, atlasJson(`${stem}.png`, sprite.w, sprite.h, frames), line)
           break
         }
         case 'aseprite': {
           const frames = content.frames ?? [
             { name: ex.name, x: 0, y: 0, width: sprite.w, height: sprite.h },
           ]
-          const img = `${ex.basePath.split('/').pop() ?? ex.name}.png`
-          write(`${base}.aseprite.json`, asepriteJson(img, sprite.w, sprite.h, frames), artifacts, {
-            file: mod.displayPath,
-            span: line.span,
-          })
+          emit(
+            `${base}.aseprite.json`,
+            asepriteJson(`${stem}.png`, sprite.w, sprite.h, frames),
+            line,
+          )
           break
         }
         default:
@@ -445,6 +474,71 @@ export const validateExportPath = (path: string, mod: ModuleRecord, span: TextSp
 }
 
 /**
+ * Every artifact path one export will write, **relative to `--out`** and without rendering
+ * anything: each one is static (the composed `basePath`, an optional `@Nx` scale suffix, and the
+ * format's extension). The order and the suffix rules mirror {@link runExport} exactly — this is
+ * what lets `check` see a collision before `build` writes the first byte.
+ */
+const plannedArtifactPaths = (ex: ExportDefinition): string[] => {
+  const out: string[] = []
+  for (const line of ex.formats) {
+    switch (line.format) {
+      case 'png': {
+        const fallbackScales = line.sizes.length > 0 ? [] : [1]
+        const scales = line.scales.length > 0 ? line.scales : fallbackScales
+        for (const s of scales) {
+          out.push(`${ex.basePath}${s === 1 ? '' : `@${s}x`}.png`)
+        }
+        for (const _ of line.sizes) {
+          out.push(`${ex.basePath}.png`)
+        }
+        break
+      }
+      case 'svg':
+      case 'path':
+        out.push(`${ex.basePath}.svg`)
+        break
+      case 'jpeg':
+        out.push(`${ex.basePath}.jpeg`)
+        break
+      case 'tiled':
+        out.push(`${ex.basePath}.${line.tiledXml ? 'tsx' : 'tsj'}`)
+        break
+      case 'atlasJson':
+        out.push(`${ex.basePath}.json`)
+        break
+      case 'aseprite':
+        out.push(`${ex.basePath}.aseprite.json`)
+        break
+      default:
+        break
+    }
+  }
+  return out
+}
+
+/**
+ * Dry-run collision check over a whole module's exports (ADR-0098 §10). The per-export check
+ * inside {@link write} could never see a collision *between* two exports, so that case wrote
+ * silently, last-wins; `dir` and `file` templates make it easy to hit (`file "{lower base}"` over
+ * `draw Chat` and `draw chat`). Run from `check`, this reports it as a positioned `E018` before any
+ * bytes exist, instead of mid-`build` with half the artifacts already on disk.
+ */
+export const validateExportPlan = (mod: ModuleRecord): void => {
+  const planned: WriteLedger = new Map()
+  for (const ex of mod.exports) {
+    for (const path of plannedArtifactPaths(ex)) {
+      const previous = planned.get(path)
+      if (previous) {
+        // Positioned on the second occurrence — the one to change.
+        throw collisionError(path, previous, ex, mod.displayPath, ex.span)
+      }
+      planned.set(path, ex)
+    }
+  }
+}
+
+/**
  * Dry-run counterpart to {@link runExport}: renders and checks every format
  * line's constraints (indexed-palette size, `tiled`/`path` applicability)
  * without writing anything. Used by `check`'s deep validation pass so export
@@ -486,9 +580,19 @@ export const validateExport = (engine: Engine, mod: ModuleRecord, ex: ExportDefi
 
 /** Run every export in the module; backs `drawstic build`. */
 export const buildModule = (engine: Engine, mod: ModuleRecord, outDir: string): BuiltArtifact[] => {
-  const out: BuiltArtifact[] = []
+  // Validate every export's basePath against the recipe-relative grammar (ADR-0096 §6) before
+  // writing anything (ADR-0098 §2 — "`dir` is a prefix inside the recipe-relative space, never an
+  // escape from it"). `check` already runs this via `validateExport`, but `build` must not depend
+  // on `check` having run first: a build either writes entirely inside the permitted space or fails
+  // here, before the first byte, never partway through.
   for (const ex of mod.exports) {
-    out.push(...runExport(engine, mod, ex, outDir))
+    validateExportPath(ex.basePath, mod, ex.span)
+  }
+  const out: BuiltArtifact[] = []
+  // One ledger for the whole module, so two exports writing the same artifact collide loudly.
+  const ledger: WriteLedger = new Map()
+  for (const ex of mod.exports) {
+    out.push(...runExport(engine, mod, ex, outDir, ledger))
   }
   return out
 }

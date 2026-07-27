@@ -1860,6 +1860,12 @@ draw d 12x12:
     expect(px(masked, 2, 2)[3]).toBe(0)
   })
 
+  test('aa is still a bindable name outside a stamp (ADR-0099, contextual not reserved)', () => {
+    const s = render('draw d 6x6:\n  aa = 3\n  fill #ff0000 rect(aa:aa, aa:aa)\n', 'd')
+    expect(px(s, 3, 3)).toEqual([255, 0, 0, 255])
+    expect(px(s, 0, 0)[3]).toBe(0)
+  })
+
   test('apply with a non-name argument is a positioned arity error', () => {
     expect(() => render('draw d 2x2:\n  bg #fff\n  apply 5\n', 'd')).toThrow(/expected a name/)
   })

@@ -251,8 +251,10 @@ The metric bundle is a superset of `render --inspect`.
 | W013 | a `litTone`/`shadowTone` `fill` clipped by `.intersect(rect)` on a modeled region → use `spread N%` |
 | W014 | a `stamp` of a part that declares attach `pin`s (not a pin-seeded root) → `fit` it, or drop the pins if decoration |
 | W015 | a semi-transparent `fill … ellipse(…)` in the foot zone of a `fit`-using drawing → use the root `fit … ground` |
-| W016 | an `export` base path's first segment repeats the recipe's own directory name → drop the redundant `<dirname>/` prefix |
+| W016 | an `export` base path's first segment repeats the recipe's own directory name (reads the **composed** path, so a block's `dir` counts too — positions on the `dir` line then) → drop the redundant `<dirname>/` prefix |
 | W017 | a `Front`/`Back` view pair repeats an off-centre pin's `x` verbatim (not an L/R pair) → mirror it: `x = w-1-x` |
+| W018 | `aa` on a placement that provably resamples exactly — `flipx`/`flipy`/`rot(0\|180)`/`scale<N>` or no transform; `rot(90\|270)` only when the sprite's w and h share a parity → drop it, or use a non-lattice transform (`rot45`, non-integer `scale`, `skew`, `perspective`) |
+| W019 | an `export` block's `dir` is in the wrong place for its shape: (a) ≥2 targets share an explicit-path directory prefix with no block `dir` → hoist it into `dir`; (b) one target + `dir` + no `file` → fold `dir` into the target's own path |
 
 ### Construct census
 
@@ -498,7 +500,7 @@ never escapes the render call.
 ## Transforms & stamp
 
 ```drw
-stamp name[(args)] <pt> [anchor <name>] [flipx] [flipy] [rot<deg>] [scale<N>]
+stamp name[(args)] <pt> [anchor <name>] [flipx] [flipy] [rot<deg>] [scale<N>] [aa]
       [transform <t>] [tint <paint> <amount>] [shadow <dx:dy> <paint>] [mask <region>]
 ```
 
@@ -537,6 +539,17 @@ orthographic squash unless paired with `.perspective(d)` (real keystone:
 nearest-neighbour (no new colors); mirrors, quarter-turns, integer shifts/scales are lossless;
 non-invertible transforms are errors.
 
+**`aa`** — bare flag on `stamp`/`fit`: opts one placement into 4×4 area-sampled resampling in
+place of the point sample, so a non-lattice transform (`rot37`, non-integer `scale`, `skew`,
+`perspective`) anti-aliases instead of staircasing. **Trap — `W018`.** On `flipx`/`flipy`/`rot180`/
+`scale<N>` or no transform, `aa` is a byte-identical no-op — drop it. `rot90`/`rot270` are a no-op
+only when the sprite's width and height share a parity (4×4, 3×5); at mixed parity (4×5) the
+quarter-turn pivots on a half-pixel and `aa` blends a 2×2 texel block.
+**Trap — silent.** Each fringe alpha is a distinct RGBA quadruple: an `aa`'d sprite widens the
+palette and can still hit `E018` on `png indexed` (§ Export); `quantize` after painting fixes
+it. Two overlapping `aa` parts show a faint double-blended seam where their fringes meet — a
+lattice transform for contact seams, or `outline` on the finished figure, avoids it.
+
 ## Anchored assembly — pin / fit
 
 ```drw
@@ -554,7 +567,7 @@ stamp <part> <pt> [flags] [rel]                    # rel = behind <part> | front
   registers `b`'s pins in canvas space so the next `fit` chains (`fit hand.wrist arm.wrist`). Bare `fit b
   a` auto-matches a single shared pin name. Replaces hand-stamped socket offsets.
 - **Transform flags** — `fit` takes the same modifiers as `stamp` (`flipx`/`flipy`/`rotN`/`scaleN`/
-  `transform t`/`tint c p%`/`mask r`), about the footprint centre. **The pin rides the transform:** the
+  `aa`/`transform t`/`tint c p%`/`mask r`), about the footprint centre. **The pin rides the transform:** the
   fit pin still lands exactly on target, and `b`'s other pins register through the same flip/rot (a
   left-shoulder pin becomes the correctly-located right shoulder after `flipx`). Enables the depth-tint
   far limb (`fit armFar.shoulder a.shoulder tint #2b2b2b 45%`) and mirrored side/back parts.
@@ -1034,7 +1047,52 @@ export gem icons/gem:        # source-first, bareword base path
   svg ids classes inlineStyles   # pixel mode → pixel-run <rect>s; smooth → shapes
   jpeg 512 q80 mode smooth   # explicit size (512 or 512x512), quality, mode override
   path                       # geometry SVG (path definitions only)
+
+export chat, phone, contacts, videocall:   # comma-separated targets, one block
+  dir communication                        # bareword prefix, shared by every target below
+  png @1 @2
+  svg ids classes
+
+export pickaxe, axe, key, coinPouch, torch hand/torch:   # torch keeps its own path
+  dir assets/items
+  file "{kebab base}"        # filename STEM template — six inflectors, applied right-to-left
+  png @1 @4
+  atlasJson
 ```
+
+**Targets & path.** `export NAME [path] { , NAME [path] } :` — the path is optional and defaults to
+the drawing name; the single-target form (`export gem icons/gem:`) is the `n = 1` case and parses
+identically. A target that breaks the block's pattern keeps its own path (`torch hand/torch` above).
+
+**`dir` / `file` — three-tier precedence, resolved per target:**
+`basePath = dir ? dir + "/" + tail : tail`, `tail = target's own path ?? render(file) ?? NAME`. Own
+path wins over `file`, `file` wins over the name; mixing tiers in one block is legal and intended.
+`dir` is a **bareword** path — same rule as every other path, no quotes. `file` is a quoted
+**template**: literal text plus `{ [inflector...] base }` holes, applied right-to-left
+(`{upper snake base}` → `COIN_POUCH`). `\{`/`\}` escape a literal brace — legal in every string now,
+not only templates. `dir`/`file` may each appear at most once, and both must precede every format
+line — a `dir`/`file` after a format line, or a repeat, is `E004`; so is a trailing comma before `:`.
+`fmt` canonicalizes the target list to `", "` regardless of source spacing.
+
+**Six inflectors**, one word-splitting rule: split at each `_`/`-`, at each lower→upper boundary, and
+before an acronym run's last capital when a lowercase follows (`HTMLIcon` → `HTML`, `Icon`); digits
+never split (`chat16` stays one word):
+
+| Inflector | `coinPouch` → |
+|---|---|
+| `snake` | `coin_pouch` |
+| `kebab` | `coin-pouch` |
+| `camel` | `coinPouch` |
+| `pascal` | `CoinPouch` |
+| `upper` | `COINPOUCH` |
+| `lower` | `coinpouch` |
+
+**`file` renders a stem, never an extension** — a block can emit several formats from one target, so
+`{ext}`/`{full}` don't exist: the format line always owns the extension. Naming `{ext}`, `{full}`,
+`{date …}`, or `{plural …}`/`{title …}` in a hole is a positioned `E028` with a hint naming the fix
+(`{date}`: Drawstic has no clock — output must stay a pure function of source; pluralization needs a
+dictionary — name the target's path explicitly instead, e.g. `export coin coins:`). A rendered `file`
+producing a `/` is `E018` (`file` names the filename, `dir` names directories).
 
 Sheet sidecars (atlas exports): `png` (the sheet) · `tiled` (`.tsj`; `tiled xml` → `.tsx`; requires the
 atlas's `tile WxH` — E018 otherwise) · `atlasJson` (`.json` frames map — TexturePacker/Phaser/Pixi) ·
@@ -1042,13 +1100,18 @@ atlas's `tile WxH` — E018 otherwise) · `atlasJson` (`.json` frames map — Te
 
 **Base path is recipe-relative:** `build` defaults `--out` to the recipe file's own directory, and the
 base path is relative to that — the recipe alone decides the layout; an explicit `--out` only relocates
-the whole tree. Grammar: `SEGMENT { "/" SEGMENT }` — no leading `/`, no `.`/`..` segment, no file
-extension (the format line appends the real one); a violation is a positioned `E018`, caught by `check`
-(not `build`). Above, `icons/gem` is a *family/name* prefix inside some other recipe directory (e.g. a
-recipe `games.drw` exporting `export dice games/dice`) — never repeat the recipe's own directory name as
-the leading segment (a recipe that already lives in a `showcase/` directory exporting `export scene
-showcase/scene` repeats it); `build` already writes next to the recipe, so that prefix is always
-redundant (lint `W016`).
+the whole tree, and `dir` composes *inside* this space, never escapes it. Grammar:
+`SEGMENT { "/" SEGMENT }` — no leading `/`, no `.`/`..` segment, no file extension (the format line
+appends the real one); a violation is a positioned `E018`, caught by `check` (not `build`). `check` also
+runs a module-scope collision check before any bytes are written: two exports — or two targets of one
+block — resolving to the same artifact path is `E018`, naming both sources. Above, `icons/gem` is a
+*family/name* prefix inside some other recipe directory (e.g. a recipe `games.drw` exporting `export
+dice games/dice`) — never repeat the recipe's own directory name as the leading segment (a recipe that
+already lives in a `showcase/` directory exporting `export scene showcase/scene` repeats it); `build`
+already writes next to the recipe, so that prefix is always redundant (lint `W016`, positioned on the
+`dir` line when the repetition comes from `dir`). Lint `W019` flags the opposite shape mistake: ≥2
+targets whose own paths already share a directory prefix that should be hoisted into `dir`, or a single
+target with a `dir` and no `file` (fold it into the target's own path instead).
 
 **SVG size — pixel mode merges *horizontal* same-color runs into `<rect width=run height=1>`, so colour
 that varies along a scanline explodes the file.** A horizontal or radial gradient, a `model` form shade

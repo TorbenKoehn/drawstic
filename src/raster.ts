@@ -1,6 +1,7 @@
 // Rasterization (spec §8–§9, ADR-0028, ADR-0023, ADR-0025, ADR-0043):
 // pinned primitives, region eliminators, gradients (ordered-dithered in
-// pixel mode), stamps (inverse-mapped NN), filters, text.
+// pixel mode), stamps (inverse-mapped NN; opt-in 4×4 area-sampled AA —
+// ADR-0099), filters, text.
 
 import {
   type Color,
@@ -308,14 +309,20 @@ const regionBounds = (ctx: Context, r: Region): BBox | null => {
   return b.x0 > b.x1 || b.y0 > b.y1 ? null : b
 }
 
+/**
+ * The pinned 4×4 subsample grid (ADR-0040): `−0.5 + (2k+1)/8` for `k = 0..3`, i.e.
+ * `{−3/8, −1/8, +1/8, +3/8}` about a pixel centre. Shared by `coverageAt` (region
+ * eliminators, `mode smooth`) and `stampTexelAA` (opt-in stamp resampling, ADR-0099) —
+ * one AA grid in the whole engine.
+ */
+const SUBSAMPLE_OFFSETS = [-0.375, -0.125, 0.125, 0.375]
+
 /** Smooth-mode coverage: 4×4 supersamples on the 1/16 grid (ADR-0040). */
 const coverageAt = (r: Region, x: number, y: number): number => {
   let hit = 0
-  for (let sy = 0; sy < 4; sy++) {
-    for (let sx = 0; sx < 4; sx++) {
-      const fx = x - 0.5 + (2 * sx + 1) / 8
-      const fy = y - 0.5 + (2 * sy + 1) / 8
-      if (r.test(fx, fy)) {
+  for (const oy of SUBSAMPLE_OFFSETS) {
+    for (const ox of SUBSAMPLE_OFFSETS) {
+      if (r.test(x + ox, y + oy)) {
         hit++
       }
     }
@@ -764,10 +771,70 @@ const stampTexelAt = (
 }
 
 /**
+ * Opt-in 4×4 area-sampled resample of a dest pixel through the inverse matrix (ADR-0099 §3): 16
+ * taps on the pinned {@link SUBSAMPLE_OFFSETS} grid, each mapped independently through
+ * `applyMatrix` (never stepped incrementally — that would depend on float accumulation order) and
+ * read via the *same* inverse-map + `roundHalfUp` path {@link stampTexelAt} uses. Accumulates
+ * premultiplied, gamma-encoded sRGB in exact integers (`A ≤ 4080`, `R,G,B ≤ 1 040 400`), so the sum
+ * is order-independent by construction. `null` when every tap misses (off-sprite or zero-alpha) —
+ * the caller's "nothing to write" contract, identical to the NN path.
+ */
+const stampTexelAA = (
+  sprite: Sprite,
+  inverse: readonly number[],
+  px: number,
+  py: number,
+  dx: number,
+  dy: number,
+): Color | null => {
+  let A = 0
+  let R = 0
+  let G = 0
+  let B = 0
+  for (const oy of SUBSAMPLE_OFFSETS) {
+    for (const ox of SUBSAMPLE_OFFSETS) {
+      const p = applyMatrix(inverse, dx + ox - px, dy + oy - py)
+      if (!p) {
+        continue
+      }
+      const sx = roundHalfUp(p.x)
+      const sy = roundHalfUp(p.y)
+      if (sx < 0 || sy < 0 || sx >= sprite.w || sy >= sprite.h) {
+        continue
+      }
+      const c = spriteTexel(sprite, sx, sy)
+      if (!c) {
+        continue
+      }
+      A += c.a
+      R += c.r * c.a
+      G += c.g * c.a
+      B += c.b * c.a
+    }
+  }
+  if (A === 0) {
+    return null
+  }
+  return {
+    type: 'color',
+    r: roundHalfUp(R / A),
+    g: roundHalfUp(G / A),
+    b: roundHalfUp(B / A),
+    a: roundHalfUp(A / 16),
+  }
+}
+
+/**
  * Blit a sprite at (px, py) with an optional source-space transform:
  * dest = (px, py) + M(src). Inverse-mapped nearest-neighbour; alpha
  * honoured; identity blits directly. Each written destination pixel ticks
  * Framebuffer.onWrite (the pixel-write budget hook) via blendColor.
+ * `aa` (ADR-0099) opts one placement into the 4×4 area-sampled
+ * {@link stampTexelAA} instead of {@link stampTexelAt} — byte-identical to
+ * nearest-neighbour under the lattice-identity lemma (mirrors, `rot180`,
+ * integer scale/shift at any size; the quarter-turns only when the sprite's
+ * `w` and `h` share a parity — ADR-0099 §3, amended 2026-07-27) and ignored
+ * by the identity (`!matrix`) fast path, which has no fringe to resample.
  */
 export const stampSprite = (
   ctx: Context,
@@ -777,6 +844,7 @@ export const stampSprite = (
   matrix?: readonly number[],
   tint?: Tint,
   extraMask?: Region,
+  aa = false,
 ): boolean => {
   if (!matrix) {
     blitIdentity(ctx, sprite, px, py, tint, extraMask)
@@ -790,12 +858,13 @@ export const stampSprite = (
   if (!bounds) {
     return false
   }
+  const sampleTexel = aa ? stampTexelAA : stampTexelAt
   for (let dy = bounds.y0; dy <= bounds.y1; dy++) {
     for (let dx = bounds.x0; dx <= bounds.x1; dx++) {
       if (stampMasked(ctx, extraMask, dx, dy)) {
         continue
       }
-      const c = stampTexelAt(sprite, inverse, px, py, dx, dy)
+      const c = sampleTexel(sprite, inverse, px, py, dx, dy)
       if (c) {
         ctx.buffer.blendColor(dx, dy, applyTint(c, tint))
       }

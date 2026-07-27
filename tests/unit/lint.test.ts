@@ -30,9 +30,7 @@ describe('lintModule', () => {
   // `examples/showcase/parts.drw` is this shape — `showcase.drw` does `from parts gem, eye` and
   // stamps both — and `check` only ever sees one file, so it cannot observe the importer.
   test('W002 is silent in a module with no exports at all (a library module)', () => {
-    const { engine, mod } = load(
-      'draw gem 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n',
-    )
+    const { engine, mod } = load('draw gem 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n')
     expect(lintModule(engine, mod).some((d) => d.code === 'W002')).toBe(false)
   })
 
@@ -844,10 +842,12 @@ describe("W016: export path repeats the recipe's own directory (ADR-0096 §6)", 
       code: 'W016',
       message: "export path 'showcase/scene' repeats the recipe's own directory 'showcase'",
       file: 'recipe.drw',
+      // Positioned on the target token `scene` (col 8-13), not the `export` keyword: a block
+      // expands to one definition per target, each carrying its own span (ADR-0098 §9).
       line: 4,
-      column: 1,
+      column: 8,
       endLine: 4,
-      endColumn: 7,
+      endColumn: 13,
       hint: "build writes next to the recipe — drop the 'showcase/' prefix",
     })
   })
@@ -952,5 +952,115 @@ describe('W017: Front/Back view pair repeats an off-centre pin x (mirrored-prop 
     ].join('\n')
     const { engine, mod } = load(src)
     expect(lintModule(engine, mod).filter((d) => d.code === 'W017')).toEqual([])
+  })
+})
+
+describe('W018: aa on a provably exact placement is a no-op (ADR-0099, amended 2026-07-27)', () => {
+  const part = 'draw part 4x4:\n  fill #888888 rect(0:0, 3:3)\n\n'
+  const codes = (src: string): string[] => {
+    const { engine, mod } = load(src)
+    return lintModule(engine, mod).map((d) => d.code)
+  }
+
+  test('fires on aa with a size-free lattice transform (scale2, flipx, or bare)', () => {
+    const scale = `${part}draw d 20x20:\n  stamp part 0:0 scale2 aa\n\nexport d w/d:\n  png\n`
+    expect(codes(scale).filter((c) => c === 'W018')).toHaveLength(1)
+
+    const flip = `${part}draw d 20x20:\n  stamp part 0:0 flipx aa\n\nexport d w/d:\n  png\n`
+    expect(codes(flip).filter((c) => c === 'W018')).toHaveLength(1)
+
+    const bare = `${part}draw d 20x20:\n  stamp part 0:0 aa\n\nexport d w/d:\n  png\n`
+    expect(codes(bare).filter((c) => c === 'W018')).toHaveLength(1)
+  })
+
+  test('stays silent on a real (non-lattice) transform', () => {
+    const rot45 = `${part}draw d 20x20:\n  stamp part 0:0 rot45 aa\n\nexport d w/d:\n  png\n`
+    expect(codes(rot45)).not.toContain('W018')
+
+    const rot37 = `${part}draw d 20x20:\n  stamp part 0:0 rot37 aa\n\nexport d w/d:\n  png\n`
+    expect(codes(rot37)).not.toContain('W018')
+
+    const dynamicTransform = `${part}draw d 20x20:\n  t = rotate(37)\n  stamp part 0:0 transform t aa\n\nexport d w/d:\n  png\n`
+    expect(codes(dynamicTransform)).not.toContain('W018')
+  })
+
+  test('fires on a quarter-turn only when the sprite sides share a parity', () => {
+    // 4x4: rot90 pivots about (1.5, 1.5), cx−cy = 0 ⇒ every tap rounds to the point sample's texel.
+    const equal = `${part}draw d 20x20:\n  stamp part 0:0 rot90 aa\n\nexport d w/d:\n  png\n`
+    expect(codes(equal).filter((c) => c === 'W018')).toHaveLength(1)
+
+    const equalComposed = `${part}draw d 20x20:\n  stamp part 0:0 flipx scale2 rot270 aa\n\nexport d w/d:\n  png\n`
+    expect(codes(equalComposed).filter((c) => c === 'W018')).toHaveLength(1)
+  })
+
+  test('stays silent on a mixed-parity quarter-turn — there aa really does resample', () => {
+    // 4x5: cx−cy = −1/2, so all 16 taps sit on the roundHalfUp boundary and split 4/4/4/4 over a
+    // 2x2 texel block. Claiming a no-op here was the ADR's false lemma.
+    const mixed = 'draw part 4x5:\n  fill #888888 rect(0:0, 3:4)\n\n'
+    const rot90 = `${mixed}draw d 20x20:\n  stamp part 0:0 rot90 aa\n\nexport d w/d:\n  png\n`
+    expect(codes(rot90)).not.toContain('W018')
+
+    const rot270 = `${mixed}draw d 20x20:\n  stamp part 0:0 scale2 rot270 aa\n\nexport d w/d:\n  png\n`
+    expect(codes(rot270)).not.toContain('W018')
+
+    // …while the size-free flags still warn on the very same mixed-parity sprite.
+    const flip = `${mixed}draw d 20x20:\n  stamp part 0:0 flipy aa\n\nexport d w/d:\n  png\n`
+    expect(codes(flip).filter((c) => c === 'W018')).toHaveLength(1)
+  })
+
+  test('stays silent on a quarter-turn whose sprite size is not statically known', () => {
+    const parametric =
+      'draw part(c) 4x4:\n  fill c rect(0:0, 3:3)\n\ndraw d 20x20:\n  stamp part(#888888) 0:0 rot90 aa\n\nexport d w/d:\n  png\n'
+    expect(codes(parametric)).not.toContain('W018')
+  })
+
+  test("fires on a fit whose flags are lattice-exact for the fitted part's size", () => {
+    const src = [
+      'draw torso 12x20:',
+      '  fill #6a5030 rect(0:0, 11:19)',
+      '  pin shoulder 10:3',
+      '',
+      'draw arm 6x14:', // even/even — a quarter-turn is exact here
+      '  fill #8a5a3a rect(0:0, 5:13)',
+      '  pin shoulder 0:2',
+      '',
+      'draw fig 30x30:',
+      '  stamp torso 4:2',
+      '  pin torso.shoulder 14:5',
+      '  fit arm.shoulder torso.shoulder rot90 aa',
+      '',
+      'export fig chars/fig:',
+      '  png',
+      '',
+    ].join('\n')
+    expect(codes(src).filter((c) => c === 'W018')).toHaveLength(1)
+    // the same fit of a mixed-parity part is a real resample — silent
+    expect(codes(src.replace('draw arm 6x14:', 'draw arm 7x14:'))).not.toContain('W018')
+  })
+
+  test("stays silent on a fit whose rotation comes from 'aim' (ADR-0099 §2's own example)", () => {
+    // `aim` solves its angle at runtime and composes it onto the fit's matrix *outside* the flag
+    // list, so the transform is not statically lattice-preserving — the same "not statically known"
+    // carve-out a `transform EXPR` flag gets.
+    const src = [
+      'draw torso 12x20:',
+      '  fill #6a5030 rect(0:0, 11:19)',
+      '  pin shoulder 10:3',
+      '',
+      'draw arm 6x14:',
+      '  fill #8a5a3a rect(0:0, 5:13)',
+      '  pin shoulder 0:2',
+      '  pin tip 5:13',
+      '',
+      'draw fig 30x30:',
+      '  stamp torso 4:2',
+      '  pin torso.shoulder 14:5',
+      '  fit arm.shoulder torso.shoulder aim tip 26:24 aa',
+      '',
+      'export fig chars/fig:',
+      '  png',
+      '',
+    ].join('\n')
+    expect(codes(src)).not.toContain('W018')
   })
 })

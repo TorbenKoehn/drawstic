@@ -289,14 +289,5 @@ draw archerSheet 196x128:
   stamp figSide 66:0
   stamp figBack 132:0
 
-export figFront archer-front:
-  png @1 @4
-
-export figSide archer-side:
-  png @1 @4
-
-export figBack archer-back:
-  png @1 @4
-
-export archerSheet archer-sheet:
+export figFront archer-front, figSide archer-side, figBack archer-back, archerSheet archer-sheet:
   png @1 @4

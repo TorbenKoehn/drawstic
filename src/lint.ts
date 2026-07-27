@@ -8,6 +8,7 @@ import { basename, dirname } from 'node:path'
 import type {
   Argument,
   DrawDefinition,
+  ExportGroup,
   Expression,
   PaletteEntry,
   PixelRow,
@@ -50,6 +51,7 @@ const warning = (
 export const lintModule = (engine: Engine, mod: ModuleRecord): Diagnostic[] => {
   const diagnostics: Diagnostic[] = []
   lintExportPathRepeatsDir(mod, diagnostics)
+  lintExportBlockDirShape(mod, diagnostics)
   lintMirroredViewPin(mod, diagnostics)
   const exported = new Set(mod.exports.map((ex) => ex.name))
   const used = new Set<string>()
@@ -65,6 +67,7 @@ export const lintModule = (engine: Engine, mod: ModuleRecord): Diagnostic[] => {
     }
     lintUnusedPaletteKeys(entry.definition, mod, diagnostics)
     lintClippedStamps(engine, mod, entry.definition, diagnostics)
+    lintNoOpAa(engine, mod, entry.definition, diagnostics)
     lintDitherTransparentPartner(engine, mod, entry.definition, diagnostics)
     lintCoveredStamps(engine, mod, entry.definition, diagnostics)
     lintUnknownGlyphs(engine, mod, entry.definition, diagnostics, fontCache)
@@ -205,6 +208,125 @@ const lintClippedStamps = (
       }
     } catch {
       // Validation reports render errors; lint avoids duplicate cascades.
+    }
+  })
+}
+
+/**
+ * A bare `stamp`/`fit` flag whose 16 `aa` taps provably round to the point sample's texel for
+ * **every** sprite size (ADR-0099 §3, amended 2026-07-27): the mirrors, the half-turn and integer
+ * upscales keep the inverse-mapped tap coordinates at least `1/(2N)` from the `roundHalfUp`
+ * boundary, while a tap displaces the source coordinate by at most `3/(8N)`.
+ */
+const isSizeFreeLatticeFlag = (flag: string): boolean =>
+  flag === 'flipx' || flag === 'flipy' || /^scale\d+$/.test(flag) || /^rot(0|180)$/.test(flag)
+
+/**
+ * `rot90`/`rot270` — a quarter-turn pivots about `((w−1)/2, (h−1)/2)`, so the inverse map carries
+ * the offsets `cx∓cy`. Those are integral **iff `w` and `h` share a parity**; at mixed parity every
+ * tap lands exactly on the `roundHalfUp` boundary and the 16 taps split 4/4/4/4 across a 2×2 texel
+ * block — a real blend, not a no-op. So a quarter-turn only joins the identity set once the sprite's
+ * size is known (ADR-0099 §3, amended 2026-07-27).
+ */
+const isQuarterTurnFlag = (flag: string): boolean => flag === 'rot90' || flag === 'rot270'
+
+/**
+ * The pixel size of the sprite a `stamp`/`fit` places, when the linter can know it statically: the
+ * named target must be one of `mod`'s own zero-parameter drawings, which is rendered exactly as
+ * `W003` already renders one. `undefined` for anything computed (a parametric target, an `image`, a
+ * local binding, an atlas member) — callers then stay silent rather than guess a parity.
+ */
+const staticSpriteSize = (
+  engine: Engine,
+  mod: ModuleRecord,
+  name: string,
+  span: TextSpan,
+): { readonly w: number; readonly h: number } | undefined => {
+  const target = mod.definitions.get(name)
+  if (target?.kind !== 'draw' || (target.definition.params?.length ?? 0) > 0) {
+    return undefined
+  }
+  try {
+    const sprite = engine.renderDraw(target, [], span)
+    return { w: sprite.w, h: sprite.h }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Lint `W018`: `aa` (ADR-0099) on a `stamp`/`fit` whose placement the corrected lattice-identity
+ * lemma proves byte-identical to the point sample — the flag cannot change a pixel. Scoped to
+ * exactly what the lemma covers: the size-free flags decide themselves, a quarter-turn additionally
+ * needs the sprite's width/height parity, and everything the linter cannot resolve statically (a
+ * `transform EXPR` flag, a `fit … aim`/`bone` rotation solved at runtime, a target whose size does
+ * not resolve) stays silent instead of claiming an unprovable no-op.
+ */
+const lintNoOpAa = (
+  engine: Engine,
+  mod: ModuleRecord,
+  def: DrawDefinition,
+  diagnostics: Diagnostic[],
+): void => {
+  const check = (
+    flagArgs: readonly Argument[],
+    span: TextSpan,
+    targetName: string | null,
+  ): void => {
+    const bareFlags: string[] = []
+    let hasTransform = false
+    for (const arg of flagArgs) {
+      if (arg.kind === 'expression' && arg.expression.kind === 'name') {
+        bareFlags.push(arg.expression.name)
+      } else if (arg.kind === 'keyword' && arg.keyword === 'transform') {
+        hasTransform = true
+      }
+    }
+    if (hasTransform || !bareFlags.includes('aa')) {
+      return
+    }
+    const others = bareFlags.filter((flag) => flag !== 'aa')
+    if (!others.every((flag) => isSizeFreeLatticeFlag(flag) || isQuarterTurnFlag(flag))) {
+      return
+    }
+    let reason =
+      others.length === 0
+        ? 'the placement has no transform'
+        : 'a mirror/half-turn/integer-scale transform reads one texel per pixel'
+    if (others.some(isQuarterTurnFlag)) {
+      const size = targetName === null ? undefined : staticSpriteSize(engine, mod, targetName, span)
+      if (!size || (size.w - size.h) % 2 !== 0) {
+        return
+      }
+      reason = `a quarter-turn of a ${size.w}x${size.h} sprite (equal-parity sides) reads one texel per pixel`
+    }
+    diagnostics.push(
+      warning(
+        'W018',
+        `'aa' cannot change a pixel here: ${reason}`,
+        mod.displayPath,
+        span,
+        "'aa' only changes pixels under a non-lattice transform (rot45, non-integer scale, skew, perspective) — drop it",
+      ),
+    )
+  }
+  walkStatements(def.body, (stmt) => {
+    if (stmt.kind === 'call' && stmt.callee === 'stamp') {
+      check(stmt.args.slice(2), stmt.span, stampTargetName(stmt.args[0]))
+      return
+    }
+    if (stmt.kind === 'fit') {
+      // An `aim PIN PT` clause (ADR-0092) and a `bone JOINT` source (ADR-0095) each compose an
+      // extra rotation onto the fit's matrix from an angle solved at runtime, and neither lives in
+      // the flag list — so the transform is not statically known and the fit is skipped, exactly as
+      // a `transform EXPR` flag is. Without this, `fit blade.hilt hand.grip aim tip 60:8 aa` — the
+      // ADR's own worked example — warns that a real rotation "cannot change a pixel".
+      if (stmt.aim !== undefined || stmt.source.kind === 'bone') {
+        return
+      }
+      // `fit A.pin B.pin` places `A` — the fit's *target* head is the sprite whose size decides a
+      // quarter-turn's parity, and whose footprint centre the flags pivot about (`#execFit`).
+      check(stmt.flags, stmt.span, stmt.target.head)
     }
   })
 }
@@ -718,10 +840,33 @@ const lintTransparentLastRow = (
  * leading `<dirname>/` segment just duplicates what `build` already provides — the historical cause
  * of the corpus's five different export-path conventions and the duplicated-junk-directory bug the
  * ADR fixes. Runs once per module (not per drawing), against every declared export.
+ *
+ * A block's `dir` (ADR-0098) is the same mistake in a new spelling, so it reads the **composed**
+ * path: when the repetition comes from `dir`, the finding positions on the `dir` line, its hint
+ * names `dir`, and it reports once per block rather than once per target.
  */
 const lintExportPathRepeatsDir = (mod: ModuleRecord, diagnostics: Diagnostic[]): void => {
   const recipeDir = basename(dirname(mod.file))
+  const reportedGroups = new Set<ExportGroup>()
   for (const ex of mod.exports) {
+    const dir = ex.group.dir
+    if (dir !== undefined) {
+      // A `dir` is always a directory, so the "no `/` → skip" guard below does not apply to it:
+      // `dir loot` inside `items-v2/loot/` writes `loot/loot/<name>.png`, the junk directory itself.
+      if (dir.split('/')[0] === recipeDir && !reportedGroups.has(ex.group)) {
+        reportedGroups.add(ex.group)
+        diagnostics.push(
+          warning(
+            'W016',
+            `export dir '${dir}' repeats the recipe's own directory '${recipeDir}'`,
+            mod.displayPath,
+            ex.group.dirSpan ?? ex.span,
+            `build writes next to the recipe — drop the '${recipeDir}/' prefix from 'dir'`,
+          ),
+        )
+      }
+      continue
+    }
     // Only a *leading directory segment* duplicates anything. A bare basename that happens to equal
     // the folder name (`export loot loot:` inside `items-v2/loot/`) writes `loot/loot.png` — the set
     // named after its own folder, which is the normal convention, not the junk-directory bug. Four
@@ -738,6 +883,74 @@ const lintExportPathRepeatsDir = (mod: ModuleRecord, diagnostics: Diagnostic[]):
           mod.displayPath,
           ex.span,
           `build writes next to the recipe — drop the '${recipeDir}/' prefix`,
+        ),
+      )
+    }
+  }
+}
+
+/** The leading directory segments `paths` all share (`a/b/x`, `a/b/y` → `['a','b']`); `[]` if none. */
+const sharedDirPrefix = (paths: readonly string[]): string[] => {
+  const first = paths[0]?.split('/').slice(0, -1) ?? []
+  let shared = first.length
+  for (const path of paths.slice(1)) {
+    const segments = path.split('/').slice(0, -1)
+    let i = 0
+    while (i < shared && i < segments.length && segments[i] === first[i]) {
+      i++
+    }
+    shared = i
+  }
+  return first.slice(0, shared)
+}
+
+/**
+ * Lint `W019` (ADR-0098 §10), two arms of one concern — *the directory is declared in the wrong
+ * place for this block's shape*:
+ *
+ * - (a) ≥2 targets that all carry an explicit path sharing a directory prefix: that prefix is what
+ *   `dir` is for, and hoisting it removes the second place each name's folder is spelled.
+ * - (b) a single target plus a `dir` and no `file`: the composition has nothing to amortize, so the
+ *   plain `export <n> <dir>/<tail>:` form says the same thing in one line instead of two.
+ *
+ * Runs once per block (dedupe on the shared `group` identity), and arm (a) stays silent when the
+ * block already declares a `dir` — "hoist it into `dir`" is not actionable advice when a `dir`
+ * exists, and the two would have to be merged rather than moved.
+ */
+const lintExportBlockDirShape = (mod: ModuleRecord, diagnostics: Diagnostic[]): void => {
+  const seen = new Set<ExportGroup>()
+  for (const ex of mod.exports) {
+    const group = ex.group
+    if (seen.has(group)) {
+      continue
+    }
+    seen.add(group)
+    const paths = group.explicitPaths
+    if (paths.length >= 2 && group.dir === undefined) {
+      const explicit = paths.filter((p): p is string => p !== undefined)
+      const prefix = explicit.length === paths.length ? sharedDirPrefix(explicit).join('/') : ''
+      if (prefix !== '') {
+        diagnostics.push(
+          warning(
+            'W019',
+            `all ${paths.length} targets of this export block share the path prefix '${prefix}/'`,
+            mod.displayPath,
+            group.span,
+            `hoist the shared '${prefix}/' prefix into 'dir ${prefix}'`,
+          ),
+        )
+      }
+      continue
+    }
+    if (paths.length === 1 && group.dir !== undefined && !group.hasFile) {
+      const tail = paths[0] ?? ex.name
+      diagnostics.push(
+        warning(
+          'W019',
+          "'dir' on a single-target export block",
+          mod.displayPath,
+          group.dirSpan ?? group.span,
+          `a single target needs no 'dir' — write 'export ${ex.name} ${group.dir}/${tail}:'`,
         ),
       )
     }

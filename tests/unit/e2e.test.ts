@@ -9,6 +9,7 @@ import { buildModule } from '../../src/build.js'
 import { Engine } from '../../src/eval.js'
 import { decodePng, encodePngRgba } from '../../src/png.js'
 import { spriteToAscii } from '../../src/preview.js'
+import { encodeSvg } from '../../src/svg.js'
 import type { Sprite } from '../../src/values.js'
 
 const indexedPaletteRgb = (bytes: Uint8Array): number[][] => {
@@ -396,6 +397,92 @@ describe('e2e', () => {
       }
     }
     expect(partial).toBeGreaterThan(0)
+  })
+
+  const renderMem = (src: string, name: string, file: string): Sprite => {
+    const engine = new Engine(process.cwd())
+    const mod = engine.loadSource(src, join(process.cwd(), file), file)
+    const entry = mod.definitions.get(name)
+    if (!entry) {
+      throw new Error(`no ${name}`)
+    }
+    return engine.defToSprite(entry, { line: 1, column: 1 })
+  }
+
+  const partialAlphaCount = (sprite: Sprite): number => {
+    let n = 0
+    for (let i = 3; i < sprite.data.length; i += 4) {
+      const a = sprite.data[i] ?? 0
+      if (a > 0 && a < 255) {
+        n++
+      }
+    }
+    return n
+  }
+
+  test("aa softens a rot45 stamp and the un-aa'd twin stays crisp", () => {
+    const part = 'draw part 8x8:\n  bg #808080\n\n'
+    const aaSprite = renderMem(
+      `${part}draw d 24x24:\n  stamp part 8:8 rot45 aa\n`,
+      'd',
+      'mem-aa-rot45.drw',
+    )
+    expect(partialAlphaCount(aaSprite)).toBeGreaterThan(0)
+    const nnSprite = renderMem(
+      `${part}draw d 24x24:\n  stamp part 8:8 rot45\n`,
+      'd',
+      'mem-nn-rot45.drw',
+    )
+    expect(partialAlphaCount(nnSprite)).toBe(0)
+  })
+
+  test('aa composes with tint', () => {
+    const src =
+      'draw part 8x8:\n  bg #808080\n\ndraw d 24x24:\n  stamp part 8:8 rot45 aa tint #0000ff 1.0\n'
+    const sprite = renderMem(src, 'd', 'mem-aa-tint.drw')
+    const alphas = new Set<number>()
+    for (let i = 0; i < sprite.data.length; i += 4) {
+      const a = sprite.data[i + 3] ?? 0
+      if (a === 0) {
+        continue
+      }
+      alphas.add(a)
+      expect(sprite.data[i]).toBe(0)
+      expect(sprite.data[i + 1]).toBe(0)
+      expect(sprite.data[i + 2]).toBe(255)
+    }
+    // resample -> tint -> composite: alpha is the resampled coverage, not flattened to one value
+    expect(alphas.size).toBeGreaterThan(1)
+  })
+
+  test('aa shadow carries the soft contour', () => {
+    const src =
+      'draw part 8x8:\n  bg #808080\n\ndraw d 24x24:\n  stamp part 8:8 rot37 aa shadow 2:2 #000000ff\n'
+    const sprite = renderMem(src, 'd', 'mem-aa-shadow.drw')
+    // the shadow tints at amount 1, so its resampled colour collapses to pure black while the
+    // resampled alpha carries the AA contour — a partial-alpha black pixel can only come from the
+    // shadow layer (the part itself is opaque gray, never black).
+    let shadowFringe = 0
+    for (let i = 0; i < sprite.data.length; i += 4) {
+      const a = sprite.data[i + 3] ?? 0
+      if (
+        a > 0 &&
+        a < 255 &&
+        sprite.data[i] === 0 &&
+        sprite.data[i + 1] === 0 &&
+        sprite.data[i + 2] === 0
+      ) {
+        shadowFringe++
+      }
+    }
+    expect(shadowFringe).toBeGreaterThan(0)
+  })
+
+  test('svg export of an aa stamp emits fill-opacity', () => {
+    const src = 'draw part 8x8:\n  bg #808080\n\ndraw d 24x24:\n  stamp part 8:8 rot45 aa\n'
+    const sprite = renderMem(src, 'd', 'mem-aa-svg.drw')
+    const svg = encodeSvg(sprite, { ids: false, classes: false, inlineStyles: false })
+    expect(svg).toContain('fill-opacity="')
   })
 
   test('island scene render and export smoke', () => {

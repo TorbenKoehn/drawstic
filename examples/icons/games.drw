@@ -151,38 +151,7 @@ draw heart16 16x16:
     ................
     ................
 
-export controller games/controller:
-  png @1 @2
-  svg ids classes
-
-export controller64 games/controller64:
-  png @1 @2
-  svg ids classes
-
-export dice games/dice:
-  png @1 @2
-  svg ids classes
-
-export dice16 games/dice16:
-  png @1 @2
-  svg ids classes
-
-export trophy games/trophy:
-  png @1 @2
-  svg ids classes
-
-export map games/map:
-  png @1 @2
-  svg ids classes
-
-export puzzle games/puzzle:
-  png @1 @2
-  svg ids classes
-
-export heart games/heart:
-  png @1 @2
-  svg ids classes
-
-export heart16 games/heart16:
+export controller, controller64, dice, dice16, trophy, map, puzzle, heart, heart16:
+  dir games
   png @1 @2
   svg ids classes

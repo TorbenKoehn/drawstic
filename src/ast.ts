@@ -457,7 +457,16 @@ export type Statement =
   | { readonly kind: 'themeDefinition'; readonly def: ThemeDefinition; readonly span: TextSpan }
   | { readonly kind: 'fontDefinition'; readonly def: FontDefinition; readonly span: TextSpan }
   | { readonly kind: 'atlasDefinition'; readonly def: AtlasDefinition; readonly span: TextSpan }
-  | { readonly kind: 'exportDefinition'; readonly def: ExportDefinition; readonly span: TextSpan }
+  | {
+      /**
+       * One `export` block — expanded by the parser into one resolved {@link ExportDefinition} per
+       * target (ADR-0098 §9), so `defs` has as many entries as the block had targets and `span` is
+       * the block header.
+       */
+      readonly kind: 'exportDefinition'
+      readonly defs: ExportDefinition[]
+      readonly span: TextSpan
+    }
   | {
       /**
        * An `image NAME = FILE-PATH [sha256 HEX]` statement (ADR-0096 §2, was `import` —
@@ -685,10 +694,36 @@ export type FormatLine = {
   readonly span: TextSpan
 }
 
+/**
+ * The block-level facts shared by every target of one `export` block (ADR-0098 §9). The parser
+ * expands a block into one resolved {@link ExportDefinition} per target, so this is the only place
+ * the block itself survives — the lints that reason about a block's *shape* (`W016`'s `dir` arm,
+ * `W019`) read it, and dedupe on this object's identity so a 6-target block reports once.
+ */
+export type ExportGroup = {
+  /** The block's `dir` prefix, already part of every member's `basePath`; `undefined` if absent. */
+  readonly dir: string | undefined
+  readonly dirSpan: TextSpan | undefined
+  /** Whether the block declared a `file` name template. */
+  readonly hasFile: boolean
+  /** Each target's own `OUTPUT-PATH`, in declaration order; `undefined` where the target had none. */
+  readonly explicitPaths: readonly (string | undefined)[]
+  /** The block header (`export …:`), not any one target. */
+  readonly span: TextSpan
+}
+
+/**
+ * One resolved export target (ADR-0098 §9): a block with N targets yields N of these, in
+ * declaration order. `basePath` is the **composed** path (`dir` + the target's own path, the
+ * rendered `file` template, or the target name — §2) and `span` is the **target's own** name token,
+ * so a diagnostic points at the target that caused it rather than at the whole block. `formats` and
+ * `group` are shared with the block's other targets.
+ */
 export type ExportDefinition = {
   readonly name: string
   readonly basePath: string
   readonly formats: FormatLine[]
+  readonly group: ExportGroup
   readonly span: TextSpan
 }
 

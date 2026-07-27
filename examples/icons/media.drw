@@ -147,38 +147,7 @@ draw camera64 64x64:
   stamp gCamera64 0:0 shadow 2:2 d.alpha(45%)
 
 # ── Exports ───────────────────────────────────────────────────────────────
-export music media/music:
-  png @1 @2
-  svg
-
-export video media/video:
-  png @1 @2
-  svg
-
-export camera media/camera:
-  png @1 @2
-  svg
-
-export gallery media/gallery:
-  png @1 @2
-  svg
-
-export mic media/mic:
-  png @1 @2
-  svg
-
-export podcast media/podcast:
-  png @1 @2
-  svg
-
-export music16 media/music16:
-  png @1 @2
-  svg
-
-export video16 media/video16:
-  png @1 @2
-  svg
-
-export camera64 media/camera64:
+export music, video, camera, gallery, mic, podcast, music16, video16, camera64:
+  dir media
   png @1 @2
   svg

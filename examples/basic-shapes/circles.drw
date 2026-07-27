@@ -21,5 +21,5 @@ export circleIcon circle:
   png @1 @2
   svg ids classes
 
-export circles circles:
+export circles:
   png

@@ -107,30 +107,7 @@ draw settings64 64x64:
   stroke s.darken(28%) circle(32:32, 7)
 
 # ── Exports: png @1 @2 + svg per icon, base path system/<name> ───────
-export settings system/settings:
-  png @1 @2
-  svg
-export files system/files:
-  png @1 @2
-  svg
-export trash system/trash:
-  png @1 @2
-  svg
-export search system/search:
-  png @1 @2
-  svg
-export downloads system/downloads:
-  png @1 @2
-  svg
-export terminal system/terminal:
-  png @1 @2
-  svg
-export search16 system/search16:
-  png @1 @2
-  svg
-export downloads16 system/downloads16:
-  png @1 @2
-  svg
-export settings64 system/settings64:
+export settings, files, trash, search, downloads, terminal, search16, downloads16, settings64:
+  dir system
   png @1 @2
   svg

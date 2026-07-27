@@ -90,14 +90,6 @@ draw timer 32x32:
   line p.lighten(14%) 13:9 17:9 w1
   line s 5:3 26:3 w1
 
-export weather weather/weather:
-  png @1 @2
-  svg ids classes
-
-export alarm weather/alarm:
-  png @1 @2
-  svg ids classes
-
 draw stopwatch 32x32:
   dc = 16:17
   rect k 14:3 18:7 fill
@@ -116,14 +108,6 @@ draw stopwatch 32x32:
   line k dc 16:10 w2
   line r dc 21:12 w1
   circle k dc 1 fill
-
-export timer weather/timer:
-  png @1 @2
-  svg ids classes
-
-export stopwatch weather/stopwatch:
-  png @1 @2
-  svg ids classes
 
 draw compass 32x32:
   dc = 16:16
@@ -153,10 +137,6 @@ draw moon 32x32:
   stamp spark(p) 27:20 anchor center
   stamp spark(p) 24:5 anchor center
 
-export compass weather/compass:
-  png @1 @2
-  svg ids classes
-
 draw alarmSmall 16x16:
   dc = 8:9
   mask dial = circle(dc, 6)
@@ -172,10 +152,6 @@ draw alarmSmall 16x16:
   line k dc 10:6 w1
   circle k dc 1 fill
 
-export moon weather/moon:
-  png @1 @2
-  svg ids classes
-
 draw compassSmall 16x16:
   dc = 8:8
   circle k dc 7 fill
@@ -185,14 +161,6 @@ draw compassSmall 16x16:
   poly r 8:3 9:8 7:8 fill
   poly k 8:13 9:8 7:8 fill
   circle k dc 1 fill
-
-export alarmSmall weather/alarmSmall:
-  png @1 @2
-  svg ids classes
-
-export compassSmall weather/compassSmall:
-  png @1 @2
-  svg ids classes
 
 draw weatherDetail 64x64:
   sc = 24:24
@@ -218,6 +186,7 @@ draw weatherDetail 64x64:
   line p.lighten(16%) 30:32 38:28 w2
   line p.lighten(16%) 38:28 46:30 w2
 
-export weatherDetail weather/weatherDetail:
+export weather, alarm, timer, stopwatch, compass, moon, alarmSmall, compassSmall, weatherDetail:
+  dir weather
   png @1 @2
   svg ids classes

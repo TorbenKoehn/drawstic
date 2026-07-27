@@ -227,11 +227,5 @@ draw wizardBack 64x128:
 
 # ---------- exports ----------
 
-export wizardFront wizard-front:
-  png @1 @4
-
-export wizardSide wizard-side:
-  png @1 @4
-
-export wizardBack wizard-back:
+export wizardFront wizard-front, wizardSide wizard-side, wizardBack wizard-back:
   png @1 @4

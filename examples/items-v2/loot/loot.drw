@@ -107,25 +107,10 @@ atlas loot:
   tile 64x64
   cols 3
 
-export pickaxe pickaxe:
+export pickaxe, axe, key, coinPouch, gem, crown:
   png @1 @4
 
-export axe axe:
-  png @1 @4
-
-export key key:
-  png @1 @4
-
-export coinPouch coinPouch:
-  png @1 @4
-
-export gem gem:
-  png @1 @4
-
-export crown crown:
-  png @1 @4
-
-export loot loot:
+export loot:
   png @1 @4
   tiled
   atlasJson

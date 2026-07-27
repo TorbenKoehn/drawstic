@@ -49,10 +49,6 @@ draw wallet 32x32:
   circle gold 24:9 3 fill
   circle goldDark 24:9 3
 
-export wallet finance/wallet:
-  png @1 @2
-  svg ids classes
-
 # --- Bank (32x32 master) ---
 draw bank 32x32:
   stamp tileBg32 0:0
@@ -66,10 +62,6 @@ draw bank 32x32:
   ellipse shade.alpha(25%) 16:27 12:2 fill
   circle gold 16:12 2 fill
   circle goldDark 16:12 2
-
-export bank finance/bank:
-  png @1 @2
-  svg ids classes
 
 # --- Warenkorb / Cart (32x32 master) ---
 draw cart 32x32:
@@ -87,10 +79,6 @@ draw cart 32x32:
   circle goldDark 16:16 2
   ellipse shade.alpha(25%) 16:27 9:1 fill
 
-export cart finance/cart:
-  png @1 @2
-  svg ids classes
-
 # --- Preisschild / Price tag (32x32 master) ---
 draw tag 32x32:
   stamp tileBg32 0:0
@@ -102,10 +90,6 @@ draw tag 32x32:
   circle tileDark 12:16 2
   rrect gold 16:14 23:19 1 fill
 
-export tag finance/tag:
-  png @1 @2
-  svg ids classes
-
 # --- Chart (32x32 master) ---
 draw chart 32x32:
   stamp tileBg32 0:0
@@ -116,10 +100,6 @@ draw chart 32x32:
   rect gold.lighten(18%) 20:8 24:9 fill
   line gold 8:19 24:4 w1
   poly gold 27:3 23:4 25:8 fill
-
-export chart finance/chart:
-  png @1 @2
-  svg ids classes
 
 # --- Rechnung / Invoice (32x32 master) ---
 draw invoice 32x32:
@@ -133,10 +113,6 @@ draw invoice 32x32:
   line tile 10:17 18:17
   line green 20:17 22:19 w2
   line green 22:19 26:14 w2
-
-export invoice finance/invoice:
-  png @1 @2
-  svg ids classes
 
 # --- Wallet (16x16 native redraw) ---
 draw wallet16 16x16:
@@ -158,10 +134,6 @@ draw wallet16 16x16:
     .tttttttttttttt.
     ..tttttttttttt..
 
-export wallet16 finance/wallet16:
-  png @1 @2
-  svg ids classes
-
 # --- Preisschild (16x16 native redraw) ---
 draw tag16 16x16:
   pixels:
@@ -181,10 +153,6 @@ draw tag16 16x16:
     ttttttttkttttttt
     .tttttttttttttt.
     ..tttttttttttt..
-
-export tag16 finance/tag16:
-  png @1 @2
-  svg ids classes
 
 # --- Bank (64x64 detail) ---
 draw bank64 64x64:
@@ -217,6 +185,7 @@ draw bank64 64x64:
   circle gold 32:24 3 fill
   circle goldDark 32:24 3
 
-export bank64 finance/bank64:
+export wallet, bank, cart, tag, chart, invoice, wallet16, tag16, bank64:
+  dir finance
   png @1 @2
   svg ids classes

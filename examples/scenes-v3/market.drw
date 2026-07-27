@@ -411,5 +411,5 @@ draw market 480x300:
   fill radial(#ffd98f.alpha(18%), #ffd98f.alpha(0%)) wash
   fill radial(#2f2a4a.alpha(0%), #2f2a4a.alpha(10%)) wash
 
-export market market:
+export market:
   png @1 @4

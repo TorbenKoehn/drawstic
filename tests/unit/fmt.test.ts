@@ -90,6 +90,23 @@ describe('fmt', () => {
     expect(format(want)).toBe(want)
     expect(format(format(want))).toBe(format(want))
   })
+
+  test('an export-header-shaped line inside a triple-quoted string is left alone (ADR-0098 §8)', () => {
+    // Regression: normalizeExportHeader used to run on every depth-0 line, so a style-guide body
+    // that happened to contain "export a ,b:" verbatim got rewritten to "export a, b:" — a line the
+    // author never wrote as code. `depth === 0` alone can't fix this: the offending line genuinely
+    // is at depth 0, it just isn't code.
+    const src = 'desc = """\nexport a ,b:\n"""\n'
+    expect(format(src)).toBe(src)
+    expect(format(format(src))).toBe(format(src)) // idempotent
+  })
+
+  test('a real export header inside a normally-indented block still normalizes around a string body', () => {
+    const src = 'theme t:\n  style """\n  export a ,b:\n  """\n\nexport chat ,phone:\n  png\n'
+    const want = 'theme t:\n  style """\n  export a ,b:\n  """\n\nexport chat, phone:\n  png\n'
+    expect(format(src)).toBe(want)
+    expect(format(want)).toBe(want)
+  })
 })
 
 describe('diagnostics contract (ADR-0030)', () => {

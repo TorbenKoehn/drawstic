@@ -184,38 +184,7 @@ draw clock64 64x64:
 
 # --- exports ---------------------------------------------------------------
 
-export mail productivity/mail:
-  png @1 @2
-  svg
-
-export calendar productivity/calendar:
-  png @1 @2
-  svg
-
-export notes productivity/notes:
-  png @1 @2
-  svg
-
-export calculator productivity/calculator:
-  png @1 @2
-  svg
-
-export clock productivity/clock:
-  png @1 @2
-  svg
-
-export todo productivity/todo:
-  png @1 @2
-  svg
-
-export mail16 productivity/mail16:
-  png @1 @2
-  svg
-
-export clock16 productivity/clock16:
-  png @1 @2
-  svg
-
-export clock64 productivity/clock64:
+export mail, calendar, notes, calculator, clock, todo, mail16, clock16, clock64:
+  dir productivity
   png @1 @2
   svg

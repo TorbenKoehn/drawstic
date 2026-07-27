@@ -567,7 +567,7 @@ as a handful of straight chunks, not a smooth curve. For small curved details, h
 ## 9. Composition, transforms & masks
 
 ```drw
-stamp <name>[(<args>)] <pt> [anchor <name>] [flipx] [flipy] [rot<deg>] [scale<N>] [transform <t>] [tint <paint> <amount>] [shadow <dx:dy> <paint>]
+stamp <name>[(<args>)] <pt> [anchor <name>] [flipx] [flipy] [rot<deg>] [scale<N>] [aa] [transform <t>] [tint <paint> <amount>] [shadow <dx:dy> <paint>]
 ```
 
 `stamp` blits another drawing at `pt` (top-left by default). `anchor center`, `anchor bottom`,
@@ -611,16 +611,35 @@ Transforms are **first-class values**
   `flipx`/`flipy` ≡ the centre-anchored mirrors, `scale<N>` ≡ `transform scale(N)`;
   combined flags expand flip → scale → rotate.
 - **Rasterization:** any invertible transform is inverse-mapped **nearest-neighbour** in
-  pixel mode (bundled math, half-up rounding — no new colours, alpha honoured); smooth
-  mode uses the same mapping on the 1/16 subpixel grid. Lattice-preserving transforms
-  (mirrors, quarter-turns, integer shifts/scales) are **lossless**; a non-invertible
-  transform is a positioned error.
+  both pixel and smooth mode (bundled math, half-up rounding — no new colours, alpha
+  honoured) — both modes point-sample a stamp; `mode smooth` never resamples one. `aa`
+  (below) opts a single placement into 4×4 area sampling instead. Lattice-preserving
+  transforms (mirrors, quarter-turns, integer shifts/scales) are **lossless**; a
+  non-invertible transform is a positioned error.
 
 ```drw
 t = rotate(30).about(8:8)                              # a transform is an ordinary value
 stamp gem 4:4 transform t
 stamp card 8:2 transform rotatey(60).perspective(64)   # 3D card flip, projected
 ```
+
+**`aa`** ([ADR-0099](decisions/0099-opt-in-filtered-stamp-resampling.md)) opts one placement
+into 4×4 area-sampled resampling instead of the point sample above: 16 taps of the source
+under `M⁻¹`, accumulated premultiplied in gamma-encoded sRGB, then un-premultiplied, then
+`tint`, then composited — so a non-lattice transform (`rot<other>`, non-integer `scale`,
+`skew`, `matrix`, `rotatex`/`rotatey`/`perspective`) anti-aliases instead of staircasing.
+**Byte-identical no-op on `flipx`/`flipy`/`rot180`/`scale<N>`/integer `shift` (or no transform) at
+any sprite size — and on `rot90`/`rot270` only when the sprite's width and height share a parity.**
+A quarter-turn pivots about `((w−1)/2, (h−1)/2)`, so at mixed parity (e.g. 4×5) every tap lands on
+the rounding boundary and `aa` really does resample: a 2×2 texel average plus a 1px fringe
+([ADR-0099](decisions/0099-opt-in-filtered-stamp-resampling.md) §3, amended 2026-07-27). Lint `W018`
+flags only the cases it can prove. Off by default; no theme/CLI
+switch turns it on set-wide. Costs palette slots (each fringe alpha is a distinct RGBA
+quadruple — `png indexed` can still hit its existing `E018`; `quantize` after painting is the
+fix) and SVG run fragmentation (`fill-opacity` still renders the coverage exactly, §13). Two
+overlapping `aa` parts show a faint double-blended seam where their fringes meet (two-phase
+composite, above) — a lattice `fit` for contact seams, or `outline` on the finished figure,
+avoids it.
 
 **Parametric & recoloured stamps.** `stamp key(r) 4:4` instantiates a **parametric drawing**
 (§6) with its args; `stamp eye 3:5 tint k 0.3` blends the stamped pixels toward a paint by an
@@ -664,7 +683,7 @@ a bbox overlap is not pixel contact — a part **declares named attach points** 
   (`fit hand.wrist arm.wrist`). When each side has one pin of the same name, the shorter
   `fit partB partA` **auto-matches** it. A named pin absent on one side is a positioned error.
 - **Transform flags — the pin rides the transform.** `fit` takes the same modifiers as `stamp`
-  (`flipx`/`flipy`/`rotN`/`scaleN`/`transform t`/`tint c p%`/`mask r`) **except `anchor`** — the
+  (`flipx`/`flipy`/`rotN`/`scaleN`/`aa`/`transform t`/`tint c p%`/`mask r`) **except `anchor`** — the
   pin already *is* the anchor, so an `anchor` flag on `fit` is a positioned error
   ([ADR-0096](decisions/0096-language-freeze-for-1-0.md) §1; it used to parse and be silently
   ignored). Flags apply to the part about its footprint centre. The pin still lands *exactly* on
@@ -1551,6 +1570,10 @@ theme dusk:
   """
 ```
 
+`mode` governs region eliminators, gradients and masks (§14) — it never resamples a
+`stamp`/`fit` blit. Opt one placement into 4×4 area sampling regardless of theme mode with
+the `aa` stamp/fit flag (§9, [ADR-0099](decisions/0099-opt-in-filtered-stamp-resampling.md)).
+
 A theme body holds only these forms — `palette:` / `gradient NAME = …`, `size` / `mode` / `font` /
 `light` / `figure:`, `style`, `with`, and `filter` / `draw` definitions. A theme's `light NAME = …`
 ([ADR-0086](decisions/0086-declarative-light-and-material.md)) folds like `size`/`mode`/`font`
@@ -1665,21 +1688,89 @@ export gem icons/gem:
   svg  ids classes           # element ids + CSS classes
   path                       # for path definitions: geometry SVG
   jpeg 512x512  q80  mode smooth # explicit 512x512, quality 80, anti-aliased (override theme)
+
+export chat, phone, contacts, videocall:   # comma-separated targets, one block
+  dir communication                        # bareword prefix, shared by every target below
+  png @1 @2
+  svg ids classes
+
+export pickaxe, axe, key, coinPouch, torch hand/torch:  # torch keeps its own path
+  dir assets/items
+  file "{kebab base}"        # filename STEM template, rendered per target
+  png @1 @4
+  atlasJson
 ```
 
-- `export <content> <base-path>:` then one line per output format. Source-first, then the
-  **bareword** base path — position separates them, no quotes or connector; the per-format
-  extension is appended (`png` → `<base>.png`)
-  ([ADR-0019](decisions/0019-source-first-module-references.md)).
-- **The base path is recipe-relative** ([ADR-0096](decisions/0096-language-freeze-for-1-0.md) §6):
-  `drawstic build` defaults `--out` to the recipe file's own directory, and the base path is
-  relative to that — the recipe alone decides the output layout; an explicit `--out` only
-  relocates the whole tree. Grammar: `SEGMENT { "/" SEGMENT }` — no leading `/`, no `.`/`..`
+- `export target { "," target } ":"` then one line per output format. A block declares **one or
+  more comma-separated targets**, each `NAME [OUTPUT-PATH]` — source-first, then the optional
+  **bareword** base path, no quotes or connector
+  ([ADR-0019](decisions/0019-source-first-module-references.md)). The path is optional and, when
+  omitted, defaults to the target's drawing name; the single-target legacy form (`export gem
+  icons/gem:`) is the `n = 1`, no-option case of this grammar and parses byte-identically
+  ([ADR-0098](decisions/0098-multi-target-export-blocks.md)).
+- **Path composition is three-tier precedence, not three spellings of one thing** — resolved
+  per target:
+
+  ```
+  tail     = target's own OUTPUT-PATH  ??  render(file)  ??  target NAME
+  basePath = dir ? dir + "/" + tail : tail
+  ```
+
+  The per-target path is the escape hatch for the one target that breaks the block's pattern
+  (`torch hand/torch` above), `file` is the pattern, and the name is the default. Mixing tiers
+  in one block is legal and is the intended use — the same shape as the language's three-tier
+  size resolution (header → `pixels` grid → module/theme default).
+- **`dir` and `file` are the block's optional header**, each at most once, and both must precede
+  every format line — a `dir`/`file` after a format line, or a repeated one, is a positioned
+  `E004`. `dir OUTPUT-PATH` is a **bareword** path, like every other path in the language. `file
+  TEMPLATE` is a quoted string: literal text plus `{ [inflector …] base }` holes, applied
+  **rightmost-first** (`{upper snake base}` → `COIN_POUCH`). A literal brace is `\{`/`\}` — now a
+  legal escape in every string, not only in `file` position.
+- **The six inflectors** (§17.2 `INFLECTOR`) share one word-splitting rule: split at each
+  `_`/`-`, at each lower→upper boundary (`coinPouch` → `coin`, `Pouch`), and inside an acronym
+  run before its final capital when a lowercase follows (`HTMLIcon` → `HTML`, `Icon`); digits
+  never split, so `chat16`/`videocall64` are one word each.
+
+  | Inflector | `coinPouch` → |
+  |---|---|
+  | `snake` | `coin_pouch` |
+  | `kebab` | `coin-pouch` |
+  | `camel` | `coinPouch` |
+  | `pascal` | `CoinPouch` |
+  | `upper` | `COINPOUCH` |
+  | `lower` | `coinpouch` |
+
+  Case mapping is ASCII-only and locale-free — legal by construction, since a `NAME` is
+  `[A-Za-z][A-Za-z0-9_]*` (D5). `plural`/`singular`/`title` and a `{date …}` clock read are not
+  in the grammar — see `E028` below.
+- **`file` renders a filename *stem*, never an extension.** One block emits several formats from
+  one name, so a template cannot own the extension without rendering differently per line — the
+  format line already owns it (`png` → `<base>.png`, …), so `TMPL-VAR` has exactly one member,
+  `base`. Writing `{ext}`, `{full}`, `{date …}`, or `{plural …}`/`{title …}` in a hole is a
+  positioned **`E028`** with a hint naming the fix (`{date}`: Drawstic has no clock — a recipe's
+  output must stay a pure function of its source,
+  [ADR-0007](decisions/0007-visual-not-byte-determinism.md); pluralization needs a dictionary and
+  cannot be deterministic — name the target's path explicitly instead). A rendered `file`
+  producing a `/` is `E018` (`file` names the filename, `dir` names directories).
+- **The base path is recipe-relative** ([ADR-0096](decisions/0096-language-freeze-for-1-0.md) §6),
+  unchanged by `dir`/`file`: `drawstic build` defaults `--out` to the recipe file's own directory,
+  and the composed base path is relative to that — the recipe alone decides the output layout;
+  an explicit `--out` only relocates the whole tree, and `dir` is a prefix *inside* this space,
+  never an escape from it. Grammar: `SEGMENT { "/" SEGMENT }` — no leading `/`, no `.`/`..`
   segment, no file extension (the format line appends the real one); a violation is a positioned
-  `E018`, checked by `check` (not `build`). Lint `W016` flags a base path whose first segment
-  repeats the recipe's own directory name (e.g. `export scene showcase/scene:` inside
-  `showcase/showcase.drw`) — `build` already writes next to the recipe, so the prefix is always
-  redundant.
+  `E018`, checked by `check` (not `build`). `check` also runs a module-scope collision check
+  (before any bytes are written): two exports — or two targets of one block — resolving to the
+  same artifact path is a positioned `E018` naming both sources; the same check catches two
+  format lines of *one* export colliding (`png 8x8 16x16`, or `svg` + `path`).
+- Lint `W016` flags a composed base path whose first segment repeats the recipe's own directory
+  name (e.g. `export scene showcase/scene:` inside `showcase/showcase.drw`) — `build` already
+  writes next to the recipe, so the prefix is always redundant; when the repetition comes from
+  `dir`, the finding positions on the `dir` line instead. Lint `W019` flags the block's shape
+  fighting `dir`: (a) ≥2 targets whose own paths already share a directory prefix that `dir`
+  should hold instead, or (b) a single target with a `dir` and no `file`, which needs no `dir` at
+  all (`export NAME dir/tail:` says the same thing in one line).
+- `drawstic fmt` canonicalizes a block header's target list to `", "` (comma, exactly one space),
+  collapsing any other spacing; a trailing comma before `:` is `E004`.
 - **Scale / size:** `@N` = integer scale factor (nearest-neighbor for pixel mode);
   `512x512` = explicit pixel size. (A bare-int size, `512`, was a third spelling — removed,
   ADR-0096 §1.)
@@ -1758,6 +1849,12 @@ This is **engineered**, not assumed:
   [ADR-0087](decisions/0087-anchored-assembly.md)), silent out-of-bounds clipping, and NN stamp
   rotation (centre-pivot inverse mapping) ([ADR-0028](decisions/0028-rasterization-semantics.md),
   [ADR-0043](decisions/0043-arbitrary-angle-stamp-rotation.md)).
+- **Pinned `aa` sampler.** The opt-in stamp/fit resampler taps the same 16-point 1/16 grid as
+  smooth-mode coverage (`−0.5 + (2k+1)/8`, `k = 0..3`), accumulates premultiplied
+  gamma-encoded sRGB in exact integers (order-independent by construction), and rounds
+  half-up on commit — alpha averages over the 16-tap grid, colour un-premultiplies over the
+  accumulated alpha ([ADR-0040](decisions/0040-mode-scoped-coordinate-quantization.md),
+  [ADR-0099](decisions/0099-opt-in-filtered-stamp-resampling.md)).
 - **No ambient inputs.** No wall-clock, no locale; fixed, mode-scoped coordinate
   quantization — integers in pixel mode, the 1/16 subpixel grid in smooth mode (§5,
   [ADR-0040](decisions/0040-mode-scoped-coordinate-quantization.md)). Randomness
@@ -1952,8 +2049,10 @@ skipped rather than guessed at, so a lint pass never produces a false positive.
 | `W013` | a `litTone`/`shadowTone` `fill` clipped by `.intersect(rect)` on a modeled region — the retired value-spread corner patch (ADR-0094) | use the material's `spread N%` override |
 | `W014` | a `stamp` of a part that declares attach `pin`s (unless it is a pin-seeded assembly root, ADR-0092/0094) — `stamp` is for pin-less decoration | place it with `fit <part>.<pin> <anchor>`, or drop the pins if it is decoration |
 | `W015` | a semi-transparent `fill … ellipse(…)` low in the foot zone of a drawing that uses `fit` — a hand contact-shadow (ADR-0094) | drop it; add the `ground` flag to the root `fit … ground` |
-| `W016` | an `export` base path's first segment repeats the recipe file's own directory name (ADR-0096 §6) — `build` already writes next to the recipe | drop the redundant `<dirname>/` prefix |
+| `W016` | an `export` base path's first segment repeats the recipe file's own directory name (ADR-0096 §6) — `build` already writes next to the recipe. Reads the **composed** path, so a block's `dir` is the same mistake in a new spelling (ADR-0098): the finding then positions on the `dir` line and its hint names `dir` | drop the redundant `<dirname>/` prefix |
 | `W017` | a `Front`/`Back` view pair (two draws sharing a name stem, same canvas width) repeats an off-centre attach `pin`'s `x` verbatim — the back view is the same figure turned 180°, so the pin should mirror. Exempt when the pin is part of an L/R pair (a sibling pin in the same draw with the trailing `L`/`R` swapped) — that pin set is already mirror-symmetric | mirror the coordinate: `x = w - 1 - x`, the axis `flipx` mirrors about |
+| `W018` | a `stamp`/`fit`'s `aa` flag on a placement that provably resamples exactly, so the flag cannot change a pixel (ADR-0099 §3, amended 2026-07-27): `flipx`/`flipy`/`rot(0\|180)`/`scale<N>` or no transform at all, at any size; plus `rot(90\|270)` **only** when the placed sprite's width and height share a parity. Silent on everything it cannot prove — a `transform EXPR` flag, a `fit … aim`/`bone` rotation solved at runtime, and a quarter-turn whose target size is not statically known | drop `aa`, or use a non-lattice transform (`rot45`, non-integer `scale`, `skew`, `perspective`) |
+| `W019` | an `export` block's directory is declared in the wrong place for its shape (ADR-0098 §10), two arms, once per block: (a) ≥2 targets all carry an explicit path sharing a directory prefix, with no block-level `dir`; (b) exactly one target, a `dir` line, and no `file` | (a) hoist the shared prefix into `dir <prefix>`; (b) drop `dir` and fold it into the single target's own path |
 
 **Construct census.** `critique --json` and `check --lint --json` carry a deterministic `census`
 (AST-only, [ADR-0094](decisions/0094-language-diet-and-canonical-lints.md)): every construct used in
@@ -2008,7 +2107,17 @@ SIZE        = INT "x" INT ;               (* one token, no interior whitespace: 
 COLOR       = "#" ( 3 * HEXDIGIT | 4 * HEXDIGIT | 6 * HEXDIGIT | 8 * HEXDIGIT ) ;
 HEX         = HEXDIGIT { HEXDIGIT } ;     (* sha256 content pin (§2) *)
 STRING      = '"' { ? any char except '"' or newline ? } '"'
-            | '"""' { ? any char ? } '"""' ;                   (* multi-line (§3) *)
+            | '"""' { ? any char ? } '"""' ;                   (* multi-line (§3); `\{`/`\}` escape
+                                                                    a literal brace in every string
+                                                                    (ADR-0098) *)
+
+(* a STRING read in `file` position (§13, ADR-0098) — the holes are NOT general string
+   interpolation; `base` is an export-frame variable, meaningless anywhere else *)
+TEMPLATE    = '"' { tmpl-char | tmpl-hole } '"' ;
+tmpl-char   = ? any char except '"', '{', '}', '\' ? | "\{" | "\}" ;
+tmpl-hole   = "{" { INFLECTOR } TMPL-VAR "}" ;      (* prefix application, rightmost applies first *)
+INFLECTOR   = "snake" | "camel" | "pascal" | "kebab" | "upper" | "lower" ;
+TMPL-VAR    = "base" ;                              (* the target's drawing name — the only variable *)
 
 (* pixel rows — only inside a pixels: block; no SPACE, no trailing comment (§7) *)
 PIXEL-ROW   = ( KEY | "." ) { KEY | "." } ;
@@ -2166,6 +2275,8 @@ fit-source     = fit-ref                             (* another already-placed p
                | "bone" NAME                         (* the active pose's solved joint (ADR-0095) *)
                | point ;                             (* canvas point — the ground-placement oracle *)
 fit-flag       = "flipx" | "flipy" | ROT-FLAG | SCALE-FLAG
+               | "aa"                                (* opt-in filtered resampling (§9, ADR-0099);
+                                                         same flag, same semantics as stamp-flag *)
                | "transform" expr | "tint" paint expr | "mask" NAME
                                                       (* NOT "anchor" — the pin already is the
                                                          anchor, so that stamp-flag is a positioned
@@ -2227,6 +2338,8 @@ stroke-flags   = [ W-FLAG ] ;                       (* `cap`/`join` removed — 
 stampable      = NAME [ "(" [ expr-seq ] ")" ]      (* plain or parametric drawing (§6) *)
                | NAME "." NAME ;                    (* atlas member by name (§9) *)
 stamp-flag     = "flipx" | "flipy" | ROT-FLAG | SCALE-FLAG          (* pinned sugar (§9) *)
+               | "aa"                                (* opt-in filtered resampling (§9, ADR-0099);
+                                                         a no-op on §9's identity set, W018 *)
                | "transform" expr | "tint" paint expr | "mask" NAME
                | "anchor" NAME | "shadow" point paint
                | "behind" NAME | "front" NAME ;      (* occlusion order vs. an earlier-placed part,
@@ -2313,8 +2426,13 @@ atlas-item     = "sprites" name-list NL | "tile" SIZE NL | "cols" INT NL
 
 (* ───────────────────────────── exports ───────────────────────────── *)
 
-export-def     = "export" NAME OUTPUT-PATH ":" NL
-                 INDENT format-line { format-line } DEDENT ;        (* §13 *)
+export-def     = "export" export-target { "," export-target } ":" NL
+                 INDENT { export-option } format-line { format-line } DEDENT ;   (* §13 *)
+export-target  = NAME [ OUTPUT-PATH ] ;             (* the path is optional — it defaults to NAME *)
+export-option  = dir-opt | file-opt ;               (* both optional, at most one each, before the
+                                                        first format-line — E004 otherwise *)
+dir-opt        = "dir" OUTPUT-PATH NL ;             (* bareword, like every other path (§13) *)
+file-opt       = "file" TEMPLATE NL ;               (* the filename stem for targets without a path *)
 format-line    = "png"  { out-size | Z-FLAG | "indexed" | mode-flag } NL
                | "svg"  { "ids" | "classes" | "inlineStyles" | mode-flag } NL
                | "jpeg" { out-size | Q-FLAG | mode-flag } NL

@@ -229,7 +229,7 @@ stamped variant parametrically (`draw part(c)`) or with `tint`.
 ## 8 — Stamp and transforms
 
 ```text
-stamp name[(args)] pt [anchor <name>] [flipx] [flipy] [rot45] [scale2]
+stamp name[(args)] pt [anchor <name>] [flipx] [flipy] [rot45] [scale2] [aa]
      [transform t] [tint p 0.3] [shadow 1:1 #0006] [mask r]
 ```
 
@@ -239,6 +239,17 @@ bottomLeft bottom bottomRight`) are **visual** — they name a spot on the footp
 rotatex rotatey perspective`, anchored with `.about(pt)`. **Reading order is application order.**
 Pixel mode resamples nearest-neighbour; mirrors, quarter-turns and integer scales are lossless; a
 non-invertible transform is `E014`.
+
+**`aa`** — bare flag, same on `stamp`/`fit`: opts this one placement into 4×4 area-sampled
+resampling instead of the default point sample, so `rot37`/non-integer `scale`/`skew`/`perspective`
+anti-alias instead of staircasing.
+**Trap — `W018`.** On `flipx`/`flipy`/`rot180`/`scale<N>` or no transform, `aa` is a byte-identical
+no-op — drop it. `rot90`/`rot270` are a no-op only when the sprite's width and height share a parity
+(4×4, 3×5); at mixed parity (4×5) a quarter-turn pivots on a half-pixel and `aa` does blend.
+**Trap — silent.** Each fringe alpha is a distinct RGBA quadruple: an `aa`'d sprite widens the
+palette and can still hit `E018` on `png indexed`; `quantize` after painting fixes it. Two
+overlapping `aa` parts show a faint double-blended seam where their fringes meet — use a lattice
+transform for contact seams, or `outline` the finished figure.
 
 **Trap — silent.** A stamp `shadow` on a *composite* sprite offsets the whole silhouette and reads
 as a dark clump. For a standing object draw a separate ground ellipse, or use `fit … ground`.
@@ -354,24 +365,43 @@ an unknown member is `E015`.
 ## 13 — Export
 
 ```drw
-export sword sword:          # <drawing> <base path>, then one line per format
-  png @1 @4                  # @N scale variants; also `z0-9`, `indexed`
-  svg ids classes            # also `inlineStyles`
+export sword:                 # bare name — path defaults to the drawing name
+  png @1 @4                   # @N scale variants; also `z0-9`, `indexed`
+  svg ids classes             # also `inlineStyles`
   jpeg 512 q80
-  path                       # geometry-only SVG
+  path                        # geometry-only SVG
+
+export chat, phone, contacts:   # comma-separated targets, one shared block
+  dir communication              # bareword prefix
+  file "{kebab base}"            # filename STEM template — six inflectors, right-to-left
+  png @1 @2
+  svg ids classes
 ```
+
+Path per target, in precedence order: **own path** (`export sword icons/sword:`) > `render(file)` >
+the drawing name; `dir` prefixes whichever wins. Inflectors: `snake camel pascal kebab upper lower`,
+e.g. `{upper snake base}` on `coinPouch` → `COIN_POUCH`. `dir`/`file` each appear at most once, both
+before every format line.
 
 Sheet sidecars on an atlas export: `png` (the sheet) · `tiled` (`.tsj`; `tiled xml` → `.tsx`;
 needs `tile`) · `atlasJson` (frames map) · `aseprite`.
 
 **The base path is relative to the recipe's own folder** — `build` defaults `--out` to the recipe's
-directory, so an export path is a plain basename.
+directory; `dir` prefixes inside that same space, never escapes it.
 
 **Trap — silent, and the single most common "it worked but nothing appeared".** No `export` block
 means `build` writes nothing and still exits 0.
 **Trap — `W002`.** A drawing that is neither exported, stamped nor fitted. Listing it under an
 atlas's `sprites` does **not** count — atlas members need their own `export` too.
-**Trap — `W016`.** An export path whose first segment repeats the recipe's own directory name.
+**Trap — `W016`.** An export path (or a block's `dir`) whose first segment repeats the recipe's own
+directory name.
+**Trap — `W019`.** A `dir` on a single, file-less target — inline it instead; or ≥2 targets whose own
+paths share a prefix that belongs in `dir`.
+**Trap — `E028`.** `file` renders a filename **stem**, not an extension — `{ext}`/`{full}` don't
+exist, the format line owns it. `{date …}` (no clock) and `{plural …}`/`{title …}` (no dictionary,
+use `pascal` or name the path explicitly) are rejected too.
+**Trap — `E018`.** A rendered `file` containing `/`; or two exports — including two targets of one
+block — landing on the same artifact path, now caught by `check` before `build` writes anything.
 **Trap — silent.** SVG stays compact for flat, row-uniform fills. Scanline-varying gradients,
 veils, texture and grain explode the `<rect>` count — keep those for PNG targets.
 

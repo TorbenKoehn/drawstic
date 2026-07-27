@@ -282,14 +282,5 @@ draw knightSheet 200x140:
 
 # ================= EXPORTS =================
 
-export knightFront knight-front:
-  png @1 @4
-
-export knightSide knight-side:
-  png @1 @4
-
-export knightBack knight-back:
-  png @1 @4
-
-export knightSheet knight-sheet:
+export knightFront knight-front, knightSide knight-side, knightBack knight-back, knightSheet knight-sheet:
   png @1 @4

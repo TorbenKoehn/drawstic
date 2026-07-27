@@ -36,15 +36,20 @@ import {
   type UserFontResolved,
 } from '../../src/raster.js'
 import {
+  aboutPoint,
   circleRegion,
+  compose,
   type Grad,
+  IDENTITY,
   multiplyMatrix,
   perspectiveMatrix,
   type Region,
   rectRegion,
+  rotationDeg,
   rotationYDeg,
   type Sprite,
   scaling,
+  translation,
 } from '../../src/values.js'
 
 const ctx = (w: number, h: number, mode: 'pixel' | 'smooth' = 'pixel'): Context => ({
@@ -418,6 +423,259 @@ describe('stampSprite', () => {
     const m = multiplyMatrix(perspectiveMatrix(20), rotationYDeg(60))
     const ok = stampSprite(c, sprite, 8, 8, m)
     expect(ok).toBe(true)
+  })
+})
+
+describe('stampSprite aa (ADR-0099 opt-in filtered resampling)', () => {
+  test('half-pixel shift spreads one texel across two at alpha 128', () => {
+    const onePx: Sprite = {
+      type: 'sprite',
+      name: 't',
+      w: 1,
+      h: 1,
+      data: new Uint8Array([255, 0, 0, 255]),
+      pal: [],
+      title: undefined,
+      desc: undefined,
+    }
+    const m = translation(0.5, 0)
+    const aa = ctx(4, 2)
+    stampSprite(aa, onePx, 0, 0, m, undefined, undefined, true)
+    expect(px(aa, 0, 0)).toEqual([255, 0, 0, 128])
+    expect(px(aa, 1, 0)).toEqual([255, 0, 0, 128])
+    expect(px(aa, 2, 0)).toEqual([0, 0, 0, 0])
+    expect(px(aa, 3, 0)).toEqual([0, 0, 0, 0])
+    expect(px(aa, 0, 1)).toEqual([0, 0, 0, 0])
+    expect(px(aa, 1, 1)).toEqual([0, 0, 0, 0])
+    expect(px(aa, 2, 1)).toEqual([0, 0, 0, 0])
+    expect(px(aa, 3, 1)).toEqual([0, 0, 0, 0])
+
+    // without aa: single nearest-neighbour texel at (0, 0)
+    const nn = ctx(4, 2)
+    stampSprite(nn, onePx, 0, 0, m)
+    expect(px(nn, 0, 0)).toEqual([255, 0, 0, 255])
+    expect(px(nn, 1, 0)).toEqual([0, 0, 0, 0])
+  })
+
+  test('interior texel boundary blends 50/50 in gamma sRGB', () => {
+    // discriminates the blend space: linear-light averaging gives ~188 per channel,
+    // an OkLCh mix nothing close to (128, 0, 128) — only premultiplied gamma sRGB lands here.
+    const twoPx: Sprite = {
+      type: 'sprite',
+      name: 't',
+      w: 2,
+      h: 1,
+      data: new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]),
+      pal: [],
+      title: undefined,
+      desc: undefined,
+    }
+    const c = ctx(3, 1)
+    stampSprite(c, twoPx, 0, 0, translation(0.5, 0), undefined, undefined, true)
+    expect(px(c, 0, 0)).toEqual([255, 0, 0, 128])
+    expect(px(c, 1, 0)).toEqual([128, 0, 128, 255])
+    expect(px(c, 2, 0)).toEqual([0, 0, 255, 128])
+  })
+
+  // An asymmetric sprite (every texel a distinct colour) with one transparent hole, so an
+  // alpha-0 texel round-trips too.
+  const asymSprite = (w: number, h: number): Sprite => {
+    const data = new Uint8Array(w * h * 4)
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4
+        data[i] = (x * 70 + 10) % 256
+        data[i + 1] = (y * 45 + 20) % 256
+        data[i + 2] = ((x + y) * 30 + 5) % 256
+        data[i + 3] = x === w - 1 && y === h - 1 ? 0 : 255
+      }
+    }
+    return { type: 'sprite', name: 't', w, h, data, pal: [], title: undefined, desc: undefined }
+  }
+
+  /** The flag matrix exactly as eval.ts's `#buildStampMatrix` builds it: flip → scale → rotate. */
+  const flagMatrix = (
+    w: number,
+    h: number,
+    f: { flipx?: boolean; flipy?: boolean; scale?: number; rot?: number },
+  ): readonly number[] => {
+    const cx = (w - 1) / 2
+    const cy = (h - 1) / 2
+    let m = IDENTITY
+    if (f.flipx) {
+      m = compose(m, aboutPoint(scaling(-1, 1), cx, cy))
+    }
+    if (f.flipy) {
+      m = compose(m, aboutPoint(scaling(1, -1), cx, cy))
+    }
+    if (f.scale) {
+      m = compose(m, aboutPoint(scaling(f.scale, f.scale), -0.5, -0.5))
+    }
+    if (f.rot) {
+      m = compose(m, aboutPoint(rotationDeg(f.rot), cx, cy))
+    }
+    return m
+  }
+
+  /** Renders the same placement twice (aa off, aa on) and returns both buffers. */
+  const nnVsAa = (s: Sprite, m: readonly number[]): [Uint8Array, Uint8Array] => {
+    const nn = ctx(40, 40)
+    const aa = ctx(40, 40)
+    expect(stampSprite(nn, s, 15, 15, m)).toBe(true)
+    expect(stampSprite(aa, s, 15, 15, m, undefined, undefined, true)).toBe(true)
+    return [nn.buffer.data, aa.buffer.data]
+  }
+
+  // odd/odd, even/even, and both mixed-parity orders — the parity split is the whole point.
+  const SIZES: readonly (readonly [number, number])[] = [
+    [3, 5],
+    [4, 4],
+    [4, 5],
+    [3, 4],
+    [6, 4],
+  ]
+
+  test('mirrors, rot180, integer scale and integer shift are byte-identical with and without aa — at every sprite size', () => {
+    const cases: Record<string, (w: number, h: number) => readonly number[]> = {
+      flipx: (w, h) => flagMatrix(w, h, { flipx: true }),
+      flipy: (w, h) => flagMatrix(w, h, { flipy: true }),
+      rot180: (w, h) => flagMatrix(w, h, { rot: 180 }),
+      scale2: (w, h) => flagMatrix(w, h, { scale: 2 }),
+      scale3: (w, h) => flagMatrix(w, h, { scale: 3 }),
+      'flipx flipy scale2 rot180': (w, h) =>
+        flagMatrix(w, h, { flipx: true, flipy: true, scale: 2, rot: 180 }),
+      'integer shift(3,-2)': () => translation(3, -2),
+    }
+    for (const [w, h] of SIZES) {
+      for (const [label, build] of Object.entries(cases)) {
+        const [nn, aa] = nnVsAa(asymSprite(w, h), build(w, h))
+        expect(aa, `${label} on ${w}x${h}: aa vs nn buffer`).toEqual(nn)
+      }
+    }
+  })
+
+  test('a quarter-turn is byte-identical to nearest-neighbour only at equal parity (ADR-0099 §3, amended 2026-07-27)', () => {
+    // rot90/rot270 pivot about ((w−1)/2, (h−1)/2), so the inverse map carries the offsets cx∓cy.
+    // Integral iff w and h share a parity — then every tap rounds to the point sample's texel.
+    for (const [w, h] of SIZES.filter(([sw, sh]) => (sw - sh) % 2 === 0)) {
+      for (const rot of [90, 270]) {
+        const [nn, aa] = nnVsAa(asymSprite(w, h), flagMatrix(w, h, { rot }))
+        expect(aa, `rot${rot} on ${w}x${h}: aa vs nn buffer`).toEqual(nn)
+        // and it stays exact when the quarter-turn is composed with the size-free flags
+        const [nn2, aa2] = nnVsAa(
+          asymSprite(w, h),
+          flagMatrix(w, h, { flipx: true, scale: 2, rot }),
+        )
+        expect(aa2, `flipx scale2 rot${rot} on ${w}x${h}`).toEqual(nn2)
+      }
+    }
+    // At mixed parity every tap lands exactly on the roundHalfUp boundary, the taps split 8/8 per
+    // axis, and `aa` genuinely resamples. Anyone reinstating the old "quarter-turns are always
+    // byte-identical" claim in code fails here.
+    for (const [w, h] of [
+      [4, 5],
+      [3, 4],
+      [2, 3],
+      [5, 6],
+    ] as const) {
+      for (const rot of [90, 270]) {
+        const [nn, aa] = nnVsAa(asymSprite(w, h), flagMatrix(w, h, { rot }))
+        expect(aa, `rot${rot} on ${w}x${h}: aa must differ from nn`).not.toEqual(nn)
+      }
+    }
+  })
+
+  test('a mixed-parity quarter-turn averages a 2x2 texel block (the 16 taps split 4/4/4/4)', () => {
+    // 2x3, six distinct opaque texels; rot90 about cx=0.5, cy=1.
+    const s: Sprite = {
+      type: 'sprite',
+      name: 't',
+      w: 2,
+      h: 3,
+      // (0,0) red   (1,0) green
+      // (0,1) blue  (1,1) yellow
+      // (0,2) cyan  (1,2) magenta
+      data: new Uint8Array([
+        255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255, 0, 255, 255, 255, 255, 0,
+        255, 255,
+      ]),
+      pal: [],
+      title: undefined,
+      desc: undefined,
+    }
+    const m = flagMatrix(2, 3, { rot: 90 })
+    const nn = ctx(12, 12)
+    const aa = ctx(12, 12)
+    stampSprite(nn, s, 4, 4, m)
+    stampSprite(aa, s, 4, 4, m, undefined, undefined, true)
+
+    // nearest-neighbour: the exact 3x2 turned sprite, every texel opaque and unblended
+    expect(px(nn, 4, 4)).toEqual([0, 255, 255, 255]) // cyan
+    expect(px(nn, 5, 5)).toEqual([255, 255, 0, 255]) // yellow
+    expect(px(nn, 3, 5)).toEqual([0, 0, 0, 0]) // nothing left of the footprint
+
+    // aa: (4,5) is fully covered by four taps each of cyan, blue, magenta and yellow —
+    // r = (0+0+255+255)/4 = 127.5 → 128, g = (255+0+0+255)/4 → 128, b = (255+255+255+0)/4 = 191.25 → 191
+    expect(px(aa, 4, 5)).toEqual([128, 128, 191, 255])
+    // (5,5): the neighbouring 2x2 block — blue, red, yellow, green ⇒ b = 255/4 = 63.75 → 64
+    expect(px(aa, 5, 5)).toEqual([128, 128, 64, 255])
+    // and the fringe reaches one pixel further left than nearest-neighbour ever writes:
+    // 8 of 16 taps land on the sprite, cyan + magenta ⇒ (128, 128, 255) at alpha 8·255/16 → 128
+    expect(px(aa, 3, 5)).toEqual([128, 128, 255, 128])
+  })
+
+  test('identity blit ignores aa', () => {
+    const s: Sprite = {
+      type: 'sprite',
+      name: 't',
+      w: 2,
+      h: 2,
+      data: new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 0, 0, 0, 0]),
+      pal: [],
+      title: undefined,
+      desc: undefined,
+    }
+    const withAa = ctx(6, 6)
+    const withoutAa = ctx(6, 6)
+    stampSprite(withAa, s, 2, 3, undefined, undefined, undefined, true)
+    stampSprite(withoutAa, s, 2, 3, undefined, undefined, undefined, false)
+    expect(withAa.buffer.data).toEqual(withoutAa.buffer.data)
+  })
+
+  test('aa never ticks the budget for an empty pixel', () => {
+    const solid = new Uint8Array(6 * 6 * 4)
+    for (let i = 0; i < solid.length; i += 4) {
+      solid[i] = 200
+      solid[i + 1] = 60
+      solid[i + 2] = 30
+      solid[i + 3] = 255
+    }
+    const solidSprite: Sprite = {
+      type: 'sprite',
+      name: 't',
+      w: 6,
+      h: 6,
+      data: solid,
+      pal: [],
+      title: undefined,
+      desc: undefined,
+    }
+    const c = ctx(20, 20)
+    let writes = 0
+    c.buffer.onWrite = () => {
+      writes++
+    }
+    const m = aboutPoint(rotationDeg(37), 2.5, 2.5) // non-lattice: a fringe ring is expected
+    const ok = stampSprite(c, solidSprite, 7, 7, m, undefined, undefined, true)
+    expect(ok).toBe(true)
+    let opaque = 0
+    for (let i = 3; i < c.buffer.data.length; i += 4) {
+      if ((c.buffer.data[i] ?? 0) > 0) {
+        opaque++
+      }
+    }
+    expect(opaque).toBeGreaterThan(0)
+    expect(writes).toBe(opaque)
   })
 })
 

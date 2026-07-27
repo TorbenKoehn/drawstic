@@ -32,6 +32,12 @@ export type Token = {
   sizeH: number
   /** String payload (string literals: unquoted content). */
   str: string
+  /**
+   * String literals only: the exact source between the quotes, **before** escape processing
+   * (ADR-0098 §2). The `file` name-template compiler reads this so it can tell an escaped `\{`
+   * from a template hole's `{`; every other string consumer reads {@link str}.
+   */
+  raw: string
   line: number
   col: number
   endLine: number
@@ -95,6 +101,7 @@ export const lex = (source: string, file: string): Token[] => {
       num: 0,
       sizeH: 0,
       str: '',
+      raw: '',
       endLine: t.line,
       endCol: t.col + t.text.length,
       spaced: false,
@@ -247,6 +254,8 @@ export const lex = (source: string, file: string): Token[] => {
             kind: 'string',
             text: `"""${buf}"""`,
             str: buf,
+            // A triple-quoted string processes no escapes, so its inner text is already verbatim.
+            raw: buf,
             line: cl + 1,
             col: startCol,
             endLine: sl + 1,
@@ -268,6 +277,11 @@ export const lex = (source: string, file: string): Token[] => {
             switch (next) {
               case '"':
               case '\\':
+              // `\{`/`\}` (ADR-0098 §2) escape a literal brace in every string, not only in a
+              // `file` template — a strict widening of an escape set that rejected them outright,
+              // so no existing source changes meaning.
+              case '{':
+              case '}':
                 buf += next
                 j += 2
                 continue
@@ -299,7 +313,15 @@ export const lex = (source: string, file: string): Token[] => {
             column: startCol,
           })
         }
-        push({ kind: 'string', text: `"${buf}"`, str: buf, line: cl + 1, col: startCol, spaced })
+        push({
+          kind: 'string',
+          text: `"${buf}"`,
+          str: buf,
+          raw: text.slice(i + 1, j),
+          line: cl + 1,
+          col: startCol,
+          spaced,
+        })
         i = j + 1
         spaced = false
         prevWasDot = false

@@ -3,7 +3,7 @@
 // list still reported both writes — one missing file, no diagnostic.
 
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildModule, validateExport } from '../../src/build.js'
@@ -128,6 +128,79 @@ describe('validateExport — recipe-relative path grammar (ADR-0096 §6)', () =>
           "export path 'gem.png' must not carry a file extension — the format line appends it",
         )
       }
+    }
+  })
+})
+
+describe('buildModule enforces the recipe-relative space before writing anything (ADR-0098 §2)', () => {
+  /** Builds `src` into a fresh temp dir; returns the parent dir so a test can inspect what (if
+   *  anything) got written outside `out/`, and the caught error, if any. */
+  const attemptBuild = (src: string): { root: string; caught: unknown } => {
+    const root = mkdtempSync(join(tmpdir(), 'drawstic-build-escape-'))
+    const file = join(root, 'recipe.drw')
+    writeFileSync(file, src, 'utf8')
+    const engine = new Engine(root)
+    const mod = engine.loadEntry(file)
+    let caught: unknown
+    try {
+      buildModule(engine, mod, join(root, 'out'))
+    } catch (e) {
+      caught = e
+    }
+    return { root, caught }
+  }
+
+  test("'dir ../…' fails E018 and writes nothing — not even inside 'out/' (ADR-0098 §2: dir is never an escape)", () => {
+    const { root, caught } = attemptBuild(`${DOT}\nexport dot:\n  dir ../pwned\n  png\n`)
+    try {
+      expect(caught).toBeInstanceOf(DrawsticError)
+      expect((caught as DrawsticError).code).toBe('E018')
+      expect((caught as DrawsticError).message).toContain('escapes the output directory')
+      // Nothing landed next to the recipe (the escape target) …
+      expect(existsSync(join(root, '..', 'pwned'))).toBe(false)
+      expect(existsSync(join(root, 'pwned'))).toBe(false)
+      // … and nothing landed inside 'out/' either: the build wrote zero bytes, not a partial set.
+      expect(existsSync(join(root, 'out'))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('the legacy `export name ../…/name:` spelling fails the same way, before any write', () => {
+    const { root, caught } = attemptBuild(`${DOT}\nexport dot ../pwned3/dot:\n  png\n`)
+    try {
+      expect(caught).toBeInstanceOf(DrawsticError)
+      expect((caught as DrawsticError).code).toBe('E018')
+      expect((caught as DrawsticError).message).toContain('escapes the output directory')
+      expect(existsSync(join(root, '..', 'pwned3'))).toBe(false)
+      expect(existsSync(join(root, 'out'))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('a well-formed export among a batch still fails atomically when a later export escapes', () => {
+    // The path check runs over every export before any of them writes, so an early, otherwise-valid
+    // export does not get its files written while a later export in the same module is rejected.
+    const { root, caught } = attemptBuild(
+      `${DOT}\nexport dot ok/dot:\n  png\n\nexport dot ../pwned/dot:\n  png\n`,
+    )
+    try {
+      expect(caught).toBeInstanceOf(DrawsticError)
+      expect((caught as DrawsticError).code).toBe('E018')
+      expect(existsSync(join(root, 'out'))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('a well-formed build is unaffected: the validation pass adds no extra artifacts or reordering', () => {
+    const { root, caught } = attemptBuild(`${DOT}\nexport dot dot:\n  png\n`)
+    try {
+      expect(caught).toBeUndefined()
+      expect(readdirSync(join(root, 'out'))).toEqual(['dot.png'])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })

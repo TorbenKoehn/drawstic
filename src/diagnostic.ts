@@ -115,4 +115,7 @@ export const ERROR_CODE = {
   occlusionCycle: 'E025',
   unknownFlag: 'E026',
   pngUnsupported: 'E027',
+  // ADR-0098: a `file` name template in an `export` block is malformed, or names something that is
+  // neither the one template variable (`base`) nor one of the six inflectors.
+  template: 'E028',
 } as const

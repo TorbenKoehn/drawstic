@@ -6,6 +6,8 @@ import type {
   Argument,
   AtlasDefinition,
   DrawDefinition,
+  ExportDefinition,
+  ExportGroup,
   Expression,
   FontDefinition,
   FontItem,
@@ -53,6 +55,135 @@ const KW_ARG_ARITY: Record<string, number> = {
 // `by`-expression (path-local `rel` replaced it) and ADR-0073 unreserved
 // the now-dead word, so `by` is an ordinary bindable name again.
 const RESERVED = new Set(['rel', 'if', 'then', 'else', 'true', 'false', 'transparent', 'mod', 'as'])
+
+// ── `file` name templates (ADR-0098 §3–§6) ─────────────────────────────
+//
+// Template-only, deliberately not expression-level functions: `title` is already a statement
+// keyword and `upper`/`lower`/`base` are attractive binding names, so promoting them would reserve
+// six words everywhere to serve a language that has no string-producing operation at all. Holes
+// exist only in `file` position — making `{` significant in every string would break `glyph "{"` in
+// the bundled fonts on day one (§4).
+
+/** One compiled piece of a `file` template: verbatim text, or a hole applying inflectors to `base`. */
+type TemplatePart =
+  | { readonly kind: 'literal'; readonly text: string }
+  | { readonly kind: 'hole'; readonly inflectors: readonly string[]; readonly variable: 'base' }
+
+/** ASCII-only, locale-free case maps — legal by construction: a NAME is `[A-Za-z][A-Za-z0-9_]*` (D5). */
+const lowerAscii = (s: string): string =>
+  s.replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32))
+const upperAscii = (s: string): string =>
+  s.replace(/[a-z]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 32))
+const capitalizeAscii = (w: string): string => upperAscii(w.slice(0, 1)) + lowerAscii(w.slice(1))
+
+/**
+ * The one word-splitting rule shared by every case inflector (ADR-0098 §5) — total and
+ * dictionary-free: split at each `_`/`-` (separator consumed), at each lower→upper boundary
+ * (`coinPouch` → `coin`, `Pouch`), and inside an acronym run before its final capital when a
+ * lowercase follows (`HTMLIcon` → `HTML`, `Icon`). A digit is neither upper nor lower, so it never
+ * opens a word: `chat16`/`videocall64` stay one word and every inflector is a no-op on them, rather
+ * than a silent rename.
+ */
+const splitWords = (s: string): string[] => {
+  const words: string[] = []
+  let current = ''
+  const flush = (): void => {
+    if (current !== '') {
+      words.push(current)
+      current = ''
+    }
+  }
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i] ?? ''
+    if (c === '_' || c === '-') {
+      flush()
+      continue
+    }
+    if (c >= 'A' && c <= 'Z' && current !== '') {
+      const prev = s[i - 1] ?? ''
+      const next = s[i + 1] ?? ''
+      const lowerBefore = prev >= 'a' && prev <= 'z'
+      const acronymEnd = prev >= 'A' && prev <= 'Z' && next >= 'a' && next <= 'z'
+      if (lowerBefore || acronymEnd) {
+        flush()
+      }
+    }
+    current += c
+  }
+  flush()
+  return words
+}
+
+/** The six inflectors (ADR-0098 §5). Every one is a total, pure function of its input's characters. */
+const INFLECTORS = new Map<string, (s: string) => string>([
+  ['snake', (s) => splitWords(s).map(lowerAscii).join('_')],
+  ['kebab', (s) => splitWords(s).map(lowerAscii).join('-')],
+  [
+    'camel',
+    (s) =>
+      splitWords(s)
+        .map((w, i) => (i === 0 ? lowerAscii(w) : capitalizeAscii(w)))
+        .join(''),
+  ],
+  ['pascal', (s) => splitWords(s).map(capitalizeAscii).join('')],
+  ['upper', upperAscii],
+  ['lower', lowerAscii],
+])
+
+const INFLECTOR_NAMES = 'snake, camel, pascal, kebab, upper, lower'
+
+/**
+ * Applies `inflectors` to `name`, **rightmost first** (`{upper snake base}` → `COIN_POUCH`). Every
+ * name was validated when the template was compiled, so the lookup can never miss at render time.
+ */
+const applyInflectors = (inflectors: readonly string[], name: string): string => {
+  let out = name
+  for (let i = inflectors.length - 1; i >= 0; i--) {
+    out = INFLECTORS.get(inflectors[i] ?? '')?.(out) ?? out
+  }
+  return out
+}
+
+/** One `E028` message plus its teach-the-replacement hint (ADR-0094, ADR-0098 §10). */
+type TemplateProblem = { readonly message: string; readonly hint: string | undefined }
+
+/** Drawstic has no clock: a date would break output-is-a-pure-function-of-source (ADR-0007). */
+const DATE_PROBLEM: TemplateProblem = {
+  message: "'date' is not a template variable — Drawstic has no clock",
+  hint: "a recipe's output is a pure function of its source (ADR-0007); a date would make the same recipe write different filenames on two runs",
+}
+
+/** The diagnostic for a hole's variable word — the last word of `{ … base }`. */
+const variableProblem = (name: string): TemplateProblem => {
+  if (name === 'ext' || name === 'full') {
+    return {
+      message: `'{${name}}' is not a template variable — the format line owns the extension`,
+      hint: `write 'file "{snake base}"'; a png+svg block would render two different names`,
+    }
+  }
+  if (name === 'date') {
+    return DATE_PROBLEM
+  }
+  return {
+    message: `unknown template variable '${name}' — the only variable is 'base' (the target's drawing name)`,
+    hint: undefined,
+  }
+}
+
+/** The diagnostic for a hole's inflector word — any word before the variable. */
+const inflectorProblem = (name: string): TemplateProblem => {
+  if (name === 'date') {
+    return DATE_PROBLEM
+  }
+  const message = `unknown inflector '${name}' — available: ${INFLECTOR_NAMES}`
+  if (name === 'plural' || name === 'singular') {
+    return {
+      message,
+      hint: "pluralization needs a dictionary and cannot be deterministic — name the target's path explicitly: 'export coin coins:'",
+    }
+  }
+  return name === 'title' ? { message, hint: "use 'pascal'" } : { message, hint: undefined }
+}
 
 /**
  * Recursive-descent parser over one file's token stream (see module header
@@ -1638,26 +1769,224 @@ class Parser {
     return { kind: 'atlasDefinition', def, span: s }
   }
 
-  /** Parses `export-def` (§17.4): `export NAME OUTPUT-PATH: { format-line }`. */
+  /**
+   * Raises the one template error code (`E028`), positioned at `offset` **inside the string
+   * literal** — the column of the opening quote plus its delimiter, so the caret lands on the
+   * offending `{` (or `\`) rather than on the whole `file` line.
+   */
+  readonly #failTemplate = (
+    problem: TemplateProblem,
+    tok: Token,
+    offset: number,
+    hint?: string,
+  ): never => {
+    const delimiter = tok.text.startsWith('"""') ? 3 : 1
+    throw error(
+      ERROR_CODE.template,
+      problem.message,
+      this.#file,
+      { line: tok.line, column: tok.col + delimiter + offset },
+      hint ?? problem.hint,
+    )
+  }
+
+  /**
+   * Compiles a `file` name template (ADR-0098 §1) from a string token's **raw**, pre-unescape
+   * source: literal chunks plus `{ [INFLECTOR …] base }` holes. Only `\{` and `\}` are escapable
+   * here — every other escape the lexer accepts (`\n`, `\t`, `\"`) is a character a filename cannot
+   * carry, so it is `E028` with the reason rather than a broken artifact name.
+   */
+  readonly #parseTemplate = (tok: Token): TemplatePart[] => {
+    const src = tok.raw
+    const parts: TemplatePart[] = []
+    let literal = ''
+    const flush = (): void => {
+      if (literal !== '') {
+        parts.push({ kind: 'literal', text: literal })
+        literal = ''
+      }
+    }
+    for (let i = 0; i < src.length; i++) {
+      const c = src[i] ?? ''
+      if (c === '\\') {
+        const next = src[i + 1] ?? ''
+        if (next !== '{' && next !== '}') {
+          this.#failTemplate(
+            {
+              message: `'\\${next}' is not allowed in a file template`,
+              hint: "a filename cannot contain a newline, tab or quote; only '\\{' and '\\}' are escapable here",
+            },
+            tok,
+            i,
+          )
+        }
+        literal += next
+        i++
+        continue
+      }
+      if (c === '}') {
+        this.#failTemplate(
+          {
+            message: "unmatched '}' in a file template",
+            hint: "escape a literal brace as '\\}'",
+          },
+          tok,
+          i,
+        )
+      }
+      if (c !== '{') {
+        literal += c
+        continue
+      }
+      const end = src.indexOf('}', i + 1)
+      if (end < 0) {
+        this.#failTemplate(
+          {
+            message: "unterminated '{' in a file template",
+            hint: "close it, or escape a literal brace as '\\{'",
+          },
+          tok,
+          i,
+        )
+      }
+      const words = src
+        .slice(i + 1, end)
+        .split(/\s+/)
+        .filter((w) => w !== '')
+      if (words.length === 0) {
+        this.#failTemplate(
+          { message: "empty '{}' in a file template", hint: "name a variable, e.g. '{base}'" },
+          tok,
+          i,
+        )
+      }
+      const inflectors = words.slice(0, -1)
+      for (const inflector of inflectors) {
+        if (!INFLECTORS.has(inflector)) {
+          this.#failTemplate(inflectorProblem(inflector), tok, i)
+        }
+      }
+      if (words[words.length - 1] !== 'base') {
+        this.#failTemplate(variableProblem(words[words.length - 1] ?? ''), tok, i)
+      }
+      flush()
+      parts.push({ kind: 'hole', inflectors, variable: 'base' })
+      i = end
+    }
+    flush()
+    return parts
+  }
+
+  /** Renders a compiled template for one target's drawing `name` — the block's filename stem (§3). */
+  readonly #renderTemplate = (parts: readonly TemplatePart[], name: string): string =>
+    parts.map((p) => (p.kind === 'literal' ? p.text : applyInflectors(p.inflectors, name))).join('')
+
+  /**
+   * Parses `export-def` (§17.4, ADR-0098 §1): a comma-separated target list, each target
+   * `NAME [OUTPUT-PATH]`, then an optional `dir`/`file` header and the format lines. The block is
+   * **expanded here** into one resolved {@link ExportDefinition} per target (§9), `basePath`
+   * composed per §2 (`explicit path ?? render(file) ?? NAME`, prefixed by `dir`), so every
+   * downstream consumer keeps reading one flat list of resolved targets. The single-target form
+   * `export gem icons/gem:` is the `n = 1`, no-option case and parses byte-identically.
+   */
   readonly #parseExport = (): Statement => {
     const s = this.#span(this.#peek())
     this.#next() // export
-    const name = this.#next().text
-    const basePath = this.#parsePath()
+    const targets: {
+      readonly name: string
+      readonly path: string | undefined
+      readonly span: TextSpan
+    }[] = []
+    for (;;) {
+      const nameTok = this.#expect('name', undefined, 'an export target name')
+      // The path is optional (it defaults to NAME) — one is present iff the target is not already
+      // ended by the list comma or the block colon.
+      const path = this.#at('op', ',') || this.#at('op', ':') ? undefined : this.#parsePath()
+      targets.push({ name: nameTok.text, path, span: this.#span(nameTok) })
+      if (!this.#at('op', ',')) {
+        break
+      }
+      const comma = this.#next()
+      if (this.#at('op', ':')) {
+        this.#fail(
+          "trailing ',' in the export target list",
+          comma,
+          'drop it — the list ends at the colon',
+        )
+      }
+    }
     this.#expect('op', ':')
     this.#expect('nl')
     this.#skipNLs()
     this.#expect('indent')
-    const formats: FormatLine[] = []
     this.#skipNLs()
+    let dir: string | undefined
+    let dirSpan: TextSpan | undefined
+    let fileTok: Token | undefined
+    let fileSpan: TextSpan | undefined
+    const formats: FormatLine[] = []
     while (!this.#at('dedent') && !this.#at('eof')) {
+      const t = this.#peek()
+      if (t.kind === 'name' && (t.text === 'dir' || t.text === 'file')) {
+        // §8: the block's shape is fixed — `dir`/`file` first, at most one each — so every block
+        // has exactly one canonical form and the line-based `fmt` never has to reorder anything.
+        if (formats.length > 0) {
+          this.#fail(
+            `'${t.text}' after a format line`,
+            t,
+            "'dir' and 'file' come before the format lines",
+          )
+        }
+        if (t.text === 'dir') {
+          if (dir !== undefined) {
+            this.#fail("a second 'dir' in one export block", t, "at most one 'dir' per block")
+          }
+          dirSpan = this.#span(this.#next())
+          dir = this.#parsePath()
+        } else {
+          if (fileTok !== undefined) {
+            this.#fail("a second 'file' in one export block", t, "at most one 'file' per block")
+          }
+          fileSpan = this.#span(this.#next())
+          fileTok = this.#expect('string', undefined, 'a file name template')
+        }
+        this.#expectNL()
+        this.#skipNLs()
+        continue
+      }
       formats.push(this.#parseFormatLine())
       this.#skipNLs()
     }
     if (this.#at('dedent')) {
       this.#next()
     }
-    return { kind: 'exportDefinition', def: { name, basePath, formats, span: s }, span: s }
+    const template = fileTok ? this.#parseTemplate(fileTok) : undefined
+    const group: ExportGroup = {
+      dir,
+      dirSpan,
+      hasFile: template !== undefined,
+      explicitPaths: targets.map((t) => t.path),
+      span: s,
+    }
+    const defs = targets.map((t): ExportDefinition => {
+      const tail = t.path ?? (template ? this.#renderTemplate(template, t.name) : t.name)
+      if (t.path === undefined && tail.includes('/')) {
+        throw error(
+          ERROR_CODE.exportError,
+          "a 'file' template renders the filename, not a directory — put directories in 'dir'",
+          this.#file,
+          fileSpan ?? t.span,
+        )
+      }
+      return {
+        name: t.name,
+        basePath: dir === undefined ? tail : `${dir}/${tail}`,
+        formats,
+        group,
+        span: t.span,
+      }
+    })
+    return { kind: 'exportDefinition', defs, span: s }
   }
 
   /**

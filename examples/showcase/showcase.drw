@@ -47,19 +47,13 @@ draw dots 24x8:
   stamp parametricDot(lighten(r, 0.2)) 8:0
   stamp parametricDot(darken(r, 0.2)) 16:0
 
-export scene scene:
+export scene:
   png @1 @2 z9
   svg ids classes
   jpeg q80
 
-export badge badge:
+export badge:
   png indexed
 
-export stripes stripes:
-  png
-
-export face face:
-  png
-
-export dots dots:
+export stripes, face, dots:
   png

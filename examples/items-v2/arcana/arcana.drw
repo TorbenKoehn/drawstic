@@ -194,22 +194,7 @@ atlas arcanaSetSheet:
   tile 64x64
   cols 3
 
-export combatStaff combatStaff:
-  png @1 @4
-
-export crystalStaff crystalStaff:
-  png @1 @4
-
-export scepter scepter:
-  png @1 @4
-
-export spellbook spellbook:
-  png @1 @4
-
-export scroll scroll:
-  png @1 @4
-
-export amulet amulet:
+export combatStaff, crystalStaff, scepter, spellbook, scroll, amulet:
   png @1 @4
 
 export arcanaSetSheet arcanaSet:

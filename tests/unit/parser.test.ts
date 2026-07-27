@@ -326,15 +326,18 @@ describe('parser', () => {
     )
     expect(s.kind).toBe('exportDefinition')
     if (s.kind === 'exportDefinition') {
-      expect(s.def.basePath).toBe('icons/gem')
-      const png = s.def.formats[0]
+      // One target, so the block expands to exactly one resolved definition (ADR-0098 §9).
+      expect(s.defs).toHaveLength(1)
+      const def = s.defs[0]
+      expect(def?.basePath).toBe('icons/gem')
+      const png = def?.formats[0]
       expect(png?.scales).toEqual([1, 2, 3])
       expect(png?.zlib).toBe(9)
-      const jpeg = s.def.formats[2]
+      const jpeg = def?.formats[2]
       expect(jpeg?.quality).toBe(80)
       expect(jpeg?.mode).toBe('smooth')
       expect(jpeg?.sizes).toEqual([{ width: 512, height: 512 }])
-      expect(s.def.formats[3]?.format).toBe('path')
+      expect(def?.formats[3]?.format).toBe('path')
     }
   })
 

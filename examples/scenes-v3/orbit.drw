@@ -226,5 +226,5 @@ draw orbit 384x256:
   line #fff6e0.alpha(50%) 356:6 356:38
   px #ffffff 356:22
 
-export orbit orbit:
+export orbit:
   png @1 @4

@@ -22,7 +22,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import type { DrawDefinition, FormatLine, Statement } from './ast.js'
-import { buildModule, validateExport } from './build.js'
+import { buildModule, validateExport, validateExportPlan } from './build.js'
 import { toHexColor } from './color.js'
 import {
   buildRubric,
@@ -385,6 +385,9 @@ const runCheck = (cli: CliArguments): number => {
         collect(() => engine.buildAtlas(entry, entry.definition.span))
       }
     }
+    // Module scope first: two exports writing one artifact is only visible across the whole plan,
+    // and it must surface here rather than mid-`build` with half the files already written.
+    collect(() => validateExportPlan(mod))
     for (const ex of mod.exports) {
       collect(() => validateExport(engine, mod, ex))
     }
@@ -569,6 +572,10 @@ const formatThemeLight = (l: Light): string => {
  * once — a `<=32x32` render also gets an inline ASCII preview, and anything
  * over `80x40` gets a `largePreviewHint` pointing at `render --preview --fit`
  * instead (an unreadably large inline ASCII dump).
+ *
+ * `mod.exports` is one entry per **resolved export target** (ADR-0098 §9/§11), so a 4-target block
+ * contributes 4 brief entries, in declaration order, each with the fully composed `basePath` — the
+ * brief's contract is what `build` will write, not what the recipe typed.
  */
 const buildBrief = (engine: Engine, mod: ModuleRecord): Brief => {
   const theme = mod.fileTheme

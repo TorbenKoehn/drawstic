@@ -125,22 +125,8 @@ atlas potionSheet:
   tile 64x64
   cols 3
 
-export healingPotion healing-potion:
-  png @1 @4
-
-export manaPotion mana-potion:
-  png @1 @4
-
-export poisonPotion poison-potion:
-  png @1 @4
-
-export elixirPotion elixir-potion:
-  png @1 @4
-
-export bombPotion bomb-potion:
-  png @1 @4
-
-export emptyVial empty-vial:
+export healingPotion, manaPotion, poisonPotion, elixirPotion, bombPotion, emptyVial:
+  file "{kebab base}"
   png @1 @4
 
 export potionSheet potions:

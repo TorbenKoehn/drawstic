@@ -27,11 +27,6 @@ draw squares 128x16:
     rect k c-r c+r-1
     rect a c-r+2 c+r-3 fill
 
-export squares squares:
-  png
-
-export squareDeclarative square-declarative:
-  png
-
-export squareImperative square-imperative:
+export squares, squareDeclarative, squareImperative:
+  file "{kebab base}"
   png

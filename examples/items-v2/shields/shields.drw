@@ -179,22 +179,8 @@ atlas shieldsAtlas:
   sprites roundShield, heraldShield, towerShield, buckler, woodShield, magicBarrier
   pad 1
 
-export roundShield round-shield:
-  png @1 @4
-
-export heraldShield herald-shield:
-  png @1 @4
-
-export towerShield tower-shield:
-  png @1 @4
-
-export buckler buckler:
-  png @1 @4
-
-export woodShield wood-shield:
-  png @1 @4
-
-export magicBarrier magic-barrier:
+export roundShield, heraldShield, towerShield, buckler, woodShield, magicBarrier:
+  file "{kebab base}"
   png @1 @4
 
 export shieldsGrid shields-grid:

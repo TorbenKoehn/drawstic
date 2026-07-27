@@ -261,5 +261,5 @@ draw arctic 240x160:
   scatter fb 10 19 rect(0:0, 239:150):
     circle starLite.alpha(22%) fb 1 fill
 
-export arctic arctic:
+export arctic:
   png @1 @4

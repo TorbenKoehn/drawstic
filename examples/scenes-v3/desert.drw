@@ -248,5 +248,5 @@ draw desert 320x180:
   # ── globale Lichtvereinheitlichung ──
   fill radial(dusk.alpha(0%), dusk.alpha(14%)) duneWash
 
-export desert desert:
+export desert:
   png @1 @4

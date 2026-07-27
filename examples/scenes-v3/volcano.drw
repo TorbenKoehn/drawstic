@@ -173,5 +173,5 @@ draw volcano 256x192:
     px lavaMid.alpha(45%) (r - 0:1)
 
 # ---- export ----------------------------------------------------------
-export volcano volcano:
+export volcano:
   png @1 @4

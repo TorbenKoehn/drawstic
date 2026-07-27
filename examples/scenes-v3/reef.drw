@@ -300,5 +300,5 @@ draw reef 320x240:
   # === atmosphere: depth vignette darkens the edges ===
   rect vign 0:0 (w - 1):(h - 1) fill
 
-export reef reef:
+export reef:
   png @1 @4
