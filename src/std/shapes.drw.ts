@@ -2,7 +2,7 @@
 export default `# std/shapes — bundled shared parts
 
 draw arrow 7x7:
-  pal k=#1a1a1a
+  palette k=#1a1a1a
   pixels:
     ...k...
     ..kk...
@@ -13,7 +13,7 @@ draw arrow 7x7:
     ...k...
 
 draw dot 3x3:
-  pal k=#1a1a1a
+  palette k=#1a1a1a
   pixels:
     .k.
     kkk

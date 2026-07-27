@@ -9,11 +9,16 @@ glass = #38445c
 glassHi = #57678a
 trimC = #4a3d33
 
-grad skyG = linear(90, #4a6cae, #f3d9a8)
-grad hazeG = linear(90, #e8dfd2.alpha(0%), #e8dfd2.alpha(45%))
-grad plazaG = linear(90, #cbbfa6, #8a7a66)
+gradient skyG = linear(90, #4a6cae, #f3d9a8)
+gradient hazeG = linear(90, #e8dfd2.alpha(0%), #e8dfd2.alpha(45%))
+gradient plazaG = linear(90, #cbbfa6, #8a7a66)
 
 fn sagPt(a, b, t, drop) = (lerp(a.x, b.x, t)):(lerp(a.y, b.y, t) + drop * 4 * t * (1 - t))
+
+# Ein Gradient spannt immer die BBox der Region, die er malt. Ein Punktlicht-Wasch ist
+# deshalb ein `radial`-Fill ueber einen Span, der um das Licht zentriert ist und genau bis
+# zur fernsten Ecke der Zielregion reicht (d = groesster Abstand in x bzw. y).
+fn washSpan(p, d) = rect((p - d), (p + d))
 
 # ---------- Bauteile ----------
 
@@ -144,10 +149,10 @@ draw fountain 85x62:
   wallR = rect(2:48, 82:56).union(ellipse(42:56, 40:6))
   fill stoneD wallR
   ellipse stone 42:48 40:7 fill
-  rim ellipse(42:48, 40:7) 1:1 stoneL 1
+  fill stoneL ellipse(42:48, 40:7).edge(1:1)
   ellipse waterD 42:48 33:5 fill
   ellipse water 42:47 31:5 fill
-  ambientOcclusion ellipse(42:56, 40:6) #241f33 0.5
+  stroke #241f33.alpha(50%) ellipse(42:56, 40:6)
   # Saeule + Schalen
   rect stone 38:20 46:47 fill
   rect stoneL 38:20 40:47 fill
@@ -159,7 +164,7 @@ draw fountain 85x62:
   ellipse stone 42:8 7:3 fill
   ellipse water 42:7 5:2 fill
   circle stone 42:4 2 fill
-  rim rect(36:6, 48:47) 1:0 stoneL 1
+  fill stoneL rect(36:6, 48:47).edge(1:0)
   # Wasserstrahlen, gespiegelt
   mirror x=42:
     curve foam 44:6 52:14 56:32 55:45 w1
@@ -215,7 +220,7 @@ draw treeSmall 34x44:
   fill leaf canopy.intersect(circle(12:11, 12))
   fill leafL canopy.intersect(circle(9:9, 7))
   speckle canopy 0.18 7 leafD.darken(20%)
-  rim canopy 1:1 leafL.lighten(10%) 1
+  fill leafL.lighten(10%) canopy.edge(1:1)
 
 draw lampPost 12x40:
   iron = #3a3742
@@ -240,7 +245,7 @@ draw cart 26x16:
   ellipse #d9c49a 18:3 2:2 fill
 
 draw pigeon 4x3:
-  pal g=#8a8f9a d=#5a5f6a
+  palette g=#8a8f9a d=#5a5f6a
   pixels:
     .gg.
     gggd
@@ -401,8 +406,10 @@ draw market 480x300:
   # Atmosphaere: warmes Sonnenlicht von links oben, kuehler Schleier rechts unten
   plazaR = rect(0:160, 479:299)
   grain plazaR 0.12 13 #6b5a4a
-  lightRegion rect(0:0, 479:299) 70:46 #ffd98f 18%
-  shadeRegion rect(0:0, 479:299) 70:46 #2f2a4a 10%
+  # warmer Schein und kuehler Gegenschleier, beide radial von der Sonne aus (fern: 479:299)
+  wash = washSpan(70:46, 409:253)
+  fill radial(#ffd98f.alpha(18%), #ffd98f.alpha(0%)) wash
+  fill radial(#2f2a4a.alpha(0%), #2f2a4a.alpha(10%)) wash
 
-export market market:
+export market:
   png @1 @4

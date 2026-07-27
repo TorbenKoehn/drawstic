@@ -30,8 +30,8 @@ draw beach 64x32:
   ellipse sandLite 24:22 12:3 fill
 ```
 
-Use `pal` only when a color needs to be a pixel key, when authored palette order matters, or
-when indexed/sprite palette control matters. A `pal` is not required for export: PNG indexed
+Use `palette` only when a color needs to be a pixel key, when authored palette order matters, or
+when indexed/sprite palette control matters. A `palette` is not required for export: PNG indexed
 exports collect all rendered colors from the framebuffer and use the authored palette only
 as priority order.
 
@@ -39,7 +39,7 @@ For small pixel sprites, derive palette entries locally:
 
 ```drw
 draw stone:
-  pal a=#777 b=a.lighten(14%) c=a.darken(16%)
+  palette a=#777 b=a.lighten(14%) c=a.darken(16%)
   pixels:
     .bb.
     baab
@@ -59,22 +59,22 @@ they must not choose the palette for the author.
 
 ## Palettes
 
-Palette keys are one ASCII letter. Keep a `pal` small and readable. If one drawing needs too
+Palette keys are one ASCII letter. Keep a `palette` small and readable. If one drawing needs too
 many palette letters, split it into stamped parts with their own local palettes.
 
-Good uses of `pal`:
+Good uses of `palette`:
 
 - hand-pixel sprites with a small color vocabulary
 - palette order for `png indexed` or sidecars
 - shared theme colors for a deliberately consistent set
 
-Poor uses of `pal`:
+Poor uses of `palette`:
 
 - naming every color in a large procedural scene
 - storing semantic colors only to make them exportable
 - forcing a whole project into generic preset colors
 
-`w` and `h` are legal palette keys inside drawings — `pal w=#fff` shadows the visible canvas
+`w` and `h` are legal palette keys inside drawings — `palette w=#fff` shadows the visible canvas
 width/height binding for that drawing (ADR-0073). Only keep those two letters free for the
 palette if the same drawing also needs the canvas dimension in an expression; otherwise use
 the natural colour mnemonic freely.
@@ -113,7 +113,7 @@ verification surface.
 
 ```drw
 draw eye:
-  pal k=#1a1a1a w=#ffffff
+  palette k=#1a1a1a w=#ffffff
   pixels:
     .k.
     kwk
@@ -233,36 +233,59 @@ with a small `K` is smooth by construction and the integer-lattice trap cannot o
 
 ## Light And Shadow
 
-Keep lighting explicit. Do not hide light direction, shadow strength, or material behavior in
-ambient state. Draw local shadows with simple geometry, or reach for the explicit lighting
-filters (`shadeRegion`, `rim`, `ambientOcclusion`, `shadow`/`castShadow`) — but their pixel
-effect is not obvious from the call alone, so verify by rendering, not by reading the recipe:
+Keep lighting explicit, and let the engine keep it coherent. There is exactly **one** shading path
+([ADR-0086](decisions/0086-declarative-light-and-material.md),
+[ADR-0097](decisions/0097-canonical-shading-floor.md)): declare ONE named `light`, pick a `material`
+(base colour + a response that sets the *physics*, never the colour), and shade each object mass with
+one `model`/`cel` command. That single call lowers, from the one light, to the whole form shade → rim
+→ AO → cast sequence — so the shadow, the highlight, and the cast can never drift apart, and you
+never re-type the light direction per object:
 
-- `shadeRegion r light base amount` blends `base` as a shadow **veil** over `r` — opacity
-  `base.a × amount` at the far corner, fading to untouched at the light. **`amount` is the veil
-  opacity**, and it composites over detail rather than repainting it, so an opaque `base` is
-  fine. (Under a `drawstic 1` pin the old rule holds: `base` alpha = opacity, and an opaque
-  `base` repaints the whole region.)
-- `lightRegion r light paint amount` is the additive mirror — a light veil, **brightest nearest
-  `light`**, opacity `paint.a × amount`. Reach for it instead of faking warm light with a masked
-  gradient. It washes the *whole* region with a distance falloff (not an edge), so keep `amount` low
-  or it flattens the form.
-- `rim r dir p` lights the edge of `r` facing away from `dir` — `rim r 0:1 p` lights the top
-  edge, `rim r 1:0 p` the left edge. On a **filled** silhouette it strokes the *whole* facing
-  contour (both slopes of a peak = a wireframe), so `.intersect(rect(…))` it down to the target
-  edge; the band is 1px per `w`, nearly invisible on a ~20px sprite.
+```drw
+light sun      = dir 1:1 #ffe6b0 amb #2a3a5e 15%   # one source of truth; source up-left ⇒ up-left edge lit
+material steel = #8a95a5 metal
+
+draw blade 16x40:
+  edge = rect(7:2, 9:34)
+  model edge steel light sun        # form shade + rim + AO + cast, all from sun
+```
+
+(A `theme` with a default `light` lets `model`/`cel` drop the per-command `light sun` arg; the `lit L:`
+block was removed — ADR-0094.)
+
+`render <file>#<draw> --explain` prints the exact primitive expansion of every `model`/`cel`, so you
+can predict the pixels. When a baked dose doesn't fit, tune the **material** — the trailing
+`shade`/`hi`/`rim`/`ao`/`spec`/`puff`/`spread N%` overrides — not a hand veil beside it. The old
+hand-light quartet (`shadeRegion`, `lightRegion`, `rim`, `ambientOcclusion`) was **removed**: seven of
+seven audited authors read `shadeRegion`'s `amount` as opacity when it was a distance scalar, and
+every job those four did that `model` doesn't is ordinary region + paint work:
+
+- **A one-sided edge band** — a bevel, a contour lip, a lit rim in a colour of your own choosing —
+  is `fill p r.edge(dx:dy[, n])`. The direction is where the light *travels*, so `0:1` is the **top**
+  edge; `n` (default 1) widens the band with uniform coverage. Because the region constructor is
+  separate from the `fill`, clip it **after**: `r.edge(0:1).intersect(c)` keeps the part of the
+  silhouette band inside `c`, while `r.intersect(c).edge(0:1)` bands the clip rectangle and lays a
+  straight bar across the middle of the mass.
+- **A veil over already-drawn pixels** — a whole-frame vignette, a warm wash, a graded darkening
+  over hand-drawn detail — is a gradient `fill`:
+  `fill linear(90, transparent, #201810.alpha(70%)) r` darkens away from the top,
+  `fill linear(90, #fff2c0.alpha(50%), transparent) r` warms toward it. Use this, **not** `model`,
+  whenever the region already carries marks: `model` writes opaque tones, so it repaints (and
+  erases) them. One `fill linear(deg, warm.alpha(a), cool.alpha(b)) rect(0:0, w:h)` is the whole
+  scene-closing light+shade pass.
+- **Contact darkening at a seated edge** is `stroke p.alpha(a) r` — a 1px inner-edge stroke, not a
+  soft occlusion gradient — or just the material's own `ao N%` dose.
 - For a **soft glow/halo**, don't end a radial gradient on `transparent` (that is black at alpha 0,
   so the RGB fades to a muddy grey ring) — end on `c.alpha(0%)`, or stack a few `alpha`-graded
   `circle … fill`s. Pixel-mode gradients also ordered-dither a wide alpha ramp into hard bands, so
   stacked circles (or `mode smooth`) give the smoothest control.
-- `ambientOcclusion r p amount` is a 1px inner-edge stroke, not a soft occlusion gradient.
-- All four shadow surfaces share one `[region] dx:dy paint` shape: the whole-frame
-  `shadow 1:1 p`, the local `shadow r 1:1 p` / `castShadow r 1:1 p`, and the stamp flag
-  `stamp part pt shadow 1:1 p`. The whole-frame `shadow` respects an enclosing `mask …:` block
-  in language version 2 (a `drawstic 1` pin makes it rebuild the whole buffer, ignoring the
-  mask). A `stamp … shadow` on a **composite** sprite (roof + posts + basin) offsets the whole
-  silhouette into a dark clump, not a cast shadow — for a standing object draw a separate
-  `ellipse … fill` ground shadow instead.
+- All three shadow surfaces share one `[region] dx:dy paint` shape: the whole-frame
+  `shadow 1:1 p`, the local `shadow r 1:1 p`, and the stamp flag
+  `stamp part pt shadow 1:1 p` — the offset is always a `dx:dy` point (no two-bare-number form, and
+  `castShadow` was removed as a byte-identical duplicate). The whole-frame `shadow` respects an
+  enclosing `mask …:` block. A `stamp … shadow` on a **composite** sprite (roof + posts + basin)
+  offsets the whole silhouette into a dark clump, not a cast shadow — for a standing object draw a
+  separate `ellipse … fill` ground shadow instead.
 
 Good:
 
@@ -274,16 +297,18 @@ draw object 32x16:
   circle #e9bd72 16:8 6 fill
 ```
 
-Good, using the filters — aim the shadow and the highlight at the same light:
+Good — one light, the mass modelled, the edge band and the veil as plain region + paint work:
 
 ```drw
-mask duneShape = ellipse(16:10, 14:5)         # a reusable Region value
+light sun = dir 1:1 #fff2c0 amb #201810 15%
+material sandM = #e9bd72 cloth
+
+mask duneShape = ellipse(16:10, 14:5)              # a reusable Region value
 
 draw dune 32x16:
-  fill #e9bd72 duneShape
-  shadeRegion duneShape 4:2 #201810 0.7       # shadow veil at 70%, deepest away from the light
-  lightRegion duneShape 4:2 #fff2c0 0.5       # warm light, brightest at the 4:2 source
-  rim duneShape 1:1 #ffffffa0 1               # top-left rim: dir points down-right (light travels from a top-left source)
+  model duneShape sandM light sun                  # the mass: form shade + rim + AO, all from sun
+  fill #ffffff.alpha(60%) duneShape.edge(1:1)      # crest lip: dir points down-right ⇒ top-left band
+  fill linear(90, transparent, #201810.alpha(35%)) rect(0:0, w-1:h-1)   # closing vignette
 ```
 
 Avoid automatic scene-wide lighting that changes results based on hidden context.
@@ -299,20 +324,20 @@ A theme style guide should describe constraints that help consistency:
 theme uiSet:
   mode pixel
   font small
-  pal k=#1a1a1a a=#4b8fd8
+  palette k=#1a1a1a a=#4b8fd8
   style "Crisp 1px silhouettes. High contrast. No gradients."
 ```
 
-For one-off scenes, local bindings and local `pal` entries are usually clearer.
+For one-off scenes, local bindings and local `palette` entries are usually clearer.
 
 ## Verification Loop
 
 Agents should verify recipes through the CLI before claiming success:
 
 ```sh
-bun run src/cli.ts check examples/scenes/island.drw --json
-bun run src/cli.ts render examples/scenes/island.drw#island --preview
-bun run src/cli.ts render examples/scenes/island.drw#island --png@4 --out out.png
+bun run src/cli.ts check examples/scenes-v3/island.drw --json
+bun run src/cli.ts render examples/scenes-v3/island.drw#island --preview
+bun run src/cli.ts render examples/scenes-v3/island.drw#island --png@4 --out out.png
 bun run test
 ```
 

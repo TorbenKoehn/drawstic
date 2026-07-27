@@ -1,7 +1,8 @@
 // The evaluator: module loading (sandboxed imports, ADR-0035), theme
 // composition (ADR-0005), one-namespace scope with const palettes
 // (ADR-0046/0050), drawing rendering, the command set (§8–§9), the runtime
-// budget (§15), tilesets/atlases (ADR-0016), fonts (ADR-0022/0042).
+// budget (§15), atlases (ADR-0016, merged with the former `tileset` by ADR-0096 §3), fonts
+// (ADR-0022/0042).
 
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
@@ -14,31 +15,35 @@ import type {
   Expression,
   FontDefinition,
   FontItem,
+  MaterialOverrideKey,
   Module,
   PathCommand,
   PathDefinition,
   Statement,
   ThemeDefinition,
-  TilesetDefinition,
 } from './ast.js'
+import { MATERIAL_OVERRIDE_KEYS } from './ast.js'
 import {
   type Color,
   darken,
   desaturate,
-  grayscale,
   hsl,
   lighten,
+  litTone,
   type MixSpace,
   mix,
   oklch,
   parseHexColor,
+  ramp,
   rgb,
   rotateHue,
   saturate,
+  shadowTone,
   TRANSPARENT,
+  toHexColor,
   withAlpha,
 } from './color.js'
-import { DrawsticError, ERROR_CODE, error, type TextSpan } from './diagnostic.js'
+import { type Diagnostic, DrawsticError, ERROR_CODE, error, type TextSpan } from './diagnostic.js'
 import {
   datan2,
   dcos,
@@ -56,9 +61,8 @@ import {
 } from './dmath.js'
 import { Framebuffer, MirrorFramebuffer } from './framebuffer.js'
 import { parse, parseStandaloneExpr } from './parser.js'
-import { decodePng } from './png.js'
+import { decodePng, PngDecodeError } from './png.js'
 import {
-  ambientOcclusion,
   arcPoints,
   bezierPoints,
   type Context,
@@ -70,45 +74,63 @@ import {
   filterDither,
   filterGrain,
   filterOutline,
-  filterReplace,
+  filterQuantize,
   filterRipple,
   filterShadow,
   filterSpeckle,
   filterTint,
-  flood,
-  lightRegion,
   type Paint,
   PixelSink,
   putPixel,
   quadPoints,
   quantInt,
   type RenderMode,
-  rimRegion,
-  shadeRegion,
-  shadeRegionLegacy,
   stampSprite,
   strokeLine,
   strokePath,
   strokeRegion,
   type UserFontResolved,
 } from './raster.js'
+import {
+  contactShadowColor,
+  lightPointFor,
+  lowerCel,
+  lowerMaterial,
+  type ShadeOp,
+} from './shading.js'
 import { STD_GLOBAL_FONTS, STD_MODULES } from './std.js'
 import {
   aboutPoint,
   applyMatrix,
   circleRegion,
   compose,
+  crescentRegion,
+  domeRegion,
   ellipseRegion,
   emptyRegion,
+  type Figure,
+  type FigureSpec,
+  figure,
+  figureField,
   type Grad,
   IDENTITY,
   invertMatrix,
+  isFigureView,
+  isFormProfile,
+  isMaterialResponse,
+  type Light,
+  light,
   list,
+  lobeRegion,
+  type Material,
+  material,
   multiplyMatrix,
+  type OcclusionResult,
   type Path,
   type PathContour,
   type PathPoint,
   type Point,
+  type Pose,
   path,
   pathFillRegion,
   pathFromRegion,
@@ -124,25 +146,24 @@ import {
   regionTransform,
   regionUnion,
   regionXor,
+  ribbonRegion,
   rotationDeg,
   rotationXDeg,
   rotationYDeg,
   rrectRegion,
+  type Skeleton,
+  type SkeletonJoint,
+  type SolvedJoint,
   type Sprite,
   scaling,
   skewX,
+  solveSkeleton,
   spriteRegion,
   type Transform,
   translation,
   typeName,
   type Value,
 } from './values.js'
-
-/**
- * Highest recipe `lang` pragma this engine accepts (ADR-0029); recipes
- * pinning a newer version fail fast with E009 rather than mis-evaluating.
- */
-export const LANGUAGE_VERSION = 2
 
 /**
  * The optional leading region of a scoped texture filter (`grain [r] …`, ADR-0071) or a shadow
@@ -168,6 +189,18 @@ const regionScopeOf = (v: Value): Region | undefined => {
  */
 const curvePolyRegion = (pts: readonly { readonly x: number; readonly y: number }[]): Region =>
   polyRegion(catmullRomLoopPoints(pts).map((p) => ({ x: quantInt(p.x), y: quantInt(p.y) })))
+
+/** The proportion field names a theme `figure:` block may declare (ADR-0093). */
+const FIGURE_FIELDS: ReadonlySet<string> = new Set([
+  'heads',
+  'headW',
+  'eyeLine',
+  'earLine',
+  'eyeSep',
+  'neckW',
+  'shoulderW',
+  'hipW',
+])
 
 // ── budget (spec §15) ───────────────────────────────────────────────────────
 
@@ -289,6 +322,16 @@ export type DefinitionEntry =
   | { readonly kind: 'path'; readonly definition: PathDefinition; readonly module: ModuleRecord }
   | { readonly kind: 'theme'; readonly definition: ThemeDefinition; readonly module: ModuleRecord }
   | {
+      readonly kind: 'skeleton'
+      readonly definition: Extract<Statement, { readonly kind: 'skeletonBlock' }>
+      readonly module: ModuleRecord
+    }
+  | {
+      readonly kind: 'pose'
+      readonly definition: Extract<Statement, { readonly kind: 'poseBlock' }>
+      readonly module: ModuleRecord
+    }
+  | {
       readonly kind: 'function'
       readonly name: string
       readonly params: readonly string[]
@@ -302,11 +345,6 @@ export type DefinitionEntry =
       readonly module: ModuleRecord
     }
   | { readonly kind: 'font'; readonly definition: FontDefinition; readonly module: ModuleRecord }
-  | {
-      readonly kind: 'tileset'
-      readonly definition: TilesetDefinition
-      readonly module: ModuleRecord
-    }
   | { readonly kind: 'atlas'; readonly definition: AtlasDefinition; readonly module: ModuleRecord }
   | {
       readonly kind: 'image'
@@ -333,8 +371,15 @@ export type ModuleRecord = {
   readonly exports: ExportDefinition[]
   fileTheme: FoldedTheme | undefined
   sizeDefault: { readonly width: number; readonly height: number } | undefined
-  seed: number | undefined
   fontDefault: string | undefined
+  /**
+   * Every bare, module-scope `light NAME = …` binding this module declares (ADR-0096 §4 — the
+   * third light-resolution tier: a file with exactly one of these and no theme default
+   * unambiguously names its light). Populated by {@link Engine.#execTopLevel} as each binding
+   * runs; a `light` declared inside a `theme:` block or a `draw:` body never lands here — only
+   * a theme's own default (tier 2) or an explicit `light L` argument (tier 1) covers those.
+   */
+  readonly moduleLights: Map<string, Light>
 }
 
 /**
@@ -343,6 +388,11 @@ export type ModuleRecord = {
  * directives (ADR-0005 fold semantics, ADR-0003). Later sources win on
  * key collisions (see {@link mergeThemes}); style text and filters/draws
  * are unioned.
+ *
+ * `light` is the theme's default light (ADR-0086 tier 3): folded like
+ * `size`/`mode`/`font` (later wins), it becomes the drawing's outermost
+ * `DrawState.light` so every view/variant applying the theme shares one
+ * light source — structurally closing the "light mirrored per view" bug.
  */
 export type FoldedTheme = {
   readonly palette: {
@@ -363,6 +413,13 @@ export type FoldedTheme = {
   size: { readonly width: number; readonly height: number } | null
   mode: RenderMode | null
   font: string | null
+  light: Light | null
+  /**
+   * The theme's declared figure proportions (ADR-0093), or `null`. Folded like `light` (later wins);
+   * a drawing whose theme carries this gets a `fig` guide value bound from these numbers and its own
+   * canvas size, so every view/variant reads the same proportions.
+   */
+  figure: FigureSpec | null
 }
 
 const emptyTheme = (): FoldedTheme => ({
@@ -373,33 +430,18 @@ const emptyTheme = (): FoldedTheme => ({
   size: null,
   mode: null,
   font: null,
+  light: null,
+  figure: null,
   style: [],
 })
 
 /**
- * A built tileset (ADR-0016): tiles blitted into one `sheet` sprite on a
- * regular grid, `frames[i]` giving tile `i`'s rect in sheet coordinates in
- * declaration order (matching `names`). Built lazily by {@link Engine.buildTileset}
- * and cached per definition.
- */
-export type TilesetValue = {
-  readonly sheet: Sprite
-  readonly tileWidth: number
-  readonly tileHeight: number
-  readonly columns: number
-  readonly frames: readonly {
-    readonly x: number
-    readonly y: number
-    readonly width: number
-    readonly height: number
-  }[]
-  readonly names: readonly string[]
-}
-
-/**
- * A built atlas (ADR-0016): member sprites deterministically shelf-packed
- * into one `sheet` (see {@link packShelves}), with each frame's placement
- * and original name recorded for downstream lookup/export.
+ * A built atlas (ADR-0096 §3 — merges the former `tileset`/`atlas`): member sprites either
+ * blitted onto a uniform grid (`tile` set — row-major, see {@link Engine.buildAtlas}) or
+ * deterministically shelf-packed (see {@link packShelves}) into one `sheet`, with each frame's
+ * placement and original name recorded for downstream lookup/export. `tile` carries the grid
+ * facts (tile size, resolved column count, gutter) a `tiled` sidecar needs; it's `undefined` in
+ * shelf-pack mode, which gates `tiled` off (uniform tiles only).
  */
 export type AtlasValue = {
   readonly sheet: Sprite
@@ -410,6 +452,14 @@ export type AtlasValue = {
     readonly width: number
     readonly height: number
   }[]
+  readonly tile:
+    | {
+        readonly tileWidth: number
+        readonly tileHeight: number
+        readonly columns: number
+        readonly padding: number
+      }
+    | undefined
 }
 
 /**
@@ -432,6 +482,35 @@ type DrawState = {
   title: string | undefined
   description: string | undefined
   /**
+   * The light in scope for shading commands (ADR-0086): the applied theme's default light, or
+   * `null` when the theme declares none. A `model`/`cel` with no light here and no explicit
+   * `light L` argument falls back to the module's sole `light` binding (ADR-0096 §4,
+   * {@link Engine.#requireLight}) before it's a hard E024 — never a silent default.
+   */
+  light: Light | null
+  /**
+   * The drawing's attach-point registry (ADR-0087): `pin KEY PT` writes `KEY → {x,y}` in this
+   * drawing's own coordinate space, and `fit` reads a source part's already-placed pins and writes
+   * a fitted part's pins back (as `head.name`). Captured onto the rendered {@link Sprite.pins} so a
+   * part exports its local pins to whatever assembles it.
+   */
+  readonly pins: Map<string, { readonly x: number; readonly y: number }>
+  /**
+   * The transform matrix each `stamp HEAD …` placement in this drawing used, keyed by `HEAD`'s
+   * bare name (the fix for the pin-transform bug on record in `docs/impl-progress.md`: a manual
+   * `pin HEAD.KEY PT` seed-all used to resolve HEAD's pins from the untransformed part sprite, so
+   * a preceding `stamp HEAD … flipx` left the seeded siblings at the unflipped positions). Set by
+   * {@link Engine.#execStamp} right after it computes the placement's matrix (`undefined` = no
+   * transform flags, recorded so `.has(head)` distinguishes "stamped, no transform" from "never
+   * stamped under this name"); read by {@link Engine.#execPinDeclaration}'s seed-all branch, which
+   * applies the same matrix to every local pin before seeding — mirroring how `fit` already
+   * carries its own pins through its transform (ADR-0087 amendment 2). Only the most recent stamp
+   * of a given head name is tracked; a head re-stamped under the same name with a different
+   * transform before the seeding `pin` line is an existing, undocumented edge case this does not
+   * attempt to resolve.
+   */
+  readonly stampTransforms: Map<string, readonly number[] | undefined>
+  /**
    * The active `mirror` reflection (ADR-0078) during the reflected pass, or `null`
    * outside any mirror / during the normal pass. `matrix` maps author → real
    * coordinates (the full composition of nested mirrors), `inverse` is its inverse,
@@ -442,6 +521,39 @@ type DrawState = {
     readonly matrix: readonly number[]
     readonly base: Framebuffer
   } | null
+  /**
+   * `fit` placements awaiting their W010 contact check (ADR-0087, hardened for the
+   * character-DX 2026-07-10 rerun): checking contact immediately against the buffer state
+   * *before* each `fit` false-fires on deliberate back-to-front layering (e.g. fitting feet
+   * before the covering robe is stamped over them) — the covering part hasn't painted yet, so
+   * the earlier part reads as gapped even though the final composite shows no seam. Every
+   * `fit` appends its placement here instead of checking immediately; `#renderDrawBody` walks
+   * the list once the whole body has painted and checks contact against the FINAL buffer, so a
+   * later part that touches/overlaps the seam clears it, while a placement nothing ever
+   * reaches still warns.
+   */
+  readonly pendingFits: {
+    readonly sprite: Sprite
+    readonly origin: { readonly x: number; readonly y: number }
+    readonly matrix: readonly number[] | undefined
+    readonly targetHead: string
+    readonly pinName: string
+    readonly cp: { readonly x: number; readonly y: number }
+    readonly span: TextSpan
+  }[]
+  /**
+   * The active pose's solved bones (ADR-0095): joint name → {@link SolvedJoint}. Set by a `pose NAME`
+   * statement (forward kinematics over the drawing's canvas + figure oracle); read by
+   * `fit part.pin bone JOINT` to land the pin on the joint, inherit its `angleDelta` as orientation,
+   * and carry its depth into auto-Z. Empty until a pose is applied.
+   */
+  readonly bones: Map<string, SolvedJoint>
+  /**
+   * The view depth of the most recent bone-`fit`/`stamp` placement (ADR-0095 auto-Z), or `null` when
+   * it carried no bone. `#execAssemblyBody` reads it right after executing each placement to tag the
+   * layer, then resets it — the plumbing that turns bone depth into paint-order edges automatically.
+   */
+  lastPlacementDepth: number | null
 }
 
 /**
@@ -458,6 +570,8 @@ type StampFlags = {
   mask: Region | undefined
   anchor: StampAnchor
   shadow: { readonly dx: number; readonly dy: number; readonly color: Color } | undefined
+  /** Opt-in 4×4 area-sampled resampling (ADR-0099) — a no-op on a lattice transform. */
+  aa: boolean
 }
 
 type StampAnchor =
@@ -487,6 +601,79 @@ const isStampAnchor = (value: string | null): value is StampAnchor =>
   value !== null && STAMP_ANCHORS.includes(value as StampAnchor)
 
 /**
+ * The largest Chebyshev gap (px) tolerated between a `fit` target pin and the part's own ink before
+ * W011 fires (ADR-0087 amendment 2). 2 leaves a diagonal-corner cushion for edge pins; a pin sitting
+ * further out sits in empty part space, so the join visibly floats even though the pins coincide.
+ */
+const LOOSE_PIN_MAX = 2
+
+/**
+ * The alpha (0–255) at which a pixel is considered opaquely "owned" by the layer that painted it,
+ * for two-phase occlusion ownership + coverage (ADR-0092). Mirrors the 50 % silhouette floor
+ * (`OUTLINE_ALPHA_MIN`): a soft contact shadow or AA fringe never claims ownership of a pixel.
+ */
+const OCCLUSION_ALPHA_MIN = 128
+
+/** Owner-map sentinel for a pixel last painted by an inline (barrier) statement, not a placement layer. */
+const SENTINEL_INLINE = -2
+
+/**
+ * One deferred placement in a two-phase assembly (ADR-0092): its stable `id`, the part `name` used as
+ * a `behind`/`front` target, the transparent `buffer` it painted into, its opaque `cover` pixel set
+ * (packed `y*w+x`), the resolved same-segment layers it must paint `behind`/in `front` of, and a human
+ * `reason` for `--explain`.
+ */
+type PaintLayer = {
+  readonly id: number
+  readonly name: string
+  readonly buffer: Framebuffer
+  readonly cover: Set<number>
+  readonly behind: PaintLayer[]
+  readonly front: PaintLayer[]
+  readonly reason: string
+  readonly span: TextSpan
+  /** The bone depth of a `fit … bone JOINT` placement (ADR-0095 auto-Z), or `undefined` — see {@link Engine.#orderLayers}. */
+  readonly depth: number | undefined
+}
+
+/** The packed (`y*w+x`) pixels of a layer buffer at or above `minAlpha` — its opaque coverage. */
+const coverPixels = (fb: Framebuffer, minAlpha: number): Set<number> => {
+  const set = new Set<number>()
+  const n = fb.width * fb.height
+  for (let i = 0; i < n; i++) {
+    if ((fb.data[i * 4 + 3] ?? 0) >= minAlpha) {
+      set.add(i)
+    }
+  }
+  return set
+}
+
+/**
+ * Split a `stamp` call's args into its occlusion relations (`behind`/`front` keyword args, ADR-0092)
+ * and the remaining stamp args. The target of each relation is the bare part-name token the parser
+ * stored as a single name expression.
+ */
+const stampRelations = (
+  stmt: Extract<Statement, { readonly kind: 'call' }>,
+): { readonly behind: string[]; readonly front: string[]; readonly args: Argument[] } => {
+  const behind: string[] = []
+  const front: string[] = []
+  const args: Argument[] = []
+  for (const a of stmt.args) {
+    if (a.kind === 'keyword' && (a.keyword === 'behind' || a.keyword === 'front')) {
+      const part = a.parts[0]
+      const target = part?.kind === 'name' ? part.name : undefined
+      if (target) {
+        ;(a.keyword === 'behind' ? behind : front).push(target)
+        continue
+      }
+    }
+    args.push(a)
+  }
+  return { behind, front, args }
+}
+
+/**
  * Ambient evaluation context threaded through every eval/exec call: which
  * module's scope errors report against, the shared budget, the enclosing
  * drawing (`null` outside a drawing body — e.g. module-level bindings or
@@ -502,7 +689,8 @@ type State = {
 /**
  * Every predefined name — builtins, commands, filters — reserved and
  * unshadowable (E007) regardless of scope; checked by {@link Engine.#checkBindable}
- * and at definition-collection time.
+ * and at definition-collection time. The reservation rule is uniform (ADR-0096 §5): every
+ * catalogue name is here, with no shadowable exceptions.
  */
 const BUILTIN_NAMES = new Set([
   // math (ADR-0034)
@@ -539,12 +727,15 @@ const BUILTIN_NAMES = new Set([
   'darken',
   'saturate',
   'desaturate',
-  'grayscale',
   'hue',
   'alpha',
   'mix',
   'tones',
   'mixes',
+  // ADR-0086 §5 shading helpers; reserved uniformly with everything else (ADR-0096 §5)
+  'ramp',
+  'litTone',
+  'shadowTone',
   // gradients
   'linear',
   'radial',
@@ -554,11 +745,18 @@ const BUILTIN_NAMES = new Set([
   'rrect',
   'ellipse',
   'poly',
+  // organic region constructors (ADR-0093)
+  'dome',
+  'lobe',
+  'crescent',
+  'ribbon',
   'region',
   'union',
   'intersect',
   'subtract',
   'xor',
+  // ADR-0097: the one-sided edge band, region algebra rather than a light
+  'edge',
   // transforms (ADR-0044)
   'shift',
   'rotate',
@@ -586,23 +784,79 @@ const BUILTIN_NAMES = new Set([
   'fill',
   'stroke',
   'text',
-  'flood',
   'stamp',
   'apply',
   'outline',
-  'replace',
   'tint',
   'shadow',
-  'castShadow',
   'grain',
   'speckle',
   'ripple',
   'dither',
+  'quantize',
+  // ADR-0086 declarative light/material; reserved uniformly with everything else (ADR-0096 §5).
+  // `rim`/`ao` stay reserved as *material dose keys* even though the raw commands are gone
+  // (ADR-0097); `shadeRegion`/`lightRegion` are reserved so a stale recipe hits the removal hint
+  // rather than resolving a user binding of the same name.
+  'model',
+  'cel',
   'shadeRegion',
   'lightRegion',
   'rim',
-  'ambientOcclusion',
+  'ao',
 ])
+
+/**
+ * The subset of {@link BUILTIN_NAMES} that are drawing commands (statement position, §8/§9)
+ * rather than expression-position functions — named separately, duplicating a handful of the
+ * entries above, only so E007's collision hint ({@link reservedNameHint}) can say *which kind* of
+ * reserved name a binding hit instead of a bare "it's reserved".
+ */
+const RESERVED_COMMAND_NAMES = new Set([
+  'bg',
+  'px',
+  'move',
+  'line',
+  'arc',
+  'quad',
+  'bezier',
+  'curve',
+  'curvePoly',
+  'profile',
+  'fill',
+  'stroke',
+  'text',
+  'stamp',
+  'apply',
+  'outline',
+  'tint',
+  'shadow',
+  'grain',
+  'speckle',
+  'ripple',
+  'dither',
+  'quantize',
+])
+
+/** The subset of {@link BUILTIN_NAMES} that are `material`/`model`/`cel` declaration keywords. */
+const RESERVED_MATERIAL_NAMES = new Set(['model', 'cel', 'shadeRegion', 'lightRegion', 'rim', 'ao'])
+
+/**
+ * E007's collision hint (ADR-0096 §5's uniform, no-shadowable-exceptions reservation rule): names
+ * *what kind* of reserved word `name` hit — an everyday English word like `rim` reads as a natural
+ * binding name until it collides, and the escape is always the same shape (character-craft.md's
+ * verified `cap`→`turbCap`, `mask`→`hoodMask` trap) — so spell that pattern out at the raise site,
+ * not only in skill prose.
+ */
+const reservedNameHint = (name: string): string => {
+  const kind = RESERVED_MATERIAL_NAMES.has(name)
+    ? 'a material/lighting keyword'
+    : RESERVED_COMMAND_NAMES.has(name)
+      ? 'a drawing command'
+      : 'a built-in function'
+  const compound = `part${name.charAt(0).toUpperCase()}${name.slice(1)}`
+  return `'${name}' is ${kind}, reserved everywhere (no shadowing) — rename with a qualifying prefix (e.g. '${compound}') instead`
+}
 
 // ── the engine ──────────────────────────────────────────────────────────────
 
@@ -681,6 +935,23 @@ const packShelves = (
 }
 
 /**
+ * Hint text for E006 when a colour-typed slot receives a `material` instead — a natural,
+ * encouraged-looking mistake: a `material NAME = COLOR RESPONSE` binding (ADR-0086) reads like a
+ * colour but is a colour *plus* a response, and the language has no accessor to pull the colour
+ * back out of it. Names the material's own base colour — always statically known at this point,
+ * since colours are committed values, never symbolic — as the way out: reuse that literal, or keep
+ * a separate plain binding for the accent. `undefined` for every other mismatch, where the
+ * message's own `got <kind>` already disambiguates without needing a hint.
+ */
+const materialColorHint = (value: Value | undefined): string | undefined => {
+  if (typeof value !== 'object' || value === null || value.type !== 'material') {
+    return undefined
+  }
+  const hex = toHexColor(value.base)
+  return `this is a material (a colour plus a response) — reuse its own colour ${hex} directly, or bind a separate colour (e.g. accent = ${hex}) instead of the material`
+}
+
+/**
  * Shared arg-checking surface handed to each `#builtinX` dispatcher
  * (ADR-0015 unified call model) so type coercion/arity errors are
  * reported consistently regardless of which builtin group handles `name`.
@@ -741,9 +1012,137 @@ const assertLiteralArg = (expr: Expression, file: string): void => {
 }
 
 /**
+ * One serialized step of a `model`/`cel` expansion for `render --explain` (ADR-0086 §6):
+ * the raster primitive the step drives plus its already-resolved, JSON-friendly arguments
+ * (colours as hex, amounts rounded), so an agent can predict the exact pixels a material
+ * lowers to — and copy the sequence to hand-tune when a baked dose doesn't fit.
+ */
+export type ExplainStep = {
+  readonly op: string
+  readonly color?: string
+  readonly amount?: number
+  readonly point?: { readonly x: number; readonly y: number }
+  readonly dir?: { readonly x: number; readonly y: number }
+  readonly width?: number
+  readonly offset?: { readonly dx: number; readonly dy: number }
+  /** `form` op (ADR-0089): highlight/shadow tint targets, out-of-plane light `z`, and the doses. */
+  readonly warm?: string
+  readonly cool?: string
+  readonly elevation?: number
+  readonly shade?: number
+  readonly hi?: number
+  readonly spec?: number
+  readonly specPow?: number
+  readonly ambient?: number
+  readonly puff?: number
+  readonly bands?: number
+  /** `form` op (ADR-0091): the height-field profile, serialized only when non-default (`drape`). */
+  readonly profile?: string
+}
+
+/** One recorded `model`/`cel` command expansion (ADR-0086 §6). */
+export type ExplainRecord = {
+  readonly command: 'model' | 'cel'
+  readonly region: string | undefined
+  readonly light: { readonly x: number; readonly y: number } | undefined
+  readonly steps: ExplainStep[]
+}
+
+/**
+ * One recorded `fit` placement for `render --explain` and the W011 loose-pin self-check (ADR-0087
+ * amendment 2). `target`/`source` are the two pins by name; `landed` is where the target pin ended
+ * up in canvas space and `at` is the source contact point — equal when the fit brought them to
+ * coincidence (`coincident`). `pinToInk` is the Chebyshev distance from the (transformed) target
+ * pin to the part's nearest own opaque pixel: 0–1 for a pin on the ink, larger when the pin sits in
+ * empty part space so the join visibly floats even though the pins coincide (the wizard-head defect
+ * C007 misses). `transformed` flags a fit that mirrored/rotated the part.
+ */
+export type PlacementRecord = {
+  readonly target: string
+  readonly source: string
+  readonly landed: { readonly x: number; readonly y: number }
+  readonly at: { readonly x: number; readonly y: number }
+  readonly coincident: boolean
+  readonly pinToInk: number
+  readonly transformed: boolean
+  /** The solved `aim` rotation in degrees (ADR-0092), when the fit carried an `aim PIN PT` clause. */
+  readonly aimDeg?: number
+}
+
+/**
+ * The resolved paint order of one two-phase assembly (ADR-0092) for `render --explain`: `drawing`
+ * names the assembly, `order` lists every top-level `stamp`/`fit` bottom-to-top with the reason it
+ * sits there (`sequence`, `behind X`, `front X`, or a cross-segment note). Recorded only for a body
+ * that declared at least one `behind`/`front` relation.
+ */
+export type PaintOrderRecord = {
+  readonly drawing: string
+  readonly order: readonly { readonly name: string; readonly reason: string }[]
+}
+
+/**
+ * One applied `pose` for `render --explain` (ADR-0095): the drawing, the pose and its view, and every
+ * solved joint (world position, solved world angle, pose-angle delta, depth) — so a rig's forward
+ * kinematics and its auto-Z depth order are inspectable, not implicit.
+ */
+export type PoseSolveRecord = {
+  readonly drawing: string
+  readonly pose: string
+  readonly view: string
+  readonly joints: readonly SolvedJoint[]
+}
+
+const round3 = (v: number): number => Math.round(v * 1000) / 1000
+const roundVec = (v: { readonly x: number; readonly y: number }): { x: number; y: number } => ({
+  x: round3(v.x),
+  y: round3(v.y),
+})
+
+/** Serialize one planned {@link ShadeOp} to a JSON-friendly {@link ExplainStep}. */
+const explainShadeOp = (op: ShadeOp): ExplainStep => {
+  switch (op.kind) {
+    case 'fill':
+      return { op: 'fill', color: toHexColor(op.color) }
+    case 'form':
+      return {
+        op: 'form',
+        color: toHexColor(op.spec.base),
+        warm: toHexColor(op.spec.warm),
+        cool: toHexColor(op.spec.cool),
+        dir: roundVec({ x: op.spec.light.x, y: op.spec.light.y }),
+        elevation: round3(op.spec.light.z),
+        shade: round3(op.spec.shade),
+        hi: round3(op.spec.hi),
+        ambient: round3(op.spec.ambient),
+        puff: round3(op.spec.puff),
+        ...(op.spec.spec > 0 ? { spec: round3(op.spec.spec), specPow: op.spec.specPow } : {}),
+        ...(op.spec.bands !== null ? { bands: op.spec.bands } : {}),
+        ...(op.spec.profile !== 'round' ? { profile: op.spec.profile } : {}),
+      }
+    case 'light':
+      return {
+        op: 'light',
+        point: roundVec(op.point),
+        color: toHexColor(op.color),
+        amount: round3(op.amount),
+      }
+    case 'rim':
+      return { op: 'rim', dir: roundVec(op.dir), color: toHexColor(op.color), width: op.width }
+    case 'ao':
+      return { op: 'ao', color: toHexColor(op.color), amount: round3(op.amount) }
+    case 'cast':
+      return { op: 'cast', offset: op.offset, color: toHexColor(op.color) }
+  }
+}
+
+/** The source name of a command argument when it is a bare name (for `--explain` labels). */
+const commandArgName = (arg: Argument | undefined): string | undefined =>
+  arg?.kind === 'expression' && arg.expression.kind === 'name' ? arg.expression.name : undefined
+
+/**
  * The Drawstic evaluator. One `Engine` instance owns a project root, a
  * shared {@link Budget}, and per-instance caches for parsed modules and
- * rendered sprites/tilesets/atlases — so repeated references to the same
+ * rendered sprites/atlases — so repeated references to the same
  * drawing (e.g. stamped many times, or requested for several export
  * targets) are evaluated once. An engine is not meant to be reused across
  * unrelated recipes: caches are keyed by file path plus arguments/theme
@@ -753,7 +1152,7 @@ const assertLiteralArg = (expr: Expression, file: string): void => {
  *
  * Public entry points: {@link loadEntry}/{@link loadSource} to parse and
  * run a module's top level, {@link renderDraw} to rasterize a drawing to a
- * {@link Sprite}, {@link buildTileset}/{@link buildAtlas} for sheet content,
+ * {@link Sprite}, {@link buildAtlas} for sheet content,
  * {@link evalPath}/{@link defToSprite} for path and generic content
  * resolution, {@link renderFragment} for the CLI `render file#draw(args)`
  * fragment (ADR-0067), and {@link evalExpr}/{@link evalNumber}/
@@ -768,10 +1167,46 @@ export class Engine {
   readonly #modules = new Map<string, ModuleRecord>()
   readonly #loading = new Set<string>()
   readonly #spriteCache = new Map<string, Sprite>()
-  readonly #tilesetCache = new Map<string, TilesetValue>()
   readonly #atlasCache = new Map<string, AtlasValue>()
   /** Render-mode override for ad-hoc renders/exports. */
   modeOverride: RenderMode | null = null
+  /**
+   * When non-null, every `model`/`cel` command appends its lowered primitive expansion here
+   * (ADR-0086 §6) — the CLI's `render --explain` sets it to `[]` before rendering, then reads
+   * the collected trace. `null` (the default) disables collection with zero overhead.
+   */
+  explain: ExplainRecord[] | null = null
+
+  /**
+   * When non-null, every `fit` appends a {@link PlacementRecord} here (ADR-0087 amendment 2) — the
+   * CLI's `render --explain` sets it to `[]` so an agent can inspect exactly where each fit landed
+   * its source and target pin, whether the two coincide, and how far the target pin sits from the
+   * part's own ink (the loose-pin/float signal C007 can't see). `null` disables collection.
+   */
+  placements: PlacementRecord[] | null = null
+
+  /**
+   * Non-fatal render-time warnings collected during evaluation (ADR-0087): a `fit` that leaves a
+   * part with no pixel contact appends a positioned `W010` gap warning here rather than failing
+   * silently. Read by the CLI (`render` surfaces them in its `diagnostics`) and by tests; the
+   * structural defect itself is also caught downstream by `critique`'s C007. Accumulates across a
+   * run; the sprite cache means a given draw's `fit`s warn once.
+   */
+  readonly warnings: Diagnostic[] = []
+
+  /**
+   * When non-null, every two-phase assembly body that declares a `behind`/`front` relation appends
+   * its resolved paint order here (ADR-0092) — the CLI's `render --explain` sets it to `[]` to print
+   * the bottom-to-top layer order with each layer's reason. `null` disables collection.
+   */
+  paintOrders: PaintOrderRecord[] | null = null
+
+  /**
+   * When non-null, every applied `pose` appends its solved rig here (ADR-0095) — the CLI's
+   * `render --explain` sets it to `[]` to print each joint's solved world angle, pose-angle delta,
+   * and auto-Z depth. `null` disables collection.
+   */
+  poses: PoseSolveRecord[] | null = null
 
   /**
    * The `root` directory bounds every relative import/image path (ADR-0035
@@ -838,8 +1273,10 @@ export class Engine {
   }
 
   /**
-   * Parse `source`, check its `lang` pragma (E009 if unsupported), then
-   * collect definitions and execute top-level statements. The module is
+   * Parse `source`, then collect definitions and execute top-level
+   * statements. The leading `drawstic N` pragma is parsed but inert
+   * (ADR-0088): there is exactly one engine semantics, so no `N` is
+   * accepted-or-rejected and nothing branches on it. The module is
    * registered in the cache only *after* its body finishes running, so a
    * re-import that reaches back into a module still executing its top level
    * is caught as an import cycle by the `#loading` stack (spec §2, E008)
@@ -848,14 +1285,6 @@ export class Engine {
    */
   loadSource(source: string, abs: string, display: string): ModuleRecord {
     const ast = parse(source, display)
-    if (ast.pragma !== undefined && ast.pragma > LANGUAGE_VERSION) {
-      throw error(
-        ERROR_CODE.versionPragma,
-        `recipe pins language version ${ast.pragma}, engine supports ${LANGUAGE_VERSION}`,
-        display,
-        { line: 1, column: 1 },
-      )
-    }
     const rec: ModuleRecord = {
       file: abs,
       displayPath: display,
@@ -864,9 +1293,9 @@ export class Engine {
       env: new Environment(null),
       fileTheme: undefined,
       sizeDefault: undefined,
-      seed: undefined,
       fontDefault: undefined,
       exports: [],
+      moduleLights: new Map(),
     }
     this.#collectDefs(rec)
     this.#execTopLevel(rec)
@@ -954,6 +1383,7 @@ export class Engine {
           `'${name}' is a predefined, unshadowable name`,
           rec.displayPath,
           span,
+          reservedNameHint(name),
         )
       }
       if (rec.definitions.has(name)) {
@@ -977,6 +1407,12 @@ export class Engine {
         case 'themeDefinition':
           add(s.def.name, { kind: 'theme', definition: s.def, module: rec }, s.span)
           break
+        case 'skeletonBlock':
+          add(s.name, { kind: 'skeleton', definition: s, module: rec }, s.span)
+          break
+        case 'poseBlock':
+          add(s.name, { kind: 'pose', definition: s, module: rec }, s.span)
+          break
         case 'functionDefinition':
           add(
             s.name,
@@ -990,13 +1426,10 @@ export class Engine {
         case 'fontDefinition':
           add(s.def.name, { kind: 'font', definition: s.def, module: rec }, s.span)
           break
-        case 'tilesetDefinition':
-          add(s.def.name, { kind: 'tileset', definition: s.def, module: rec }, s.span)
-          break
         case 'atlasDefinition':
           add(s.def.name, { kind: 'atlas', definition: s.def, module: rec }, s.span)
           break
-        case 'imageImport':
+        case 'image':
           add(
             s.name,
             {
@@ -1011,7 +1444,9 @@ export class Engine {
           )
           break
         case 'exportDefinition':
-          rec.exports.push(s.def)
+          // One block, N resolved targets (ADR-0098 §9): the parser already composed each
+          // target's `basePath`, so `exports` stays a flat list in declaration order.
+          rec.exports.push(...s.defs)
           break
         default:
           break
@@ -1059,14 +1494,25 @@ export class Engine {
         case 'sizeDirective':
           rec.sizeDefault = { width: s.width, height: s.height }
           break
-        case 'seedDirective':
-          rec.seed = s.seed
-          break
         case 'fontDirective':
           rec.fontDefault = s.name
           break
         case 'binding':
           this.#execBinding(s, rec.env, state)
+          break
+        case 'lightBinding': {
+          this.#execLightBinding(s, rec.env, state)
+          // Track every bare module-scope light binding (ADR-0096 §4 tier 3) — a `theme:` block's
+          // own `light` line folds into `FoldedTheme.light` through a different path and never
+          // reaches this loop (module top-level statements only), so this can't double-count it.
+          const bound = rec.env.lookup(s.name)
+          if (bound && typeof bound.value === 'object' && bound.value?.type === 'light') {
+            rec.moduleLights.set(s.name, bound.value)
+          }
+          break
+        }
+        case 'materialBinding':
+          this.#execMaterialBinding(s, rec.env, state)
           break
         case 'pathDefinition':
           break
@@ -1199,8 +1645,8 @@ export class Engine {
     acc: FoldedTheme,
     state: State,
   ): void {
-    if (item.bindKind !== 'grad') {
-      // A theme body carries only pal/grad/size/mode/font/style/with + filter/draw
+    if (item.bindKind !== 'gradient') {
+      // A theme body carries only palette/gradient/size/mode/font/style/with + filter/draw
       // definitions; a plain (or `mask`) binding here folds into nothing and used to
       // vanish silently, surfacing later as E001 at the use site (ADR-0081). Reject it
       // at the declaration with an actionable hint instead.
@@ -1209,7 +1655,7 @@ export class Engine {
         `a theme body has no place for the binding '${item.names.join(', ')}'`,
         mod.displayPath,
         item.span,
-        'put colours under `pal:` (or use `grad NAME = …`); move other constants to module scope, above the theme',
+        'put colours under `palette:` (or use `gradient NAME = …`); move other constants to module scope, above the theme',
       )
     }
     const env = new Environment(mod.env)
@@ -1220,12 +1666,62 @@ export class Engine {
     if (typeof v !== 'object' || v?.type !== 'grad') {
       throw error(
         ERROR_CODE.typeError,
-        "a 'grad' binding must be a gradient",
+        "a 'gradient' binding must be a gradient",
         mod.displayPath,
         item.span,
       )
     }
     acc.gradients.set(item.names[0] ?? '', v)
+  }
+
+  /**
+   * Fold a theme-body `light NAME = …` default (ADR-0086) into `acc.light` — later wins,
+   * like `size`/`mode`/`font`. The binding evaluates with the folded palette visible, so a
+   * theme light may reference its own `palette` colours; the bound name is decorative (the value
+   * is the theme's single default light, resolved as tier 3 in {@link #requireLight}).
+   */
+  #foldLight(
+    item: Extract<Statement, { readonly kind: 'lightBinding' }>,
+    mod: ModuleRecord,
+    acc: FoldedTheme,
+    state: State,
+  ): void {
+    const env = new Environment(mod.env)
+    for (const p of acc.palette) {
+      env.declare(p.key, p.color, true, true)
+    }
+    acc.light = this.#evalLightValue(item, env, state)
+  }
+
+  /**
+   * Fold a theme-body `figure:` block (ADR-0093) into a {@link FigureSpec} — each field a validated
+   * proportion name paired with its evaluated number. The block evaluates with the folded palette
+   * visible (like `#foldLight`), and an unknown field name is a positioned E006 with the valid set.
+   */
+  #foldFigure(
+    item: Extract<Statement, { readonly kind: 'figureBlock' }>,
+    mod: ModuleRecord,
+    acc: FoldedTheme,
+    state: State,
+  ): FigureSpec {
+    const env = new Environment(mod.env)
+    for (const p of acc.palette) {
+      env.declare(p.key, p.color, true, true)
+    }
+    const spec: { -readonly [K in keyof FigureSpec]: FigureSpec[K] } = {}
+    for (const field of item.fields) {
+      if (!FIGURE_FIELDS.has(field.name)) {
+        throw error(
+          ERROR_CODE.typeError,
+          `unknown figure field '${field.name}' (heads, headW, eyeLine, earLine, eyeSep, ` +
+            `neckW, shoulderW, hipW)`,
+          mod.displayPath,
+          field.value.span,
+        )
+      }
+      spec[field.name as keyof FigureSpec] = this.evalNumber(field.value, env, state)
+    }
+    return spec
   }
 
   #foldThemeItem(
@@ -1256,6 +1752,24 @@ export class Engine {
       case 'fontDirective':
         acc.font = item.name
         return acc
+      case 'lightBinding':
+        this.#foldLight(item, mod, acc, state)
+        return acc
+      case 'figureBlock':
+        acc.figure = this.#foldFigure(item, mod, acc, state)
+        return acc
+      case 'materialBinding':
+        // A theme carries a `light` default (ADR-0086 tier 3), but *not* materials — those live in
+        // module/draw scope, where a `model`/`cel` reads them. A `material NAME = …` in a theme body
+        // has nowhere to fold and used to vanish silently (a latent footgun). Reject it at the
+        // declaration with an actionable hint instead of dropping it (analogous to {@link #foldBinding}).
+        throw error(
+          ERROR_CODE.syntax,
+          `a theme body has no place for the material '${item.name}'`,
+          mod.displayPath,
+          item.span,
+          'materials live in module scope (above the theme) or a draw body, where `model`/`cel` reads them',
+        )
       case 'binding':
         this.#foldBinding(item, mod, acc, state)
         return acc
@@ -1266,7 +1780,17 @@ export class Engine {
         acc.draws.set(item.def.name, { definition: item.def, module: mod })
         return acc
       default:
-        return acc
+        // Everything a theme can carry is enumerated above. The parser does not restrict theme
+        // bodies, so anything else — `fn`, `export`, `image`, a drawing command, a control-flow
+        // block — parses happily and then has nowhere to fold. It used to vanish without a word;
+        // that is the same footgun `materialBinding` calls out, for every remaining statement kind.
+        throw error(
+          ERROR_CODE.syntax,
+          `a theme body has no place for this statement`,
+          mod.displayPath,
+          item.span,
+          'a theme carries `palette`, `style`, `size`/`mode`/`font`, `light`, `figure:`, filters, draws and plain bindings — everything else belongs in module scope, above the theme',
+        )
     }
   }
 
@@ -1310,6 +1834,7 @@ export class Engine {
         `'${name}' is a predefined, unshadowable name`,
         state.module.displayPath,
         span,
+        reservedNameHint(name),
       )
     }
     if (env.visiblePalette(name)) {
@@ -1324,8 +1849,8 @@ export class Engine {
   }
 
   /**
-   * Execute a `let`/`const`/`grad`/`mask` binding, including list
-   * destructuring (`a, b = list`). `grad`/`mask` bindings are additionally
+   * Execute a `let`/`const`/`gradient`/`mask` binding, including list
+   * destructuring (`a, b = list`). `gradient`/`mask` bindings are additionally
    * type-checked (E006) since their declared kind promises a gradient or
    * region respectively.
    */
@@ -1335,10 +1860,10 @@ export class Engine {
     state: State,
   ): void {
     const v = this.evalExpr(stmt.expression, env, state)
-    if (stmt.bindKind === 'grad' && (typeof v !== 'object' || v?.type !== 'grad')) {
+    if (stmt.bindKind === 'gradient' && (typeof v !== 'object' || v?.type !== 'grad')) {
       throw error(
         ERROR_CODE.typeError,
-        "a 'grad' binding must be a gradient",
+        "a 'gradient' binding must be a gradient",
         state.module.displayPath,
         stmt.span,
       )
@@ -1694,6 +2219,12 @@ export class Engine {
     const env = new Environment(mod.env, true)
     env.declare('w', width, true, false)
     env.declare('h', height, true, false)
+    // The proportions oracle (ADR-0093): a theme `figure:` block binds `fig` for the drawing,
+    // laid out over this canvas — a first-class guide value alongside `w`/`h`. Declared before the
+    // palette so a theme `pal` key `fig` still shadows it (consistent with `w`/`h`).
+    if (theme.figure) {
+      env.declare('fig', figure(width, height, theme.figure), true, false)
+    }
     for (const p of theme.palette) {
       env.declare(p.key, p.color, true, true)
     }
@@ -1728,7 +2259,16 @@ export class Engine {
       fontName: theme.font ?? mod.fontDefault,
       title: undefined,
       description: undefined,
+      // The applied theme's default light (ADR-0086) is the drawing's outermost light, so every
+      // view/variant using the theme shares one source; an explicit `light L` argument overrides
+      // it for a single command.
+      light: theme.light,
+      pins: new Map(),
+      stampTransforms: new Map(),
       mirror: null,
+      pendingFits: [],
+      bones: new Map(),
+      lastPlacementDepth: null,
     }
     const state: State = { module: mod, budget: this.budget, draw, functionDepth: 0 }
     // seed theme palette into the artifact (drawing-local pal overrides later)
@@ -1741,14 +2281,14 @@ export class Engine {
         env.declare(p, args[i] ?? 0)
       })
     }
-    // 4 — run the body
-    for (const s of def.body) {
-      if (s.kind === 'use') {
-        continue
-      }
-      this.#execDrawStmt(s, env, state)
-    }
-    // 5 — palette artifact fold (ADR-0050)
+    // 4 — run the body as a two-phase assembly (ADR-0092): top-level `stamp`/`fit` are deferred into
+    // layers and composited in a topologically-resolved order (behind/front), everything else paints
+    // live in sequence. Returns each declared occlusion relation's measured parity.
+    const occlusions = this.#execAssemblyBody(def, env, state, buffer)
+    // 5 — resolve every deferred `fit` contact check (W010) against the FINAL composite, now
+    // that the whole body has painted — see `DrawState.pendingFits`.
+    this.#resolvePendingFits(draw, mod.displayPath)
+    // 6 — palette artifact fold (ADR-0050)
     const palette = this.#foldSpritePalette(draw)
     return {
       type: 'sprite',
@@ -1759,7 +2299,323 @@ export class Engine {
       pal: palette,
       title: draw.title,
       desc: draw.description,
+      // Export the drawing's own attach points (ADR-0087) so an assembling `fit` can read them.
+      ...(draw.pins.size > 0 ? { pins: new Map(draw.pins) } : {}),
+      // Export each declared occlusion relation's measured parity (ADR-0092) for `critique`'s C013.
+      ...(occlusions.length > 0 ? { occlusions } : {}),
     }
+  }
+
+  /**
+   * Run a drawing body as a two-phase assembly (ADR-0092). Phase 1 walks the top-level statements in
+   * source order: a top-level `stamp`/`fit` is a **placement** — rendered into its own transparent
+   * layer (so pin/origin bookkeeping still runs in statement order for chained fits) and set aside
+   * with its `behind`/`front` relations; every other statement (`fill`, `px`, `line`, blocks, the
+   * `outline` filter, …) is a **barrier** that first flushes the pending placement layers, then paints
+   * live onto the shared buffer. A `pin` declaration is neither — it registers an attach point in
+   * place without painting. Phase 2 (each flush) topologically sorts the pending layers by their
+   * relations — ties break by statement order, a cycle is a positioned E025 — and composites them
+   * bottom-to-top, tracking per-pixel ownership so a declared occlusion's parity can be measured
+   * (C013). `behind`/`front` reorder placements only within one barrier-delimited segment; a target in
+   * an already-flushed segment can't be reordered under, which C013 then flags in the composite.
+   */
+  #execAssemblyBody(
+    def: DrawDefinition,
+    env: Environment,
+    state: State,
+    buffer: Framebuffer,
+  ): OcclusionResult[] {
+    const draw = state.draw as DrawState
+    const w = buffer.width
+    const h = buffer.height
+    const owner = new Int32Array(w * h).fill(-1)
+    const pending: PaintLayer[] = []
+    const units: PaintLayer[] = []
+    const relations: {
+      readonly behindId: number
+      readonly frontId: number
+      readonly behindName: string
+      readonly frontName: string
+      readonly clause: 'behind' | 'front'
+    }[] = []
+    let nextId = 0
+    const order: { name: string; reason: string }[] = []
+    let sawRelation = false
+
+    const compositeLayer = (layer: PaintLayer): void => {
+      const src = layer.buffer.data
+      for (let i = 0; i < w * h; i++) {
+        const a = src[i * 4 + 3] ?? 0
+        if (a === 0) {
+          continue
+        }
+        const x = i % w
+        const y = (i - x) / w
+        buffer.blend(x, y, src[i * 4] ?? 0, src[i * 4 + 1] ?? 0, src[i * 4 + 2] ?? 0, a)
+        if (a >= OCCLUSION_ALPHA_MIN) {
+          owner[i] = layer.id
+        }
+      }
+    }
+
+    const flush = (): void => {
+      if (pending.length === 0) {
+        return
+      }
+      const ordered = this.#orderLayers(pending, state, def.span)
+      for (const layer of ordered) {
+        compositeLayer(layer)
+        order.push({ name: layer.name, reason: layer.reason })
+      }
+      pending.length = 0
+    }
+
+    for (const s of def.body) {
+      if (s.kind === 'use') {
+        continue
+      }
+      if (s.kind === 'pinDeclaration') {
+        this.#execDrawStmt(s, env, state)
+        continue
+      }
+      const isFit = s.kind === 'fit'
+      const isStamp = s.kind === 'call' && s.callee === 'stamp'
+      if (isFit || isStamp) {
+        const layerBuf = new Framebuffer(w, h)
+        layerBuf.onWrite = buffer.onWrite
+        const prev = draw.context.buffer
+        draw.context.buffer = layerBuf
+        const id = nextId++
+        let name: string
+        let behind: readonly string[]
+        let front: readonly string[]
+        // Reset the bone-depth channel before the placement; `#execFit` sets it for a `bone` source.
+        draw.lastPlacementDepth = null
+        if (isFit) {
+          name = s.target.head
+          behind = s.behind
+          front = s.front
+          this.#execFit(s, env, state)
+        } else {
+          const rel = stampRelations(s)
+          behind = rel.behind
+          front = rel.front
+          name = this.#execStamp(
+            s,
+            new Args(this, rel.args, env, state, s.span, 'stamp'),
+            env,
+            state,
+          )
+        }
+        const depth = draw.lastPlacementDepth ?? undefined
+        draw.context.buffer = prev
+        if (behind.length > 0 || front.length > 0) {
+          sawRelation = true
+        }
+        if (depth !== undefined) {
+          sawRelation = true
+        }
+        const reason =
+          behind.length > 0
+            ? `behind ${behind.join(',')}`
+            : front.length > 0
+              ? `front ${front.join(',')}`
+              : depth !== undefined
+                ? `z${depth}`
+                : 'sequence'
+        const layer: PaintLayer = {
+          id,
+          name,
+          buffer: layerBuf,
+          cover: coverPixels(layerBuf, OCCLUSION_ALPHA_MIN),
+          behind: [],
+          front: [],
+          reason,
+          span: s.span,
+          depth,
+        }
+        // Resolve each relation target to the most-recent placement of that name. A target in the
+        // current pending segment yields a real ordering edge; one already flushed is recorded for
+        // C013 only (it can't be reordered under). An unplaced target is a positioned error.
+        for (const t of behind) {
+          const target = this.#resolveRelationTarget(t, units, state, s.span)
+          relations.push({
+            behindId: id,
+            frontId: target.id,
+            behindName: name,
+            frontName: t,
+            clause: 'behind',
+          })
+          if (pending.includes(target)) {
+            layer.behind.push(target)
+          }
+        }
+        for (const t of front) {
+          const target = this.#resolveRelationTarget(t, units, state, s.span)
+          relations.push({
+            behindId: target.id,
+            frontId: id,
+            behindName: t,
+            frontName: name,
+            clause: 'front',
+          })
+          if (pending.includes(target)) {
+            layer.front.push(target)
+          }
+        }
+        pending.push(layer)
+        units.push(layer)
+      } else {
+        // barrier: flush pending placements, then paint live while attributing touched pixels to a
+        // sentinel owner so a relation whose behind-part an inline paint later covers isn't a false C013.
+        flush()
+        const before = buffer.data.slice()
+        this.#execDrawStmt(s, env, state)
+        for (let i = 0; i < w * h; i++) {
+          if ((buffer.data[i * 4 + 3] ?? 0) >= OCCLUSION_ALPHA_MIN) {
+            const off = i * 4
+            if (
+              buffer.data[off] !== before[off] ||
+              buffer.data[off + 1] !== before[off + 1] ||
+              buffer.data[off + 2] !== before[off + 2] ||
+              buffer.data[off + 3] !== before[off + 3]
+            ) {
+              owner[i] = SENTINEL_INLINE
+            }
+          }
+        }
+      }
+    }
+    flush()
+
+    if (sawRelation && this.paintOrders) {
+      this.paintOrders.push({ drawing: def.name, order })
+    }
+
+    return relations.map((r) => {
+      const bCover = units.find((u) => u.id === r.behindId)?.cover ?? new Set<number>()
+      const fCover = units.find((u) => u.id === r.frontId)?.cover ?? new Set<number>()
+      let overlap = 0
+      let violating = 0
+      for (const p of bCover) {
+        if (fCover.has(p)) {
+          overlap++
+          if (owner[p] === r.behindId) {
+            violating++
+          }
+        }
+      }
+      return {
+        behind: r.behindName,
+        front: r.frontName,
+        clause: r.clause,
+        overlap,
+        violating,
+      }
+    })
+  }
+
+  /**
+   * Resolve a `behind`/`front` target part-name to its most-recently-placed unit (ADR-0092). A name
+   * that was never placed by an earlier top-level `stamp`/`fit` is a positioned error.
+   */
+  #resolveRelationTarget(
+    name: string,
+    units: readonly PaintLayer[],
+    state: State,
+    span: TextSpan,
+  ): PaintLayer {
+    for (let i = units.length - 1; i >= 0; i--) {
+      const u = units[i]
+      if (u && u.name === name) {
+        return u
+      }
+    }
+    throw error(
+      ERROR_CODE.unknownName,
+      `behind/front target '${name}' names no part placed earlier in this drawing`,
+      state.module.displayPath,
+      span,
+      `stamp or fit '${name}' before the part that references it`,
+    )
+  }
+
+  /**
+   * Topologically order one segment's pending placement layers bottom-to-top (ADR-0092): a `behind`
+   * edge forces the subject before its target, a `front` edge after. Minimal-disruption stable order —
+   * built top-down, at each step emitting the highest-statement-index layer all of whose
+   * paint-after successors are already emitted, so an unconstrained layer keeps its sequence slot and
+   * a single `behind` moves only its own subject. An unbreakable cycle is a positioned E025.
+   */
+  #orderLayers(layers: readonly PaintLayer[], state: State, span: TextSpan): PaintLayer[] {
+    // succ[L] = layers that must paint AFTER L (L is below them): a `behind` edge on L adds its
+    // targets; a `front` edge on L adds L as a successor of each target.
+    const succ = new Map<PaintLayer, Set<PaintLayer>>()
+    for (const l of layers) {
+      succ.set(l, new Set())
+    }
+    for (const l of layers) {
+      for (const t of l.behind) {
+        succ.get(l)?.add(t)
+      }
+      for (const t of l.front) {
+        succ.get(t)?.add(l)
+      }
+    }
+    // Auto-Z (ADR-0095): a `fit … bone JOINT` layer carries the joint's view depth; higher = nearer
+    // the viewer = painted later (on top). A layer without a bone depth inherits the nearest earlier
+    // one (so a decoration stamped right after a limb sits with it), defaulting to 0. Explicit
+    // `behind`/`front` edges above are hard constraints that always win; depth only breaks ties among
+    // otherwise-unordered layers — so manual occlusion overrides auto-Z, exactly as specified.
+    const effDepth = new Map<PaintLayer, number>()
+    let running = 0
+    for (const l of layers) {
+      if (l.depth !== undefined) {
+        running = l.depth
+      }
+      effDepth.set(l, l.depth ?? running)
+    }
+    const emittedTop: PaintLayer[] = []
+    const done = new Set<PaintLayer>()
+    const remaining = new Set(layers)
+    while (remaining.size > 0) {
+      let pick: PaintLayer | undefined
+      let pickDepth = Number.NEGATIVE_INFINITY
+      let pickIdx = -1
+      for (const l of remaining) {
+        let ready = true
+        for (const s of succ.get(l) ?? []) {
+          if (!done.has(s)) {
+            ready = false
+            break
+          }
+        }
+        if (ready) {
+          // Emit the topmost first: highest depth, then highest statement index (later on top).
+          const d = effDepth.get(l) ?? 0
+          const idx = layers.indexOf(l)
+          if (d > pickDepth || (d === pickDepth && idx > pickIdx)) {
+            pickDepth = d
+            pickIdx = idx
+            pick = l
+          }
+        }
+      }
+      if (!pick) {
+        const names = [...remaining].map((l) => l.name).join(', ')
+        throw error(
+          ERROR_CODE.occlusionCycle,
+          `occlusion cycle among parts: ${names} — their behind/front relations can't be satisfied`,
+          state.module.displayPath,
+          span,
+          'remove one of the conflicting behind/front clauses',
+        )
+      }
+      emittedTop.push(pick)
+      done.add(pick)
+      remaining.delete(pick)
+    }
+    return emittedTop.reverse()
   }
 
   // ── statement execution inside a drawing ──────────────────────────────
@@ -1811,6 +2667,988 @@ export class Engine {
     }
   }
 
+  /** Evaluate a `light NAME = …` binding's inline args into a {@link Light} value (ADR-0086). */
+  #evalLightValue(
+    stmt: Extract<Statement, { readonly kind: 'lightBinding' }>,
+    env: Environment,
+    state: State,
+  ): Light {
+    const vec = this.evalExpr(stmt.vec, env, state)
+    if (typeof vec !== 'object' || vec?.type !== 'point' || vec.rel) {
+      throw error(
+        ERROR_CODE.typeError,
+        `light '${stmt.source}' needs a ${stmt.source === 'dir' ? 'DX:DY' : 'X:Y'} point, got ${typeName(vec)}`,
+        state.module.displayPath,
+        stmt.vec.span,
+      )
+    }
+    const col = this.evalExpr(stmt.color, env, state)
+    if (typeof col !== 'object' || col?.type !== 'color') {
+      throw error(
+        ERROR_CODE.typeError,
+        `light needs a colour, got ${typeName(col)}`,
+        state.module.displayPath,
+        stmt.color.span,
+      )
+    }
+    const gain = stmt.gain === undefined ? undefined : this.evalNumber(stmt.gain, env, state)
+    let amb: { color: Color; amount: number } | undefined
+    if (stmt.amb) {
+      const ambColor = this.evalExpr(stmt.amb.color, env, state)
+      if (typeof ambColor !== 'object' || ambColor?.type !== 'color') {
+        throw error(
+          ERROR_CODE.typeError,
+          `light 'amb' needs a colour, got ${typeName(ambColor)}`,
+          state.module.displayPath,
+          stmt.amb.color.span,
+        )
+      }
+      amb = { color: ambColor, amount: this.evalNumber(stmt.amb.amount, env, state) }
+    }
+    // Build the spec without ever passing `undefined` explicitly (exactOptionalPropertyTypes).
+    const common = {
+      color: col,
+      ...(gain === undefined ? {} : { gain }),
+      ...(amb === undefined ? {} : { amb }),
+    }
+    return light(
+      stmt.source === 'dir'
+        ? { ...common, dir: { x: vec.x, y: vec.y } }
+        : { ...common, pos: { x: vec.x, y: vec.y } },
+    )
+  }
+
+  /** Bind a `light NAME = …` value into scope (module- or drawing-local, ADR-0086). */
+  #execLightBinding(
+    stmt: Extract<Statement, { readonly kind: 'lightBinding' }>,
+    env: Environment,
+    state: State,
+  ): void {
+    const value = this.#evalLightValue(stmt, env, state)
+    this.#checkBindable(stmt.name, env, stmt.span, state)
+    if (!env.assignLocal(stmt.name, value)) {
+      env.declare(stmt.name, value)
+    }
+  }
+
+  /** Bind a `material NAME = COLOR [RESPONSE]` value into scope (ADR-0086). */
+  #execMaterialBinding(
+    stmt: Extract<Statement, { readonly kind: 'materialBinding' }>,
+    env: Environment,
+    state: State,
+  ): void {
+    const col = this.evalExpr(stmt.color, env, state)
+    if (typeof col !== 'object' || col?.type !== 'color') {
+      throw error(
+        ERROR_CODE.typeError,
+        `material needs a colour, got ${typeName(col)}`,
+        state.module.displayPath,
+        stmt.color.span,
+      )
+    }
+    const response = stmt.response ?? 'flat'
+    if (!isMaterialResponse(response)) {
+      throw error(
+        ERROR_CODE.typeError,
+        `unknown material response '${response}'`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const profile = stmt.profile ?? 'round'
+    if (!isFormProfile(profile)) {
+      throw error(
+        ERROR_CODE.typeError,
+        `unknown form profile '${profile}'`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    // Trailing dose overrides (ADR-0091): each evaluates to a number (`0..1`/percent).
+    const overrides: { [K in MaterialOverrideKey]?: number } = {}
+    for (const key of MATERIAL_OVERRIDE_KEYS) {
+      const expr = stmt.overrides[key]
+      if (expr === undefined) {
+        continue
+      }
+      const n = this.evalExpr(expr, env, state)
+      if (typeof n !== 'number') {
+        throw error(
+          ERROR_CODE.typeError,
+          `material ${key} override needs a number, got ${typeName(n)}`,
+          state.module.displayPath,
+          expr.span,
+        )
+      }
+      overrides[key] = n
+    }
+    const value = material(col, response, {
+      ...overrides,
+      ...(profile !== 'round' ? { profile } : {}),
+    })
+    this.#checkBindable(stmt.name, env, stmt.span, state)
+    if (!env.assignLocal(stmt.name, value)) {
+      env.declare(stmt.name, value)
+    }
+  }
+
+  /**
+   * Execute a `pin KEY PT` declaration (ADR-0087): evaluate the point in the current drawing's
+   * coordinate space and register it in {@link DrawState.pins} under `KEY`. In a part draw the key
+   * is a bare name (`shoulder`) exported on the rendered sprite; in an assembly the key is a dotted
+   * `part.name` that seeds a canvas-space attach point for `fit`.
+   */
+  #execPinDeclaration(
+    stmt: Extract<Statement, { readonly kind: 'pinDeclaration' }>,
+    env: Environment,
+    state: State,
+  ): void {
+    const draw = state.draw
+    if (!draw) {
+      throw error(
+        ERROR_CODE.syntax,
+        "'pin' belongs in a drawing body",
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const value = this.evalExpr(stmt.point, env, state)
+    if (typeof value !== 'object' || value?.type !== 'point' || value.rel) {
+      throw error(
+        ERROR_CODE.typeError,
+        `pin '${stmt.name}' needs an absolute point, got ${typeName(value)}`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    // `pin HEAD.KEY PT` in an assembly: when HEAD names an already-drawn part sprite that owns a
+    // local pin KEY, seed ALL of that part's pins into canvas space from the one anchor (KEY→PT),
+    // not just KEY — so a later `fit …HEAD.other` chains instead of throwing (ADR-0087 amendment 2;
+    // character-DX §5.8). A bare label (`a.hipL`) or unknown HEAD falls through to the single-key
+    // registration, keeping hand-labelled anchors working.
+    const dot = stmt.name.indexOf('.')
+    if (dot > 0) {
+      const head = stmt.name.slice(0, dot)
+      const key = stmt.name.slice(dot + 1)
+      const part = this.#tryResolveSprite(head, env, state, stmt.span)
+      const localPin = part?.pins?.get(key)
+      if (part?.pins && localPin) {
+        // The pin-transform fix (docs/impl-progress.md): if a `stamp HEAD … flipx/rotN/scaleN/
+        // transform` painted this head earlier in the same drawing, `#execStamp` recorded its
+        // matrix — apply it to every local pin (including the seed anchor itself) before
+        // computing offsets, exactly as `fit` already carries its target's pins through its own
+        // transform. No recorded stamp (the common unflipped-root case) means identity, matching
+        // the previous behaviour exactly.
+        const matrix = draw.stampTransforms.get(head)
+        const mapPin = (p: {
+          readonly x: number
+          readonly y: number
+        }): { readonly x: number; readonly y: number } => {
+          if (!matrix) {
+            return p
+          }
+          const m = applyMatrix(matrix, p.x, p.y)
+          if (!m) {
+            throw error(
+              ERROR_CODE.nonInvertible,
+              'stamp transform is not invertible',
+              state.module.displayPath,
+              stmt.span,
+            )
+          }
+          return m
+        }
+        const mLocalPin = mapPin(localPin)
+        const ox = value.x - mLocalPin.x
+        const oy = value.y - mLocalPin.y
+        for (const [name, p] of part.pins) {
+          const mp = mapPin(p)
+          draw.pins.set(`${head}.${name}`, { x: quantInt(ox + mp.x), y: quantInt(oy + mp.y) })
+        }
+        return
+      }
+    }
+    draw.pins.set(stmt.name, { x: value.x, y: value.y })
+  }
+
+  /**
+   * Build a first-class {@link Skeleton} value from a `skeleton NAME:` definition (ADR-0095) by
+   * evaluating each joint's expressions (`at POINT`, `from PARENT ANGLE LENGTH`, `limit MIN:MAX`) in
+   * `env` — which may bind `fig` (the figure oracle, ADR-0093), so a rest length/anchor binds to the
+   * same proportion numbers. Pure; the caller re-views `fig` for the pose before calling.
+   */
+  #buildSkeleton(
+    entry: Extract<DefinitionEntry, { readonly kind: 'skeleton' }>,
+    env: Environment,
+    state: State,
+  ): Skeleton {
+    const joints: SkeletonJoint[] = []
+    for (const j of entry.definition.joints) {
+      let anchor: { readonly x: number; readonly y: number } | null = null
+      let restAngle = 0
+      let length = 0
+      if (j.anchor) {
+        const p = this.evalExpr(j.anchor, env, state)
+        if (typeof p !== 'object' || p?.type !== 'point') {
+          throw error(
+            ERROR_CODE.typeError,
+            `joint '${j.name}' at needs a point, got ${typeName(p)}`,
+            state.module.displayPath,
+            j.span,
+          )
+        }
+        anchor = { x: p.x, y: p.y }
+      } else if (j.angle && j.length) {
+        restAngle = this.evalNumber(j.angle, env, state)
+        length = this.evalNumber(j.length, env, state)
+      }
+      let limit: { readonly min: number; readonly max: number } | null = null
+      if (j.limit) {
+        limit = {
+          min: this.evalNumber(j.limit.min, env, state),
+          max: this.evalNumber(j.limit.max, env, state),
+        }
+      }
+      joints.push({ name: j.name, parent: j.parent, anchor, restAngle, length, limit })
+    }
+    return { type: 'skeleton', name: entry.definition.name, joints }
+  }
+
+  /** Build a first-class {@link Pose} value from a `pose NAME over SKELETON:` definition (ADR-0095). */
+  #buildPose(
+    entry: Extract<DefinitionEntry, { readonly kind: 'pose' }>,
+    env: Environment,
+    state: State,
+  ): Pose {
+    const deltas = new Map<string, number>()
+    const depth = new Map<string, number>()
+    for (const e of entry.definition.entries) {
+      deltas.set(e.joint, this.evalNumber(e.delta, env, state))
+      if (e.depth) {
+        depth.set(e.joint, this.evalNumber(e.depth, env, state))
+      }
+    }
+    return {
+      type: 'pose',
+      name: entry.definition.name,
+      skeleton: entry.definition.skeleton,
+      view: entry.definition.view,
+      deltas,
+      depth,
+    }
+  }
+
+  /**
+   * Execute a `pose NAME` statement (ADR-0095): resolve the pose and its skeleton, re-view the figure
+   * oracle to the pose's view, evaluate the rig over the drawing's canvas, check every pose delta
+   * against its joint's angle `limit` (a violation is a positioned error, never a silent clamp), solve
+   * the forward kinematics, and bind each solved joint as a bone anchor the following
+   * `fit part.pin bone JOINT` reads. The pose's per-joint depth drives auto-Z.
+   */
+  #execPoseApply(
+    stmt: Extract<Statement, { readonly kind: 'poseApply' }>,
+    env: Environment,
+    state: State,
+  ): void {
+    const draw = state.draw
+    if (!draw) {
+      throw error(
+        ERROR_CODE.syntax,
+        "'pose' belongs in a drawing body",
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const poseEntry = state.module.definitions.get(stmt.name)
+    if (poseEntry?.kind !== 'pose') {
+      throw error(
+        ERROR_CODE.unknownName,
+        `pose '${stmt.name}' not found`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const skelEntry = poseEntry.module.definitions.get(poseEntry.definition.skeleton)
+    if (skelEntry?.kind !== 'skeleton') {
+      throw error(
+        ERROR_CODE.unknownName,
+        `pose '${stmt.name}' names skeleton '${poseEntry.definition.skeleton}', which is not defined`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const pose = this.#buildPose(poseEntry, env, state)
+    // Re-view `fig` to the pose's view for the skeleton evaluation, so view-aware guide points
+    // (shoulders/hips collapse in profile, ADR-0093) lay the rig out correctly per view.
+    const skelEnv = new Environment(env)
+    const figBinding = env.lookup('fig')
+    if (figBinding && typeof figBinding.value === 'object' && figBinding.value?.type === 'figure') {
+      skelEnv.declare('fig', { ...figBinding.value, view: pose.view }, true, false)
+    }
+    const skel = this.#buildSkeleton(skelEntry, skelEnv, state)
+    // Constraint check: a pose delta outside a joint's declared limit is a positioned error.
+    const limits = new Map(skel.joints.map((j) => [j.name, j.limit] as const))
+    for (const [joint, delta] of pose.deltas) {
+      const lim = limits.get(joint)
+      if (lim && (delta < lim.min || delta > lim.max)) {
+        throw error(
+          ERROR_CODE.syntax,
+          `pose '${stmt.name}' bends joint '${joint}' by ${delta}°, outside its limit ${lim.min}:${lim.max}`,
+          state.module.displayPath,
+          stmt.span,
+          'widen the joint limit in the skeleton, or reduce the pose delta',
+        )
+      }
+    }
+    const solved = solveSkeleton(skel, pose.deltas, pose.depth)
+    draw.bones.clear()
+    for (const j of solved) {
+      draw.bones.set(j.name, j)
+    }
+    if (this.poses) {
+      this.poses.push({ drawing: draw.drawName, pose: pose.name, view: pose.view, joints: solved })
+    }
+  }
+
+  /**
+   * Resolve `name` to an already-buildable sprite WITHOUT throwing: an in-scope binding whose value
+   * is a sprite, or a non-parametric drawing definition (rendered/cached). Returns `undefined` for
+   * an unbound name, a parametric drawing, or any non-sprite value — so a caller can probe whether a
+   * `pin HEAD.KEY` head names a real part (seed all its pins) or is a bare hand-labelled anchor.
+   */
+  #tryResolveSprite(
+    name: string,
+    env: Environment,
+    state: State,
+    span: TextSpan,
+  ): Sprite | undefined {
+    const binding = env.lookup(name)
+    if (binding) {
+      const v = binding.value
+      return typeof v === 'object' && v?.type === 'sprite' ? v : undefined
+    }
+    const entry = state.module.definitions.get(name)
+    if (
+      entry?.kind === 'draw' &&
+      !(entry.definition.params && entry.definition.params.length > 0)
+    ) {
+      return this.renderDraw(entry, [], span)
+    }
+    return undefined
+  }
+
+  /**
+   * Execute a `fit TARGET SOURCE [flags] [ground]` placement (ADR-0087): solve the translation (and
+   * optional flip/rotate/scale/transform of the part about its footprint centre) that lands the
+   * target part's named pin exactly on the source attach point, drop an optional contact shadow,
+   * stamp the part, register the part's now-canvas-space pins — each carried through the SAME
+   * transform so a downstream `fit` chains correctly — and warn on a loose pin (W011) or a final
+   * non-contact (W010). The pins ride the transform, so a pin on the left shoulder becomes the
+   * (correctly located) right shoulder after `flipx`. Reuses the `stamp` blit path — a `fit` is a
+   * transformed stamp with a pin-derived origin and a contact guarantee (ADR-0087 amendment 2).
+   */
+  #execFit(
+    stmt: Extract<Statement, { readonly kind: 'fit' }>,
+    env: Environment,
+    state: State,
+  ): void {
+    const draw = state.draw
+    if (!draw) {
+      throw error(
+        ERROR_CODE.syntax,
+        "'fit' belongs in a drawing body",
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    // 1 — resolve the target part sprite (its local pins ride along on `.pins`).
+    const targetValue = this.evalExpr(
+      { kind: 'name', name: stmt.target.head, span: stmt.span },
+      env,
+      state,
+    )
+    if (typeof targetValue !== 'object' || targetValue?.type !== 'sprite') {
+      throw error(
+        ERROR_CODE.typeError,
+        `fit target '${stmt.target.head}' is not a drawing, got ${typeName(targetValue)}`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const sprite = targetValue
+    const localPins = sprite.pins ?? new Map<string, { readonly x: number; readonly y: number }>()
+
+    // 2 — resolve the source contact point (canvas) and the pin name to attach by. A `bone` source
+    // additionally carries the joint's pose-angle change (inherited as the part's orientation) and
+    // its view depth (auto-Z, ADR-0095).
+    const {
+      canvas: cp,
+      pinName,
+      boneRot,
+      depth: boneDepth,
+    } = this.#resolveFitSource(stmt, localPins, env, state)
+
+    // 3 — the target's local pin to land on the source.
+    const localPin = localPins.get(pinName)
+    if (!localPin) {
+      throw error(
+        ERROR_CODE.unknownName,
+        `fit target '${stmt.target.head}' has no pin '${pinName}'`,
+        state.module.displayPath,
+        stmt.span,
+        `declare it in ${sprite.name} with 'pin ${pinName} X:Y', or fit by a pin both parts share`,
+      )
+    }
+
+    // 4 — compile the trailing flags (same grammar as `stamp`) into one part-local transform matrix
+    // about the footprint centre; `anchor` was removed on `fit` (ADR-0096 §1) — the pin IS the
+    // anchor, so `#parseStampFlags` now errors on it instead of silently ignoring it.
+    const flags = this.#parseStampFlags(
+      new Args(this, stmt.flags, env, state, stmt.span, 'fit'),
+      state,
+      stmt.span,
+      false,
+    )
+    let matrix = this.#buildStampMatrix(sprite, flags)
+    // 4a — bone orientation (ADR-0095): a `bone JOINT` source rotates the part about its fit pin by
+    // the joint's pose-angle change, so the part inherits the bone's orientation from the active pose
+    // (the same about-a-point machinery `aim` uses). Records the joint's depth for auto-Z.
+    draw.lastPlacementDepth = boneDepth ?? null
+    if (boneRot !== undefined && boneRot !== 0) {
+      const base = matrix ?? IDENTITY
+      const p0 = applyMatrix(base, localPin.x, localPin.y)
+      if (p0) {
+        matrix = compose(base, aboutPoint(rotationDeg(boneRot), p0.x, p0.y))
+      }
+    }
+    // 4b — aim (ADR-0092): rotate the part about the fit pin so a second named pin points at PT.
+    // The flag-only transform positions both pins; the solved rotation about the (flagged) fit pin
+    // then swings the aim pin's direction onto (PT − contact point). Pins ride the same matrix.
+    const aimDeg = this.#solveAim(stmt, sprite, localPin, cp, matrix, env, state)
+    if (aimDeg !== undefined) {
+      const base = matrix ?? IDENTITY
+      const p0 = applyMatrix(base, localPin.x, localPin.y)
+      if (p0) {
+        matrix = compose(base, aboutPoint(rotationDeg(aimDeg), p0.x, p0.y))
+      }
+    }
+    const map = (p: { readonly x: number; readonly y: number }): { x: number; y: number } => {
+      if (!matrix) {
+        return { x: p.x, y: p.y }
+      }
+      const m = applyMatrix(matrix, p.x, p.y)
+      if (!m) {
+        throw error(
+          ERROR_CODE.nonInvertible,
+          'fit transform is not invertible',
+          state.module.displayPath,
+          stmt.span,
+        )
+      }
+      return m
+    }
+
+    // 5 — origin so the TRANSFORMED target pin lands on the source contact point: the part paints
+    // dest = origin + M(src), so origin = cp − M(localPin) keeps the pin on `cp` through any flip/rot.
+    const mPin = map(localPin)
+    const origin = { x: quantInt(cp.x - mPin.x), y: quantInt(cp.y - mPin.y) }
+
+    // 6 — auto contact-shadow (opt-in): an ellipse under the part's (transformed) footprint bottom,
+    // painted BEFORE the part so the feet overdraw it. Anchored at the footprint, not the fit pin, so
+    // a joint-to-joint fit (leg.hip → torso.hip) still pools under the feet (character-DX §5.6).
+    if (stmt.ground) {
+      this.#dropContactShadow(draw, sprite, origin, matrix)
+    }
+
+    // 7 — stamp the part (reuses the stamp path, with the same transform/tint/mask) and fold palette.
+    const ok = stampSprite(
+      draw.context,
+      sprite,
+      origin.x,
+      origin.y,
+      matrix,
+      flags.tint,
+      flags.mask,
+      flags.aa,
+    )
+    if (!ok) {
+      throw error(
+        ERROR_CODE.nonInvertible,
+        'fit transform is not invertible',
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    if (!draw.sprite.stamped.includes(sprite)) {
+      draw.sprite.stamped.push(sprite)
+    }
+
+    // 8 — register the fitted part's pins in canvas space (`head.name`), each through M, so later
+    // fits chain onto the transformed part correctly.
+    for (const [name, p] of localPins) {
+      const mp = map(p)
+      draw.pins.set(`${stmt.target.head}.${name}`, {
+        x: quantInt(origin.x + mp.x),
+        y: quantInt(origin.y + mp.y),
+      })
+    }
+
+    // 9 — placement self-check (ADR-0087 amendment 2): where the target pin actually landed, whether
+    // it coincides with the source, and how far it sits from the part's own ink. A pin in empty part
+    // space (the wizard-head float) lands the join off the ink even though the pins coincide — C007
+    // measures contact, not this. Records feed `render --explain`; a loose pin warns (W011).
+    const landed = { x: quantInt(origin.x + mPin.x), y: quantInt(origin.y + mPin.y) }
+    const coincident = Math.abs(landed.x - cp.x) <= 1 && Math.abs(landed.y - cp.y) <= 1
+    const pinToInk = this.#pinToInkDistance(sprite, localPin.x, localPin.y)
+    if (this.placements) {
+      this.placements.push({
+        target: `${stmt.target.head}.${pinName}`,
+        source: this.#fitSourceLabel(stmt),
+        landed,
+        at: { x: quantInt(cp.x), y: quantInt(cp.y) },
+        coincident,
+        pinToInk: Number.isFinite(pinToInk) ? pinToInk : -1,
+        transformed: matrix !== undefined,
+        ...(aimDeg === undefined ? {} : { aimDeg }),
+      })
+    }
+    if (Number.isFinite(pinToInk) && pinToInk > LOOSE_PIN_MAX) {
+      this.warnings.push({
+        severity: 'warning',
+        code: 'W011',
+        message: `loose fit pin: '${stmt.target.head}.${pinName}' sits ${pinToInk}px off '${stmt.target.head}''s own pixels, so the join floats even though the pins coincide at ${landed.x}:${landed.y}`,
+        file: state.module.displayPath,
+        line: stmt.span.line,
+        column: stmt.span.column,
+        ...(stmt.span.endLine === undefined ? {} : { endLine: stmt.span.endLine }),
+        ...(stmt.span.endColumn === undefined ? {} : { endColumn: stmt.span.endColumn }),
+        hint: `move 'pin ${pinName}' onto the part's edge pixels (it is in empty space now), or pick the pin that marks the real contact edge`,
+      })
+    }
+
+    // 10 — defer the contact guarantee: a same-statement-time check false-fires on deliberate
+    // back-to-front layering (e.g. fitting feet before the covering robe is stamped over them,
+    // where the robe hasn't painted yet). `#renderDrawBody` checks every pending fit against the
+    // FINAL composite once the whole body has painted (W010, non-fatal).
+    draw.pendingFits.push({
+      sprite,
+      origin,
+      matrix,
+      targetHead: stmt.target.head,
+      pinName,
+      cp,
+      span: stmt.span,
+    })
+  }
+
+  /**
+   * Solve the `aim PIN PT` rotation (ADR-0092) for a `fit`: the angle (degrees) to rotate the part
+   * about its fit pin so the second named pin `PIN` points from the contact point toward `PT`. The
+   * flag-only `flagMatrix` positions both pins first; the returned angle is layered on top by
+   * `#execFit`. `undefined` when the fit carries no `aim` (zero-cost) or the pins map to infinity.
+   */
+  #solveAim(
+    stmt: Extract<Statement, { readonly kind: 'fit' }>,
+    sprite: Sprite,
+    localPin: { readonly x: number; readonly y: number },
+    cp: { readonly x: number; readonly y: number },
+    flagMatrix: readonly number[] | undefined,
+    env: Environment,
+    state: State,
+  ): number | undefined {
+    if (!stmt.aim) {
+      return undefined
+    }
+    const aimLocal = sprite.pins?.get(stmt.aim.pin)
+    if (!aimLocal) {
+      throw error(
+        ERROR_CODE.unknownName,
+        `fit target '${stmt.target.head}' has no aim pin '${stmt.aim.pin}'`,
+        state.module.displayPath,
+        stmt.span,
+        `declare it in ${sprite.name} with 'pin ${stmt.aim.pin} X:Y'`,
+      )
+    }
+    const aimVal = this.evalExpr(stmt.aim.point, env, state)
+    if (typeof aimVal !== 'object' || aimVal?.type !== 'point' || aimVal.rel) {
+      throw error(
+        ERROR_CODE.typeError,
+        `aim needs an absolute point, got ${typeName(aimVal)}`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const base = flagMatrix ?? IDENTITY
+    const p0 = applyMatrix(base, localPin.x, localPin.y)
+    const a0 = applyMatrix(base, aimLocal.x, aimLocal.y)
+    if (!p0 || !a0) {
+      return undefined
+    }
+    const srcAng = datan2(a0.y - p0.y, a0.x - p0.x)
+    const dstAng = datan2(aimVal.y - cp.y, aimVal.x - cp.x)
+    const deg = ((dstAng - srcAng) * 180) / PI
+    return Math.round(deg * 1000) / 1000
+  }
+
+  /** A human label for a `fit` source (the ground point or the `head.pin`/`head` ref), for --explain. */
+  #fitSourceLabel(stmt: Extract<Statement, { readonly kind: 'fit' }>): string {
+    if (stmt.source.kind === 'point') {
+      return 'point'
+    }
+    if (stmt.source.kind === 'bone') {
+      return `bone ${stmt.source.joint}`
+    }
+    return stmt.source.pin ? `${stmt.source.head}.${stmt.source.pin}` : stmt.source.head
+  }
+
+  /**
+   * Chebyshev distance from a part-local pin `(px,py)` to the part's nearest own opaque pixel —
+   * 0–1 for a pin on/adjacent to the ink, larger when the pin sits in empty part space (so a `fit`
+   * onto it floats the join). `Infinity` for a fully-transparent part. Measured in local space; a
+   * flip/rotate is an isometry, so the transformed distance is the same (ADR-0087 amendment 2).
+   */
+  #pinToInkDistance(sprite: Sprite, px: number, py: number): number {
+    let best = Number.POSITIVE_INFINITY
+    for (let y = 0; y < sprite.h; y++) {
+      for (let x = 0; x < sprite.w; x++) {
+        if ((sprite.data[(y * sprite.w + x) * 4 + 3] ?? 0) > 0) {
+          const d = Math.max(Math.abs(x - px), Math.abs(y - py))
+          if (d < best) {
+            best = d
+          }
+        }
+      }
+    }
+    return best
+  }
+
+  /**
+   * Resolve a `fit` source to a canvas contact point and the pin name to attach by. A `point`
+   * source is a canvas coordinate (the ground-placement oracle) and requires an explicit target
+   * pin. A `ref` source reads an already-registered `head.pin` (or auto-matches the single pin name
+   * both parts share when either side is bare).
+   */
+  #resolveFitSource(
+    stmt: Extract<Statement, { readonly kind: 'fit' }>,
+    localPins: ReadonlyMap<string, { readonly x: number; readonly y: number }>,
+    env: Environment,
+    state: State,
+  ): {
+    readonly canvas: { readonly x: number; readonly y: number }
+    readonly pinName: string
+    readonly boneRot?: number
+    readonly depth?: number
+  } {
+    const draw = state.draw as DrawState
+    // A `bone JOINT` source (ADR-0095): land the target pin on the active pose's solved joint, and
+    // carry the joint's pose-angle change (inherited as the part's orientation) and its view depth.
+    if (stmt.source.kind === 'bone') {
+      const joint = draw.bones.get(stmt.source.joint)
+      if (!joint) {
+        throw error(
+          ERROR_CODE.unknownName,
+          `fit source bone '${stmt.source.joint}' is not a joint of the active pose`,
+          state.module.displayPath,
+          stmt.span,
+          'apply a pose first (`pose NAME`) whose skeleton declares that joint',
+        )
+      }
+      if (!stmt.target.pin) {
+        throw error(
+          ERROR_CODE.syntax,
+          `fit onto a bone needs a named target pin (e.g. 'fit ${stmt.target.head}.attach bone ${stmt.source.joint}')`,
+          state.module.displayPath,
+          stmt.span,
+        )
+      }
+      return {
+        canvas: { x: joint.x, y: joint.y },
+        pinName: stmt.target.pin,
+        boneRot: joint.angleDelta,
+        depth: joint.depth,
+      }
+    }
+    if (stmt.source.kind === 'point') {
+      const value = this.evalExpr(stmt.source.expression, env, state)
+      if (typeof value !== 'object' || value?.type !== 'point' || value.rel) {
+        throw error(
+          ERROR_CODE.typeError,
+          `fit source needs an absolute point, got ${typeName(value)}`,
+          state.module.displayPath,
+          stmt.span,
+        )
+      }
+      if (!stmt.target.pin) {
+        throw error(
+          ERROR_CODE.syntax,
+          `fit onto a point needs a named target pin (e.g. 'fit ${stmt.target.head}.base X:Y')`,
+          state.module.displayPath,
+          stmt.span,
+        )
+      }
+      return { canvas: { x: value.x, y: value.y }, pinName: stmt.target.pin }
+    }
+    const head = stmt.source.head
+    // explicit source pin: read the registered canvas point directly.
+    if (stmt.source.pin) {
+      const key = `${head}.${stmt.source.pin}`
+      const cp = draw.pins.get(key)
+      if (!cp) {
+        throw error(
+          ERROR_CODE.unknownName,
+          `fit source pin '${key}' is not placed yet`,
+          state.module.displayPath,
+          stmt.span,
+          `place '${head}' first (stamp it and 'pin ${key} X:Y', or 'fit ${head}…'), then fit onto its pin`,
+        )
+      }
+      const pinName = stmt.target.pin ?? stmt.source.pin
+      return { canvas: cp, pinName }
+    }
+    // bare source: auto-match a single pin name shared between the source's registered pins and the
+    // target's local pins.
+    const sourceNames = new Set<string>()
+    for (const key of draw.pins.keys()) {
+      if (key.startsWith(`${head}.`)) {
+        sourceNames.add(key.slice(head.length + 1))
+      }
+    }
+    if (sourceNames.size === 0) {
+      throw error(
+        ERROR_CODE.unknownName,
+        `fit source '${head}' has no placed pins`,
+        state.module.displayPath,
+        stmt.span,
+        `place '${head}' first (stamp it and 'pin ${head}.NAME X:Y', or 'fit ${head}…')`,
+      )
+    }
+    const shared = [...sourceNames].filter((n) => localPins.has(n))
+    const candidates = stmt.target.pin ? shared.filter((n) => n === stmt.target.pin) : shared
+    if (candidates.length !== 1) {
+      throw error(
+        ERROR_CODE.syntax,
+        candidates.length === 0
+          ? `fit '${stmt.target.head}' and '${head}' share no pin name`
+          : `fit '${stmt.target.head}' and '${head}' share ${candidates.length} pin names — name one (e.g. 'fit ${stmt.target.head}.NAME ${head}.NAME')`,
+        state.module.displayPath,
+        stmt.span,
+      )
+    }
+    const pinName = candidates[0] as string
+    return { canvas: draw.pins.get(`${head}.${pinName}`) as { x: number; y: number }, pinName }
+  }
+
+  /**
+   * Drop an auto contact-shadow ellipse (ADR-0087) under a fitted part's footprint: a soft cool
+   * pool centred on the footprint's bottom edge (the feet/ground line) in canvas space — NOT the fit
+   * pin, so a joint-to-joint fit (leg.hip → torso.hip) still grounds the shadow under the feet, not
+   * at the hip (character-DX §5.6). Its width comes from the part's covered footprint. Painted before
+   * the part so feet/base overdraw it; uses the light in scope for its cool colour, else the
+   * canonical cool.
+   */
+  #dropContactShadow(
+    draw: DrawState,
+    sprite: Sprite,
+    origin: { readonly x: number; readonly y: number },
+    matrix: readonly number[] | undefined,
+  ): void {
+    const box = this.#coveredBBox(sprite)
+    if (!box) {
+      return
+    }
+    // The footprint on canvas is the part's covered bbox forward-mapped through the fit transform
+    // (its axis-aligned span after any flip/rotate), so the pool still hugs the visible feet.
+    let minX = Number.POSITIVE_INFINITY
+    let minY = Number.POSITIVE_INFINITY
+    let maxX = Number.NEGATIVE_INFINITY
+    let maxY = Number.NEGATIVE_INFINITY
+    for (const [x, y] of [
+      [box.x0, box.y0],
+      [box.x1, box.y0],
+      [box.x0, box.y1],
+      [box.x1, box.y1],
+    ] as const) {
+      const p = matrix ? applyMatrix(matrix, x, y) : { x, y }
+      if (!p) {
+        return
+      }
+      minX = Math.min(minX, p.x)
+      minY = Math.min(minY, p.y)
+      maxX = Math.max(maxX, p.x)
+      maxY = Math.max(maxY, p.y)
+    }
+    const footWidth = maxX - minX + 1
+    const rx = Math.max(1, roundHalfUp(footWidth * 0.45))
+    const ry = Math.max(1, roundHalfUp(rx * 0.35))
+    const cx = origin.x + (minX + maxX) / 2
+    const cy = origin.y + maxY
+    fillRegion(
+      draw.context,
+      ellipseRegion(quantInt(cx), quantInt(cy), rx, ry),
+      contactShadowColor(draw.light),
+    )
+  }
+
+  /**
+   * Resolves every `fit` queued in `draw.pendingFits` (ADR-0087, hardened for the character-DX
+   * 2026-07-10 rerun) against the FINAL painted buffer — the whole `draw` body has now run, so a
+   * part fitted early that a later part overlaps/touches (deliberate back-to-front layering, e.g.
+   * feet fitted before the covering robe is stamped over them) reads as connected, while a
+   * placement nothing ever reaches still warns. Appends a non-fatal W010 {@link Diagnostic} to
+   * `this.warnings` per unresolved gap.
+   */
+  #resolvePendingFits(draw: DrawState, file: string): void {
+    for (const pending of draw.pendingFits) {
+      if (this.#hasContact(draw.context.buffer, pending.sprite, pending.origin, pending.matrix)) {
+        continue
+      }
+      this.warnings.push({
+        severity: 'warning',
+        code: 'W010',
+        message: `fit gap: '${pending.targetHead}' pin '${pending.pinName}' lands at ${pending.cp.x}:${pending.cp.y} but the part touches no other content in the final composite`,
+        file,
+        line: pending.span.line,
+        column: pending.span.column,
+        ...(pending.span.endLine === undefined ? {} : { endLine: pending.span.endLine }),
+        ...(pending.span.endColumn === undefined ? {} : { endColumn: pending.span.endColumn }),
+        hint: 'the pins coincide but the parts have no pixel overlap/adjacency there, even once every later part has painted — move the pin onto solid pixels, overlap the seam by 1–2px, or add the missing part first',
+      })
+    }
+  }
+
+  /** The tight covered (`alpha>0`) bounding box of a sprite's own pixels, or `null` when empty. */
+  #coveredBBox(
+    sprite: Sprite,
+  ): { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null {
+    let x0 = sprite.w
+    let y0 = sprite.h
+    let x1 = -1
+    let y1 = -1
+    for (let y = 0; y < sprite.h; y++) {
+      for (let x = 0; x < sprite.w; x++) {
+        if ((sprite.data[(y * sprite.w + x) * 4 + 3] ?? 0) > 0) {
+          x0 = Math.min(x0, x)
+          y0 = Math.min(y0, y)
+          x1 = Math.max(x1, x)
+          y1 = Math.max(y1, y)
+        }
+      }
+    }
+    return x1 < 0 ? null : { x0, y0, x1, y1 }
+  }
+
+  /**
+   * The set of canvas pixels a part covers when stamped at `origin` with `matrix` — packed `y*w+x`,
+   * clipped to the buffer. Identity blits map `origin + (sx,sy)`; a transformed blit inverse-maps
+   * each dest pixel in the transformed footprint bbox back to its texel (mirroring
+   * {@link stampSprite}'s own nearest-neighbour mapping), so ownership matches the painted pixels
+   * exactly. Used by {@link #hasContact} to test adjacency without re-scanning the whole buffer.
+   */
+  #stampedFootprint(
+    sprite: Sprite,
+    origin: { readonly x: number; readonly y: number },
+    matrix: readonly number[] | undefined,
+    w: number,
+    h: number,
+  ): Set<number> {
+    const own = new Set<number>()
+    const add = (cx: number, cy: number): void => {
+      if (cx >= 0 && cy >= 0 && cx < w && cy < h) {
+        own.add(cy * w + cx)
+      }
+    }
+    if (!matrix) {
+      for (let sy = 0; sy < sprite.h; sy++) {
+        for (let sx = 0; sx < sprite.w; sx++) {
+          if ((sprite.data[(sy * sprite.w + sx) * 4 + 3] ?? 0) > 0) {
+            add(origin.x + sx, origin.y + sy)
+          }
+        }
+      }
+      return own
+    }
+    const inverse = invertMatrix(matrix)
+    if (!inverse) {
+      return own
+    }
+    let minX = Number.POSITIVE_INFINITY
+    let minY = Number.POSITIVE_INFINITY
+    let maxX = Number.NEGATIVE_INFINITY
+    let maxY = Number.NEGATIVE_INFINITY
+    for (const [x, y] of [
+      [0, 0],
+      [sprite.w - 1, 0],
+      [0, sprite.h - 1],
+      [sprite.w - 1, sprite.h - 1],
+    ] as const) {
+      const p = applyMatrix(matrix, x, y)
+      if (!p) {
+        return own
+      }
+      minX = Math.min(minX, p.x)
+      minY = Math.min(minY, p.y)
+      maxX = Math.max(maxX, p.x)
+      maxY = Math.max(maxY, p.y)
+    }
+    for (let dy = Math.floor(minY); dy <= Math.ceil(maxY); dy++) {
+      for (let dx = Math.floor(minX); dx <= Math.ceil(maxX); dx++) {
+        const s = applyMatrix(inverse, dx, dy)
+        if (!s) {
+          continue
+        }
+        const sx = roundHalfUp(s.x)
+        const sy = roundHalfUp(s.y)
+        if (
+          sx >= 0 &&
+          sy >= 0 &&
+          sx < sprite.w &&
+          sy < sprite.h &&
+          (sprite.data[(sy * sprite.w + sx) * 4 + 3] ?? 0) > 0
+        ) {
+          add(origin.x + dx, origin.y + dy)
+        }
+      }
+    }
+    return own
+  }
+
+  /**
+   * Whether a part stamped at `origin` (with optional `matrix`) makes pixel contact with content
+   * OTHER than itself, read from `buffer` — the FINAL composite once the whole `draw` body has
+   * painted (see {@link resolvePendingFits}): any of the part's covered pixels is 8-adjacent to a
+   * covered pixel that isn't one of the part's own footprint pixels. Self-exclusion by position (not
+   * by paint identity) is what makes this safe to run against the final buffer — without it, every
+   * multi-pixel sprite would trivially "contact" its own interior. This is exactly the signature
+   * `critique`'s C007 measures — a `fit` that fails it is a floating/seamed part.
+   */
+  #hasContact(
+    buffer: Framebuffer,
+    sprite: Sprite,
+    origin: { readonly x: number; readonly y: number },
+    matrix: readonly number[] | undefined,
+  ): boolean {
+    const w = buffer.width
+    const h = buffer.height
+    const own = this.#stampedFootprint(sprite, origin, matrix, w, h)
+    for (const packed of own) {
+      const cx = packed % w
+      const cy = (packed - cx) / w
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = cx + dx
+          const ny = cy + dy
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h || own.has(ny * w + nx)) {
+            continue
+          }
+          if (buffer.alphaAt(nx, ny) > 0) {
+            return true
+          }
+        }
+      }
+    }
+    return false
+  }
+
   #execIf(stmt: Extract<Statement, { readonly kind: 'if' }>, env: Environment, state: State): void {
     const condition = this.evalExpr(stmt.condition, env, state)
     const body = truthy(condition) ? stmt.thenStatement : stmt.elseStatement
@@ -1828,14 +3666,6 @@ export class Engine {
         this.#execBody(arm.body, env, state)
         return
       }
-    }
-  }
-
-  #execRepeat(stmt: Extract<Statement, { kind: 'repeat' }>, env: Environment, state: State): void {
-    const n = this.evalNumber(stmt.count, env, state)
-    for (let i = 0; i < n; i++) {
-      this.step(stmt.span, state.module.displayPath)
-      this.#execBody(stmt.body, env, state)
     }
   }
 
@@ -1857,16 +3687,6 @@ export class Engine {
       for (const inner of stmt.body) {
         this.#execDrawStmt(inner, child, state)
       }
-    }
-  }
-
-  #execWhile(stmt: Extract<Statement, { kind: 'while' }>, env: Environment, state: State): void {
-    for (;;) {
-      this.step(stmt.span, state.module.displayPath)
-      if (!truthy(this.evalExpr(stmt.condition, env, state))) {
-        break
-      }
-      this.#execBody(stmt.body, env, state)
     }
   }
 
@@ -2006,14 +3826,20 @@ export class Engine {
   #execDrawStmt(stmt: Statement, env: Environment, state: State): void {
     this.step(stmt.span, state.module.displayPath)
     const draw = state.draw
-    // Shared by every "lives at module scope" E004 below: mask/grad are the
+    // Shared by every "lives at module scope" E004 below: mask/gradient are the
     // two definition-shaped statements that stay legal inside a draw, so
     // that's the natural next question once an author hits this error.
     const moduleScopeHint =
-      'move it to module scope, above the draw — mask and grad definitions may stay drawing-local'
+      'move it to module scope, above the draw — mask and gradient definitions may stay drawing-local'
     switch (stmt.kind) {
       case 'binding':
         this.#execBinding(stmt, env, state)
+        return
+      case 'lightBinding':
+        this.#execLightBinding(stmt, env, state)
+        return
+      case 'materialBinding':
+        this.#execMaterialBinding(stmt, env, state)
         return
       case 'compound':
         this.#execCompound(stmt, env, state)
@@ -2033,8 +3859,6 @@ export class Engine {
           }
         }
         return
-      case 'seedDirective':
-        return // stored for sugar helpers (none in v1); core fns take seeds explicitly
       case 'fontDirective':
         if (draw) {
           draw.fontName = stmt.name
@@ -2080,14 +3904,6 @@ export class Engine {
           stmt.span,
           moduleScopeHint,
         )
-      case 'tilesetDefinition':
-        throw error(
-          ERROR_CODE.syntax,
-          'tileset definitions live at module scope',
-          state.module.displayPath,
-          stmt.span,
-          moduleScopeHint,
-        )
       case 'atlasDefinition':
         throw error(
           ERROR_CODE.syntax,
@@ -2104,10 +3920,10 @@ export class Engine {
           stmt.span,
           moduleScopeHint,
         )
-      case 'imageImport':
+      case 'image':
         throw error(
           ERROR_CODE.syntax,
-          'image imports live at module scope',
+          'image definitions live at module scope',
           state.module.displayPath,
           stmt.span,
           moduleScopeHint,
@@ -2120,20 +3936,23 @@ export class Engine {
       case 'maskBlock':
         this.#execMaskBlock(stmt, env, state)
         return
+      case 'pinDeclaration':
+        this.#execPinDeclaration(stmt, env, state)
+        return
+      case 'fit':
+        this.#execFit(stmt, env, state)
+        return
+      case 'poseApply':
+        this.#execPoseApply(stmt, env, state)
+        return
       case 'if':
         this.#execIf(stmt, env, state)
         return
       case 'match':
         this.#execMatch(stmt, env, state)
         return
-      case 'repeat':
-        this.#execRepeat(stmt, env, state)
-        return
       case 'for':
         this.#execFor(stmt, env, state)
-        return
-      case 'while':
-        this.#execWhile(stmt, env, state)
         return
       case 'scatter':
         this.#execScatter(stmt, env, state)
@@ -2212,7 +4031,7 @@ export class Engine {
           line: row.span.line,
           column: row.span.column + x,
         },
-        `declare it in a 'pal' (e.g. 'pal ${ch}=<color>')`,
+        `declare it in a 'palette' (e.g. 'palette ${ch}=<color>')`,
       )
     }
     const paint = b.value
@@ -2546,7 +4365,11 @@ export class Engine {
    */
   #execProfile(ctx: Context, A: Args, state: State, span: TextSpan): void {
     const paint = A.drawPaint(span)
-    const columns = this.#profileColumns(A.value(), span, state)
+    const columns = this.#profileColumns(
+      A.value('a range or list of x-columns (e.g. 0..w)'),
+      span,
+      state,
+    )
     const fnName = A.rawName()
     const hasBaseline = !A.empty() && A.peekFlag() === undefined && A.peekKeyword() === null
     const baseline = hasBaseline ? A.num() : ctx.buffer.height - 1
@@ -2619,21 +4442,22 @@ export class Engine {
 
   /**
    * Disambiguate an unrecognized statement-position callee: a user
-   * `filter` name is run as `apply` sugar; a `fn`/builtin name used as a
-   * bare statement means its value was silently dropped, which is almost
-   * always a missing paint (E013); anything else is genuinely unknown
-   * (E001).
+   * `filter` name run bare (no `apply`) is a removed dispatch path
+   * (ADR-0096 §1 — a third way beside the `apply` statement and `apply`
+   * command); a `fn`/builtin name used as a bare statement means its value
+   * was silently dropped, which is almost always a missing paint (E013);
+   * anything else is genuinely unknown (E001).
    */
-  #execCommandFallback(
-    stmt: Extract<Statement, { readonly kind: 'call' }>,
-    env: Environment,
-    state: State,
-  ): void {
-    // a user filter name used as a command? a fn call whose value drops?
+  #execCommandFallback(stmt: Extract<Statement, { readonly kind: 'call' }>, state: State): void {
+    // a user filter name used bare as a command? a fn call whose value drops?
     const entry = state.module.definitions.get(stmt.callee)
     if (entry?.kind === 'filter') {
-      this.#runFilter(stmt.callee, env, state, stmt.span)
-      return
+      throw error(
+        ERROR_CODE.syntax,
+        `a bare filter name as a statement was removed — use 'apply ${stmt.callee}'`,
+        state.module.displayPath,
+        stmt.span,
+      )
     }
     if (entry?.kind === 'function' || BUILTIN_NAMES.has(stmt.callee)) {
       throw error(
@@ -2649,6 +4473,42 @@ export class Engine {
       state.module.displayPath,
       stmt.span,
     )
+  }
+
+  /**
+   * Resolve the light for a `model`/`cel` command in three tiers (ADR-0086; the third tier is
+   * ADR-0096 §4), most-local first: an explicit `light L` argument; else the applied theme's
+   * default (which seeds {@link DrawState.light}); else, if the theme tier is empty, the module's
+   * *sole* bare `light NAME = …` binding ({@link ModuleRecord.moduleLights}) — a file that
+   * declares exactly one light and no theme has unambiguously said what the light is. Two or
+   * more module lights don't collapse the ambiguity automatically; ADR-0094 removed the earlier
+   * `lit L:` block that could have picked one by scope. No light in any tier is a hard E024 —
+   * never a silent default, so a light is always named and always visible.
+   */
+  #requireLight(
+    explicit: Light | null,
+    draw: DrawState,
+    stmt: Extract<Statement, { readonly kind: 'call' }>,
+    state: State,
+  ): Light {
+    const moduleLights = state.module.moduleLights
+    const sole = moduleLights.size === 1 ? ([...moduleLights.values()][0] ?? null) : null
+    const lt = explicit ?? draw.light ?? sole
+    if (!lt) {
+      const names = [...moduleLights.keys()]
+      const hint =
+        names.length > 1
+          ? `this module declares ${names.length} lights (${names.join(', ')}) with no theme default — name one: add a trailing 'light ${names[0]}' to this command, or set the theme's default light`
+          : 'declare one (e.g. `light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%`), then add a trailing `light sun` to this command or set it as the theme default'
+      throw error(
+        ERROR_CODE.noLight,
+        `'${stmt.callee}' needs a light: pass 'light L', or give the theme a default light`,
+        state.module.displayPath,
+        stmt.span,
+        hint,
+      )
+    }
+    return lt
   }
 
   /**
@@ -2674,7 +4534,7 @@ export class Engine {
       )
     }
     const ctx = draw.context
-    const args = new Args(this, stmt.args, env, state, stmt.span)
+    const args = new Args(this, stmt.args, env, state, stmt.span, stmt.callee)
     switch (stmt.callee) {
       case 'bg': {
         const paint = args.paint()
@@ -2752,6 +4612,79 @@ export class Engine {
         this.#emitShape(ctx, ellipseRegion(quantInt(c.x), quantInt(c.y), rr.x, rr.y), paint, flags)
         return
       }
+      case 'dome': {
+        const paint = args.drawPaint(stmt.span)
+        const c = args.point(draw)
+        const rr = args.pair()
+        const flags = args.drawFlags()
+        args.done()
+        this.#emitShape(ctx, domeRegion(quantInt(c.x), quantInt(c.y), rr.x, rr.y), paint, flags)
+        return
+      }
+      case 'lobe': {
+        const paint = args.drawPaint(stmt.span)
+        const base = args.point(draw)
+        const tip = args.point(draw)
+        const width = args.num()
+        const flags = args.drawFlags()
+        args.done()
+        this.#emitShape(
+          ctx,
+          lobeRegion(quantInt(base.x), quantInt(base.y), quantInt(tip.x), quantInt(tip.y), width),
+          paint,
+          flags,
+        )
+        return
+      }
+      case 'crescent': {
+        const paint = args.drawPaint(stmt.span)
+        const c = args.point(draw)
+        const rr = args.pair()
+        const thick = args.num()
+        const dir = args.pair()
+        const flags = args.drawFlags()
+        args.done()
+        this.#emitShape(
+          ctx,
+          crescentRegion(quantInt(c.x), quantInt(c.y), rr.x, rr.y, thick, dir.x, dir.y),
+          paint,
+          flags,
+        )
+        return
+      }
+      case 'ribbon': {
+        const paint = args.drawPaint(stmt.span)
+        const p0 = args.point(draw)
+        const p1 = args.point(draw)
+        const p2 = args.point(draw)
+        const width = args.num()
+        const flags = args.drawFlags()
+        args.done()
+        this.#emitShape(
+          ctx,
+          ribbonRegion(
+            quantInt(p0.x),
+            quantInt(p0.y),
+            quantInt(p1.x),
+            quantInt(p1.y),
+            quantInt(p2.x),
+            quantInt(p2.y),
+            width,
+          ),
+          paint,
+          flags,
+        )
+        return
+      }
+      case 'band':
+        // Renamed to `ribbon` (ADR-0096 §2) — `band` already means cel band, ripple band, or
+        // gradient band.
+        throw error(
+          ERROR_CODE.syntax,
+          "'band' was renamed to 'ribbon' — use 'ribbon <paint> <p0> <p1> <p2> <w>'",
+          state.module.displayPath,
+          stmt.span,
+        )
       case 'arc': {
         const paint = args.paint()
         const c = args.point(draw)
@@ -2811,7 +4744,7 @@ export class Engine {
       }
       case 'fill': {
         const paint = args.paint()
-        const value = args.value()
+        const value = args.value('a path or region')
         args.done()
         if (typeof value === 'object' && value !== null && value.type === 'path') {
           fillRegion(ctx, pathFillRegion(value), paint)
@@ -2830,7 +4763,7 @@ export class Engine {
       }
       case 'stroke': {
         const paint = args.paint()
-        const value = args.value()
+        const value = args.value('a path or region')
         const flags = args.strokeFlags()
         args.done()
         if (typeof value === 'object' && value !== null && value.type === 'path') {
@@ -2867,17 +4800,15 @@ export class Engine {
         drawText(ctx, font, quantInt(p.x), quantInt(p.y), str, paint)
         return
       }
-      case 'flood': {
-        const paint = args.paint()
-        const p = args.point(draw)
-        args.done()
-        flood(ctx, quantInt(p.x), quantInt(p.y), paint, () =>
-          this.step(stmt.span, state.module.displayPath),
-        )
-        return
-      }
       case 'stamp':
-        this.#execStamp(stmt, args, env, state)
+        // `behind`/`front` clauses (ADR-0092) are honored by the two-phase assembly pass, not here;
+        // strip them so a stamp reached through a block (barrier) doesn't choke on the extra args.
+        this.#execStamp(
+          stmt,
+          new Args(this, stampRelations(stmt).args, env, state, stmt.span, 'stamp'),
+          env,
+          state,
+        )
         return
       case 'apply': {
         const name = args.rawName()
@@ -2887,17 +4818,12 @@ export class Engine {
       }
       // built-in filters (§12)
       case 'outline': {
-        const paint = args.paint()
+        // Both args optional: `outline` → 1px derived-dark ink over the composited silhouette;
+        // `outline ink` / `outline ink 2` / `outline 2` also valid (ADR-0090).
+        const paint = args.optPaint()
         const width = args.empty() ? 1 : args.num()
         args.done()
         filterOutline(ctx, paint, quantInt(width))
-        return
-      }
-      case 'replace': {
-        const from = args.color()
-        const to = args.color()
-        args.done()
-        filterReplace(ctx, from, to)
         return
       }
       case 'tint': {
@@ -2909,10 +4835,10 @@ export class Engine {
       }
       case 'shadow': {
         // Unified `[region] dx:dy paint` shape (ADR-0070). The first argument disambiguates the
-        // three forms by value type: a region → local region shadow (ADR-0062); a dx:dy point →
-        // the canonical whole-frame drop shadow; a bare number → the deprecated two-number frame
-        // alias, kept for error-robustness in every version.
-        const first = args.value()
+        // two forms by value type: a region → local region shadow (ADR-0062); a dx:dy point →
+        // the canonical whole-frame drop shadow. The whole-frame shadow always honours an
+        // enclosing `mask …:` block (ADR-0070 / ADR-0088).
+        const first = args.value('a dx:dy offset or region')
         if (typeof first === 'object' && first !== null && first.type === 'region') {
           const offset = args.pair()
           const paint = args.paint()
@@ -2922,9 +4848,6 @@ export class Engine {
           fillRegion(ctx, regionTransform(first, translation(dx, dy), translation(-dx, -dy)), paint)
           return
         }
-        // language version 2 makes the whole-frame shadow honour an enclosing `mask …:` block
-        // (ADR-0070); `drawstic 1` keeps the whole-buffer rebuild.
-        const respectMask = (state.module.ast.pragma ?? LANGUAGE_VERSION) >= 2
         if (typeof first === 'object' && first !== null && first.type === 'point') {
           if (first.rel) {
             throw error(
@@ -2936,40 +4859,30 @@ export class Engine {
           }
           const paint = args.color()
           args.done()
-          filterShadow(ctx, quantInt(first.x), quantInt(first.y), paint, respectMask)
+          filterShadow(ctx, quantInt(first.x), quantInt(first.y), paint)
           return
         }
-        if (typeof first !== 'number') {
-          throw error(
-            ERROR_CODE.typeError,
-            `shadow needs a dx:dy offset or region, got ${typeName(first)}`,
-            state.module.displayPath,
-            stmt.span,
-          )
-        }
-        const dx = first
-        const dy = args.num()
-        const paint = args.color()
-        args.done()
-        filterShadow(ctx, quantInt(dx), quantInt(dy), paint, respectMask)
-        return
+        throw error(
+          ERROR_CODE.typeError,
+          `shadow needs a dx:dy offset or region, got ${typeName(first)}`,
+          state.module.displayPath,
+          stmt.span,
+        )
       }
-      case 'castShadow': {
-        const region = args.region()
-        const offset = args.pair()
-        const paint = args.paint()
-        args.done()
-        const dx = quantInt(offset.x)
-        const dy = quantInt(offset.y)
-        fillRegion(ctx, regionTransform(region, translation(dx, dy), translation(-dx, -dy)), paint)
-        return
-      }
+      case 'castShadow':
+        // Removed (ADR-0096 §1) — byte-identical implementation to `shadow r dx:dy p`.
+        throw error(
+          ERROR_CODE.syntax,
+          "'castShadow' was removed — use 'shadow r dx:dy p' instead",
+          state.module.displayPath,
+          stmt.span,
+        )
       // Texture filters take an optional leading region scope (ADR-0071): the first argument is a
       // region → confine to it; otherwise it is the filter's first real argument (a number for
       // grain/speckle/ripple, a paint for dither), and the whole-frame form runs unchanged.
       // The two numeric scalars are uniformly ordered `magnitude seed` (ADR-0080).
       case 'grain': {
-        const first = args.value()
+        const first = args.value('a region or a number')
         const region = regionScopeOf(first)
         const amount = region ? args.num() : this.#asNumber(first, stmt.span, state)
         const seed = args.num()
@@ -2979,7 +4892,7 @@ export class Engine {
         return
       }
       case 'speckle': {
-        const first = args.value()
+        const first = args.value('a region or a number')
         const region = regionScopeOf(first)
         const density = region ? args.num() : this.#asNumber(first, stmt.span, state)
         const seed = args.num()
@@ -2989,7 +4902,7 @@ export class Engine {
         return
       }
       case 'ripple': {
-        const first = args.value()
+        const first = args.value('a region or a number')
         const region = regionScopeOf(first)
         const strength = region ? args.num() : this.#asNumber(first, stmt.span, state)
         const seed = args.num()
@@ -2999,7 +4912,7 @@ export class Engine {
         return
       }
       case 'dither': {
-        const first = args.value()
+        const first = args.value('a region or a paint')
         const region = regionScopeOf(first)
         const paintA = region ? args.paint() : this.#asPaint(first, stmt.span, state)
         const paintB = args.paint()
@@ -3008,49 +4921,125 @@ export class Engine {
         filterDither(ctx, paintA, paintB, threshold, region)
         return
       }
-      case 'shadeRegion': {
-        const region = args.region()
-        const light = args.pair()
-        const base = args.color()
-        const amount = args.num()
+      case 'quantize': {
+        // `quantize [REGION] PALETTE` (ADR-0093): remap opaque pixels to their nearest palette colour.
+        // Optional leading region scope, like the other texture filters; PALETTE is a list of colours.
+        const first = args.value('a region or a palette')
+        const region = regionScopeOf(first)
+        const palVal = region ? args.value('a palette') : first
         args.done()
-        // ADR-0068: language version 2 makes `amount` the veil opacity; `drawstic 1`
-        // recipes keep the v1 "base alpha = opacity, amount = distance-darkening" split.
-        if ((state.module.ast.pragma ?? LANGUAGE_VERSION) >= 2) {
-          shadeRegion(ctx, region, light, base, amount)
-        } else {
-          shadeRegionLegacy(ctx, region, light, base, amount)
+        filterQuantize(ctx, this.#paletteColors(palVal, stmt.span, state), region)
+        return
+      }
+      // The raw hand-light quartet was removed (ADR-0097): `model`/`cel` are now the only lighting
+      // verbs, and everything the quartet could do that they cannot is ordinary region + paint work.
+      // Each hint names the *canonical* replacement, not a mechanical transliteration — for the two
+      // distance veils the right answer depends on whether the region already carries drawn detail
+      // (`model` is a repaint and would erase it; a gradient `fill` veils it).
+      case 'shadeRegion':
+        throw error(
+          ERROR_CODE.syntax,
+          "'shadeRegion' was removed — shade a solid body with 'model r mat'; " +
+            "veil already-drawn pixels with 'fill linear(deg, transparent, c.alpha(a)) r'",
+          state.module.displayPath,
+          stmt.span,
+        )
+      case 'lightRegion':
+        throw error(
+          ERROR_CODE.syntax,
+          "'lightRegion' was removed — light a solid body with 'model r mat'; " +
+            "veil already-drawn pixels with 'fill linear(deg, c.alpha(a), transparent) r'",
+          state.module.displayPath,
+          stmt.span,
+        )
+      case 'rim':
+        throw error(
+          ERROR_CODE.syntax,
+          "'rim' was removed — use 'fill p r.edge(dx:dy[, n])', or the material's own 'rim N%' dose",
+          state.module.displayPath,
+          stmt.span,
+        )
+      case 'ao':
+        throw error(
+          ERROR_CODE.syntax,
+          "'ao' was removed — use 'stroke p.alpha(a) r', or the material's own 'ao N%' dose",
+          state.module.displayPath,
+          stmt.span,
+        )
+      case 'ambientOcclusion':
+        // Renamed to `ao` by ADR-0096 §2, then removed outright with the rest of the quartet
+        // (ADR-0097) — it was byte-identical to a 1px inner stroke.
+        throw error(
+          ERROR_CODE.syntax,
+          "'ambientOcclusion' was removed — use 'stroke p.alpha(a) r', " +
+            "or the material's own 'ao N%' dose",
+          state.module.displayPath,
+          stmt.span,
+        )
+      case 'model': {
+        // `model REGION MATERIAL [light L]` (ADR-0086): lower a material under one light onto the
+        // fixed craft-correct primitive sequence — every shade/rim/AO/cast encoding derived from
+        // the one `Light`, so they can never drift apart. MATERIAL is a `material` value or an
+        // inline `COLOR [RESPONSE]` (bare colour ⇒ flat).
+        const region = args.region()
+        const mat = args.material()
+        // `over UNION` (ADR-0091): co-shade this region on a shared surface field (a union of the
+        // part and its neighbour) so a leg + boot read as one continuous limb, not two masses.
+        let field: Region | undefined
+        if (args.peekBareName() === 'over') {
+          args.rawName()
+          field = args.region()
+        }
+        let explicit: Light | null = null
+        if (args.peekBareName() === 'light') {
+          args.rawName()
+          explicit = args.light()
+        }
+        args.done()
+        const lt = this.#requireLight(explicit, draw, stmt, state)
+        const ops = lowerMaterial(ctx, region, mat, lt, field)
+        if (this.explain) {
+          this.explain.push({
+            command: 'model',
+            region: commandArgName(stmt.args[0]),
+            light: roundVec(lightPointFor(region, lt)),
+            steps: ops.map(explainShadeOp),
+          })
         }
         return
       }
-      case 'lightRegion': {
+      case 'cel': {
+        // `cel REGION MATERIAL N [light L]` (ADR-0089): the same form-based body as `model`, but
+        // quantized into N crisp bands that follow the surface normal — the opt-in cel stylization
+        // (smooth `model` is the default). One `form` op with `bands = N`, driven by the same light.
         const region = args.region()
-        const light = args.pair()
-        const paint = args.color()
-        const amount = args.num()
+        const mat = args.material()
+        const n = quantInt(args.num())
+        let field: Region | undefined
+        if (args.peekBareName() === 'over') {
+          args.rawName()
+          field = args.region()
+        }
+        let explicit: Light | null = null
+        if (args.peekBareName() === 'light') {
+          args.rawName()
+          explicit = args.light()
+        }
         args.done()
-        lightRegion(ctx, region, light, paint, amount)
-        return
-      }
-      case 'rim': {
-        const region = args.region()
-        const direction = args.pair()
-        const paint = args.paint()
-        const width = args.empty() ? 1 : args.num()
-        args.done()
-        rimRegion(ctx, region, direction, paint, quantInt(width))
-        return
-      }
-      case 'ambientOcclusion': {
-        const region = args.region()
-        const paint = args.color()
-        const amount = args.num()
-        args.done()
-        ambientOcclusion(ctx, region, paint, amount)
+        const lt = this.#requireLight(explicit, draw, stmt, state)
+        const ops = lowerCel(ctx, region, mat, lt, n, field)
+        if (this.explain) {
+          this.explain.push({
+            command: 'cel',
+            region: commandArgName(stmt.args[0]),
+            light: roundVec(lightPointFor(region, lt)),
+            steps: ops.map(explainShadeOp),
+          })
+        }
         return
       }
       default: {
-        this.#execCommandFallback(stmt, env, state)
+        this.#execCommandFallback(stmt, state)
         return
       }
     }
@@ -3086,6 +5075,32 @@ export class Engine {
     )
   }
 
+  /** Coerce a value to a flat palette of solid colours (the `quantize` target, ADR-0093). */
+  #paletteColors(v: Value, span: TextSpan, state: State): Color[] {
+    if (typeof v === 'object' && v !== null && v.type === 'list') {
+      const colors: Color[] = []
+      for (const item of v.items) {
+        if (typeof item === 'object' && item !== null && item.type === 'color') {
+          colors.push(item)
+          continue
+        }
+        throw error(
+          ERROR_CODE.typeError,
+          `quantize palette must be a list of colours, got ${typeName(item)}`,
+          state.module.displayPath,
+          span,
+        )
+      }
+      return colors
+    }
+    throw error(
+      ERROR_CODE.typeError,
+      `quantize needs a list of colours, got ${typeName(v)}`,
+      state.module.displayPath,
+      span,
+    )
+  }
+
   /** As {@link Engine.#asNumber}, but validates the value as a paint (dither's first argument). */
   #asPaint(v: Value, span: TextSpan, state: State): Paint {
     if (typeof v === 'object' && v !== null && (v.type === 'color' || v.type === 'grad')) {
@@ -3103,9 +5118,17 @@ export class Engine {
    * Parse one keyword-form `stamp` modifier (`transform:`, `tint:`,
    * `mask:`, `anchor:`, `shadow:`) into `f`, mutating it in place. Returns
    * `false` (without consuming input) if the next arg isn't a recognized
-   * keyword, so callers can loop until no more modifiers match.
+   * keyword, so callers can loop until no more modifiers match. `allowAnchor` is `false` for a
+   * `fit` (ADR-0096 §1): `anchor` on `fit` was parsed and silently ignored — the pin already is
+   * the anchor — so it now errors instead of the old silent no-op.
    */
-  #parseStampKeyword(args: Args, state: State, span: TextSpan, f: StampFlags): boolean {
+  #parseStampKeyword(
+    args: Args,
+    state: State,
+    span: TextSpan,
+    f: StampFlags,
+    allowAnchor: boolean,
+  ): boolean {
     const keyword = args.peekKeyword()
     if (keyword === 'transform') {
       const t = args.keywordExpression()
@@ -3142,6 +5165,14 @@ export class Engine {
       return true
     }
     if (keyword === 'anchor') {
+      if (!allowAnchor) {
+        throw error(
+          ERROR_CODE.syntax,
+          "'anchor' on 'fit' was removed — fit solves contact from the pins, drop the flag",
+          state.module.displayPath,
+          span,
+        )
+      }
       const anchor = args.keywordName('anchor')
       if (!isStampAnchor(anchor)) {
         throw error(
@@ -3183,7 +5214,13 @@ export class Engine {
    * `scaleN`) or delegate to {@link #parseStampKeyword}; `false` means no
    * more flags to consume.
    */
-  #parseOneStampFlag(args: Args, st: State, span: TextSpan, f: StampFlags): boolean {
+  #parseOneStampFlag(
+    args: Args,
+    st: State,
+    span: TextSpan,
+    f: StampFlags,
+    allowAnchor: boolean,
+  ): boolean {
     const flag = args.peekFlag()
     if (flag === 'flipx') {
       args.takeFlag()
@@ -3205,10 +5242,19 @@ export class Engine {
       f.scale = Number.parseInt(flag.slice(5), 10)
       return true
     }
-    return this.#parseStampKeyword(args, st, span, f)
+    if (flag === 'aa') {
+      args.takeFlag()
+      f.aa = true
+      return true
+    }
+    return this.#parseStampKeyword(args, st, span, f, allowAnchor)
   }
 
-  #parseStampFlags(args: Args, state: State, span: TextSpan): StampFlags {
+  /**
+   * `allowAnchor` is `false` only for `fit` (ADR-0096 §1) — every other caller (`stamp`) keeps
+   * the flag.
+   */
+  #parseStampFlags(args: Args, state: State, span: TextSpan, allowAnchor = true): StampFlags {
     const f: StampFlags = {
       flipx: false,
       flipy: false,
@@ -3219,8 +5265,9 @@ export class Engine {
       mask: undefined,
       anchor: 'topLeft',
       shadow: undefined,
+      aa: false,
     }
-    while (this.#parseOneStampFlag(args, state, span, f)) {
+    while (this.#parseOneStampFlag(args, state, span, f, allowAnchor)) {
       // consume flags until none match
     }
     return f
@@ -3255,57 +5302,6 @@ export class Engine {
       m = compose(m, part)
     }
     return m
-  }
-
-  /**
-   * The sprite-local point (in unscaled source pixels) that `anchor`
-   * names (ADR-0064) — e.g. `center` is the sprite's midpoint, `topLeft`
-   * is the origin and needs no lookup (handled separately by callers).
-   */
-  #stampAnchorPoint(
-    sprite: Sprite,
-    anchor: StampAnchor,
-  ): { readonly x: number; readonly y: number } {
-    const cx = (sprite.w - 1) / 2
-    const cy = (sprite.h - 1) / 2
-    switch (anchor) {
-      case 'top':
-        return { x: cx, y: 0 }
-      case 'topRight':
-        return { x: sprite.w - 1, y: 0 }
-      case 'left':
-        return { x: 0, y: cy }
-      case 'center':
-        return { x: cx, y: cy }
-      case 'right':
-        return { x: sprite.w - 1, y: cy }
-      case 'bottomLeft':
-        return { x: 0, y: sprite.h - 1 }
-      case 'bottom':
-        return { x: cx, y: sprite.h - 1 }
-      case 'bottomRight':
-        return { x: sprite.w - 1, y: sprite.h - 1 }
-      default:
-        return { x: 0, y: 0 }
-    }
-  }
-
-  /**
-   * Legacy (`drawstic 1`, ADR-0064) anchor resolution: the source-local
-   * anchor point pushed *through* the stamp transform, so flip/rotate/scale
-   * carry the named point with the pixels. `undefined` when it maps to
-   * infinity (projective/singular).
-   */
-  #throughTransformAnchorPoint(
-    sprite: Sprite,
-    anchor: StampAnchor,
-    matrix: readonly number[] | undefined,
-  ): { readonly x: number; readonly y: number } | undefined {
-    const local = this.#stampAnchorPoint(sprite, anchor)
-    if (!matrix) {
-      return local
-    }
-    return applyMatrix(matrix, local.x, local.y) ?? undefined
   }
 
   /**
@@ -3368,29 +5364,43 @@ export class Engine {
   /**
    * The top-left stamp origin such that `anchor` lands on `point`. `topLeft`
    * (and the implicit default) always places the untransformed origin at
-   * `point` (ADR-0072 §2). For the eight offset anchors: language version 2
-   * resolves them against the *transformed* footprint bbox (visual — ADR-0072);
-   * `drawstic 1` maps the source-local anchor point *through* the transform
-   * (legacy — ADR-0064). Both fall back to raw origin placement if the anchor
-   * maps outside the transform's domain.
+   * `point` (ADR-0072 §2). The eight offset anchors resolve against the
+   * *transformed* footprint bbox (visual — ADR-0072), falling back to raw
+   * origin placement if the anchor maps outside the transform's domain.
    */
   #anchoredStampOrigin(
     sprite: Sprite,
     point: { readonly x: number; readonly y: number },
     matrix: readonly number[] | undefined,
     anchor: StampAnchor,
-    visual: boolean,
   ): { readonly x: number; readonly y: number } {
     if (anchor === 'topLeft') {
       return { x: quantInt(point.x), y: quantInt(point.y) }
     }
-    const mapped = visual
-      ? this.#visualAnchorPoint(sprite, anchor, matrix)
-      : this.#throughTransformAnchorPoint(sprite, anchor, matrix)
+    const mapped = this.#visualAnchorPoint(sprite, anchor, matrix)
     if (!mapped) {
       return { x: quantInt(point.x), y: quantInt(point.y) }
     }
     return { x: quantInt(point.x - mapped.x), y: quantInt(point.y - mapped.y) }
+  }
+
+  /**
+   * Extracts a `stamp`/`fit`-style target argument's bare head name — `stamp torso …` → `'torso'`,
+   * `stamp torso(x) …` → `'torso'` (the parametric call's callee) — mirroring `lint.ts`'s
+   * `stampTargetName` (kept as a separate, private copy rather than an import to avoid a
+   * lint.ts↔eval.ts module cycle). `null` for anything else (a UFCS chain, member access, …).
+   */
+  #stampHeadName(arg: Argument | undefined): string | null {
+    if (arg?.kind !== 'expression') {
+      return null
+    }
+    if (arg.expression.kind === 'name') {
+      return arg.expression.name
+    }
+    if (arg.expression.kind === 'call' && arg.expression.callee.kind === 'name') {
+      return arg.expression.callee.name
+    }
+    return null
   }
 
   #execStamp(
@@ -3398,10 +5408,10 @@ export class Engine {
     args: Args,
     _env: Environment,
     state: State,
-  ): void {
+  ): string {
     const draw = state.draw
     if (!draw) {
-      return
+      return ''
     }
     const sprite = args.sprite()
     const point = args.point(draw)
@@ -3409,11 +5419,19 @@ export class Engine {
     const flags = this.#parseStampFlags(args, state, stmt.span)
     args.done()
     const matrix = this.#buildStampMatrix(sprite, flags)
+    // Record this placement's transform under the target's bare head name (the pin-transform fix
+    // on record in `docs/impl-progress.md`), so a later manual `pin HEAD.KEY PT` seed-all
+    // (`#execPinDeclaration`) can carry the same part's OTHER pins through it instead of seeding
+    // them from the untransformed sprite. A target that isn't a bare name/parametric-call (a UFCS
+    // chain, say) has no head name to key by — left unrecorded, exactly like before this fix.
+    const headName = this.#stampHeadName(stmt.args[0])
+    if (headName) {
+      draw.stampTransforms.set(headName, matrix)
+    }
     // A stamp `mask` region is in canvas coordinates like every mask; inside a `mirror` the
     // reflecting buffer flips the sprite pixels and the mask travels with them (ADR-0078 §5).
-    // v2 = visual anchors (transformed footprint bbox); v1 = through-transform (ADR-0072)
-    const visualAnchors = (state.module.ast.pragma ?? LANGUAGE_VERSION) >= 2
-    const origin = this.#anchoredStampOrigin(sprite, point, matrix, flags.anchor, visualAnchors)
+    // Offset anchors resolve against the transformed footprint bbox (visual — ADR-0072).
+    const origin = this.#anchoredStampOrigin(sprite, point, matrix, flags.anchor)
     if (flags.shadow) {
       const shadowOk = stampSprite(
         draw.context,
@@ -3423,6 +5441,7 @@ export class Engine {
         matrix,
         { color: flags.shadow.color, amount: 1 },
         flags.mask,
+        flags.aa,
       )
       if (!shadowOk) {
         throw error(
@@ -3433,7 +5452,16 @@ export class Engine {
         )
       }
     }
-    const ok = stampSprite(draw.context, sprite, origin.x, origin.y, matrix, flags.tint, flags.mask)
+    const ok = stampSprite(
+      draw.context,
+      sprite,
+      origin.x,
+      origin.y,
+      matrix,
+      flags.tint,
+      flags.mask,
+      flags.aa,
+    )
     if (!ok) {
       throw error(
         ERROR_CODE.nonInvertible,
@@ -3446,6 +5474,7 @@ export class Engine {
     if (!draw.sprite.stamped.includes(sprite)) {
       draw.sprite.stamped.push(sprite)
     }
+    return sprite.name
   }
 
   // ── fonts (ADR-0022 bitmap fonts, ADR-0042 user fonts, ADR-0054 std fonts) ─
@@ -3551,37 +5580,46 @@ export class Engine {
   }
 
   /**
-   * Expand a `glyphs tilesetName "abc…"` item: maps each character in
-   * `item.chars` to the tileset frame at the same index (E017 if the
-   * tileset is shorter than the character string).
+   * Expand a `glyphs atlasName "abc…"` item: maps each character in `item.chars` to the named
+   * atlas's member at the same index (ADR-0096 §3 — requires a uniform-tile atlas; index order
+   * is only meaningful once every member is the same size). E017 if the atlas is not found, isn't
+   * uniform, or is shorter than the character string.
    */
   #addFontGlyphs(
     item: Extract<FontItem, { readonly kind: 'glyphs' }>,
     mod: ModuleRecord,
     glyphs: Map<string, Sprite>,
   ): void {
-    const tileset = mod.definitions.get(item.tileset)
-    if (tileset?.kind !== 'tileset') {
+    const entry = mod.definitions.get(item.atlas)
+    if (entry?.kind !== 'atlas') {
       throw error(
         ERROR_CODE.fontError,
-        `glyphs tileset '${item.tileset}' not found`,
+        `glyphs atlas '${item.atlas}' not found`,
         mod.displayPath,
         item.span,
       )
     }
-    const value = this.buildTileset(tileset, item.span)
+    if (!entry.definition.tile) {
+      throw error(
+        ERROR_CODE.fontError,
+        `glyphs atlas '${item.atlas}' needs a 'tile WxH' declaration (uniform tiles)`,
+        mod.displayPath,
+        item.span,
+      )
+    }
+    const value = this.buildAtlas(entry, item.span)
     for (let i = 0; i < item.chars.length; i++) {
       const ch = item.chars[i] ?? ''
       const frame = value.frames[i]
       if (!frame) {
         throw error(
           ERROR_CODE.fontError,
-          `tileset has no tile ${i} for character "${ch}"`,
+          `atlas has no tile ${i} for character "${ch}"`,
           mod.displayPath,
           item.span,
         )
       }
-      glyphs.set(ch, extractSubSprite(value.sheet, frame, `${item.tileset}.${i}`))
+      glyphs.set(ch, extractSubSprite(value.sheet, frame, `${item.atlas}.${i}`))
     }
   }
 
@@ -3723,87 +5761,24 @@ export class Engine {
     }
   }
 
-  // ── tilesets & atlases (ADR-0016) ─────────────────────────────────────
+  // ── atlases (ADR-0016, merged with the former `tileset` by ADR-0096 §3) ─
 
   /**
-   * Build (or fetch cached) a `tileset` definition: renders each named
-   * tile, checks every tile matches the declared `tileWidth`x`tileHeight`
-   * (E016), then blits them in declaration order onto a grid sheet
-   * (`columns` defaults to a square-ish layout via `ceil(sqrt(n))`).
-   */
-  buildTileset(
-    entry: Extract<DefinitionEntry, { readonly kind: 'tileset' }>,
-    span: TextSpan,
-  ): TilesetValue {
-    const key = `${entry.module.file}#${entry.definition.name}`
-    const cached = this.#tilesetCache.get(key)
-    if (cached) {
-      return cached
-    }
-    const def = entry.definition
-    const mod = entry.module
-    const sprites: Sprite[] = def.tiles.map((name) => {
-      const tileDef = mod.definitions.get(name)
-      if (!tileDef) {
-        throw error(ERROR_CODE.unknownName, `tile '${name}' not found`, mod.displayPath, def.span)
-      }
-      const tile = this.defToSprite(tileDef, span)
-      if (tile.w !== def.tileWidth || tile.h !== def.tileHeight) {
-        throw error(
-          ERROR_CODE.tileSize,
-          `tile '${name}' is ${tile.w}x${tile.h} — tileset '${def.name}' requires ${def.tileWidth}x${def.tileHeight}`,
-          mod.displayPath,
-          def.span,
-        )
-      }
-      return tile
-    })
-    const columns = def.columns ?? Math.ceil(Math.sqrt(sprites.length))
-    const rows = Math.ceil(sprites.length / columns)
-    const width = columns * def.tileWidth
-    const height = rows * def.tileHeight
-    const buffer = new Framebuffer(width, height)
-    const frames: {
-      readonly x: number
-      readonly y: number
-      readonly width: number
-      readonly height: number
-    }[] = []
-    const ctx: Context = { buffer: buffer, mask: null, mode: 'pixel' }
-    sprites.forEach((sp, i) => {
-      const x = (i % columns) * def.tileWidth
-      const y = Math.floor(i / columns) * def.tileHeight
-      stampSprite(ctx, sp, x, y)
-      frames.push({ x, y, width: def.tileWidth, height: def.tileHeight })
-    })
-    const palette = foldPalettes(sprites)
-    const value: TilesetValue = {
-      sheet: {
-        type: 'sprite',
-        name: def.name,
-        w: width,
-        h: height,
-        data: buffer.data,
-        pal: palette,
-        title: undefined,
-        desc: undefined,
-      },
-      tileWidth: def.tileWidth,
-      tileHeight: def.tileHeight,
-      columns,
-      frames,
-      names: def.tiles.slice(),
-    }
-    this.#tilesetCache.set(key, value)
-    return value
-  }
-
-  /**
-   * Build (or fetch cached) an `atlas` definition: explicitly `place`d
-   * members keep their pinned coordinates; the rest are shelf-packed
-   * deterministically (tallest-first, then declaration order — see
-   * {@link packShelves}) around them. Overlapping members blit in
-   * declaration order, so later members paint over earlier ones.
+   * Build (or fetch cached) an `atlas` definition. Two modes, chosen by whether `tile WxH` is
+   * declared:
+   *
+   * - **Uniform grid** (`tile` set): every member is checked against `tileWidth`x`tileHeight`
+   *   (E016), then blitted in declaration order onto a row-major grid (`columns` defaults to a
+   *   square-ish `ceil(sqrt(n))`), `padding` opening a fixed gutter between cells (also the
+   *   `tiled` sidecar's `spacing`). The parser already rejects `place`/`cols` mis-combinations and
+   *   a zero/negative `cols`, so the grid math here can't divide by zero.
+   * - **Shelf-pack** (no `tile`): explicitly `place`d members keep their pinned coordinates; the
+   *   rest are shelf-packed deterministically (tallest-first, then declaration order — see
+   *   {@link packShelves}) around them, `padding` as inter-sprite gutter. Overlapping members blit
+   *   in declaration order, so later members paint over earlier ones.
+   *
+   * A `place` naming a member the atlas doesn't have is E001 — silently ignoring a typo'd pin
+   * would place its target by shelf-pack fallback with no sign anything was wrong.
    */
   buildAtlas(entry: Extract<DefinitionEntry, { kind: 'atlas' }>, span: TextSpan): AtlasValue {
     const key = `${entry.module.file}#${entry.definition.name}`
@@ -3820,7 +5795,63 @@ export class Engine {
       }
       return { name, sprite: this.defToSprite(memberDef, span) }
     })
+    for (const p of def.place) {
+      if (!members.some((m) => m.name === p.name)) {
+        throw error(
+          ERROR_CODE.unknownName,
+          `atlas '${def.name}' has no member '${p.name}' to place`,
+          mod.displayPath,
+          p.span,
+        )
+      }
+    }
     const padding = def.padding
+
+    if (def.tile) {
+      const { width: tileWidth, height: tileHeight } = def.tile
+      for (const m of members) {
+        if (m.sprite.w !== tileWidth || m.sprite.h !== tileHeight) {
+          throw error(
+            ERROR_CODE.tileSize,
+            `tile '${m.name}' is ${m.sprite.w}x${m.sprite.h} — atlas '${def.name}' requires ${tileWidth}x${tileHeight} (tile declaration)`,
+            mod.displayPath,
+            def.span,
+          )
+        }
+      }
+      const columns = def.columns ?? Math.ceil(Math.sqrt(members.length))
+      const rows = Math.ceil(members.length / columns)
+      const cellWidth = tileWidth + padding
+      const cellHeight = tileHeight + padding
+      const width = columns * cellWidth - padding
+      const height = rows * cellHeight - padding
+      const buffer = new Framebuffer(width, height)
+      const ctx: Context = { buffer: buffer, mask: null, mode: 'pixel' }
+      const frames: { name: string; x: number; y: number; width: number; height: number }[] = []
+      members.forEach((m, i) => {
+        const x = (i % columns) * cellWidth
+        const y = Math.floor(i / columns) * cellHeight
+        stampSprite(ctx, m.sprite, x, y)
+        frames.push({ name: m.name, x, y, width: tileWidth, height: tileHeight })
+      })
+      const value: AtlasValue = {
+        sheet: {
+          type: 'sprite',
+          name: def.name,
+          w: width,
+          h: height,
+          data: buffer.data,
+          pal: foldPalettes(members.map((m) => m.sprite)),
+          title: undefined,
+          desc: undefined,
+        },
+        frames,
+        tile: { tileWidth, tileHeight, columns, padding },
+      }
+      this.#atlasCache.set(key, value)
+      return value
+    }
+
     const pinned = new Map(def.place.map((p) => [p.name, p]))
     const placed: AtlasPlaced[] = []
     for (const member of members) {
@@ -3879,6 +5910,7 @@ export class Engine {
         const p = placed.find((q) => q.name === member.name)
         return p ? [{ name: member.name, x: p.x, y: p.y, width: p.width, height: p.height }] : []
       }),
+      tile: undefined,
     }
     this.#atlasCache.set(key, value)
     return value
@@ -3887,8 +5919,9 @@ export class Engine {
   // ── images (ADR-0045) ─────────────────────────────────────────────────
 
   /**
-   * Load an `import image` definition (ADR-0045) as a plain sprite (empty
-   * palette — imported images aren't required to be palette-clean). PNG
+   * Load an `image NAME = FILE-PATH` definition (ADR-0045; ADR-0096 §2 renamed the keyword from
+   * `import`) as a plain sprite (empty palette — imported images aren't required to be
+   * palette-clean). PNG
    * only: JPEG's lossy, non-bit-exact decoding would break ADR-0007
    * visual determinism. Enforces the sandbox root (E008) and, if the
    * definition pins a `sha256`, verifies it (E020) so a recipe's imported
@@ -3942,8 +5975,11 @@ export class Engine {
     try {
       decoded = decodePng(bytes)
     } catch (e) {
+      // A structured decode failure (bad signature/interlaced/bad filter, src/png.ts) keeps its own
+      // code (E027) so the diagnostic names the actual problem instead of a generic import failure.
+      const code = e instanceof PngDecodeError ? ERROR_CODE.pngUnsupported : ERROR_CODE.importError
       throw error(
-        ERROR_CODE.importError,
+        code,
         `failed to decode '${entry.path}': ${(e as Error).message}`,
         entry.module.displayPath,
         entry.span,
@@ -4197,16 +6233,14 @@ export class Engine {
   }
 
   /**
-   * Resolve any content definition to a sprite: drawings render, tilesets
-   * and atlases yield their full sheet, images decode. Themes/functions/
-   * filters/fonts/paths aren't stampable content and throw E006.
+   * Resolve any content definition to a sprite: drawings render, an atlas yields its full built
+   * sheet, images decode. Themes/functions/filters/fonts/paths aren't stampable content and throw
+   * E006.
    */
   defToSprite(entry: DefinitionEntry, span: TextSpan, args: Value[] = []): Sprite {
     switch (entry.kind) {
       case 'draw':
         return this.renderDraw(entry, args, span)
-      case 'tileset':
-        return this.buildTileset(entry, span).sheet
       case 'atlas':
         return this.buildAtlas(entry, span).sheet
       case 'image':
@@ -4319,33 +6353,16 @@ export class Engine {
   }
 
   /**
-   * Evaluate `target.index` (dot-index sugar). A bare tileset name gets a
-   * fast path straight to its frame (`terrain.0`) without materializing
-   * the whole sheet as a value first; everything else falls through to
-   * generic {@link #indexValue} on the evaluated target.
+   * Evaluate `target.index` (dot-index sugar, numeric index only — D8). Atlas members are no
+   * longer index-addressable (ADR-0096 §3 retired the numeric `terrain.0` form the old `tileset`
+   * supported; member addressing is by name only, via `case 'method'` below); this always falls
+   * through to generic {@link #indexValue} on the evaluated target.
    */
   #evalDotIndex(
     expr: Extract<Expression, { readonly kind: 'dotIndex' }>,
     env: Environment,
     state: State,
   ): Value {
-    // tileset member? `terrain.0`
-    if (expr.target.kind === 'name') {
-      const entry = state.module.definitions.get(expr.target.name)
-      if (entry?.kind === 'tileset') {
-        const tv = this.buildTileset(entry, expr.span)
-        const frame = tv.frames[expr.index]
-        if (!frame) {
-          throw error(
-            ERROR_CODE.indexError,
-            `tileset '${expr.target.name}' has no tile ${expr.index}`,
-            state.module.displayPath,
-            expr.span,
-          )
-        }
-        return extractSubSprite(tv.sheet, frame, `${expr.target.name}.${expr.index}`)
-      }
-    }
     const obj = this.evalExpr(expr.target, env, state)
     return this.#indexValue(obj, expr.index, state, expr.span)
   }
@@ -4408,7 +6425,34 @@ export class Engine {
       case 'dotIndex':
         return this.#evalDotIndex(expr, env, state)
       case 'method': {
+        // Atlas member access by name (ADR-0096 §3 — member addressing is by name only, the
+        // numeric `terrain.0` form the old `tileset` supported is retired): a zero-arg reference
+        // (bare `terrain.grass` or explicit `terrain.grass()`) whose target names a module-level
+        // atlas commits to member semantics — resolved before generic UFCS, mirroring the `fig`
+        // guide-getter intercept just below. An unmatched name is a positioned E015, not a silent
+        // fall-through to UFCS on the whole sheet.
+        if (expr.target.kind === 'name' && (expr.args === undefined || expr.args.length === 0)) {
+          const targetEntry = state.module.definitions.get(expr.target.name)
+          if (targetEntry?.kind === 'atlas') {
+            const av = this.buildAtlas(targetEntry, expr.span)
+            const frame = av.frames.find((f) => f.name === expr.name)
+            if (!frame) {
+              throw error(
+                ERROR_CODE.indexError,
+                `atlas '${expr.target.name}' has no member '${expr.name}'`,
+                state.module.displayPath,
+                expr.span,
+              )
+            }
+            return extractSubSprite(av.sheet, frame, `${expr.target.name}.${expr.name}`)
+          }
+        }
         const obj = this.evalExpr(expr.target, env, state)
+        // A figure's guide getters (`fig.crown`, `fig.eyeL`, `fig.side.eye`, ADR-0093) resolve as
+        // figure-local fields, not global builtins — so `crown`/`eye`/`ear`/… stay ordinary names.
+        if (typeof obj === 'object' && obj !== null && obj.type === 'figure') {
+          return this.#figureMember(obj, expr.name, expr.args, state, expr.span)
+        }
         const args = (expr.args ?? []).map((a) => this.#evalArgValue(a, env, state))
         return this.callBuiltinOrFn(expr.name, [obj, ...args], state, expr.span)
       }
@@ -4420,6 +6464,58 @@ export class Engine {
           (expr as Expression).span,
         )
     }
+  }
+
+  /**
+   * Resolve a `fig.NAME` / `fig.NAME(view)` guide getter (ADR-0093). `front`/`side`/`back` re-view the
+   * figure; `fig.NAME(view)` overrides the view for one read (the bare view word is a contextual
+   * keyword, never evaluated). Every other name is a scalar or a guide point via {@link figureField};
+   * an unknown name is a positioned E006.
+   */
+  #figureMember(
+    fig: Figure,
+    name: string,
+    rawArgs: readonly Argument[] | undefined,
+    state: State,
+    span: TextSpan,
+  ): Value {
+    let subject = fig
+    if (rawArgs && rawArgs.length > 0) {
+      const first = rawArgs[0]
+      if (
+        rawArgs.length === 1 &&
+        first?.kind === 'expression' &&
+        first.expression.kind === 'name' &&
+        isFigureView(first.expression.name)
+      ) {
+        subject = { ...fig, view: first.expression.name }
+      } else {
+        throw error(
+          ERROR_CODE.typeError,
+          `figure getter '${name}' takes at most one view (front|side|back)`,
+          state.module.displayPath,
+          span,
+        )
+      }
+    }
+    const field = figureField(subject, name)
+    if (!field) {
+      throw error(
+        ERROR_CODE.typeError,
+        `figure has no field '${name}' (points: crown/chin/neck(L/R)/eye(L/R)/ear(L/R)/` +
+          `shoulder(L/R)/hip(L/R); scalars: heads/headW/headH/eyeLine/earLine/eyeSep/neckW/` +
+          `shoulderW/hipW/center/eyeY/earY/chinY/shoulderY/hipY; views: front/side/back)`,
+        state.module.displayPath,
+        span,
+      )
+    }
+    if (field.kind === 'num') {
+      return field.value
+    }
+    if (field.kind === 'point') {
+      return point(field.x, field.y)
+    }
+    return field.figure
   }
 
   /**
@@ -4460,15 +6556,15 @@ export class Engine {
 
   /**
    * Resolve a bare name reference, in order: a scoped binding (env
-   * chain), the `pi`/`tau` constants, a module-level definition
-   * (instantiating non-parametric drawings/paths and building
-   * tilesets/atlases/images on the fly), then a theme base drawing
-   * (a drawing folded in via `use` but not locally redefined). Unresolved
-   * names throw E001 with a did-you-mean suggestion ({@link suggest}) —
-   * except `w`/`h` outside a draw body, which get a scope hint instead
-   * (they're declared straight into the draw's environment, ADR-0021, so
-   * a module-level `mask`/`path`/`fn` reaching for them is the single most
-   * common shape of this error).
+   * chain), the `pi`/`tau` constants, the `rgb`/`hsl`/`oklch` colour-space
+   * keywords (ADR-0096 §7), a module-level definition (instantiating
+   * non-parametric drawings/paths and building atlases/images on
+   * the fly), then a theme base drawing (a drawing folded in via `use` but
+   * not locally redefined). Unresolved names throw E001 with a did-you-mean
+   * suggestion ({@link suggest}) — except `w`/`h` outside a draw body,
+   * which get a scope hint instead (they're declared straight into the
+   * draw's environment, ADR-0021, so a module-level `mask`/`path`/`fn`
+   * reaching for them is the single most common shape of this error).
    */
   #resolveName(name: string, env: Environment, state: State, span: TextSpan): Value {
     const binding = env.lookup(name)
@@ -4480,6 +6576,13 @@ export class Engine {
     }
     if (name === 'tau') {
       return TAU
+    }
+    // `mix`'s (and `tones`/`mixes`') colour-space argument is a bare contextual keyword
+    // (ADR-0096 §7), same shape as every other enum in the language — `mix(a, b, t, rgb)`, not a
+    // quoted `"rgb"`. Reserved uniformly (§5), so this can never shadow a real binding; a bare
+    // reference evaluates to its own name, the sentinel string the mixSpace builtin checks for.
+    if (name === 'rgb' || name === 'hsl' || name === 'oklch') {
+      return name
     }
     // theme gradients visible in draw scope handled via env; fall through to defs
     const entry = state.module.definitions.get(name)
@@ -4505,8 +6608,6 @@ export class Engine {
             )
           }
           return this.evalPath(entry, [], span)
-        case 'tileset':
-          return this.buildTileset(entry, span).sheet
         case 'atlas':
           return this.buildAtlas(entry, span).sheet
         case 'image':
@@ -4956,8 +7057,13 @@ export class Engine {
         arity(2)
         return desaturate(col(0), num(1))
       case 'grayscale':
-        arity(1)
-        return grayscale(col(0))
+        // Removed (ADR-0096 §1) — exactly `desaturate(c, 100%)`.
+        throw error(
+          ERROR_CODE.syntax,
+          "'grayscale' was removed — use 'desaturate(c, 100%)' instead",
+          ctx.file,
+          ctx.span,
+        )
       case 'hue': {
         arity(2)
         const a1 = args[1]
@@ -4976,6 +7082,30 @@ export class Engine {
         }
         arity(3)
         return mix(col(0), col(1), num(2))
+      }
+      // ADR-0086 §5 shading helpers. Reserved in BUILTIN_NAMES like every other builtin
+      // (ADR-0096 §5) — no longer shadowable by a user `ramp`/`litTone`/`shadowTone` binding.
+      case 'litTone':
+        arity(3)
+        return litTone(col(0), col(1), num(2))
+      case 'shadowTone':
+        if (args.length === 4) {
+          return shadowTone(col(0), col(1), num(2), num(3))
+        }
+        arity(3)
+        return shadowTone(col(0), col(1), num(2))
+      case 'ramp': {
+        arity(2)
+        const count = num(1)
+        if (!Number.isInteger(count) || count < 1) {
+          throw error(
+            ERROR_CODE.typeError,
+            'ramp: count must be an integer >= 1',
+            ctx.file,
+            ctx.span,
+          )
+        }
+        return list(ramp(col(0), count))
       }
       case 'tones': {
         if (args.length < 2) {
@@ -5110,6 +7240,56 @@ export class Engine {
         const pts = args.map((_, i) => pt(i))
         return polyRegion(pts.map((p) => ({ x: quantInt(p.x), y: quantInt(p.y) })))
       }
+      case 'dome': {
+        arity(2)
+        const c = pt(0)
+        const r = pt(1) // rx:ry pair
+        return domeRegion(quantInt(c.x), quantInt(c.y), r.x, r.y)
+      }
+      case 'lobe': {
+        arity(3)
+        const base = pt(0)
+        const tip = pt(1)
+        return lobeRegion(
+          quantInt(base.x),
+          quantInt(base.y),
+          quantInt(tip.x),
+          quantInt(tip.y),
+          num(2),
+        )
+      }
+      case 'crescent': {
+        arity(4)
+        const c = pt(0)
+        const r = pt(1) // rx:ry pair
+        const thick = num(2)
+        const dir = pt(3) // opening direction vector
+        return crescentRegion(quantInt(c.x), quantInt(c.y), r.x, r.y, thick, dir.x, dir.y)
+      }
+      case 'ribbon': {
+        arity(4)
+        const p0 = pt(0)
+        const p1 = pt(1)
+        const p2 = pt(2)
+        return ribbonRegion(
+          quantInt(p0.x),
+          quantInt(p0.y),
+          quantInt(p1.x),
+          quantInt(p1.y),
+          quantInt(p2.x),
+          quantInt(p2.y),
+          num(3),
+        )
+      }
+      case 'band':
+        // Renamed to `ribbon` (ADR-0096 §2) — `band` already means cel band, ripple band, or
+        // gradient band.
+        throw error(
+          ERROR_CODE.syntax,
+          "'band' was renamed to 'ribbon' — use 'ribbon(p0, p1, p2, w)'",
+          file,
+          span,
+        )
       case 'curvePoly': {
         if (args.length < 3) {
           throw error(ERROR_CODE.arity, 'curvePoly needs at least three points', file, span)
@@ -5180,6 +7360,34 @@ export class Engine {
           return pathFromRegion(regionXor(pathFillRegion(a), pathFillRegion(b)), a.viewBox)
         }
         return regionXor(reg(0), reg(1))
+      }
+      case 'edge': {
+        // `R.edge(DX:DY [, N])` (ADR-0097) ≡ `R.subtract(R.shift(sign(DX)·N : sign(DY)·N))`: the
+        // one-sided edge band, N px wide with uniform coverage (one fill, so a translucent paint
+        // never stacks). Direction reads as the removed `rim` did — `0:1` is the *top* edge,
+        // because the light travels down. `0:0` (or `N = 0`) is the empty region.
+        //
+        // Pure geometry — no light, no paint — so unlike `rim` it composes: `R.edge(D).intersect(C)`
+        // clips the silhouette band, whereas `rim R.intersect(C) D P` painted the *clip rect's* own
+        // boundary (a straight bar across the mass). Fusing constructor and eliminator made that
+        // order inexpressible; splitting them is the fix.
+        if (ctx.args.length !== 2 && ctx.args.length !== 3) {
+          throw error(
+            ERROR_CODE.arity,
+            `edge takes 2 or 3 argument(s), got ${ctx.args.length}`,
+            ctx.file,
+            ctx.span,
+          )
+        }
+        const region = reg(0)
+        const dir = ctx.point(1)
+        const width = Math.max(0, ctx.args.length === 3 ? quantInt(ctx.number(2)) : 1)
+        const dx = Math.sign(dir.x) * width
+        const dy = Math.sign(dir.y) * width
+        return regionSubtract(
+          region,
+          regionTransform(region, translation(dx, dy), translation(-dx, -dy)),
+        )
       }
       case 'fill':
         arity(1)
@@ -5439,6 +7647,7 @@ export class Engine {
             `${name}: argument ${index + 1} must be a color`,
             file,
             span,
+            materialColorHint(value),
           )
         }
         return value
@@ -5539,7 +7748,7 @@ export class Engine {
 
 // ── argument reader for commands ────────────────────────────────────────────
 
-const FLAG_RE = /^(fill|flipx|flipy|w\d+|rot\d+(\.\d+)?|scale\d+)$/
+const FLAG_RE = /^(fill|flipx|flipy|aa|w\d+|rot\d+(\.\d+)?|scale\d+)$/
 
 /**
  * A consuming cursor over one command call's argument list (spec §8/§9's
@@ -5548,7 +7757,9 @@ const FLAG_RE = /^(fill|flipx|flipy|w\d+|rot\d+(\.\d+)?|scale\d+)$/
  * checks it (E006 on mismatch); `peekFlag`/`peekKeyword` look ahead
  * without consuming so command handlers can loop over optional trailing
  * modifiers. {@link done} enforces that every argument was consumed
- * (E012 on leftovers), catching typos and misplaced flags.
+ * (E012 on leftovers), catching typos and misplaced flags. `name` (the
+ * owning command/callee) prefixes every {@link #fail} message so E011 names
+ * *which* call ran out of arguments, not just that one did.
  */
 class Args {
   readonly #items: Argument[]
@@ -5556,14 +7767,23 @@ class Args {
   readonly #env: Environment
   readonly #state: State
   readonly #span: TextSpan
+  readonly #name: string
   #index = 0
 
-  constructor(engine: Engine, items: Argument[], env: Environment, state: State, span: TextSpan) {
+  constructor(
+    engine: Engine,
+    items: Argument[],
+    env: Environment,
+    state: State,
+    span: TextSpan,
+    name: string,
+  ) {
     this.#engine = engine
     this.#items = items
     this.#env = env
     this.#state = state
     this.#span = span
+    this.#name = name
   }
 
   empty(): boolean {
@@ -5571,14 +7791,43 @@ class Args {
   }
 
   #fail(msg: string): never {
-    throw error(ERROR_CODE.arity, msg, this.#state.module.displayPath, this.#span)
+    throw error(
+      ERROR_CODE.arity,
+      `${this.#name}: ${msg}`,
+      this.#state.module.displayPath,
+      this.#span,
+    )
   }
 
-  #nextExpr(): Expression {
+  /**
+   * The argument at the cursor, asserted to be an `expression` (not a keyword-prefixed sequence
+   * like `mask m`/`font small`/`transform t`, D2). Two distinct ways to run out of expression
+   * arguments both used to collapse into the same bare "missing argument" (E011) — this splits
+   * them: genuinely no argument left names `expected`; an argument *is* there but a same-named
+   * local binding collided with a reserved keyword (`transform`/`tint`/`mask`/`font`/`cap`/`join`/
+   * `sha256`/`anchor`/`shadow`) and got read as that keyword's own argument slot instead of the
+   * value it names — the confusing "far from the real cause" case `character-craft.md` warns
+   * about, now named at the raise site instead of only in skill prose.
+   */
+  #expectExpr(expected: string): Extract<Argument, { kind: 'expression' }> {
     const arg = this.#items[this.#index]
-    if (arg?.kind !== 'expression') {
-      return this.#fail('missing argument')
+    if (arg === undefined) {
+      this.#fail(`expected ${expected}`)
     }
+    if (arg.kind === 'keyword') {
+      throw error(
+        ERROR_CODE.arity,
+        `${this.#name}: expected ${expected}, got the reserved '${arg.keyword}' keyword`,
+        this.#state.module.displayPath,
+        arg.span,
+        `'${arg.keyword}' is parsed as a keyword in argument position here — rename the binding (e.g. '${arg.keyword}Val') so it passes as a value`,
+      )
+    }
+    return arg
+  }
+
+  #nextExpr(expected: string): Expression {
+    const arg = this.#expectExpr(expected)
     this.#index++
     return arg.expression
   }
@@ -5642,25 +7891,25 @@ class Args {
 
   /** A raw name argument (not resolved as a value): `apply retro`. */
   rawName(): string {
-    const arg = this.#items[this.#index]
-    if (arg?.kind === 'expression' && arg.expression.kind === 'name') {
+    const arg = this.#expectExpr('a name')
+    if (arg.expression.kind === 'name') {
       this.#index++
       return arg.expression.name
     }
     return this.#fail('expected a name')
   }
 
-  value(): Value {
-    return this.#engine.evalExpr(this.#nextExpr(), this.#env, this.#state)
+  value(expected = 'a value'): Value {
+    return this.#engine.evalExpr(this.#nextExpr(expected), this.#env, this.#state)
   }
 
   num(): number {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a number')
     return this.#engine.evalNumber(expr, this.#env, this.#state)
   }
 
   string(): string {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a string')
     const value = this.#engine.evalExpr(expr, this.#env, this.#state)
     if (typeof value !== 'string') {
       this.#fail('expected a string')
@@ -5676,7 +7925,7 @@ class Args {
    * sites that do need the cursor.
    */
   point(_draw: DrawState): { x: number; y: number } {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a point')
     const value = this.#engine.evalExpr(expr, this.#env, this.#state)
     if (typeof value !== 'object' || value?.type !== 'point') {
       throw error(
@@ -5703,7 +7952,7 @@ class Args {
    * {@link point} but framed for radii/offsets in error messages.
    */
   pair(): { readonly x: number; readonly y: number } {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a rx:ry pair')
     const value = this.#engine.evalExpr(expr, this.#env, this.#state)
     if (typeof value !== 'object' || value?.type !== 'point' || value.rel) {
       throw error(
@@ -5717,7 +7966,7 @@ class Args {
   }
 
   paint(): Paint {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a paint (color or gradient)')
     const value = this.#engine.evalExpr(expr, this.#env, this.#state)
     if (
       typeof value === 'object' &&
@@ -5734,17 +7983,45 @@ class Args {
     )
   }
 
+  /**
+   * An optional leading paint: when the current argument evaluates to a colour/gradient, consume and
+   * return it; otherwise leave it in place (so a following reader can take it as, e.g., a width
+   * number) and return null. Used by `outline`, whose colour and width are both optional (ADR-0090).
+   */
+  optPaint(): Paint | null {
+    const arg = this.#items[this.#index]
+    if (arg?.kind !== 'expression') {
+      return null
+    }
+    const value = this.#engine.evalExpr(arg.expression, this.#env, this.#state)
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      (value.type === 'color' || value.type === 'grad')
+    ) {
+      this.#index++
+      return value
+    }
+    return null
+  }
+
   color(): Color {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a color')
     const value = this.#engine.evalExpr(expr, this.#env, this.#state)
     if (typeof value === 'object' && value !== null && value.type === 'color') {
       return value
     }
-    throw error(ERROR_CODE.typeError, 'expected a color', this.#state.module.displayPath, expr.span)
+    throw error(
+      ERROR_CODE.typeError,
+      'expected a color',
+      this.#state.module.displayPath,
+      expr.span,
+      materialColorHint(value),
+    )
   }
 
   region(): Region {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a region')
     const value = this.#engine.evalExpr(expr, this.#env, this.#state)
     if (typeof value === 'object' && value !== null && value.type === 'region') {
       return value
@@ -5760,8 +8037,65 @@ class Args {
     )
   }
 
+  /**
+   * A `model`/`cel` material argument (ADR-0086): a `material` value, or an inline `COLOR
+   * [RESPONSE]` — a bare colour means `flat`. The response word is consumed only when the very
+   * next slot is one of `flat|metal|skin|cloth|glass|glow`; otherwise it stays for the next
+   * reader (e.g. `cel`'s band count), so a response word is a contextual keyword, never reserved.
+   */
+  material(): Material {
+    const arg = this.#expectExpr('a material or a colour')
+    const value = this.#engine.evalExpr(arg.expression, this.#env, this.#state)
+    this.#index++
+    if (typeof value === 'object' && value !== null && value.type === 'material') {
+      return value
+    }
+    if (typeof value === 'object' && value !== null && value.type === 'color') {
+      const next = this.#items[this.#index]
+      if (
+        next?.kind === 'expression' &&
+        next.expression.kind === 'name' &&
+        isMaterialResponse(next.expression.name)
+      ) {
+        const response = next.expression.name
+        this.#index++
+        return material(value, response)
+      }
+      return material(value)
+    }
+    throw error(
+      ERROR_CODE.typeError,
+      `expected a material or a colour, got ${typeName(value)}`,
+      this.#state.module.displayPath,
+      arg.expression.span,
+    )
+  }
+
+  /** A light-valued argument (the `light L` override on `model`/`cel`, ADR-0086). */
+  light(): Light {
+    const expr = this.#nextExpr('a light')
+    const value = this.#engine.evalExpr(expr, this.#env, this.#state)
+    if (typeof value === 'object' && value !== null && value.type === 'light') {
+      return value
+    }
+    throw error(
+      ERROR_CODE.typeError,
+      `expected a light, got ${typeName(value)}`,
+      this.#state.module.displayPath,
+      expr.span,
+    )
+  }
+
+  /** The current argument's bare name, if it is one (drives the contextual `light L` on model/cel). */
+  peekBareName(): string | undefined {
+    const arg = this.#items[this.#index]
+    return arg?.kind === 'expression' && arg.expression.kind === 'name'
+      ? arg.expression.name
+      : undefined
+  }
+
   sprite(): Sprite {
-    const expr = this.#nextExpr()
+    const expr = this.#nextExpr('a drawing')
     const value = this.#engine.evalExpr(expr, this.#env, this.#state)
     if (typeof value === 'object' && value !== null && value.type === 'sprite') {
       return value
@@ -5801,7 +8135,26 @@ class Args {
     )
   }
 
-  /** Trailing draw flags after paint+geometry: [fill] [wN] [cap …] [join …] (§8). */
+  /**
+   * `cap X`/`join X` were removed (ADR-0096 §1): parsed and discarded since ADR-0053
+   * indefinitely deferred the line-geometry work, so nothing they named was ever rendered.
+   * Throws a positioned error naming that instead of the old silent accept-and-discard; called
+   * by {@link drawFlags}/{@link strokeFlags} once no other flag matches.
+   */
+  #rejectCapJoin(): void {
+    const kw = this.peekKeyword()
+    if (kw === 'cap' || kw === 'join') {
+      const arg = this.#items[this.#index] as Extract<Argument, { kind: 'keyword' }>
+      throw error(
+        ERROR_CODE.syntax,
+        `'${kw}' was removed — it was parsed but never rendered (drop it)`,
+        this.#state.module.displayPath,
+        arg.span,
+      )
+    }
+  }
+
+  /** Trailing draw flags after paint+geometry: [fill] [wN] (§8). */
   drawFlags(): { fill: boolean; width: number } {
     let fill = false
     let width = 1
@@ -5817,10 +8170,7 @@ class Args {
         width = Number.parseInt(flag.slice(1), 10)
         continue
       }
-      if (this.peekKeyword() === 'cap' || this.peekKeyword() === 'join') {
-        this.#index++ // accepted; round brush is the v1 behaviour in both modes
-        continue
-      }
+      this.#rejectCapJoin()
       break
     }
     return { fill, width }
@@ -5835,10 +8185,7 @@ class Args {
         width = Number.parseInt(flag.slice(1), 10)
         continue
       }
-      if (this.peekKeyword() === 'cap' || this.peekKeyword() === 'join') {
-        this.#index++
-        continue
-      }
+      this.#rejectCapJoin()
       break
     }
     return { width }
@@ -6011,13 +8358,31 @@ const themeFingerprint = (t: FoldedTheme): string => {
     .join(';')
   const style = t.style.map((s) => s.text).join('')
   const size = t.size ? `${t.size.width}x${t.size.height}` : ''
-  return `${pal}|${t.mode ?? ''}|${t.font ?? ''}|${size}|G:${grads}|F:${filters}|D:${draws}|S:${style}`
+  const fig = t.figure
+    ? Object.entries(t.figure)
+        .map(([k, v]) => `${k}=${v}`)
+        .sort()
+        .join(',')
+    : ''
+  return `${pal}|${t.mode ?? ''}|${t.font ?? ''}|${size}|G:${grads}|F:${filters}|D:${draws}|S:${style}|L:${t.light ? lightFingerprint(t.light) : ''}|FIG:${fig}`
+}
+
+/**
+ * A deterministic digest of a light's every rendering-relevant field (direction, position,
+ * colour, gain, ambient) — folded into {@link themeFingerprint} so two themes that differ only
+ * in their default light digest differently and never share a stale sprite from the cache.
+ */
+const lightFingerprint = (l: Light): string => {
+  const c = (col: Color): string => `${col.r},${col.g},${col.b},${col.a}`
+  const pos = l.pos ? `${l.pos.x}:${l.pos.y}` : '~'
+  const amb = l.amb ? `${c(l.amb.color)}@${l.amb.amount}` : '~'
+  return `${l.dir.x},${l.dir.y}|${pos}|${c(l.color)}|${l.gain}|${amb}`
 }
 
 /**
  * Merge several sprites' palette artifacts into one, deduped by color
- * (first occurrence wins, in `sprites` order) — used when building a
- * tileset/atlas sheet so its combined palette reflects its members'.
+ * (first occurrence wins, in `sprites` order) — used when building an
+ * atlas sheet so its combined palette reflects its members'.
  */
 const foldPalettes = (sprites: Sprite[]): { key: string; color: Color; source: string }[] => {
   const palette: { key: string; color: Color; source: string }[] = []
@@ -6073,8 +8438,8 @@ export const extractSubSprite = (
  * `b` is the later `with`/`use` source). Palette entries and style lines
  * are merged by key/text with `b` overriding on collision; gradients/
  * filters/draws are unioned as maps (`b` wins on same-key collision via
- * `Map` spread order); scalar fields (`size`/`mode`/`font`) take `b`'s
- * value only if it's set, otherwise fall back to `a`'s.
+ * `Map` spread order); scalar fields (`size`/`mode`/`font`/`light`) take
+ * `b`'s value only if it's set, otherwise fall back to `a`'s.
  */
 const mergeThemes = (a: FoldedTheme, b: FoldedTheme): FoldedTheme => {
   const pal = a.palette.slice()
@@ -6100,6 +8465,8 @@ const mergeThemes = (a: FoldedTheme, b: FoldedTheme): FoldedTheme => {
     size: b.size ?? a.size,
     mode: b.mode ?? a.mode,
     font: b.font ?? a.font,
+    light: b.light ?? a.light,
+    figure: b.figure ?? a.figure,
     style,
   }
 }

@@ -1,5 +1,4 @@
 # showcase.drw — exercises the full language surface end-to-end.
-drawstic 1
 
 from parts gem, eye
 from themes softShadow
@@ -7,7 +6,7 @@ use themes dusk
 
 TILE = 16
 
-fn band(row) = row // 4 mod 2
+fn rowBand(row) = row // 4 mod 2
 fn ring(c, r) = circle(c, r).subtract(circle(c, r - 2))
 
 mask keyhole = circle(8:5, 4).union(rect(6:5, 9:14))
@@ -15,7 +14,7 @@ mask keyhole = circle(8:5, 4).union(rect(6:5, 9:14))
 draw stripes 32x32:
   cols = k, y
   for row 0..h:
-    poly cols[band(row)] 0:row w:row
+    poly cols[rowBand(row)] 0:row w:row
 
 draw face 16x16:
   bg y
@@ -32,7 +31,7 @@ draw badge 16x16:
   stroke k ring(8:8, 7) w2
 
 draw scene 32x24:
-  grad sky = linear(90, oklch(0.62, 0.15, 260), y)
+  gradient sky = linear(90, oklch(0.62, 0.15, 260), y)
   bg sky
   rect k 4:18 27:23 fill
   stamp gem 6:10 scale2
@@ -48,13 +47,13 @@ draw dots 24x8:
   stamp parametricDot(lighten(r, 0.2)) 8:0
   stamp parametricDot(darken(r, 0.2)) 16:0
 
-export scene showcase/scene:
+export scene:
   png @1 @2 z9
   svg ids classes
   jpeg q80
 
-export badge showcase/badge:
+export badge:
   png indexed
 
-export stripes showcase/stripes:
+export stripes, face, dots:
   png

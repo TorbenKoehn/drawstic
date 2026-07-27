@@ -1,28 +1,31 @@
 from std/shapes star4
 
+ink = #22273a
+bodyBlue = #4d63d1
+bevelLight = bodyBlue.lighten(20%)
+accent = #ffb347
+
 theme gamesTheme:
-  pal:
-    k = #22273a
-    b = #4d63d1
-    l = b.lighten(20%)
-    d = b.darken(22%)
-    a = #ffb347
+  palette k=ink b=bodyBlue l=bevelLight a=accent
   mode pixel
+  light sun = dir 1:1 #fff2d0 amb #2a3a5e 22%
   style """
   Games/Navigation icon family, silhouette-first flat style.
-  Light source: fixed top-left for every icon body — shadeRegion(lightPt, d, 0.3) then
-  lightRegion(lightPt, l, 0.18) on the filled silhouette, ink stroke last.
+  Light source: the theme's `sun`, fixed top-left for every icon body — one `model body bodyM`
+  on the silhouette, ink stroke last. The `flat` response keeps it a soft bevel, not a sphere,
+  and the shade follows the silhouette: a rounded square beads at its corners and a heart
+  rounds over its lobes, which a straight distance ramp could not do.
   Corner radius: 4px @32 master, 2px @16 redraw, 8px @64 detail (proportional to size).
   Outline: 2px ink stroke @32, 1px @16, 3px @64, always the final pass on a body.
   b = body fill, a = accent (exactly one pop element per icon: button/pip/pin/star/fill),
-  k = outlines/fine linework, l/d = derived bevel shades. No other hues.
+  k = outlines/fine linework, l = the derived bevel tint used on small stamped parts.
+  No other hues.
   """
 
 use gamesTheme
 
-lightPt32 = -6:-6
-lightPt16 = -3:-3
-lightPt64 = -12:-12
+material bodyM = bodyBlue flat
+material accentM = accent flat
 
 draw ctrlBumper 6x4:
   rrect b 0:0 5:3 1 fill
@@ -44,9 +47,7 @@ path pinOutline:
 
 draw controller 32x32:
   mask body = rrect(3:11,28:22,4).union(circle(7:21,6)).union(circle(24:21,6))
-  fill b body
-  shadeRegion body lightPt32 d 0.3
-  lightRegion body lightPt32 l 0.18
+  model body bodyM
   stroke k body w2
   stamp ctrlBumper 4:7
   stamp ctrlBumper 22:7 flipx
@@ -57,9 +58,7 @@ draw controller 32x32:
 
 draw controller64 64x64:
   mask body = rrect(6:22,57:44,8).union(circle(14:44,12)).union(circle(49:44,12))
-  fill b body
-  shadeRegion body lightPt64 d 0.3
-  lightRegion body lightPt64 l 0.18
+  model body bodyM
   stroke k body w3
   stamp ctrlBumper 8:14 scale2
   stamp ctrlBumper 44:14 scale2 flipx
@@ -71,14 +70,12 @@ draw controller64 64x64:
   circle a 52:33 4 fill
   circle a 40:33 4 fill
   circle a 46:39 4 fill
-  castShadow circle(46:27,4).union(circle(52:33,4)).union(circle(40:33,4)).union(circle(46:39,4)) 1:1 k.alpha(35%)
+  shadow circle(46:27,4).union(circle(52:33,4)).union(circle(40:33,4)).union(circle(46:39,4)) 1:1 k.alpha(35%)
   grain body 0.12 5 k
 
 draw dice 32x32:
   mask body = rrect(4:4,27:27,5)
-  fill b body
-  shadeRegion body lightPt32 d 0.3
-  lightRegion body lightPt32 l 0.18
+  model body bodyM
   stroke k body w2
   circle a 9:9 2 fill
   circle a 22:9 2 fill
@@ -88,9 +85,7 @@ draw dice 32x32:
 
 draw dice16 16x16:
   mask body = rrect(1:1,14:14,2)
-  fill b body
-  shadeRegion body lightPt16 d 0.3
-  lightRegion body lightPt16 l 0.18
+  model body bodyM
   stroke k body w1
   circle a 4:4 1 fill
   circle a 11:4 1 fill
@@ -100,11 +95,9 @@ draw dice16 16x16:
 
 draw trophy 32x32:
   mask bowl = poly(8:7,23:7,20:18,11:18)
-  fill b bowl
-  shadeRegion bowl lightPt32 d 0.3
-  lightRegion bowl lightPt32 l 0.18
+  model bowl bodyM
   stroke k bowl w2
-  grad lipGrad = linear(90, a.lighten(15%), a.darken(12%))
+  gradient lipGrad = linear(90, a.lighten(15%), a.darken(12%))
   rrect lipGrad 7:5 24:8 2 fill
   rrect k 7:5 24:8 2
   stamp trophyHandle 3:6
@@ -117,9 +110,7 @@ draw trophy 32x32:
 
 draw map 32x32:
   mask body = rrect(3:5,28:26,4)
-  fill b body
-  shadeRegion body lightPt32 d 0.3
-  lightRegion body lightPt32 l 0.18
+  model body bodyM
   stroke k body w2
   mirror x=16:
     for y 8..24:
@@ -131,21 +122,17 @@ draw map 32x32:
 
 draw puzzle 32x32:
   mask body = rrect(6:8,25:25,4).union(circle(16:7,3)).subtract(circle(16:25,3))
-  fill b body
-  shadeRegion body lightPt32 d 0.3
-  lightRegion body lightPt32 l 0.18
+  model body bodyM
   stroke k body w2
   circle a 16:16 2 fill
 
 draw heart 32x32:
   mask body = circle(11:12,6).union(circle(21:12,6)).union(poly(5:14,27:14,16:27))
-  fill a body
-  shadeRegion body lightPt32 a.darken(20%) 0.3
-  lightRegion body lightPt32 a.lighten(20%) 0.18
+  model body accentM
   stroke k body w2
 
 draw heart16 16x16:
-  pal p=a.lighten(12%) q=a.darken(15%)
+  palette p=a.lighten(12%) q=a.darken(15%)
   pixels:
     ................
     ................
@@ -164,38 +151,7 @@ draw heart16 16x16:
     ................
     ................
 
-export controller games/controller:
-  png @1 @2
-  svg ids classes
-
-export controller64 games/controller64:
-  png @1 @2
-  svg ids classes
-
-export dice games/dice:
-  png @1 @2
-  svg ids classes
-
-export dice16 games/dice16:
-  png @1 @2
-  svg ids classes
-
-export trophy games/trophy:
-  png @1 @2
-  svg ids classes
-
-export map games/map:
-  png @1 @2
-  svg ids classes
-
-export puzzle games/puzzle:
-  png @1 @2
-  svg ids classes
-
-export heart games/heart:
-  png @1 @2
-  svg ids classes
-
-export heart16 games/heart16:
+export controller, controller64, dice, dice16, trophy, map, puzzle, heart, heart16:
+  dir games
   png @1 @2
   svg ids classes

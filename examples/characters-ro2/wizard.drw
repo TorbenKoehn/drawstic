@@ -1,0 +1,231 @@
+# RO-style chibi wizard — front / side / back, 64x128 each, one sheet.
+
+theme ro:
+  mode pixel
+  light sun = dir 1:1 #ffe6b0 amb #33405e 16%
+
+theme roHead:
+  with ro
+  figure:
+    heads 1
+    headW 30
+    eyeLine 0.62
+    earLine 0.58
+    eyeSep 12
+
+skin = #e7b088
+hair = #3a2a1c
+white = #fbf6ee
+iris = #4f7bb0
+pupil = #201a1a
+mouth = #9a5240
+robeC = #40357e
+robeLo = #2c2456
+hatC = #352c66
+bandC = #e8c15a
+woodC = #6d4527
+woodLo = #3f2614
+orbC = #6ce0ff
+
+material skinM = skin skin
+material hairM = hair cloth spread 170%
+material robeM = robeC cloth drape spread 440%
+material hatM = hatC cloth spread 260%
+material woodM = woodC
+material orbM = orbC glow
+
+# ---------- head ----------
+
+draw headFront 40x40:
+  use roHead
+  head = ellipse(20:22, 15:15).union(lobe(fig.earL, 2:26, 6)).union(lobe(fig.earR, 38:26, 6))
+  model head skinM
+  fill white ellipse(fig.eyeL, 3:3)
+  fill white ellipse(fig.eyeR, 3:3)
+  circle iris fig.eyeL 2 fill
+  circle iris fig.eyeR 2 fill
+  px pupil fig.eyeL
+  px pupil fig.eyeR
+  px white.alpha(90%) (fig.eyeL - 1:1)
+  px white.alpha(90%) (fig.eyeR - 1:1)
+  line hair 12:21 16:21
+  line hair 24:21 28:21
+  px skin.darken(18%) 20:27
+  line mouth 17:31 23:31
+  pin crown 20:8
+  pin chin 20:38
+  pin templeL 6:14
+  pin templeR 34:14
+
+draw headSide 40x40:
+  use roHead
+  head = ellipse(18:22, 15:15).union(lobe(fig.side.ear, 6:27, 6)).union(lobe(30:24, 35:23, 4))
+  model head skinM
+  fill white ellipse(fig.side.eye, 3:2)
+  circle iris fig.side.eye 1 fill
+  px pupil fig.side.eye
+  px white.alpha(90%) (fig.side.eye - 1:1)
+  line hair 20:19 26:19
+  px skin.darken(20%) 32:24
+  line mouth 27:31 31:31
+  pin crown 18:8
+  pin chin 18:38
+  pin templeL 4:14
+  pin templeR 32:14
+
+draw headBack 40x40:
+  use roHead
+  head = ellipse(20:22, 15:15).union(lobe(fig.earL, 3:26, 4)).union(lobe(fig.earR, 37:26, 4))
+  model head skinM
+  napeHair = ellipse(20:19, 14:14).intersect(rect(0:10, 39:31))
+  model napeHair hairM
+  line hair.lighten(20%) 20:13 20:28
+  line hair.darken(14%) 12:16 11:29
+  line hair.darken(14%) 28:16 29:29
+  pin crown 20:8
+  pin chin 20:38
+  pin templeL 6:14
+  pin templeR 34:14
+
+# ---------- hat (cone + curved band + flopped tip) ----------
+
+draw hatFront 52x42:
+  use ro
+  cone = curvePoly(11:33, 30:5, 40:8, 40:33)
+  model cone hatM
+  brim = crescent(26:33, 21:5, 5, 0:1)
+  model brim hatM
+  ribbon bandC 8:32 26:29 44:32 4 fill
+  circle bandC 40:8 3 fill
+  pin base 26:33
+  pin brimL 6:33
+  pin brimR 46:33
+
+draw hatSide 52x42:
+  use ro
+  cone = curvePoly(9:33, 20:6, 34:10, 38:33)
+  model cone hatM
+  brim = crescent(22:33, 20:5, 5, 0:1)
+  model brim hatM
+  ribbon bandC 6:32 22:29 38:32 4 fill
+  circle bandC 34:10 3 fill
+  pin base 22:33
+  pin brimL 4:33
+  pin brimR 40:33
+
+draw hatBack 52x42:
+  use ro
+  cone = curvePoly(11:33, 26:5, 36:8, 41:33)
+  model cone hatM
+  brim = crescent(26:33, 21:5, 5, 0:1)
+  model brim hatM
+  ribbon bandC 8:32 26:29 44:32 4 fill
+  circle bandC 36:8 3 fill
+  pin base 26:33
+  pin brimL 6:33
+  pin brimR 46:33
+
+# ---------- robe (bell body + sleeves) ----------
+
+draw robeFront 52x60:
+  use ro
+  body = curvePoly(19:2, 6:58, 46:58, 33:2)
+  sleeveL = curvePoly(19:6, 4:34, 14:38, 22:14)
+  sleeveR = curvePoly(33:6, 48:34, 38:38, 30:14)
+  full = body.union(sleeveL).union(sleeveR)
+  model full robeM
+  line robeLo 26:8 26:56
+  line robeLo 18:22 15:56
+  line robeLo 34:22 37:56
+  fill skin ellipse(8:36, 3:3)
+  fill skin ellipse(44:36, 3:3)
+  model ellipse(8:36, 3:3) skinM
+  model ellipse(44:36, 3:3) skinM
+  pin neck 26:3
+  pin shoulderL 12:10
+  pin shoulderR 40:10
+  pin gripL 8:36
+  pin gripR 44:36
+  pin hem 26:58
+
+draw robeSide 46x60:
+  use ro
+  body = curvePoly(16:2, 6:58, 40:58, 30:2)
+  sleeve = curvePoly(28:8, 40:32, 32:38, 22:14)
+  full = body.union(sleeve)
+  model full robeM
+  line robeLo 22:8 20:56
+  line robeLo 14:26 12:56
+  fill skin ellipse(38:35, 3:3)
+  model ellipse(38:35, 3:3) skinM
+  pin neck 22:3
+  pin shoulderL 16:10
+  pin shoulderR 28:10
+  pin gripR 39:35
+  pin hem 23:58
+
+draw robeBack 52x60:
+  use ro
+  body = curvePoly(19:2, 6:58, 46:58, 33:2)
+  sleeveL = curvePoly(19:6, 4:34, 14:38, 22:14)
+  sleeveR = curvePoly(33:6, 48:34, 38:38, 30:14)
+  full = body.union(sleeveL).union(sleeveR)
+  model full robeM
+  line robeLo 26:6 26:56
+  line robeLo 17:20 14:56
+  line robeLo 35:20 38:56
+  fill skin ellipse(8:36, 3:3)
+  fill skin ellipse(44:36, 3:3)
+  model ellipse(8:36, 3:3) skinM
+  model ellipse(44:36, 3:3) skinM
+  pin neck 26:3
+  pin shoulderL 12:10
+  pin shoulderR 40:10
+  pin gripL 8:36
+  pin gripR 44:36
+  pin hem 26:58
+
+# ---------- staff (rod + glowing orb) ----------
+
+draw staff 18x124:
+  use ro
+  rod = rect(6:16, 12:122)
+  model rod woodM
+  fill woodLo rect(10:16, 12:122)
+  fill orbC.alpha(24%) circle(9:13, 8)
+  fill orbC.alpha(42%) circle(9:13, 6)
+  model circle(9:13, 5) orbM
+  px white 7:11
+  pin grip 9:86
+  pin tip 9:3
+
+# ---------- composers ----------
+
+draw wizardFront 64x128:
+  use ro
+  fit robeFront.neck 32:66 ground
+  fit staff.grip robeFront.gripL front robeFront
+  fit headFront.chin robeFront.neck
+  fit hatFront.base headFront.crown
+  outline
+
+draw wizardSide 64x128:
+  use ro
+  fit robeSide.neck 30:66 ground
+  fit headSide.chin robeSide.neck
+  fit hatSide.base headSide.crown
+  fit staff.grip robeSide.gripR front hatSide
+  outline
+
+draw wizardBack 64x128:
+  use ro
+  fit robeBack.neck 32:66 ground
+  fit staff.grip robeBack.gripR behind robeBack     # gripR, not gripL: from behind, the staff hand is on the far side
+  fit headBack.chin robeBack.neck
+  fit hatBack.base headBack.crown
+  outline
+
+# ---------- exports ----------
+
+export wizardFront wizard-front, wizardSide wizard-side, wizardBack wizard-back:
+  png @1 @4

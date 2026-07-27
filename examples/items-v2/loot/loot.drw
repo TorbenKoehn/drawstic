@@ -1,5 +1,5 @@
 theme lootSet:
-  pal:
+  palette:
     k = #241912
     s = #69717f
     h = #f1f4fa
@@ -102,29 +102,15 @@ draw crown 64x64:
   line h 23:33 29:24 w1
   line h 35:24 41:33 w1
 
-tileset loot 64x64:
-  tiles pickaxe, axe, key, coinPouch, gem, crown
+atlas loot:
+  sprites pickaxe, axe, key, coinPouch, gem, crown
+  tile 64x64
   cols 3
 
-export pickaxe pickaxe:
+export pickaxe, axe, key, coinPouch, gem, crown:
   png @1 @4
 
-export axe axe:
-  png @1 @4
-
-export key key:
-  png @1 @4
-
-export coinPouch coinPouch:
-  png @1 @4
-
-export gem gem:
-  png @1 @4
-
-export crown crown:
-  png @1 @4
-
-export loot loot:
+export loot:
   png @1 @4
   tiled
   atlasJson

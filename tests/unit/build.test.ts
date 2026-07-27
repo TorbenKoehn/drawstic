@@ -91,8 +91,8 @@ draw partial 4x4:
   px rgb(10, 20, 30) 0:0
   px rgb(40, 50, 60) 1:1
 
-draw ramp 3x1:
-  pal:
+draw swatch 3x1:
+  palette:
     a, b, c = #777.tones(-10%, 0%, 10%)
   pixels:
     abc
@@ -103,8 +103,14 @@ draw tileA 2x2:
 draw tileB 2x2:
   bg rgb(0, 255, 0)
 
-tileset tiny 2x2:
-  tiles tileA, tileB
+atlas tiny:
+  sprites tileA, tileB
+  tile 2x2
+
+atlas tinyPad:
+  sprites tileA, tileB
+  tile 2x2
+  pad 1
 
 draw hudA 2x2:
   bg rgb(10, 10, 200)
@@ -132,7 +138,7 @@ export solid out/solid-bare:
 export solid out/solid-svg-plain:
   svg
 
-export ramp out/ramp-svg-flags:
+export swatch out/ramp-svg-flags:
   svg ids classes inlineStyles
 
 export solid out/solid-svg-mode:
@@ -148,7 +154,7 @@ export solid out/solid-jpeg-scale:
   jpeg @2
 
 export wide out/wide-size-w:
-  png 8
+  png @2
 
 export wide out/wide-size-wh-indexed:
   png 8x8 indexed
@@ -159,7 +165,7 @@ export wide out/wide-scale-indexed:
 export partial out/partial-indexed:
   png indexed
 
-export ramp out/ramp-indexed:
+export swatch out/ramp-indexed:
   png indexed
 
 export tiny out/tiny:
@@ -170,6 +176,10 @@ export tiny out/tiny:
 
 export tiny out/tiny-xml:
   tiled xml
+
+export tinyPad out/tiny-pad:
+  png
+  tiled
 
 export hud out/hud:
   png
@@ -224,14 +234,14 @@ describe('buildModule — png scale/size × indexed combinations', () => {
     }
   })
 
-  test('explicit width-only size: auto-computed height preserves aspect ratio', () => {
+  test('@N scale factor on a non-square drawing preserves aspect ratio', () => {
     const { engine, mod } = load(CONTENT_SRC)
     const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
     try {
       buildModule(engine, mod, out)
-      const p = decodePng(new Uint8Array(readFileSync(join(out, 'out', 'wide-size-w.png'))))
+      const p = decodePng(new Uint8Array(readFileSync(join(out, 'out', 'wide-size-w@2x.png'))))
       expect(p.w).toBe(8)
-      expect(p.h).toBe(4) // wide is 4x2 -> aspect 2:1 -> height = round(2*8/4)
+      expect(p.h).toBe(4) // wide is 4x2; @2 scales both dims 2x -> 8x4
       expect(px(p.data, 8, 0, 0)).toEqual([80, 80, 200, 255])
     } finally {
       rmSync(out, { recursive: true, force: true })
@@ -397,8 +407,8 @@ describe('buildModule — svg / jpeg / path formats', () => {
   })
 })
 
-describe('buildModule — tileset/atlas sidecars (tiled, atlasJson, aseprite)', () => {
-  test('tileset content: png sheet + tiled .tsj', () => {
+describe('buildModule — atlas sidecars (tiled, atlasJson, aseprite)', () => {
+  test('uniform-tile atlas content: png sheet + tiled .tsj', () => {
     const { engine, mod } = load(CONTENT_SRC)
     const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
     try {
@@ -428,7 +438,7 @@ describe('buildModule — tileset/atlas sidecars (tiled, atlasJson, aseprite)', 
     }
   })
 
-  test('tileset content: tiled xml flag writes .tsx instead of .tsj', () => {
+  test('uniform-tile atlas content: tiled xml flag writes .tsx instead of .tsj', () => {
     const { engine, mod } = load(CONTENT_SRC)
     const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
     try {
@@ -436,7 +446,7 @@ describe('buildModule — tileset/atlas sidecars (tiled, atlasJson, aseprite)', 
       const tsx = readFileSync(join(out, 'out', 'tiny-xml.tsx'), 'utf8')
       expect(tsx).toContain('<?xml version="1.0" encoding="UTF-8"?>')
       expect(tsx).toContain(
-        '<tileset version="1.10" name="tiny" tilewidth="2" tileheight="2" tilecount="2" columns="2">',
+        '<tileset version="1.10" name="tiny" tilewidth="2" tileheight="2" tilecount="2" columns="2" spacing="0">',
       )
       expect(tsx).toContain('<image source="tiny-xml.png" width="4" height="2"/>')
     } finally {
@@ -444,7 +454,7 @@ describe('buildModule — tileset/atlas sidecars (tiled, atlasJson, aseprite)', 
     }
   })
 
-  test('tileset content: atlasJson/aseprite use the real per-tile frame map', () => {
+  test('uniform-tile atlas content: atlasJson/aseprite use the real per-tile frame map', () => {
     const { engine, mod } = load(CONTENT_SRC)
     const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
     try {
@@ -472,6 +482,22 @@ describe('buildModule — tileset/atlas sidecars (tiled, atlasJson, aseprite)', 
       const ase = JSON.parse(readFileSync(join(out, 'out', 'hud.aseprite.json'), 'utf8'))
       expect(ase.frames.hudA.duration).toBe(100)
       expect(ase.frames.hudB.duration).toBe(100)
+    } finally {
+      rmSync(out, { recursive: true, force: true })
+    }
+  })
+
+  test("uniform-tile atlas with 'pad': the sheet gutter and the tiled sidecar's spacing agree", () => {
+    const { engine, mod } = load(CONTENT_SRC)
+    const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
+    try {
+      buildModule(engine, mod, out)
+      // 2 tiles of 2x2 with a 1px grid gutter, no trailing margin: width = 2*(2+1) - 1 = 5
+      const p = decodePng(new Uint8Array(readFileSync(join(out, 'out', 'tiny-pad.png'))))
+      expect(p.w).toBe(5)
+      expect(p.h).toBe(2)
+      const tsj = JSON.parse(readFileSync(join(out, 'out', 'tiny-pad.tsj'), 'utf8'))
+      expect(tsj).toMatchObject({ spacing: 1, columns: 2, imagewidth: 5, imageheight: 2 })
     } finally {
       rmSync(out, { recursive: true, force: true })
     }
@@ -513,6 +539,18 @@ export solid out/solid-tiled-fail:
 export solid out/solid-path-fail:
   path
 
+draw hudA 2x2:
+  bg #123456
+
+draw hudB 3x2:
+  bg #654321
+
+atlas hud:
+  sprites hudA, hudB
+
+export hud out/hud-tiled-fail:
+  tiled
+
 draw manyColors 17x17:
   for x 0..17:
     for y 0..17:
@@ -548,7 +586,7 @@ export manyColors out/many:
         if (e instanceof DrawsticError) {
           expect(e.toDiagnostic()).toMatchObject({
             code: 'E018',
-            message: "'triple' is not exportable content (a draw, path, tileset, or atlas)",
+            message: "'triple' is not exportable content (a draw, path, or atlas)",
           })
         }
       }
@@ -557,16 +595,29 @@ export manyColors out/many:
     }
   })
 
-  test("'tiled' on non-tileset content fails in both runExport and validateExport", () => {
+  test("'tiled' on non-atlas (or non-uniform-tile) content fails in both runExport and validateExport", () => {
     const { engine, mod } = load(ERROR_SRC)
     const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
     try {
       const ex = exportAt(mod, 'out/solid-tiled-fail')
       expect(() => runExport(engine, mod, ex, out)).toThrow(
-        /'tiled' applies to tilesets only \(uniform tiles\)/,
+        /'tiled' needs an atlas with a 'tile WxH' declaration \(uniform tiles\)/,
       )
       expect(() => validateExport(engine, mod, ex)).toThrow(
-        /'tiled' applies to tilesets only \(uniform tiles\)/,
+        /'tiled' needs an atlas with a 'tile WxH' declaration \(uniform tiles\)/,
+      )
+    } finally {
+      rmSync(out, { recursive: true, force: true })
+    }
+  })
+
+  test("'tiled' on a non-uniform (shelf-packed) atlas is the same E018 as on a plain draw", () => {
+    const { engine, mod } = load(ERROR_SRC)
+    const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
+    try {
+      const ex = exportAt(mod, 'out/hud-tiled-fail')
+      expect(() => runExport(engine, mod, ex, out)).toThrow(
+        /'tiled' needs an atlas with a 'tile WxH' declaration \(uniform tiles\)/,
       )
     } finally {
       rmSync(out, { recursive: true, force: true })
@@ -634,7 +685,7 @@ describe('buildModule — imported image content', () => {
       writeFileSync(join(srcDir, 'image.png'), encodePngRgba(data, w, h))
       writeFileSync(
         join(srcDir, 'mod.drw'),
-        'import img = image.png\n\nexport img out/img:\n  png\n',
+        'image img = image.png\n\nexport img out/img:\n  png\n',
       )
       const engine = new Engine(srcDir)
       const mod = engine.loadEntry(join(srcDir, 'mod.drw'))

@@ -5,7 +5,7 @@ theme pixelBase:
   style "No AA. 1px black outline. Light from top-left."
 
 theme warmPal:
-  pal:
+  palette:
     k = #1a1a1a
     y = #e0b070
     r = #c04040
@@ -15,4 +15,4 @@ theme dusk:
   style "Cozy dusk mood; long soft shadows in 'r'."
 
 filter softShadow:
-  shadow 1 1 #10101080
+  shadow 1:1 #10101080

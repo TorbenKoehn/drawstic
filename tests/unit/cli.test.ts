@@ -87,26 +87,27 @@ describe('check', () => {
     expect(r.json).toEqual([])
   })
 
-  test('renders tileset and atlas members during deep validation', () => {
+  test('renders both atlas modes (uniform-tile grid + shelf-pack) during deep validation', () => {
     withTmpDir((dir) => {
       const file = join(dir, 'sheet.drw')
       writeFileSync(
         file,
         [
           'draw a 2x2:',
-          '  pal k=#000000',
+          '  palette k=#000000',
           '  pixels:',
           '    kk',
           '    kk',
           '',
           'draw b 2x2:',
-          '  pal r=#ff0000',
+          '  palette r=#ff0000',
           '  pixels:',
           '    rr',
           '    rr',
           '',
-          'tileset ts 2x2:',
-          '  tiles a, b',
+          'atlas ts:',
+          '  sprites a, b',
+          '  tile 2x2',
           '  cols 2',
           '',
           'atlas at:',
@@ -120,18 +121,45 @@ describe('check', () => {
     })
   })
 
-  test('--lint folds in authoring warnings without failing the exit code', () => {
-    const r = runJson('check', 'examples/showcase/showcase.drw', '--json', '--lint')
-    expect(r.exitCode).toBe(0)
-    const diags = r.json as { severity: string; code: string; message: string }[]
-    expect(diags.some((d) => d.code === 'W002' && d.message.includes('face'))).toBe(true)
-    expect(diags.every((d) => d.severity === 'warning')).toBe(true)
+  // Authors its own warning instead of relying on a bundled example still having one. The previous
+  // form asserted a W002 on showcase.drw, so cleaning the corpus up to the skill's own done gate
+  // broke it — a test that needs the shipped examples to stay defective is the wrong test.
+  test('--lint folds in authoring warnings + a construct census without failing the exit code', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'lintme.drw')
+      writeFileSync(
+        file,
+        'draw kept 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n\ndraw orphan 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n\nexport kept kept:\n  png\n',
+      )
+      const r = runJson('check', file, '--json', '--lint')
+      expect(r.exitCode).toBe(0)
+      // --lint --json wraps the diagnostics alongside the ADR-0094 construct census.
+      const body = r.json as {
+        diagnostics: { severity: string; code: string; message: string }[]
+        census: { constructs: { construct: string; count: number }[]; antiPatterns: object }
+      }
+      expect(body.diagnostics.some((d) => d.code === 'W002' && d.message.includes('orphan'))).toBe(
+        true,
+      )
+      expect(body.diagnostics.every((d) => d.severity === 'warning')).toBe(true)
+      expect(body.census.constructs.length).toBeGreaterThan(0)
+      expect(body.census.antiPatterns).toBeDefined()
+    })
+  })
+
+  // The bundled corpus must stay clean under the gate the product skill imposes on its users.
+  test('every bundled example recipe is check --lint clean', () => {
+    for (const path of ['examples/showcase/showcase.drw', 'examples/basic-shapes/circles.drw']) {
+      const r = runJson('check', path, '--json', '--lint')
+      expect(r.exitCode).toBe(0)
+      expect((r.json as { diagnostics: unknown[] }).diagnostics).toEqual([])
+    }
   })
 
   test('--rows reports ragged pixel-row metadata and E002', () => {
     withTmpDir((dir) => {
       const file = join(dir, 'ragged.drw')
-      writeFileSync(file, 'draw ragged 3x2:\n  pal k=#000000\n  pixels:\n    kkk\n    kk\n')
+      writeFileSync(file, 'draw ragged 3x2:\n  palette k=#000000\n  pixels:\n    kkk\n    kk\n')
       const r = runJson('check', file, '--json', '--rows')
       expect(r.exitCode).toBe(1)
       const body = r.json as {
@@ -160,7 +188,7 @@ describe('check', () => {
   test('--rows infers size from pixel rows when the header is absent', () => {
     withTmpDir((dir) => {
       const file = join(dir, 'headerless.drw')
-      writeFileSync(file, 'draw hl:\n  pal k=#000000\n  pixels:\n    kk\n    kk\n')
+      writeFileSync(file, 'draw hl:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n')
       const r = runJson('check', file, '--json', '--rows')
       expect(r.exitCode).toBe(0)
       const body = r.json as {
@@ -187,7 +215,7 @@ describe('check', () => {
   test('--rows without --json reports diagnostics to stderr and prints nothing to stdout', () => {
     withTmpDir((dir) => {
       const file = join(dir, 'ragged.drw')
-      writeFileSync(file, 'draw ragged 3x2:\n  pal k=#000000\n  pixels:\n    kkk\n    kk\n')
+      writeFileSync(file, 'draw ragged 3x2:\n  palette k=#000000\n  pixels:\n    kkk\n    kk\n')
       const r = run('check', file, '--rows')
       expect(r.exitCode).toBe(1)
       expect(r.stdout).toHaveLength(0)
@@ -351,14 +379,14 @@ describe('context', () => {
 
     expect(body.context.exports.find((e) => e.source === 'badge')).toMatchObject({
       source: 'badge',
-      basePath: 'showcase/badge',
+      basePath: 'badge',
     })
-    expect(body.context.functions).toContainEqual({ name: 'band', signature: 'band(row)' })
+    expect(body.context.functions).toContainEqual({ name: 'rowBand', signature: 'rowBand(row)' })
     expect(body.context.functions).toContainEqual({ name: 'ring', signature: 'ring(c, r)' })
   })
 
   test('--json gives an oversized drawing a largePreviewHint and no inline preview', () => {
-    const r = runJson('context', 'examples/scenes/island.drw', '--json')
+    const r = runJson('context', 'examples/scenes-v3/island.drw', '--json')
     expect(r.exitCode).toBe(0)
     const body = r.json as {
       context: {
@@ -368,7 +396,7 @@ describe('context', () => {
     const island = body.context.drawings.find((d) => d.name === 'island')
     expect(island?.preview).toBeNull()
     expect(island?.largePreviewHint).toBe(
-      'drawstic render examples/scenes/island.drw#island --preview --fit 80x40',
+      'drawstic render examples/scenes-v3/island.drw#island --preview --fit 80x40',
     )
   })
 
@@ -382,21 +410,21 @@ describe('context', () => {
     expect(text).toContain('## style guide')
     expect(text).toContain('## drawings')
     expect(text).toContain('  parametricDot 8x8(c)')
-    expect(text).toContain('    size: pixels; pal: y, r')
+    expect(text).toContain('    size: pixels; palette: y, r')
     expect(text).toContain('## exports')
-    expect(text).toContain('  scene -> showcase/scene')
+    expect(text).toContain('  scene -> scene')
     expect(text).toContain('## functions')
-    expect(text).toContain('  band(row)')
+    expect(text).toContain('  rowBand(row)')
   })
 
   test('text mode prints a hint line (no inline preview) for oversized drawings', () => {
-    const r = run('context', 'examples/scenes/island.drw')
+    const r = run('context', 'examples/scenes-v3/island.drw')
     expect(r.exitCode).toBe(0)
     const text = r.stdout.toString('utf8')
-    expect(text).toContain('  island 160x96')
-    expect(text).toContain('    size: header; pal: -')
+    expect(text).toContain('  island 192x128')
+    expect(text).toContain('    size: header; palette: -')
     expect(text).toContain(
-      '    hint: drawstic render examples/scenes/island.drw#island --preview --fit 80x40',
+      '    hint: drawstic render examples/scenes-v3/island.drw#island --preview --fit 80x40',
     )
   })
 
@@ -434,11 +462,11 @@ describe('context', () => {
   test('export formats report explicit out-sizes alongside scales', () => {
     withTmpDir((dir) => {
       const file = join(dir, 'outsize.drw')
-      writeFileSync(file, 'draw a 4x4:\n  bg #fff\n\nexport a out/a:\n  png 8 8x8\n')
+      writeFileSync(file, 'draw a 4x4:\n  bg #fff\n\nexport a out/a:\n  png 8x8 16x16\n')
       const r = runJson('context', file, '--json')
       expect(r.exitCode).toBe(0)
       const body = r.json as { context: { exports: { formats: { sizes: string[] }[] }[] } }
-      expect(body.context.exports[0]?.formats[0]?.sizes).toEqual(['8', '8x8'])
+      expect(body.context.exports[0]?.formats[0]?.sizes).toEqual(['8x8', '16x16'])
     })
   })
 
@@ -491,7 +519,7 @@ describe('context', () => {
         [
           'theme fam:',
           '  size 16x16',
-          '  pal:',
+          '  palette:',
           '    b = #3366cc',
           '    g = #ffffff',
           '',
@@ -529,7 +557,7 @@ describe('context', () => {
 
       const text = run('context', file).stdout.toString('utf8')
       expect(text).toContain('    use: fam')
-      expect(text).toContain('    theme pal: b=#3366cc (fam), g=#ffffff (fam)')
+      expect(text).toContain('    theme palette: b=#3366cc (fam), g=#ffffff (fam)')
     })
   })
 
@@ -582,17 +610,35 @@ describe('build', () => {
     })
   })
 
-  test('defaults --out to the process cwd when omitted', () => {
+  test("defaults --out to the recipe file's own directory, not the process cwd (ADR-0096 §6)", () => {
     const originalCwd = process.cwd()
+    const recipeDir = mkdtempSync(join(tmpdir(), 'drawstic-recipe-'))
+    const cwdDir = mkdtempSync(join(tmpdir(), 'drawstic-cwd-'))
+    try {
+      writeFileSync(join(recipeDir, 'x.drw'), 'draw x 2x2:\n  bg #fff\n\nexport x x:\n  png\n')
+      process.chdir(cwdDir)
+      const r = runJson('build', join(recipeDir, 'x.drw'), '--json')
+      expect(r.exitCode).toBe(0)
+      expect(existsSync(join(recipeDir, 'x.png'))).toBe(true)
+      expect(existsSync(join(cwdDir, 'x.png'))).toBe(false)
+    } finally {
+      process.chdir(originalCwd)
+      rmSync(recipeDir, { recursive: true, force: true })
+      rmSync(cwdDir, { recursive: true, force: true })
+    }
+  })
+
+  test('an explicit --out still overrides the recipe-relative default', () => {
     withTmpDir((dir) => {
-      writeFileSync(join(dir, 'x.drw'), 'draw x 2x2:\n  bg #fff\n\nexport x out/x:\n  png\n')
-      process.chdir(dir)
+      const recipeDir = mkdtempSync(join(tmpdir(), 'drawstic-recipe-'))
       try {
-        const r = runJson('build', 'x.drw', '--json')
+        writeFileSync(join(recipeDir, 'x.drw'), 'draw x 2x2:\n  bg #fff\n\nexport x x:\n  png\n')
+        const r = runJson('build', join(recipeDir, 'x.drw'), '--out', dir, '--json')
         expect(r.exitCode).toBe(0)
-        expect(existsSync(join(dir, 'out', 'x.png'))).toBe(true)
+        expect(existsSync(join(dir, 'x.png'))).toBe(true)
+        expect(existsSync(join(recipeDir, 'x.png'))).toBe(false)
       } finally {
-        process.chdir(originalCwd)
+        rmSync(recipeDir, { recursive: true, force: true })
       }
     })
   })
@@ -605,12 +651,68 @@ describe('build', () => {
       expect(diags[0]?.code).toBe('E008')
     })
   })
+
+  // A non-fatal render-time warning (W010 fit gap, ADR-0087) reaches the build diagnostics the
+  // same way `render` surfaces it — in JSON and, without --json, in the human output.
+  const GAP_EXPORT = [
+    'draw torso 12x20:',
+    '  fill #6a5030 rect(0:0, 11:19)',
+    '  pin shoulder 10:3',
+    'draw arm 6x14:',
+    '  fill #8a5a3a rect(0:0, 5:13)',
+    '  pin shoulder 0:2',
+    'draw fig 34x34:',
+    '  stamp torso 4:2',
+    '  pin far.spot 30:30',
+    '  fit arm.shoulder far.spot', // arm lands in empty space → W010
+    '',
+    'export fig out/fig:',
+    '  png',
+    '',
+  ].join('\n')
+
+  test('--json surfaces a W010 fit gap in build diagnostics (still exit 0)', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'gap.drw')
+      writeFileSync(file, GAP_EXPORT)
+      const r = runJson('build', file, '--out', dir, '--json')
+      expect(r.exitCode).toBe(0)
+      const body = r.json as {
+        diagnostics: { code: string; severity: string }[]
+        artifacts: unknown[]
+      }
+      expect(body.diagnostics.some((d) => d.code === 'W010' && d.severity === 'warning')).toBe(true)
+      expect(body.artifacts.length).toBeGreaterThan(0)
+    })
+  })
+
+  test('without --json prints the W010 fit gap after the wrote-lines', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'gap.drw')
+      writeFileSync(file, GAP_EXPORT)
+      const r = run('build', file, '--out', dir)
+      expect(r.exitCode).toBe(0)
+      expect(r.stdout.toString('utf8')).toContain('W010')
+    })
+  })
 })
 
 describe('render', () => {
   const bigFixture = (dir: string): string => {
     const file = join(dir, 'big.drw')
     writeFileSync(file, 'draw big 20x10:\n  bg #ffffff\n  rect #000000 2:2 17:7 fill\n')
+    return file
+  }
+
+  // A uniform full-canvas fill: unlike `bigFixture` (a white plate-shaped bg with a
+  // contrasting black rect stamped on it — genuinely plate-shaped pixel evidence, so
+  // `--silhouette` now detects and subtracts it, see ADR-0083's amendment), this fixture
+  // is one flat colour edge-to-edge, so the plate flood fill consumes the whole canvas,
+  // leaves no distinguishable figure, and degenerately falls back to the full covered mask
+  // — the generic (non-plate) `--silhouette` branch.
+  const flatFixture = (dir: string): string => {
+    const file = join(dir, 'flat.drw')
+    writeFileSync(file, 'draw flat 20x10:\n  bg #808080\n')
     return file
   }
 
@@ -640,6 +742,224 @@ describe('render', () => {
       const r = run('render', `${file}#solid`, '--ascii')
       expect(r.exitCode).toBe(0)
       expect(r.stdout.toString('utf8')).toBe('@@@@\n@@@@\n')
+    })
+  })
+
+  test('--explain --json reports the model/cel primitive expansion (ADR-0086 §6)', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'lit.drw')
+      writeFileSync(
+        file,
+        [
+          'light sun = dir 1:1 #ffe6b0',
+          'material steel = #8a95a5 metal',
+          'draw blade 16x16:',
+          '  body = rect(2:2, 13:13)',
+          '  model body steel light sun',
+          '',
+        ].join('\n'),
+      )
+      const r = runJson('render', `${file}#blade`, '--explain', '--json')
+      expect(r.exitCode).toBe(0)
+      const body = r.json as {
+        render: { kind: string; explain: { command: string; steps: { op: string }[] }[] }
+      }
+      expect(body.render.kind).toBe('explain')
+      expect(body.render.explain).toHaveLength(1)
+      expect(body.render.explain[0]?.command).toBe('model')
+      expect(body.render.explain[0]?.steps.map((s) => s.op)).toEqual(['form', 'rim', 'ao', 'cast'])
+    })
+  })
+
+  test('--explain without --json reports the empty case for a drawing with nothing to explain', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'plain.drw')
+      writeFileSync(file, 'draw plain 4x4:\n  bg #ffffff\n')
+      const r = run('render', `${file}#plain`, '--explain')
+      expect(r.exitCode).toBe(0)
+      expect(r.stdout.toString('utf8')).toBe('plain: no model/cel commands or fits to explain\n')
+    })
+  })
+
+  test('--explain without --json prints the model/cel primitive expansion, incl. cel bands', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'lit.drw')
+      writeFileSync(
+        file,
+        [
+          'light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%',
+          'material steel = #8a95a5 metal',
+          'draw blade 16x16:',
+          '  body = rect(2:2, 13:13)',
+          '  model body steel light sun',
+          '  band = rect(2:2, 13:13)',
+          '  cel band steel 3 light sun',
+          '',
+        ].join('\n'),
+      )
+      const r = run('render', `${file}#blade`, '--explain')
+      expect(r.exitCode).toBe(0)
+      expect(r.stdout.toString('utf8')).toBe(
+        [
+          'model body (light -14.5:-14.5)',
+          '  form #8a95a5 dir -0.62:-0.62 warm #ffe6b0 cool #2a3a5e z0.482 shade 0.5 hi 0.3 spec 0.5 specPow 16 puff 1.5 amb 0.15',
+          '  rim #c1d6b999 dir 0.707:0.707 w1',
+          '  ao #181e29 amount 0.28',
+          '  cast #181e2840 offset 1:1',
+          'cel band (light -14.5:-14.5)',
+          '  form #8a95a5 dir -0.62:-0.62 warm #ffe6b0 cool #2a3a5e z0.482 shade 0.5 hi 0.3 spec 0.5 specPow 16 puff 1.5 amb 0.15 bands 3',
+          '',
+        ].join('\n'),
+      )
+    })
+  })
+
+  test('--explain without --json prints a glow material as a bare fill + self-light "at" step', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'glow.drw')
+      writeFileSync(
+        file,
+        [
+          'light sun = dir 1:1 #ffe6b0',
+          'material glowMat = #ffcc00 glow',
+          'draw orb 8x8:',
+          '  core = ellipse(4:4, 3:3)',
+          '  model core glowMat light sun',
+          '',
+        ].join('\n'),
+      )
+      const r = run('render', `${file}#orb`, '--explain')
+      expect(r.exitCode).toBe(0)
+      expect(r.stdout.toString('utf8')).toBe(
+        [
+          'model core (light -6.5:-6.5)',
+          '  fill #ffcc00',
+          '  light #ffdc87 amount 0.45 at 3.5:3.5',
+          '',
+        ].join('\n'),
+      )
+    })
+  })
+
+  test('--explain without --json prints pose joints and fit placements (aim, transformed, loose pin)', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'rig.drw')
+      writeFileSync(
+        file,
+        [
+          'skeleton rig:',
+          '  jointA at 10:10',
+          '  jointB at 30:10',
+          '',
+          'pose pose1 over rig:',
+          '  view front',
+          '  jointA 15 z 2',
+          '  jointB 0 z 0',
+          '',
+          'draw partA 6x6:',
+          '  fill #ff0000 rect(0:0, 5:5)',
+          '  pin p 3:3',
+          '',
+          'draw partB 6x6:',
+          '  fill #00ff00 rect(0:0, 5:5)',
+          '  pin p 3:3',
+          '',
+          'draw needle 4x8:',
+          '  fill #202020 rect(1:0, 2:7)',
+          '  pin grip 2:6',
+          '  pin tip 2:0',
+          '',
+          'draw loose 6x6:',
+          '  fill #0000ff rect(0:0, 2:2)',
+          '  pin far 5:5',
+          '',
+          'draw fig 40x40:',
+          '  pose pose1',
+          '  fit partA.p bone jointA',
+          '  fit partB.p bone jointB flipx',
+          '  fit needle.grip partA.p aim tip 20:0',
+          '  fit loose.far partB.p',
+          '',
+        ].join('\n'),
+      )
+      const r = run('render', `${file}#fig`, '--explain')
+      expect(r.exitCode).toBe(0)
+      expect(r.stdout.toString('utf8')).toBe(
+        [
+          'pose pose1 (view front):',
+          '  jointA at 10:10 angle 15° Δ15° z2',
+          '  jointB at 30:10 angle 0° Δ0° z0',
+          'fit partA.p ← bone jointA: lands 10:10 (source 10:10) coincident pin-to-ink 0px transformed',
+          'fit partB.p ← bone jointB: lands 30:10 (source 30:10) coincident pin-to-ink 0px transformed',
+          'fit needle.grip ← partA.p: lands 10:10 (source 10:10) coincident pin-to-ink 0px aim 45° transformed',
+          'fit loose.far ← partB.p: lands 30:10 (source 30:10) coincident pin-to-ink 3px (LOOSE — join floats)',
+          'paint order (bottom → top):',
+          '  1. partB [z0]',
+          '  2. needle',
+          '  3. loose',
+          '  4. partA [z2]',
+          '',
+        ].join('\n'),
+      )
+    })
+  })
+
+  test('--explain without --json prints paint order reasons and every occlusion verdict', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'assembly.drw')
+      writeFileSync(
+        file,
+        [
+          'draw red 8x8:',
+          '  fill #ff0000 rect(0:0, 7:7)',
+          'draw blue 8x8:',
+          '  fill #0000ff rect(0:0, 7:7)',
+          'draw green 8x8:',
+          '  fill #00ff00 rect(0:0, 7:7)',
+          'draw yellow 8x8:',
+          '  fill #ffff00 rect(0:0, 7:7)',
+          'draw cyan 6x6:',
+          '  fill #00ffff rect(0:0, 5:5)',
+          'draw magenta 6x6:',
+          '  fill #ff00ff rect(0:0, 5:5)',
+          'draw orange 4x4:',
+          '  fill #ff8800 rect(0:0, 3:3)',
+          'draw purple 4x4:',
+          '  fill #8800ff rect(0:0, 3:3)',
+          '',
+          'draw assembly 40x40:',
+          '  stamp red 2:2',
+          '  stamp blue 6:6 behind red',
+          '  stamp green 20:2',
+          '  fill #000000 rect(0:0, 0:0)',
+          '  stamp yellow 24:6 behind green',
+          '  stamp cyan 2:30',
+          '  stamp magenta 4:30 behind cyan',
+          '  stamp orange 2:36',
+          '  stamp purple 30:2 behind orange',
+          '',
+        ].join('\n'),
+      )
+      const r = run('render', `${file}#assembly`, '--explain')
+      expect(r.exitCode).toBe(0)
+      expect(r.stdout.toString('utf8')).toBe(
+        [
+          'paint order (bottom → top):',
+          '  1. blue [behind red]',
+          '  2. red',
+          '  3. green',
+          '  4. yellow [behind green]',
+          '  5. magenta [behind cyan]',
+          '  6. cyan',
+          '  7. purple [behind orange]',
+          '  8. orange',
+          'occlusion blue behind red: overlap 16px, violating 0px — ok',
+          'occlusion yellow behind green: overlap 16px, violating 16px — VIOLATED',
+          'occlusion magenta behind cyan: overlap 24px, violating 0px — ok',
+          'occlusion purple behind orange: overlap 0px, violating 0px — no overlap',
+          '',
+        ].join('\n'),
+      )
     })
   })
 
@@ -716,7 +1036,7 @@ describe('render', () => {
         'mask box = rect(2:2, 5:5)',
         '',
         'draw badge 8x8:',
-        '  pal k=#000000  r=#ff0000',
+        '  palette k=#000000  r=#ff0000',
         '  bg k',
         '  mask box:',
         '    bg r',
@@ -795,7 +1115,7 @@ describe('render', () => {
         file,
         [
           'draw badge 8x8:',
-          '  pal k=#000000  r=#ff0000',
+          '  palette k=#000000  r=#ff0000',
           '  mask box = rect(2:2, 5:5)',
           '  bg k',
           '  mask box:',
@@ -1174,11 +1494,11 @@ describe('render', () => {
 
     test('composes with --png@N — the whole opaque sprite becomes opaque black', () => {
       withTmpDir((dir) => {
-        const file = bigFixture(dir)
+        const file = flatFixture(dir)
         const out = join(dir, 'sil@2.png')
         const r = runJson(
           'render',
-          `${file}#big`,
+          `${file}#flat`,
           '--silhouette',
           '--png@2',
           '--out',
@@ -1187,13 +1507,20 @@ describe('render', () => {
         )
         expect(r.exitCode).toBe(0)
         const body = r.json as {
-          render: { kind: string; width: number; height: number; silhouette: boolean }
+          render: {
+            kind: string
+            width: number
+            height: number
+            silhouette: boolean
+            plateDetected: boolean
+          }
         }
         expect(body.render).toMatchObject({
           kind: 'png',
           width: 40,
           height: 20,
           silhouette: true,
+          plateDetected: false,
         })
         const decoded = decodePng(new Uint8Array(readFileSync(out)))
         for (let i = 0; i < decoded.data.length; i += 4) {
@@ -1209,30 +1536,99 @@ describe('render', () => {
 
     test('composes with --inspect --json, collapsing the sprite to a single black colour', () => {
       withTmpDir((dir) => {
-        const file = bigFixture(dir)
-        const r = runJson('render', `${file}#big`, '--silhouette', '--inspect', '--json')
+        const file = flatFixture(dir)
+        const r = runJson('render', `${file}#flat`, '--silhouette', '--inspect', '--json')
         expect(r.exitCode).toBe(0)
         const body = r.json as {
-          render: { kind: string; silhouette: boolean; inspect: { distinctColorCount: number } }
+          render: {
+            kind: string
+            silhouette: boolean
+            plateDetected: boolean
+            inspect: { distinctColorCount: number }
+          }
         }
         expect(body.render.kind).toBe('inspect')
         expect(body.render.silhouette).toBe(true)
+        expect(body.render.plateDetected).toBe(false)
         expect(body.render.inspect.distinctColorCount).toBe(1)
       })
     })
 
     test('surfaces the silhouette flag under --ascii --json; omits it without the flag', () => {
       withTmpDir((dir) => {
-        const file = bigFixture(dir)
-        const on = runJson('render', `${file}#big`, '--silhouette', '--ascii', '--json')
+        const file = flatFixture(dir)
+        const on = runJson('render', `${file}#flat`, '--silhouette', '--ascii', '--json')
         expect(on.exitCode).toBe(0)
         const onBody = on.json as { render: { kind: string; silhouette?: boolean } }
         expect(onBody.render.kind).toBe('ascii')
         expect(onBody.render.silhouette).toBe(true)
 
-        const off = runJson('render', `${file}#big`, '--ascii', '--json')
+        const off = runJson('render', `${file}#flat`, '--ascii', '--json')
         const offBody = off.json as { render: { silhouette?: boolean } }
         expect(offBody.render.silhouette).toBeUndefined()
+      })
+    })
+
+    // ADR-0083 amendment: `--silhouette` reuses `detectPlateFigure` (src/preview.ts, shared with
+    // critique's C009 check) so a plated sprite (`icon-craft.md`'s canonical opaque tile/plate
+    // stamped with a glyph) silhouettes the *figure*, not the plate that dominates its alpha mask.
+    describe('plate-aware (ADR-0083 amendment)', () => {
+      test('subtracts a detected plate: only the figure silhouettes, the plate area goes transparent', () => {
+        withTmpDir((dir) => {
+          // icon-craft.md's own contract: a plate/tile is inset from the canvas edge by its own
+          // transparent margin (never edge-to-edge like `bigFixture`'s full-bleed `bg` — that's
+          // structurally a scene, not a plate, and `detectPlateFigure` now declines it precisely
+          // because it has no margin at all) — a white plate 1:1..18:8 on a 20x10 canvas, with a
+          // black glyph rect stamped in its interior.
+          const file = join(dir, 'plated.drw')
+          writeFileSync(
+            file,
+            'draw plated 20x10:\n  rect #ffffff 1:1 18:8 fill\n  rect #000000 7:3 12:6 fill\n',
+          )
+          const out = join(dir, 'plate-sil.png')
+          const r = run('render', `${file}#plated`, '--silhouette', '--out', out, '--json')
+          expect(r.exitCode).toBe(0)
+          expect(r.stderr).toContain(
+            'plate detected — showing the glyph silhouette, not the full alpha mask',
+          )
+          const body = JSON.parse(r.stdout.toString('utf8')) as {
+            render: { silhouette: boolean; plateDetected: boolean }
+          }
+          expect(body.render.silhouette).toBe(true)
+          expect(body.render.plateDetected).toBe(true)
+          const decoded = decodePng(new Uint8Array(readFileSync(out)))
+          const px = (x: number, y: number): number[] => {
+            const i = (y * decoded.w + x) * 4
+            return [...decoded.data.subarray(i, i + 4)]
+          }
+          // Plate area (inside the white rect but outside the glyph, e.g. its top-left corner) is
+          // subtracted — no longer painted at all, not even a transparent-black leftover.
+          expect(px(2, 2)).toEqual([0, 0, 0, 0])
+          // Figure area (inside the black rect, `8:4 11:6`) still silhouettes solid black.
+          expect(px(9, 5)).toEqual([0, 0, 0, 255])
+        })
+      })
+
+      test('an unplated sprite silhouettes byte-identical to before this fix (plateDetected: false)', () => {
+        withTmpDir((dir) => {
+          // A rect on a transparent canvas never touches all four edges, so it can never be
+          // mistaken for a plate — `detectPlateFigure` bails on the edge-touch gate alone.
+          const file = join(dir, 'unplated.drw')
+          writeFileSync(file, 'draw unplated 20x10:\n  rect #ff00ff 4:3 17:7 fill\n')
+          const r = runJson('render', `${file}#unplated`, '--silhouette', '--inspect', '--json')
+          expect(r.exitCode).toBe(0)
+          const body = r.json as {
+            render: {
+              silhouette: boolean
+              plateDetected: boolean
+              inspect: { distinctColorCount: number; opaquePixelCount: number }
+            }
+          }
+          expect(body.render.silhouette).toBe(true)
+          expect(body.render.plateDetected).toBe(false)
+          // The full 14x5 rect silhouettes solid, exactly as the pre-fix full-mask transform did.
+          expect(body.render.inspect.opaquePixelCount).toBe(14 * 5)
+        })
       })
     })
   })
@@ -1467,6 +1863,33 @@ describe('sheet', () => {
       expect(r.exitCode).toBe(1)
       const diags = r.json as { code: string; message: string }[]
       expect(diags[0]?.code).toBe('E022')
+    })
+  })
+
+  // A W010 fit gap raised while rendering a sheeted drawing surfaces in the sheet diagnostics,
+  // the same way `build`/`render` surface it (ADR-0087) — non-fatal, exit 0.
+  const GAP_SHEET = [
+    'draw torso 12x20:',
+    '  fill #6a5030 rect(0:0, 11:19)',
+    '  pin shoulder 10:3',
+    'draw arm 6x14:',
+    '  fill #8a5a3a rect(0:0, 5:13)',
+    '  pin shoulder 0:2',
+    'draw fig 34x34:',
+    '  stamp torso 4:2',
+    '  pin far.spot 30:30',
+    '  fit arm.shoulder far.spot', // arm lands in empty space → W010
+    '',
+  ].join('\n')
+
+  test('--json surfaces a W010 fit gap from a sheeted drawing (still exit 0)', () => {
+    withTmpDir((dir) => {
+      const file = join(dir, 'gap.drw')
+      writeFileSync(file, GAP_SHEET)
+      const r = runJson('sheet', file, '--all', '--out', join(dir, 'gap.sheet.png'), '--json')
+      expect(r.exitCode).toBe(0)
+      const body = r.json as { diagnostics: { code: string; severity: string }[] }
+      expect(body.diagnostics.some((d) => d.code === 'W010' && d.severity === 'warning')).toBe(true)
     })
   })
 })

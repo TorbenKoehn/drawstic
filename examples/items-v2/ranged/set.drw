@@ -1,5 +1,5 @@
 theme rangedSet:
-  pal:
+  palette:
     k = #241a20
     w = #8f6338
     a = #c29159
@@ -168,29 +168,15 @@ draw quiver:
   line k 37:11 42:2 w3
   line w 37:11 42:2
 
-tileset ranged 64x64:
-  tiles shortbow, longbow, crossbow, arrowBundle, bolts, quiver
+atlas ranged:
+  sprites shortbow, longbow, crossbow, arrowBundle, bolts, quiver
+  tile 64x64
   cols 3
 
-export shortbow shortbow:
+export shortbow, longbow, crossbow, arrowBundle, bolts, quiver:
   png @1 @4
 
-export longbow longbow:
-  png @1 @4
-
-export crossbow crossbow:
-  png @1 @4
-
-export arrowBundle arrowBundle:
-  png @1 @4
-
-export bolts bolts:
-  png @1 @4
-
-export quiver quiver:
-  png @1 @4
-
-export ranged ranged:
+export ranged:
   png @1 @4
   tiled
   atlasJson

@@ -166,20 +166,41 @@ const paeth = (a: number, b: number, c: number): number => {
 }
 
 /**
+ * A structured `decodePng` failure: bad signature, an unsupported Adam7-interlaced image, or an
+ * unrecognised filter byte. `decodePng` is a leaf byte-decoder with no source-position context (it
+ * only ever sees bytes, never a recipe file/span) so it cannot itself raise a positioned
+ * `DrawsticError` (ADR-0030) — but a bare `Error` would lose even the stable failure `code`. This
+ * carries that code so a caller with real position context (e.g. the `image` import boundary) can
+ * rewrap it into a positioned `DrawsticError` (`ERROR_CODE.pngUnsupported`) without parsing the
+ * message text.
+ */
+export class PngDecodeError extends Error {
+  readonly code: 'bad-signature' | 'interlaced' | 'bad-filter'
+  constructor(code: PngDecodeError['code'], message: string) {
+    super(message)
+    this.name = 'PngDecodeError'
+    this.code = code
+  }
+}
+
+/**
  * Decodes a PNG's critical chunks (IHDR/PLTE/tRNS/IDAT/IEND) to straight-alpha
  * RGBA8 — the `import` path (ADR-0045). Supports bit depths 1/2/4/8/16 and every
  * standard colour type (0 greyscale, 2 truecolour, 3 indexed, 4 greyscale+alpha,
  * 6 truecolour+alpha); ancillary chunks are ignored. Inflate + defilter is
  * bit-exact, which is why PNG (unlike JPEG) is safe as a determinism boundary
- * (ADR-0045, ADR-0007). Throws a plain `Error` — not a positioned
- * `DrawsticError` — on a bad signature, an interlaced image (unsupported), or an
- * unrecognised filter byte; callers at the `import` boundary catch and rewrap it
- * as `ERROR_CODE.importError`.
+ * (ADR-0045, ADR-0007). Throws a {@link PngDecodeError} — never a bare `Error`
+ * — on a bad signature, an interlaced (Adam7) image (decoding it is out of
+ * scope; failing honestly is in scope), or an unrecognised filter byte. The
+ * `image NAME = FILE-PATH` boundary (`Engine#loadImage`) catches it and rewraps
+ * it as a positioned `DrawsticError` (`ERROR_CODE.pngUnsupported`); `render
+ * --diff`'s comparison-PNG boundary (`cli.ts`) rewraps any decode failure as
+ * `ERROR_CODE.ioError` instead, since there's no recipe span to attach there.
  */
 export const decodePng = (bytes: Uint8Array): DecodedPng => {
   for (let i = 0; i < 8; i++) {
     if (bytes[i] !== SIG[i]) {
-      throw new Error('not a PNG file')
+      throw new PngDecodeError('bad-signature', 'not a PNG file')
     }
   }
   let pos = 8
@@ -219,7 +240,11 @@ export const decodePng = (bytes: Uint8Array): DecodedPng => {
     pos += 12 + len
   }
   if (interlace !== 0) {
-    throw new Error('interlaced PNGs are not supported')
+    throw new PngDecodeError(
+      'interlaced',
+      'Adam7-interlaced PNGs are not supported — re-export the source image as a ' +
+        'non-interlaced (baseline) PNG',
+    )
   }
   const channels =
     colorType === 0 ? 1 : colorType === 2 ? 3 : colorType === 3 ? 1 : colorType === 4 ? 2 : 4
@@ -256,7 +281,7 @@ export const decodePng = (bytes: Uint8Array): DecodedPng => {
           v = rawB + paeth(left, up, ul)
           break
         default:
-          throw new Error(`unknown PNG filter ${f}`)
+          throw new PngDecodeError('bad-filter', `unknown PNG filter ${f}`)
       }
       dst[x] = v & 0xff
     }

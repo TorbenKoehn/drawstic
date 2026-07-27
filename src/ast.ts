@@ -91,9 +91,9 @@ export type Expression =
       /**
        * A `target.name` or `target.name(args)` expression — UFCS call, `x.f(a)` sugar
        * for `f(x, a)` (ADR-0010, D8). `args` is `undefined` for the bare,
-       * parenless zero-argument form (`c.grayscale`) and an array
+       * parenless zero-argument form (`n.floor`) and an array
        * (possibly empty) for an explicit parenthesized call
-       * (`c.grayscale()`); both mean the same thing to the evaluator.
+       * (`n.floor()`); both mean the same thing to the evaluator.
        */
       readonly kind: 'method'
       readonly target: Expression
@@ -117,7 +117,7 @@ export type Argument =
     }
 
 /**
- * One `pal` line (spec §7). `entry` binds a single key (`k = #235`);
+ * One `palette` line (spec §7). `entry` binds a single key (`k = #235`);
  * `destructure` binds several keys positionally from one list-valued
  * expression (`r, g, b = rgb`) — evaluation requires the list length to
  * match `keys.length`, one key per list item, all colors.
@@ -143,6 +143,20 @@ export type PaletteEntry =
  */
 export type PixelRow = { readonly text: string; readonly span: TextSpan }
 
+/** The dose-override keys a `material NAME = …` binding may carry (ADR-0091). */
+export const MATERIAL_OVERRIDE_KEYS = [
+  'shade',
+  'hi',
+  'rim',
+  'ao',
+  'spec',
+  'puff',
+  'spread',
+] as const
+export type MaterialOverrideKey = (typeof MATERIAL_OVERRIDE_KEYS)[number]
+/** A partial map of material dose overrides → their (percent/`0..1`) value expressions (ADR-0091). */
+export type MaterialOverrides = Partial<Record<MaterialOverrideKey, Expression>>
+
 /**
  * Statement grammar (spec §17.4 `draw-stmt` / `top-stmt`). Covers module-,
  * theme-, and drawing-level statements in one union; which kinds are legal
@@ -152,15 +166,15 @@ export type PixelRow = { readonly text: string; readonly span: TextSpan }
 export type Statement =
   | {
       /**
-       * A `names = expr` binding (plain, incl. destructuring), `grad NAME = expr`, or
+       * A `names = expr` binding (plain, incl. destructuring), `gradient NAME = expr`, or
        * `mask NAME = expr`. `bindKind` records which keyword form produced
-       * the binding — `grad`/`mask` bindings still carry a single name in
+       * the binding — `gradient`/`mask` bindings still carry a single name in
        * `names`.
        */
       readonly kind: 'binding'
       readonly names: string[]
       readonly expression: Expression
-      readonly bindKind: 'plain' | 'grad' | 'mask'
+      readonly bindKind: 'plain' | 'gradient' | 'mask'
       readonly span: TextSpan
     }
   | {
@@ -200,21 +214,9 @@ export type Statement =
       readonly span: TextSpan
     }
   | {
-      readonly kind: 'repeat'
-      readonly count: Expression
-      readonly body: Statement[]
-      readonly span: TextSpan
-    }
-  | {
       readonly kind: 'for'
       readonly target: string
       readonly iterable: Expression
-      readonly body: Statement[]
-      readonly span: TextSpan
-    }
-  | {
-      readonly kind: 'while'
-      readonly condition: Expression
       readonly body: Statement[]
       readonly span: TextSpan
     }
@@ -255,6 +257,151 @@ export type Statement =
       readonly body: Statement[]
       readonly span: TextSpan
     }
+  | {
+      /**
+       * A `light NAME = dir DX:DY COLOR [amb COOL AMT] [gain N]` (directional) or
+       * `light NAME = at X:Y COLOR …` (point-source) binding (ADR-0086): inline args,
+       * no constructor parentheses. `dir`/`at`/`amb`/`gain` are keywords *only* in
+       * this position (contextual, D7) — ordinary bindable names everywhere else.
+       */
+      readonly kind: 'lightBinding'
+      readonly name: string
+      readonly source: 'dir' | 'at'
+      readonly vec: Expression
+      readonly color: Expression
+      readonly amb: { readonly color: Expression; readonly amount: Expression } | undefined
+      readonly gain: Expression | undefined
+      readonly span: TextSpan
+    }
+  | {
+      /**
+       * A `material NAME = COLOR [RESPONSE]` binding (ADR-0086): a base colour plus an
+       * optional response word (`flat|metal|skin|cloth|glass|glow`; omitted ⇒ `flat`).
+       * The response is a keyword *only* in this slot (contextual, D7); validated at
+       * parse time so `response` is always a real {@link import('./values.js').MaterialResponse}.
+       */
+      readonly kind: 'figureBlock'
+      /**
+       * A theme `figure:` block (ADR-0093) declaring the project's proportion numbers. Each field is a
+       * bare name (`heads`, `headW`, `eyeLine`, `earLine`, `eyeSep`, `neckW`, `shoulderW`, `hipW`)
+       * paired with a numeric expression; the engine folds them into the theme and derives a `fig`
+       * guide value per drawing. Field names are contextual — validated by the evaluator, not reserved.
+       */
+      readonly fields: readonly { readonly name: string; readonly value: Expression }[]
+      readonly span: TextSpan
+    }
+  | {
+      readonly kind: 'materialBinding'
+      readonly name: string
+      readonly color: Expression
+      readonly response: string | undefined
+      /**
+       * Optional form profile (`round`|`drape`, ADR-0091): how the height field inflates the region.
+       * A contextual keyword in this trailing slot only (`omitted ⇒ round`); validated at parse time.
+       */
+      readonly profile: string | undefined
+      /**
+       * Optional trailing dose overrides (ADR-0091), order-free keywords in this slot only:
+       * `shade`/`hi`/`rim`/`ao`/`spec` replace a response's baked dose; `puff` its curvature gain;
+       * `spread` scales `hi`+`shade` symmetrically. Each value is a `0..1`/percent expression.
+       */
+      readonly overrides: MaterialOverrides
+      readonly span: TextSpan
+    }
+  | {
+      /**
+       * A `pin KEY PT` attach-point declaration (ADR-0087): registers a named point `KEY` in the
+       * enclosing drawing's own coordinate space. `KEY` is a bare name in a part draw
+       * (`pin shoulder 4:0`, exported on the rendered sprite) or a dotted `part.name`
+       * (`pin torso.shoulder 16:14`) that seeds a canvas-space attach point for `fit`. `pin` is a
+       * keyword *only* in this `pin NAME …` statement position (contextual, D7).
+       */
+      readonly kind: 'pinDeclaration'
+      readonly name: string
+      readonly point: Expression
+      readonly span: TextSpan
+    }
+  | {
+      /**
+       * A `fit TARGET SOURCE [flags] [ground]` anchored-assembly placement (ADR-0087): places
+       * `TARGET`'s part so its named pin lands exactly on `SOURCE` — a contact-guaranteed replacement
+       * for a hand-computed `stamp` point. `target` names the part (a bare name resolving to a drawing/
+       * sprite) and its pin (`undefined` ⇒ auto-match the single pin name shared with the source).
+       * `source` is either another placed part's already-registered pin (`ref`) or a canvas point
+       * expression (`point` — the ground-placement oracle: `fit tree.base x:groundY(x)`). `flags` are
+       * the same `stamp` transform/paint modifiers (`flipx`/`flipy`/`rotN`/`scaleN`/`transform:`/
+       * `tint:`/`mask:`), applied to the part about its footprint centre; the pins ride the same
+       * transform so the fit pin still lands exactly on `SOURCE` (ADR-0087 amendment 2). `ground`
+       * (ADR-0096 §2, was `shadow` — distinct from `stamp … shadow dx:dy p`, which keeps its name)
+       * drops an auto contact-shadow ellipse under the footprint first. `fit` is a keyword *only* in
+       * this statement position (contextual, D7).
+       */
+      readonly kind: 'fit'
+      readonly target: { readonly head: string; readonly pin: string | undefined }
+      readonly source:
+        | { readonly kind: 'ref'; readonly head: string; readonly pin: string | undefined }
+        | { readonly kind: 'point'; readonly expression: Expression }
+        // A `bone JOINT` source (ADR-0095): the part's pin lands on the active pose's solved joint
+        // `JOINT` and the part inherits the joint's pose-angle change as its orientation (and its
+        // view depth for auto-Z). `bone` is a contextual keyword in this slot only.
+        | { readonly kind: 'bone'; readonly joint: string }
+      readonly flags: Argument[]
+      readonly ground: boolean
+      /**
+       * Optional occlusion relations (ADR-0092): `behind TARGET` layers this part below the
+       * already-placed part `TARGET` in the resolved paint order; `front TARGET` layers it above.
+       * `TARGET` is a bare part-name (a `head` of an earlier top-level `stamp`/`fit`). Contextual
+       * keywords in this trailing slot only. Both may repeat; ties break by statement order, a cycle
+       * is a positioned E025.
+       */
+      readonly behind: readonly string[]
+      readonly front: readonly string[]
+      /**
+       * Optional 1-bone orientation solve (ADR-0092): `aim PIN PT` rotates the part about its fit
+       * pin until the named second pin `PIN` points at the canvas point `PT` (atan2). Contextual
+       * keyword in this trailing slot only.
+       */
+      readonly aim: { readonly pin: string; readonly point: Expression } | undefined
+      readonly span: TextSpan
+    }
+  | {
+      /**
+       * A `skeleton NAME:` rig block (ADR-0095), module scope. Each body line declares one joint:
+       * either `NAME at POINT` (anchored — position from a point, typically a `fig` guide point) or
+       * `NAME from PARENT ANGLE LENGTH` (forward-kinematic — position derived off the parent joint).
+       * Either form may carry a trailing `limit MIN:MAX` (allowed pose-delta range, degrees). Joints
+       * are declared parents-first. `skeleton` is a contextual keyword in this block position only.
+       */
+      readonly kind: 'skeletonBlock'
+      readonly name: string
+      readonly joints: readonly SkeletonJointAst[]
+      readonly span: TextSpan
+    }
+  | {
+      /**
+       * A `pose NAME over SKELETON:` block (ADR-0095), module scope. `view` selects the projection
+       * (`front|side|back`, folds into `fig`); each `JOINT DELTA [z Z]` line adds `DELTA` degrees to
+       * that joint's rest angle and optionally declares its auto-Z depth `Z` (higher = nearer the
+       * viewer). A delta outside the joint's `limit` is a positioned error (never silently clamped).
+       */
+      readonly kind: 'poseBlock'
+      readonly name: string
+      readonly skeleton: string
+      readonly view: 'front' | 'side' | 'back'
+      readonly entries: readonly PoseEntryAst[]
+      readonly span: TextSpan
+    }
+  | {
+      /**
+       * A `pose NAME` drawing-body statement (ADR-0095): applies the named pose — solves its skeleton
+       * over the drawing's canvas + figure oracle, then binds every joint as a bone anchor a later
+       * `fit part.pin bone JOINT` can reference. A view/stance is one pose; the pose's per-joint depth
+       * feeds auto-Z. Contextual keyword — `pose NAME over …:` (with `over`) is the block above.
+       */
+      readonly kind: 'poseApply'
+      readonly name: string
+      readonly span: TextSpan
+    }
   | { readonly kind: 'palette'; readonly entries: PaletteEntry[]; readonly span: TextSpan }
   | { readonly kind: 'pixels'; readonly rows: PixelRow[]; readonly span: TextSpan }
   | {
@@ -282,7 +429,6 @@ export type Statement =
       readonly height: number
       readonly span: TextSpan
     }
-  | { readonly kind: 'seedDirective'; readonly seed: number; readonly span: TextSpan }
   | { readonly kind: 'fontDirective'; readonly name: string; readonly span: TextSpan }
   | { readonly kind: 'modeDirective'; readonly mode: 'pixel' | 'smooth'; readonly span: TextSpan }
   | { readonly kind: 'with'; readonly names: string[]; readonly span: TextSpan }
@@ -310,16 +456,25 @@ export type Statement =
   | { readonly kind: 'drawDefinition'; readonly def: DrawDefinition; readonly span: TextSpan }
   | { readonly kind: 'themeDefinition'; readonly def: ThemeDefinition; readonly span: TextSpan }
   | { readonly kind: 'fontDefinition'; readonly def: FontDefinition; readonly span: TextSpan }
-  | { readonly kind: 'tilesetDefinition'; readonly def: TilesetDefinition; readonly span: TextSpan }
   | { readonly kind: 'atlasDefinition'; readonly def: AtlasDefinition; readonly span: TextSpan }
-  | { readonly kind: 'exportDefinition'; readonly def: ExportDefinition; readonly span: TextSpan }
   | {
       /**
-       * An `import NAME = FILE-PATH [sha256 HEX]` statement — a PNG loaded as a
+       * One `export` block — expanded by the parser into one resolved {@link ExportDefinition} per
+       * target (ADR-0098 §9), so `defs` has as many entries as the block had targets and `span` is
+       * the block header.
+       */
+      readonly kind: 'exportDefinition'
+      readonly defs: ExportDefinition[]
+      readonly span: TextSpan
+    }
+  | {
+      /**
+       * An `image NAME = FILE-PATH [sha256 HEX]` statement (ADR-0096 §2, was `import` —
+       * `import` means module import everywhere else in the language) — a PNG loaded as a
        * drawing. `sha256`, if present, pins the source file's content
        * hash (checked at build time, E020 on mismatch).
        */
-      readonly kind: 'imageImport'
+      readonly kind: 'image'
       readonly name: string
       readonly path: string
       readonly sha256: string | undefined
@@ -335,6 +490,29 @@ export type Statement =
       readonly items: { readonly name: string; readonly alias: string | undefined }[]
       readonly span: TextSpan
     }
+
+/**
+ * One joint line of a `skeleton NAME:` block (ADR-0095). `anchor` set ⇒ an anchored joint (position
+ * from the `anchor` point); otherwise an FK joint positioned off `parent` by `angle`/`length`. `limit`
+ * is the optional `MIN:MAX` pose-delta bound. All numeric fields are expressions (may reference `fig`).
+ */
+export type SkeletonJointAst = {
+  readonly name: string
+  readonly parent: string | null
+  readonly anchor: Expression | null
+  readonly angle: Expression | null
+  readonly length: Expression | null
+  readonly limit: { readonly min: Expression; readonly max: Expression } | null
+  readonly span: TextSpan
+}
+
+/** One `JOINT DELTA [z Z]` line of a `pose NAME over SKELETON:` block (ADR-0095). */
+export type PoseEntryAst = {
+  readonly joint: string
+  readonly delta: Expression
+  readonly depth: Expression | null
+  readonly span: TextSpan
+}
 
 /**
  * One `match` arm. `label` is `undefined` for the catch-all `else:` arm;
@@ -451,11 +629,12 @@ export type FontItem =
     }
   | {
       /**
-       * A `glyphs TILESET STRING` item — bulk-assigns one tileset's tiles to the
-       * characters of `chars`, positionally.
+       * A `glyphs ATLAS STRING` item — bulk-assigns one uniform-tile atlas's members to the
+       * characters of `chars`, positionally (ADR-0096 §3: requires the named `atlas` to carry a
+       * `tile WxH` declaration — index order is only meaningful for uniform tiles).
        */
       readonly kind: 'glyphs'
-      readonly tileset: string
+      readonly atlas: string
       readonly chars: string
       readonly span: TextSpan
     }
@@ -469,20 +648,27 @@ export type FontDefinition = {
   readonly span: TextSpan
 }
 
-export type TilesetDefinition = {
-  readonly name: string
-  readonly tileWidth: number
-  readonly tileHeight: number
-  readonly tiles: string[]
-  readonly columns: number | undefined
-  readonly span: TextSpan
-}
-
+/**
+ * `atlas NAME:` (ADR-0096 §3 — merges the former `tileset`/`atlas` split into one construct).
+ * `tile`, when present, makes every member a fixed `width`x`height` grid slot (row-major,
+ * `columns` — default `ceil(sqrt(n))`), addressed by name; `pad` is the grid gutter (also the
+ * Tiled sidecar's `spacing`), and `place` is rejected (a grid has fixed slots already). Without
+ * `tile`, members shelf-pack (tallest-first, then declaration order) with `pad` as inter-sprite
+ * gutter, and any subset may be pinned with `place`; `cols` is rejected (nothing to count columns
+ * of without a fixed grid).
+ */
 export type AtlasDefinition = {
   readonly name: string
   readonly sprites: string[]
+  readonly tile: { readonly width: number; readonly height: number } | undefined
+  readonly columns: number | undefined
   readonly padding: number
-  readonly place: { readonly name: string; readonly x: number; readonly y: number }[]
+  readonly place: readonly {
+    readonly name: string
+    readonly x: number
+    readonly y: number
+    readonly span: TextSpan
+  }[]
   readonly span: TextSpan
 }
 
@@ -508,21 +694,45 @@ export type FormatLine = {
   readonly span: TextSpan
 }
 
-export type ExportDefinition = {
-  readonly name: string
-  readonly basePath: string
-  readonly formats: FormatLine[]
+/**
+ * The block-level facts shared by every target of one `export` block (ADR-0098 §9). The parser
+ * expands a block into one resolved {@link ExportDefinition} per target, so this is the only place
+ * the block itself survives — the lints that reason about a block's *shape* (`W016`'s `dir` arm,
+ * `W019`) read it, and dedupe on this object's identity so a 6-target block reports once.
+ */
+export type ExportGroup = {
+  /** The block's `dir` prefix, already part of every member's `basePath`; `undefined` if absent. */
+  readonly dir: string | undefined
+  readonly dirSpan: TextSpan | undefined
+  /** Whether the block declared a `file` name template. */
+  readonly hasFile: boolean
+  /** Each target's own `OUTPUT-PATH`, in declaration order; `undefined` where the target had none. */
+  readonly explicitPaths: readonly (string | undefined)[]
+  /** The block header (`export …:`), not any one target. */
   readonly span: TextSpan
 }
 
 /**
- * The parsed form of one `.drw` file. `pragma` is the optional leading
- * `drawstic N` version pin (ADR-0029); `undefined` means "engine's current
- * version". `file` is the display path used in diagnostics, not
- * necessarily a filesystem path.
+ * One resolved export target (ADR-0098 §9): a block with N targets yields N of these, in
+ * declaration order. `basePath` is the **composed** path (`dir` + the target's own path, the
+ * rendered `file` template, or the target name — §2) and `span` is the **target's own** name token,
+ * so a diagnostic points at the target that caused it rather than at the whole block. `formats` and
+ * `group` are shared with the block's other targets.
+ */
+export type ExportDefinition = {
+  readonly name: string
+  readonly basePath: string
+  readonly formats: FormatLine[]
+  readonly group: ExportGroup
+  readonly span: TextSpan
+}
+
+/**
+ * The parsed form of one `.drw` file. The `drawstic N` version pin (ADR-0029) was removed
+ * (ADR-0096 §1) — inert since ADR-0088, one engine semantics only. `file` is the display path
+ * used in diagnostics, not necessarily a filesystem path.
  */
 export type Module = {
-  readonly pragma: number | undefined
   readonly statements: Statement[]
   readonly file: string
 }

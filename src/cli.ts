@@ -1,36 +1,58 @@
 // The Drawstic CLI (spec §16, ADR-0008/0030/0031):
-//   drawstic check <file> [--json]
+//   drawstic check <file> [--rows] [--lint] [--json]
 //   drawstic fmt <file> [--check] [--json]
 //   drawstic context <file> [--json]
 //   drawstic build <file> [--out <dir>] [--json]
 //   drawstic render <file>#<drawing>[(args)] [--png@N] [--out <path>] [--stdout]
-//                   [--ascii] [--preview] [--silhouette] [--grid N] [--diff <png>]
-//                   [--mode pixel|smooth] [--json]
+//                   [--ascii] [--preview] [--silhouette] [--inspect] [--explain]
+//                   [--grid N] [--diff <png>] [--mode pixel|smooth] [--crop x:y WxH]
+//                   [--fit WxH] [--json]
 // A parametric drawing takes literal arguments in the fragment (ADR-0067):
 //   drawstic render parts.drw#house(#c04040, 3)
 // `--grid`/`--diff` are debug-only PNG-output aids (P3 drawing aids): `--grid`
 // burns a coordinate overlay into the written PNG only; `--diff` compares the
 // fresh (UNgridded) render against a previous PNG. Neither ever touches
 // `build` exports.
+// `build`'s `--out` defaults to the recipe file's own directory (ADR-0096 §6) — an export path is
+// relative to that, and `--out` only relocates the whole tree; it no longer depends on the caller's
+// cwd.
 // Every command accepts --json; exit code is non-zero iff an error
 // diagnostic was produced.
 
 import { readFileSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import type { DrawDefinition, FormatLine, Statement } from './ast.js'
-import { buildModule, validateExport } from './build.js'
+import { buildModule, validateExport, validateExportPlan } from './build.js'
 import { toHexColor } from './color.js'
+import {
+  buildRubric,
+  type CritiqueDrawing,
+  critiqueCheckDiagnostic,
+  critiqueFamily,
+  critiqueSprite,
+  type FamilyMetrics,
+  type PaletteTarget,
+  resolveProfile,
+} from './critique.js'
 import {
   type Diagnostic,
   DrawsticError,
   ERROR_CODE,
   error,
   formatDiagnostic,
+  type TextSpan,
 } from './diagnostic.js'
-import { defaultBudget, Engine, type ModuleRecord } from './eval.js'
+import {
+  defaultBudget,
+  Engine,
+  type ExplainRecord,
+  type ModuleRecord,
+  type PlacementRecord,
+  type PoseSolveRecord,
+} from './eval.js'
 import { format, formatDiff } from './fmt.js'
 import { inspectSprite } from './inspect.js'
-import { lintModule } from './lint.js'
+import { censusModule, lintModule, type ModuleCensus } from './lint.js'
 import { type DecodedPng, decodePng, encodePngRgba } from './png.js'
 import {
   applyGridOverlay,
@@ -44,8 +66,8 @@ import {
   spriteToAscii,
 } from './preview.js'
 import { scaleBitmap } from './raster.js'
-import { buildSheet, type SheetLayout } from './sheet.js'
-import type { Region, Sprite } from './values.js'
+import { buildSheet, type SheetLayout, selectCritiqueFamily } from './sheet.js'
+import type { Light, OcclusionResult, Region, Sprite } from './values.js'
 
 // union of every subcommand's flags; each `run*` handler reads only the
 // ones it recognizes and ignores the rest.
@@ -77,6 +99,12 @@ type CliArguments = {
   readonly pngScale: number
   readonly mode: 'pixel' | 'smooth' | null
   readonly budgetSteps: number | null
+  readonly as: string | null
+  readonly strict: boolean
+  readonly family: readonly string[] | null
+  readonly explain: boolean
+  /** Flags this parser did not recognize — reported as `E026` instead of being ignored. */
+  readonly unknownFlags: readonly string[]
 }
 
 type Writable<T> = { -readonly [P in keyof T]: T[P] }
@@ -86,9 +114,14 @@ type Writable<T> = { -readonly [P in keyof T]: T[P] }
  * are silently ignored rather than erroring — there is no "unknown flag"
  * diagnostic at this layer.
  */
+/** The flag spellings of `help` / `version` that a first-time user actually types. */
+const HELP_FLAGS = new Set(['help', '--help', '-h'])
+const VERSION_FLAGS = new Set(['version', '--version', '-v', '-V'])
+
 const parseArguments = (argv: string[]): CliArguments => {
+  const head = argv[0] ?? 'help'
   const cli: Writable<CliArguments> = {
-    command: argv[0] ?? 'help',
+    command: HELP_FLAGS.has(head) ? 'help' : VERSION_FLAGS.has(head) ? 'version' : head,
     target: null,
     json: false,
     check: false,
@@ -110,7 +143,13 @@ const parseArguments = (argv: string[]): CliArguments => {
     pngScale: 1,
     mode: null,
     budgetSteps: null,
+    as: null,
+    strict: false,
+    family: null,
+    explain: false,
+    unknownFlags: [],
   }
+  const unknown: string[] = []
 
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i] ?? ''
@@ -161,12 +200,34 @@ const parseArguments = (argv: string[]): CliArguments => {
       }
     } else if (a === '--budget') {
       cli.budgetSteps = Number.parseInt(argv[++i] ?? '0', 10) || null
+    } else if (a === '--as') {
+      cli.as = argv[++i] ?? null
+    } else if (a === '--strict') {
+      cli.strict = true
+    } else if (a === '--explain') {
+      cli.explain = true
+    } else if (a === '--family') {
+      const names = (argv[++i] ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+      cli.family = names.length > 0 ? names : null
     } else if (/^--png@\d+$/.test(a)) {
       cli.pngScale = Number.parseInt(a.slice(6), 10)
-    } else if (!a.startsWith('--') && cli.target === null) {
+    } else if (HELP_FLAGS.has(a)) {
+      // `drawstic render --help` asks for help, not for a render of a file named "--help"
+      cli.command = 'help'
+    } else if (VERSION_FLAGS.has(a)) {
+      cli.command = 'version'
+    } else if (a.startsWith('-')) {
+      // An unrecognized flag used to be swallowed in silence, so a typo (`--pgn@4`, `--strickt`)
+      // read as "the flag had no effect" — the CLI's own version of a silent failure.
+      unknown.push(a)
+    } else if (cli.target === null) {
       cli.target = a
     }
   }
+  cli.unknownFlags = unknown
   return cli
 }
 
@@ -283,7 +344,7 @@ const createEngine = (cli: CliArguments): Engine => {
 
 /**
  * Runs `drawstic check`: parse + deep semantic validation. Renders every
- * non-parametric `draw`/`tileset`/`atlas` and validates every `export`
+ * non-parametric `draw`/`atlas` and validates every `export`
  * (deduping identical diagnostics), so render-time errors (budget, type,
  * region) surface here, not just at `build`/`render`. `--lint` folds in
  * authoring warnings ({@link lintModule}); `--rows` reports per-drawing
@@ -293,6 +354,7 @@ const runCheck = (cli: CliArguments): number => {
   const file = cli.target ?? ''
   const diags: Diagnostic[] = []
   let rows: RowMetadata[] = []
+  let census: ModuleCensus | undefined
   try {
     const engine = createEngine(cli)
     const mod = engine.loadEntry(file)
@@ -319,23 +381,30 @@ const runCheck = (cli: CliArguments): number => {
       ) {
         collect(() => engine.renderDraw(entry, [], entry.definition.span))
       }
-      if (entry.kind === 'tileset' && entry.module === mod) {
-        collect(() => engine.buildTileset(entry, entry.definition.span))
-      }
       if (entry.kind === 'atlas' && entry.module === mod) {
         collect(() => engine.buildAtlas(entry, entry.definition.span))
       }
     }
+    // Module scope first: two exports writing one artifact is only visible across the whole plan,
+    // and it must surface here rather than mid-`build` with half the files already written.
+    collect(() => validateExportPlan(mod))
     for (const ex of mod.exports) {
       collect(() => validateExport(engine, mod, ex))
     }
     if (cli.lint) {
       diags.push(...lintModule(engine, mod))
+      census = censusModule(engine, mod)
     }
   } catch (e) {
     diags.push(toDiagnostic(e, file))
   }
-  return cli.rows ? emitObject(diags, cli.json, { rows }) : emit(diags, cli.json)
+  const payload = {
+    ...(cli.rows ? { rows } : {}),
+    ...(census ? { census } : {}),
+  }
+  return Object.keys(payload).length > 0
+    ? emitObject(diags, cli.json, payload)
+    : emit(diags, cli.json)
 }
 
 /**
@@ -446,6 +515,8 @@ type Brief = {
     readonly size: string | null
     readonly mode: string | null
     readonly font: string | null
+    readonly light: string | null
+    readonly figure: string | null
   }
   readonly drawings: readonly {
     readonly name: string
@@ -483,11 +554,28 @@ type Brief = {
 }
 
 /**
+ * Render a theme's default light (ADR-0086) back into its authoring form for the `context`
+ * brief — `dir DX:DY` (unit direction, 2-dp) or `at X:Y`, the colour hex, and `amb`/`gain`
+ * only when they carry non-default information — so the shared light is inspectable.
+ */
+const formatThemeLight = (l: Light): string => {
+  const r2 = (n: number): string => String(Math.round(n * 100) / 100)
+  const head = l.pos ? `at ${l.pos.x}:${l.pos.y}` : `dir ${r2(l.dir.x)}:${r2(l.dir.y)}`
+  const amb = l.amb ? ` amb ${toHexColor(l.amb.color)} ${Math.round(l.amb.amount * 100)}%` : ''
+  const gain = l.gain === 1 ? '' : ` gain ${l.gain}`
+  return `${head} ${toHexColor(l.color)}${amb}${gain}`
+}
+
+/**
  * Assembles the {@link Brief}. Parametric drawings can't be rendered without
  * arguments, so they get no size/preview; non-parametric ones are rendered
  * once — a `<=32x32` render also gets an inline ASCII preview, and anything
  * over `80x40` gets a `largePreviewHint` pointing at `render --preview --fit`
  * instead (an unreadably large inline ASCII dump).
+ *
+ * `mod.exports` is one entry per **resolved export target** (ADR-0098 §9/§11), so a 4-target block
+ * contributes 4 brief entries, in declaration order, each with the fully composed `basePath` — the
+ * brief's contract is what `build` will write, not what the recipe typed.
  */
 const buildBrief = (engine: Engine, mod: ModuleRecord): Brief => {
   const theme = mod.fileTheme
@@ -575,6 +663,12 @@ const buildBrief = (engine: Engine, mod: ModuleRecord): Brief => {
       size: theme?.size ? `${theme.size.width}x${theme.size.height}` : null,
       mode: theme?.mode ?? null,
       font: theme?.font ?? null,
+      light: theme?.light ? formatThemeLight(theme.light) : null,
+      figure: theme?.figure
+        ? Object.entries(theme.figure)
+            .map(([k, v]) => `${k} ${v}`)
+            .join(' · ')
+        : null,
     },
     drawings,
     exports,
@@ -698,19 +792,33 @@ const runContext = (cli: CliArguments): number => {
       }
       lines.push('')
     }
+    if (brief.theme.light) {
+      lines.push(
+        '## lighting',
+        `  light ${brief.theme.light}  (theme default, shared by all views)`,
+        '',
+      )
+    }
+    if (brief.theme.figure) {
+      lines.push(
+        '## figure',
+        `  ${brief.theme.figure}  (read guide points via fig.crown/eyeL/earR/… — see reference)`,
+        '',
+      )
+    }
     if (brief.drawings.length > 0) {
       lines.push('## drawings')
       for (const d of brief.drawings) {
         const params = d.params ? `(${d.params.join(', ')})` : ''
         lines.push(`  ${d.name} ${d.size}${params}`)
         if (d.localPaletteKeys.length > 0 || d.largePreviewHint) {
-          lines.push(`    size: ${d.sizeSource}; pal: ${d.localPaletteKeys.join(', ') || '-'}`)
+          lines.push(`    size: ${d.sizeSource}; palette: ${d.localPaletteKeys.join(', ') || '-'}`)
         }
         if (d.themes.length > 0) {
           lines.push(`    use: ${d.themes.join(', ')}`)
           if (d.themePalette.length > 0) {
             lines.push(
-              `    theme pal: ${d.themePalette.map((p) => `${p.key}=${p.hex} (${p.source})`).join(', ')}`,
+              `    theme palette: ${d.themePalette.map((p) => `${p.key}=${p.hex} (${p.source})`).join(', ')}`,
             )
           }
         }
@@ -756,7 +864,8 @@ const runContext = (cli: CliArguments): number => {
 
 /**
  * Runs `drawstic build`: executes every export in the file via {@link buildModule},
- * writing to `--out` (default cwd). `--json` reports the full
+ * writing to `--out` (default: the recipe file's own directory, ADR-0096 §6 — the recipe alone
+ * decides the layout and `--out` only relocates the whole tree). `--json` reports the full
  * {@link BuiltArtifact} list; otherwise one `wrote <path> (<n> bytes)` line
  * per artifact.
  */
@@ -766,14 +875,21 @@ const runBuild = (cli: CliArguments): number => {
   try {
     const engine = createEngine(cli)
     const mod = engine.loadEntry(file)
-    const outDir = cli.out ?? process.cwd()
+    const outDir = cli.out ?? dirname(mod.file)
     const artifacts = buildModule(engine, mod, outDir)
+    // Non-fatal render-time warnings (e.g. a `fit` gap, W010 — ADR-0087) collected during the
+    // export renders surface here exactly as `render` surfaces them, in JSON and human output.
     if (cli.json) {
-      process.stdout.write(`${JSON.stringify({ diagnostics: [], artifacts }, null, 1)}\n`)
+      process.stdout.write(
+        `${JSON.stringify({ diagnostics: engine.warnings, artifacts }, null, 1)}\n`,
+      )
       return 0
     }
     for (const a of artifacts) {
       process.stdout.write(`wrote ${a.path} (${a.bytes} bytes)\n`)
+    }
+    for (const w of engine.warnings) {
+      process.stdout.write(`${formatDiagnostic(w)}\n`)
     }
     return 0
   } catch (e) {
@@ -812,7 +928,9 @@ const namedMasksOf = (mod: ModuleRecord): { readonly name: string; readonly regi
 /**
  * Runs `drawstic render <file>#<drawing>[(args)]`: renders one drawing ad-hoc, in
  * exactly one output kind per invocation (`--ascii` > `--preview` > `--inspect` >
- * PNG, checked in that order). `--crop` applies to every kind; `--fit`
+ * `--explain` > PNG, checked in that order). `--explain` (ADR-0086 §6) prints each
+ * `model`/`cel` command's lowered primitive expansion instead of an image. `--crop`
+ * applies to every image kind; `--fit`
  * applies only to `--ascii`/`--preview` (never to PNG — use `--png@N` for
  * that). A missing `<file>#<drawing>` target or unknown drawing name is an
  * `E022` (`renderTarget`) diagnostic, not a thrown error. A parametric
@@ -820,9 +938,10 @@ const namedMasksOf = (mod: ModuleRecord): { readonly name: string; readonly regi
  * {@link Engine.renderFragment}. `--grid`/`--diff` (P3 drawing aids) only
  * affect the PNG output kind — both are silently inert under `--ascii`/
  * `--preview`/`--inspect`, same as every other PNG-only flag. `--silhouette`
- * (ADR-0083) is a pure per-pixel transform of the rendered framebuffer applied
- * before every output kind, so it composes with all of them and with
- * `--crop`/`--fit`/`--grid`.
+ * (ADR-0083, plate-aware per its amendment) is a pure per-pixel transform of the
+ * rendered framebuffer applied before every output kind, so it composes with all
+ * of them and with `--crop`/`--fit`/`--grid`; a detected plate is announced on
+ * stderr and surfaced as `plateDetected` under `--json`.
  */
 const runRender = (cli: CliArguments): number => {
   const target = cli.target ?? ''
@@ -835,6 +954,15 @@ const runRender = (cli: CliArguments): number => {
       return emit(diags, cli.json)
     }
     const engine = createEngine(cli)
+    // `--explain` collects each model/cel command's lowered primitive sequence (ADR-0086 §6) and
+    // each `fit`'s placement (ADR-0087 amendment 2) during the render — a predictability guardrail,
+    // not a render output.
+    if (cli.explain) {
+      engine.explain = []
+      engine.placements = []
+      engine.paintOrders = []
+      engine.poses = []
+    }
     const mod = engine.loadEntry(file)
     const entry = mod.definitions.get(targetRef.drawing)
     if (!entry) {
@@ -861,9 +989,20 @@ const runRender = (cli: CliArguments): number => {
     })
     // Silhouette is a pure per-pixel transform of the rendered framebuffer,
     // applied before any output kind — so it composes with `--ascii`/`--preview`/
-    // `--inspect`/PNG and downstream `--crop`/`--fit`/`--grid` (ADR-0083).
+    // `--inspect`/PNG and downstream `--crop`/`--fit`/`--grid` (ADR-0083). Plate-aware
+    // (ADR-0083 amendment): a detected plate is subtracted before the mask is drawn, and the
+    // caller must never be silently surprised by a different image than expected, so a detected
+    // plate is announced on stderr regardless of output kind or `--json`.
+    let plateDetected = false
     if (cli.silhouette) {
-      sprite = silhouetteSprite(sprite)
+      const result = silhouetteSprite(sprite)
+      sprite = result.sprite
+      plateDetected = result.plateDetected
+      if (plateDetected) {
+        process.stderr.write(
+          'plate detected — showing the glyph silhouette, not the full alpha mask\n',
+        )
+      }
     }
     let crop: {
       readonly x: number
@@ -889,7 +1028,7 @@ const runRender = (cli: CliArguments): number => {
         process.stdout.write(
           `${JSON.stringify(
             {
-              diagnostics: [],
+              diagnostics: engine.warnings,
               render: {
                 drawing: targetRef.drawing,
                 width: sprite.w,
@@ -901,7 +1040,7 @@ const runRender = (cli: CliArguments): number => {
                 ...(cli.fit
                   ? { fit: { ...cli.fit, fitted, width: sprite.w, height: sprite.h } }
                   : {}),
-                ...(cli.silhouette ? { silhouette: true } : {}),
+                ...(cli.silhouette ? { silhouette: true, plateDetected } : {}),
               },
             },
             null,
@@ -919,7 +1058,7 @@ const runRender = (cli: CliArguments): number => {
         process.stdout.write(
           `${JSON.stringify(
             {
-              diagnostics: [],
+              diagnostics: engine.warnings,
               render: {
                 drawing: targetRef.drawing,
                 width: sprite.w,
@@ -931,7 +1070,7 @@ const runRender = (cli: CliArguments): number => {
                 ...(cli.fit
                   ? { fit: { ...cli.fit, fitted, width: sprite.w, height: sprite.h } }
                   : {}),
-                ...(cli.silhouette ? { silhouette: true } : {}),
+                ...(cli.silhouette ? { silhouette: true, plateDetected } : {}),
               },
             },
             null,
@@ -949,7 +1088,7 @@ const runRender = (cli: CliArguments): number => {
         process.stdout.write(
           `${JSON.stringify(
             {
-              diagnostics: [],
+              diagnostics: engine.warnings,
               render: {
                 drawing: targetRef.drawing,
                 width: sprite.w,
@@ -959,7 +1098,7 @@ const runRender = (cli: CliArguments): number => {
                 stats: spritePreviewStats(sprite),
                 inspect: inspection,
                 ...(crop ? { crop } : {}),
-                ...(cli.silhouette ? { silhouette: true } : {}),
+                ...(cli.silhouette ? { silhouette: true, plateDetected } : {}),
               },
             },
             null,
@@ -968,6 +1107,47 @@ const runRender = (cli: CliArguments): number => {
         )
       } else {
         process.stdout.write(`${JSON.stringify(inspection, null, 1)}\n`)
+      }
+      return 0
+    }
+    if (cli.explain) {
+      const explain = engine.explain ?? []
+      const placements = engine.placements ?? []
+      const paintOrder = (engine.paintOrders ?? []).find((p) => p.drawing === targetRef.drawing)
+      const poses = (engine.poses ?? []).filter((p) => p.drawing === targetRef.drawing)
+      if (cli.json) {
+        process.stdout.write(
+          `${JSON.stringify(
+            {
+              diagnostics: engine.warnings,
+              render: {
+                drawing: targetRef.drawing,
+                width: sprite.w,
+                height: sprite.h,
+                kind: 'explain',
+                output: null,
+                explain,
+                placements,
+                ...(poses.length > 0 ? { poses } : {}),
+                ...(paintOrder ? { paintOrder: paintOrder.order } : {}),
+                ...(sprite.occlusions ? { occlusions: sprite.occlusions } : {}),
+              },
+            },
+            null,
+            1,
+          )}\n`,
+        )
+      } else {
+        process.stdout.write(
+          formatExplain(
+            targetRef.drawing,
+            explain,
+            placements,
+            paintOrder?.order,
+            sprite.occlusions,
+            poses,
+          ),
+        )
       }
       return 0
     }
@@ -991,7 +1171,7 @@ const runRender = (cli: CliArguments): number => {
       process.stdout.write(
         `${JSON.stringify(
           {
-            diagnostics: [],
+            diagnostics: engine.warnings,
             render: {
               drawing: targetRef.drawing,
               width,
@@ -1002,7 +1182,7 @@ const runRender = (cli: CliArguments): number => {
               ...(crop ? { crop } : {}),
               original: originalSize,
               ...(cli.grid ? { grid: cli.grid } : {}),
-              ...(cli.silhouette ? { silhouette: true } : {}),
+              ...(cli.silhouette ? { silhouette: true, plateDetected } : {}),
               ...(diff ? { diff } : {}),
             },
           },
@@ -1012,6 +1192,9 @@ const runRender = (cli: CliArguments): number => {
       )
     } else {
       process.stdout.write(`wrote ${resolve(out)} (${width}x${height})\n`)
+      for (const w of engine.warnings) {
+        process.stdout.write(`${formatDiagnostic(w)}\n`)
+      }
       if (diff) {
         process.stdout.write(`${formatDiffSummary(diff)}\n`)
       }
@@ -1080,6 +1263,130 @@ const formatDiffSummary = (diff: RasterDiff): string => {
   }
   const b = diff.changedBBox
   return `diff: ${diff.changedPixelCount}/${diff.totalPixelCount} px changed, bbox ${b?.x}:${b?.y} ${b?.width}x${b?.height}`
+}
+
+/**
+ * Human-readable `render --explain` output (ADR-0086 §6): each `model`/`cel` command with the
+ * exact primitive sequence it lowered to — one line per step, colours/amounts already resolved.
+ */
+const formatExplain = (
+  drawing: string,
+  records: readonly ExplainRecord[],
+  placements: readonly PlacementRecord[] = [],
+  paintOrder: readonly { readonly name: string; readonly reason: string }[] | undefined = undefined,
+  occlusions: readonly OcclusionResult[] | undefined = undefined,
+  poses: readonly PoseSolveRecord[] = [],
+): string => {
+  if (
+    records.length === 0 &&
+    placements.length === 0 &&
+    !paintOrder &&
+    poses.length === 0 &&
+    (!occlusions || occlusions.length === 0)
+  ) {
+    return `${drawing}: no model/cel commands or fits to explain\n`
+  }
+  const lines: string[] = []
+  const round3 = (v: number): number => Math.round(v * 1000) / 1000
+  // Applied poses (ADR-0095): each joint's solved world angle, pose-angle delta, and auto-Z depth.
+  for (const p of poses) {
+    lines.push(`pose ${p.pose} (view ${p.view}):`)
+    for (const j of p.joints) {
+      lines.push(
+        `  ${j.name} at ${round3(j.x)}:${round3(j.y)} angle ${round3(j.worldAngle)}° Δ${round3(j.angleDelta)}° z${j.depth}`,
+      )
+    }
+  }
+  // Placement report (ADR-0087 amendment 2): where every `fit` landed its pins, whether they
+  // coincide, and how far the target pin sits from the part's own ink (the float signal); plus the
+  // solved `aim` angle (ADR-0092).
+  for (const p of placements) {
+    const flip = p.transformed ? ' transformed' : ''
+    const coincide = p.coincident ? 'coincident' : 'NOT COINCIDENT'
+    const ink =
+      p.pinToInk < 0
+        ? ''
+        : ` pin-to-ink ${p.pinToInk}px${p.pinToInk > 2 ? ' (LOOSE — join floats)' : ''}`
+    const aim = p.aimDeg === undefined ? '' : ` aim ${p.aimDeg}°`
+    lines.push(
+      `fit ${p.target} ← ${p.source}: lands ${p.landed.x}:${p.landed.y} (source ${p.at.x}:${p.at.y}) ${coincide}${ink}${aim}${flip}`,
+    )
+  }
+  // Resolved paint order (ADR-0092): bottom-to-top, with each layer's behind/front reason.
+  if (paintOrder && paintOrder.length > 0) {
+    lines.push('paint order (bottom → top):')
+    paintOrder.forEach((o, i) => {
+      lines.push(`  ${i + 1}. ${o.name}${o.reason === 'sequence' ? '' : ` [${o.reason}]`}`)
+    })
+  }
+  // Occlusion parity (ADR-0092, C013 source): each declared relation's measured overlap/violation.
+  if (occlusions && occlusions.length > 0) {
+    for (const o of occlusions) {
+      const verdict = o.overlap === 0 ? 'no overlap' : o.violating > 0 ? 'VIOLATED' : 'ok'
+      lines.push(
+        `occlusion ${o.behind} ${o.clause} ${o.front}: overlap ${o.overlap}px, violating ${o.violating}px — ${verdict}`,
+      )
+    }
+  }
+  for (const r of records) {
+    const target = r.region ? ` ${r.region}` : ''
+    const at = r.light ? ` (light ${r.light.x}:${r.light.y})` : ''
+    lines.push(`${r.command}${target}${at}`)
+    for (const s of r.steps) {
+      const parts: string[] = []
+      if (s.color !== undefined) {
+        parts.push(s.color)
+      }
+      if (s.amount !== undefined) {
+        parts.push(`amount ${s.amount}`)
+      }
+      if (s.point) {
+        parts.push(`at ${s.point.x}:${s.point.y}`)
+      }
+      if (s.dir) {
+        parts.push(`dir ${s.dir.x}:${s.dir.y}`)
+      }
+      if (s.width !== undefined) {
+        parts.push(`w${s.width}`)
+      }
+      if (s.offset) {
+        parts.push(`offset ${s.offset.dx}:${s.offset.dy}`)
+      }
+      // form-body fields (ADR-0089): the tint targets, light elevation, doses, and cel band count.
+      if (s.warm !== undefined) {
+        parts.push(`warm ${s.warm}`)
+      }
+      if (s.cool !== undefined) {
+        parts.push(`cool ${s.cool}`)
+      }
+      if (s.elevation !== undefined) {
+        parts.push(`z${s.elevation}`)
+      }
+      if (s.shade !== undefined) {
+        parts.push(`shade ${s.shade}`)
+      }
+      if (s.hi !== undefined) {
+        parts.push(`hi ${s.hi}`)
+      }
+      if (s.spec !== undefined) {
+        parts.push(`spec ${s.spec}`)
+      }
+      if (s.specPow !== undefined) {
+        parts.push(`specPow ${s.specPow}`)
+      }
+      if (s.puff !== undefined) {
+        parts.push(`puff ${s.puff}`)
+      }
+      if (s.ambient !== undefined) {
+        parts.push(`amb ${s.ambient}`)
+      }
+      if (s.bands !== undefined) {
+        parts.push(`bands ${s.bands}`)
+      }
+      lines.push(`  ${s.op}${parts.length > 0 ? ` ${parts.join(' ')}` : ''}`)
+    }
+  }
+  return `${lines.join('\n')}\n`
 }
 
 /**
@@ -1179,10 +1486,13 @@ const runSheet = (cli: CliArguments): number => {
       const output = cli.ascii ? spriteToAscii(sprite) : spriteToAnsi(sprite)
       if (cli.json) {
         process.stdout.write(
-          `${JSON.stringify(sheetJson(layout, { kind: cli.ascii ? 'ascii' : 'preview', output }), null, 1)}\n`,
+          `${JSON.stringify(sheetJson(layout, { kind: cli.ascii ? 'ascii' : 'preview', output }, engine.warnings), null, 1)}\n`,
         )
       } else {
         process.stdout.write(output)
+        for (const w of engine.warnings) {
+          process.stdout.write(`${formatDiagnostic(w)}\n`)
+        }
       }
       return 0
     }
@@ -1204,12 +1514,15 @@ const runSheet = (cli: CliArguments): number => {
     writeFileSync(resolve(out), png)
     if (cli.json) {
       process.stdout.write(
-        `${JSON.stringify(sheetJson(layout, { kind: 'png', output: resolve(out), width, height }), null, 1)}\n`,
+        `${JSON.stringify(sheetJson(layout, { kind: 'png', output: resolve(out), width, height }, engine.warnings), null, 1)}\n`,
       )
     } else {
       process.stdout.write(
         `wrote ${resolve(out)} (${width}x${height}, ${layout.cells.length} tiles)\n`,
       )
+      for (const w of engine.warnings) {
+        process.stdout.write(`${formatDiagnostic(w)}\n`)
+      }
     }
     return 0
   } catch (e) {
@@ -1222,8 +1535,9 @@ const runSheet = (cli: CliArguments): number => {
 const sheetJson = (
   layout: SheetLayout,
   render: Record<string, unknown>,
+  diags: readonly Diagnostic[],
 ): Record<string, unknown> => ({
-  diagnostics: [],
+  diagnostics: diags,
   sheet: {
     cols: layout.cols,
     rows: layout.rows,
@@ -1235,33 +1549,210 @@ const sheetJson = (
   },
 })
 
+// ── critique (ADR-0085) ──────────────────────────────────────────────────────
+
+/**
+ * Runs `drawstic critique <file> [--as icon|scene|character|item] [--family
+ * a,b,c] [--strict]`: renders every non-parametric `draw`, runs the per-sprite
+ * pixel-based, vision-free `C0xx` catalog, and — across a sibling *family* — the
+ * family checks C009 (sibling-silhouette collapse) and C011 (weight parity). The
+ * agnostic checks (C001/C003/C004/C006/C008/C012) always run; `--as` opts a
+ * resolved {@link resolveProfile} profile into the profile-gated checks C002
+ * (edge-clip), C005 (stroke width) and C007 (floating part) plus its category
+ * thresholds — without it, an info advisory nudges the agent to set one. The
+ * family defaults to {@link selectCritiqueFamily} (exported draws, or every draw with
+ * `--all`, minus any drawing that is itself a composed presentation of ≥2 other
+ * candidates — a hand-built `sheet`-style panel never belongs in its own family, character-DX
+ * 2026-07-10 rerun §5.1); `--family` overrides it. Family checks run
+ * only with ≥2 members. Findings default to `warning` (exit 0 — never blocking);
+ * `--strict` promotes the must-fix subset to `error` (exit 1), the CI regression
+ * gate. The `--json` payload adds `critique: {pass, profile, strict, failedCodes,
+ * drawings, familyMetrics?, rubric}` — each drawing exposing the full metric
+ * bundle (a superset of `render --inspect`), plus the vision rubric the agent
+ * must still answer by looking. A render failure surfaces as its ordinary `E0xx`
+ * diagnostic, exactly as in `check`.
+ */
+/**
+ * The C006 {@link PaletteTarget} for one drawing (ADR-0085 export-target-aware palette budget):
+ * `'budgeted'` when the module declares an indexed-PNG (`png … indexed`) or `svg` export for
+ * `name` — colour count is a real indexed-palette / SVG-`<rect>` budget there — else
+ * `'unbudgeted'` (a straight-alpha RGBA-PNG/JPEG target, or no export at all, has no palette
+ * budget, so smooth `model` shading is not a defect). Conservatively defaults to `'unbudgeted'`
+ * when no export targets the drawing.
+ */
+const paletteTargetFor = (mod: ModuleRecord, name: string): PaletteTarget => {
+  for (const exp of mod.exports) {
+    if (exp.name !== name) {
+      continue
+    }
+    for (const fmt of exp.formats) {
+      if (fmt.format === 'svg' || (fmt.format === 'png' && fmt.indexed)) {
+        return 'budgeted'
+      }
+    }
+  }
+  return 'unbudgeted'
+}
+
+const runCritique = (cli: CliArguments): number => {
+  const file = cli.target ?? ''
+  const diags: Diagnostic[] = []
+  const drawings: CritiqueDrawing[] = []
+  const profile = resolveProfile(cli.as)
+  const rendered: { readonly name: string; readonly span: TextSpan; readonly sprite: Sprite }[] = []
+  let familyMetrics: FamilyMetrics | undefined
+  let census: ModuleCensus | undefined
+  let displayPath = file
+  try {
+    const engine = createEngine(cli)
+    const mod = engine.loadEntry(file)
+    displayPath = mod.displayPath
+    census = censusModule(engine, mod)
+    for (const [, entry] of mod.definitions) {
+      if (
+        entry.kind !== 'draw' ||
+        entry.module !== mod ||
+        (entry.definition.params?.length ?? 0) > 0
+      ) {
+        continue
+      }
+      try {
+        const sprite = engine.renderDraw(entry, [], entry.definition.span)
+        const report = critiqueSprite(entry.definition.name, sprite, {
+          profile,
+          strict: cli.strict,
+          paletteTarget: paletteTargetFor(mod, entry.definition.name),
+        })
+        drawings.push(report)
+        rendered.push({ name: entry.definition.name, span: entry.definition.span, sprite })
+        for (const check of report.checks) {
+          diags.push(critiqueCheckDiagnostic(check, mod.displayPath, entry.definition.span))
+        }
+      } catch (e) {
+        diags.push(toDiagnostic(e, file))
+      }
+    }
+    // Family checks (C009/C011): compare the selected siblings. `--family`
+    // overrides the default sheet selection; family checks need ≥2 members.
+    const byName = new Map(rendered.map((r) => [r.name, r]))
+    const familyNames = cli.family
+      ? cli.family
+      : selectCritiqueFamily(mod, cli.all).map((e) => e.definition.name)
+    const members = familyNames
+      .map((name) => byName.get(name))
+      .filter((r): r is (typeof rendered)[number] => r !== undefined)
+      .map((r) => ({ name: r.name, sprite: r.sprite }))
+    const family = critiqueFamily(members, { profile, strict: cli.strict })
+    if (family) {
+      familyMetrics = family.metrics
+      for (const check of family.checks) {
+        const span = byName.get(check.target)?.span
+        if (span) {
+          diags.push(critiqueCheckDiagnostic(check, mod.displayPath, span))
+        }
+      }
+    }
+    // Surface the render-time assembly warnings (W010 gap, W011 loose pin — ADR-0087) the renders
+    // collected, so the done-gate REPORTS a floating head/loose join it structurally can't see via
+    // the pixel checks (they are `warning`s, so the `--strict` error-only exit is unaffected).
+    diags.push(...engine.warnings)
+  } catch (e) {
+    diags.push(toDiagnostic(e, file))
+    return emit(diags, cli.json)
+  }
+  if (!profile) {
+    diags.push({
+      severity: 'info',
+      code: 'C000',
+      message:
+        'no --as profile: ran the category-agnostic checks only (C002 edge-clip, C005 stroke width and C007 floating-part need a profile)',
+      file,
+      line: 1,
+      column: 1,
+      hint: 'pass --as icon|scene|character|item to enable the category checks and thresholds',
+    })
+  }
+  const failedCodes = [
+    ...new Set(diags.filter((d) => d.severity !== 'info').map((d) => d.code)),
+  ].sort()
+  const pass = !diags.some((d) => d.severity === 'warning' || d.severity === 'error')
+  const sample = familyMetrics?.members[0]?.name ?? rendered[0]?.name ?? null
+  const rubric = buildRubric(profile, displayPath, sample, familyMetrics !== undefined)
+  const report = {
+    pass,
+    profile: profile?.name ?? null,
+    strict: cli.strict,
+    failedCodes,
+    drawings,
+    ...(familyMetrics === undefined ? {} : { familyMetrics }),
+    rubric,
+  }
+  return emitObject(diags, cli.json, { critique: report, ...(census ? { census } : {}) })
+}
+
 // ── entry ───────────────────────────────────────────────────────────────────
+
+/**
+ * The published package version, read from the `package.json` that sits one directory above this
+ * module in both layouts (`src/cli.ts` and `dist/cli.js`). Read lazily and defensively: a missing or
+ * unreadable manifest reports `unknown` rather than crashing the CLI.
+ */
+const packageVersion = (): string => {
+  try {
+    const manifest = new URL('../package.json', import.meta.url)
+    const parsed: unknown = JSON.parse(readFileSync(manifest, 'utf8'))
+    const version = (parsed as { readonly version?: unknown }).version
+    return typeof version === 'string' ? version : 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
 
 const HELP = `drawstic — deterministic drawing engine
 
 usage:
-  drawstic check <file> [--json]
+  drawstic check <file> [--rows] [--lint] [--json]
   drawstic fmt <file> [--check] [--json]
   drawstic context <file> [--json]
-  drawstic build <file> [--out <dir>] [--json]
+  drawstic build <file> [--out <dir>] [--json]   # --out defaults to the recipe's own directory
   drawstic render <file>#<drawing>[(args)] [--png@N] [--out <path>] [--stdout]
-                  [--ascii] [--preview] [--silhouette] [--grid N] [--diff <png>]
-                  [--mode pixel|smooth] [--json]
+                  [--ascii] [--preview] [--silhouette] [--inspect] [--explain]
+                  [--grid N] [--diff <png>] [--mode pixel|smooth] [--crop x:y WxH]
+                  [--fit WxH] [--json]
   drawstic sheet <file> [--all] [--cols N] [--png@N] [--out <path>]
                   [--stdout] [--ascii] [--preview] [--json]
-options:
+  drawstic critique <file> [--as icon|scene|character|item] [--family a,b,c]
+                  [--strict] [--all] [--json]
+  drawstic help | --help | -h        this text
+  drawstic version | --version | -v  the package version
+options (every command):
   --json     stable diagnostic records
   --budget N evaluation-step budget
+  --mode pixel|smooth  override the recipe's render mode
 `
 
 /**
  * CLI entry point: dispatches `argv` to a subcommand handler and returns the
- * process exit code. An unrecognized command prints {@link HELP} and exits
- * `0` only for the literal `help` command (or no command at all); any other
- * unknown command exits `1`.
+ * process exit code. `help`/`--help`/`-h` (and no command at all) print
+ * {@link HELP} and exit `0`; `version`/`--version`/`-v` print the package
+ * version; any other unknown command prints {@link HELP} and exits `1`.
  */
 export const main = (argv: string[]): number => {
   const cli = parseArguments(argv)
+  if (cli.unknownFlags.length > 0 && cli.command !== 'help' && cli.command !== 'version') {
+    return emit(
+      cli.unknownFlags.map((flag) => ({
+        severity: 'error' as const,
+        code: ERROR_CODE.unknownFlag,
+        message: `unknown flag '${flag}'`,
+        file: cli.target ?? '',
+        line: 1,
+        column: 1,
+        hint: `run 'drawstic help' for the flags '${cli.command}' accepts`,
+      })),
+      cli.json,
+    )
+  }
   switch (cli.command) {
     case 'check':
       return runCheck(cli)
@@ -1275,6 +1766,11 @@ export const main = (argv: string[]): number => {
       return runRender(cli)
     case 'sheet':
       return runSheet(cli)
+    case 'critique':
+      return runCritique(cli)
+    case 'version':
+      process.stdout.write(`${packageVersion()}\n`)
+      return 0
     default:
       process.stdout.write(HELP)
       return cli.command === 'help' ? 0 : 1

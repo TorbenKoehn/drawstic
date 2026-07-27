@@ -65,10 +65,15 @@ Releases are tag-driven and fully automated by `.github/workflows/release.yml`:
 
 1. Merge `develop` → `main`.
 2. Tag the release commit on `main`: `git tag v1.2.3 && git push origin v1.2.3`.
-3. The `release` workflow runs the full checks, stamps the version from the tag into
-   `package.json` (no commit), publishes to npm with provenance
-   (`npm publish --provenance --access public`), and creates a GitHub Release with
-   generated notes.
+3. The `release` workflow runs the full checks, builds `dist/`, stamps the version from
+   the tag into `package.json` (no commit), packs the npm tarball and smoke-tests it
+   under Node — install into a scratch project, `npx drawstic help`, render a tiny inline
+   recipe to PNG — publishes to npm with provenance
+   (`npm publish --provenance --access public`, authenticated via `NODE_AUTH_TOKEN`), and
+   creates a GitHub Release with generated notes.
+
+The same packed-tarball smoke test also runs in `ci.yml` on every PR, so a broken
+`files`/`exports`/`bin`/shebang fails before merge, not at release time.
 
 `package.json` stays at version `0.0.0` in the repo; the tag is the single source of truth.
 

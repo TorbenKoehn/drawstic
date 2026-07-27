@@ -1,0 +1,31 @@
+theme potionSet:
+  palette:
+    k = #1a1410
+  size 48x48
+  mode pixel
+  style """
+  48x48 transparent inventory sprite, 2-4 px breathing room.
+  Light travels down-right (1:1) => lit edge up-left, shade down-right.
+  Glass bottle with liquid filling, cork stopper, centered vertically.
+  Materials: glass = glass, liquid = flat, cork = cloth.
+  """
+
+use potionSet
+
+light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%
+
+material glass  = #4da6d1 glass
+material brew   = #e84c47 flat
+material cork   = #8b6a47 cloth
+
+draw potion 48x48:
+  shell  = rrect(14:21, 33:42, 7).union(rect(20:9, 27:23))
+  liquid = shell.intersect(rect(0:28, 47:40))
+  stopper = rrect(18:4, 29:10, 1)
+  model shell glass
+  model liquid brew
+  model stopper cork
+  outline k
+
+export potion:
+  png @1 @4

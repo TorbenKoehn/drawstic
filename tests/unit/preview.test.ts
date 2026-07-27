@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { Engine } from '../../src/eval.js'
 import {
   applyGridOverlay,
   cropSprite,
+  detectPlateFigure,
   diffRasters,
   fitSprite,
+  silhouetteSprite,
   spritePreviewStats,
   spriteToAnsi,
   spriteToAscii,
@@ -14,7 +17,7 @@ import type { Sprite } from '../../src/values.js'
 let n = 0
 const render = (src: string, drawing: string): Sprite => {
   const engine = new Engine(process.cwd())
-  const mod = engine.loadSource(src, `${process.cwd()}\\previewmem${n++}.drw`, 'mem.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `previewmem${n++}.drw`), 'mem.drw')
   const entry = mod.definitions.get(drawing)
   if (!entry) {
     throw new Error(`no drawing ${drawing}`)
@@ -28,8 +31,8 @@ const px = (s: Sprite, x: number, y: number): [number, number, number, number] =
 }
 
 describe('spritePreviewStats()', () => {
-  test('100% palette coverage when every painted pixel matches a pal entry', () => {
-    const s = render('draw d 2x2:\n  pal k=#000000\n  pixels:\n    kk\n    kk\n', 'd')
+  test('100% palette coverage when every painted pixel matches a palette entry', () => {
+    const s = render('draw d 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n', 'd')
     expect(spritePreviewStats(s)).toEqual({
       unknownPixelCount: 0,
       unknownColorCount: 0,
@@ -37,11 +40,11 @@ describe('spritePreviewStats()', () => {
     })
   })
 
-  test('raw colors painted outside the pal block count as unknown', () => {
-    // px 1:0 paints a raw hex that was never declared in `pal`, so it isn't
+  test('raw colors painted outside the palette block count as unknown', () => {
+    // px 1:0 paints a raw hex that was never declared in `palette`, so it isn't
     // in sprite.pal and must be counted as unknown coverage.
     const s = render(
-      'draw d 2x2:\n  pal k=#000000\n  px k 0:0\n  px #ff0000 1:0\n  px k 0:1\n',
+      'draw d 2x2:\n  palette k=#000000\n  px k 0:0\n  px #ff0000 1:0\n  px k 0:1\n',
       'd',
     )
     expect(spritePreviewStats(s)).toEqual({
@@ -52,7 +55,7 @@ describe('spritePreviewStats()', () => {
   })
 
   test('fully transparent sprite reports 100% coverage (nothing painted)', () => {
-    const s = render('draw d 2x2:\n  pal k=#000000\n', 'd')
+    const s = render('draw d 2x2:\n  palette k=#000000\n', 'd')
     expect(spritePreviewStats(s)).toEqual({
       unknownPixelCount: 0,
       unknownColorCount: 0,
@@ -64,7 +67,7 @@ describe('spritePreviewStats()', () => {
 describe('cropSprite()', () => {
   const base = (): Sprite =>
     render(
-      'draw d 4x4:\n  pal a=#111111 b=#222222 c=#333333 d=#444444\n  pixels:\n    aabb\n    aabb\n    ccdd\n    ccdd\n',
+      'draw d 4x4:\n  palette a=#111111 b=#222222 c=#333333 d=#444444\n  pixels:\n    aabb\n    aabb\n    ccdd\n    ccdd\n',
       'd',
     )
 
@@ -155,19 +158,19 @@ describe('spriteToAscii()', () => {
   test('transparent and opaque-black pixels both render as the sparsest glyph (space)', () => {
     // No visual difference between "no paint" and "painted pure black" on a
     // dark terminal — both are luminance 0.
-    const s = render('draw d 2x1:\n  pal k=#000000\n  pixels:\n    .k\n', 'd')
+    const s = render('draw d 2x1:\n  palette k=#000000\n  pixels:\n    .k\n', 'd')
     expect(spriteToAscii(s)).toBe('  \n')
   })
 
   test('opaque white maps to the densest glyph', () => {
-    const s = render('draw d 2x1:\n  pal p=#ffffff\n  pixels:\n    .p\n', 'd')
+    const s = render('draw d 2x1:\n  palette p=#ffffff\n  pixels:\n    .p\n', 'd')
     expect(spriteToAscii(s)).toBe(' @\n')
   })
 
   test('a dark scene reads sparse and a bright motif embedded in it stands out dense', () => {
     // Regression for the ink-density bug (TODO-IMP §3.1): a near-black night
     // sky used to invert to dense glyphs while the bright moon vanished.
-    const s = render('draw d 4x1:\n  pal n=#0a0a14 m=#fefef0\n  pixels:\n    nnmn\n', 'd')
+    const s = render('draw d 4x1:\n  palette n=#0a0a14 m=#fefef0\n  pixels:\n    nnmn\n', 'd')
     const ascii = spriteToAscii(s)
     const rows = ascii.split('\n')
     const row = rows[0] ?? ''
@@ -181,7 +184,7 @@ describe('spriteToAscii()', () => {
   test('mid-saturation red is not maximally dense (true relative luminance, not raw ink)', () => {
     // Pure red has WCAG relative luminance ~0.21 — nowhere near white's 1.0 —
     // so it must not map to the densest glyph the way naive luma/ink-density did.
-    const s = render('draw d 1x1:\n  pal r=#ff0000\n  pixels:\n    r\n', 'd')
+    const s = render('draw d 1x1:\n  palette r=#ff0000\n  pixels:\n    r\n', 'd')
     expect(spriteToAscii(s)).not.toBe('@\n')
   })
 })
@@ -189,7 +192,7 @@ describe('spriteToAscii()', () => {
 describe('spriteToAnsi()', () => {
   test('a fully-painted row pair uses top+bottom 24-bit color and a half-block', () => {
     const s = render(
-      'draw d 2x2:\n  pal a=#112233 b=#445566 c=#778899 d=#aabbcc\n  pixels:\n    ab\n    cd\n',
+      'draw d 2x2:\n  palette a=#112233 b=#445566 c=#778899 d=#aabbcc\n  pixels:\n    ab\n    cd\n',
       'd',
     )
     expect(spriteToAnsi(s)).toBe(
@@ -199,17 +202,17 @@ describe('spriteToAnsi()', () => {
   })
 
   test('bottom-only-painted pixel pair uses the lower half-block glyph', () => {
-    const s = render('draw d 1x2:\n  pal r=#ff0000\n  pixels:\n    .\n    r\n', 'd')
+    const s = render('draw d 1x2:\n  palette r=#ff0000\n  pixels:\n    .\n    r\n', 'd')
     expect(spriteToAnsi(s)).toBe('\x1b[0m\x1b[38;2;255;0;0m▄\x1b[0m\n')
   })
 
   test('top-only-painted pixel pair uses the upper half-block glyph', () => {
-    const s = render('draw d 1x2:\n  pal g=#00ff00\n  pixels:\n    g\n    .\n', 'd')
+    const s = render('draw d 1x2:\n  palette g=#00ff00\n  pixels:\n    g\n    .\n', 'd')
     expect(spriteToAnsi(s)).toBe('\x1b[0m\x1b[38;2;0;255;0m▀\x1b[0m\n')
   })
 
   test('a fully-transparent pixel pair renders as a plain reset space', () => {
-    const s = render('draw d 1x2:\n  pal k=#000000\n', 'd')
+    const s = render('draw d 1x2:\n  palette k=#000000\n', 'd')
     expect(spriteToAnsi(s)).toBe('\x1b[0m \x1b[0m\n')
   })
 
@@ -376,5 +379,108 @@ describe('diffRasters() (render --diff <png>)', () => {
     const diff = diffRasters(a, b, 4, 4)
     expect(diff.changedPixelCount).toBe(1)
     expect(diff.changedBBox).toEqual({ x: 0, y: 0, width: 1, height: 1 })
+  })
+})
+
+describe('silhouetteSprite() / detectPlateFigure() (render --silhouette, ADR-0083 amendment)', () => {
+  const coverageMask = (s: Sprite): Uint8Array => {
+    const covered = new Uint8Array(s.w * s.h)
+    for (let p = 0; p < covered.length; p++) {
+      if ((s.data[p * 4 + 3] ?? 0) > 0) {
+        covered[p] = 1
+      }
+    }
+    return covered
+  }
+
+  // icon-craft.md's canonical build order: an opaque rounded-rect plate/tile stamped first, a
+  // high-contrast glyph (a ring) painted on top — real pixel evidence of a genuine plate.
+  const platedIcon = (): Sprite =>
+    render(
+      `draw iconA 32x32:
+  rrect linear(90, #6fa8f5, #2a5db0) 2:2 29:29 6 fill
+  fill #f7faff circle(16:16, 7).subtract(circle(16:16, 3))
+`,
+      'iconA',
+    )
+
+  test('a plated icon is detected: the figure is the glyph alone, not the plate', () => {
+    const sprite = platedIcon()
+    const plateFigure = detectPlateFigure(sprite, coverageMask(sprite))
+    expect(plateFigure).not.toBeNull()
+    // The ring glyph is a small fraction of the 32x32 plate — nowhere near its full coverage.
+    const figurePx = plateFigure ? plateFigure.mask.reduce((a, b) => a + b, 0) : 0
+    expect(figurePx).toBeGreaterThan(0)
+    expect(figurePx).toBeLessThan(sprite.w * sprite.h * 0.3)
+  })
+
+  test('silhouetteSprite() on a plated icon draws only the glyph, plateDetected: true', () => {
+    const sprite = platedIcon()
+    const result = silhouetteSprite(sprite)
+    expect(result.plateDetected).toBe(true)
+    // The plate's own corner (well inside its margin, far from the glyph) is fully subtracted —
+    // painted neither black nor anything else — proving the mask is the glyph, not the full plate.
+    expect(px(result.sprite, 4, 4)).toEqual([0, 0, 0, 0])
+    // The glyph ring itself still silhouettes solid black (e.g. its top point at 16:9).
+    expect(px(result.sprite, 16, 9)).toEqual([0, 0, 0, 255])
+  })
+
+  test('a small shape on a transparent canvas (never touching all four edges) is never a plate', () => {
+    const sprite = render('draw item 20x10:\n  rect #ff00ff 4:3 17:7 fill\n', 'item')
+    expect(detectPlateFigure(sprite, coverageMask(sprite))).toBeNull()
+    const result = silhouetteSprite(sprite)
+    expect(result.plateDetected).toBe(false)
+    // Unchanged full-mask silhouette: every covered pixel (the whole 14x5 rect), nothing more.
+    let opaqueCount = 0
+    for (let i = 3; i < result.sprite.data.length; i += 4) {
+      if (result.sprite.data[i] === 255) {
+        opaqueCount++
+      }
+    }
+    expect(opaqueCount).toBe(14 * 5)
+  })
+
+  // Regression (release 1.0 hardening): reusing `detectPlateFigure` for `--silhouette` first
+  // shipped with only the edge-touch + area-dominance + row-span gates, which correctly fixed
+  // assembled character views but missed this case entirely — a lone character/item **part**
+  // rendered standalone (exactly the debug workflow `character-craft.md` prescribes for
+  // `--silhouette`) is itself a large, solid, edge-to-edge mass with only a tiny high-contrast
+  // accent escaping the flood, geometrically indistinguishable from a plate-plus-glyph by every
+  // other measured signature. `PLATE_MIN_FIGURE_FRACTION` closes it. Measured on the real bundled
+  // corpus this fired on `characters-ro2/assassin.drw#cloakFront|cloakBack|legsFront`,
+  // `characters-ro2/wizard.drw#robeSide`, and `scenes-v3/market.drw#barrel`; this fixture
+  // reproduces the shape (a solid organic body with a small contrasting accent) without depending
+  // on the example files.
+  test('a solid organic part with a tiny high-contrast accent is never mistaken for a plate', () => {
+    const sprite = render(
+      `draw part 24x40:
+  fill #8a6a4a ellipse(12:20, 11:19)
+  rect #3a2a1a 10:2 13:5 fill
+`,
+      'part',
+    )
+    const covered = coverageMask(sprite)
+    expect(detectPlateFigure(sprite, covered)).toBeNull()
+    const result = silhouetteSprite(sprite)
+    expect(result.plateDetected).toBe(false)
+    let coveredCount = 0
+    for (const v of covered) {
+      coveredCount += v
+    }
+    let opaqueCount = 0
+    for (let i = 3; i < result.sprite.data.length; i += 4) {
+      if (result.sprite.data[i] === 255) {
+        opaqueCount++
+      }
+    }
+    // The whole organic silhouette silhouettes solid, unchanged from the naive full-mask transform
+    // — the small dark accent rect does not get read as a "glyph" and carved out of it.
+    expect(opaqueCount).toBe(coveredCount)
+  })
+
+  test('a fully-opaque full-bleed sprite (a scene, no transparent margin at all) is never a plate', () => {
+    const sprite = render('draw scene 12x8:\n  bg #446688\n  rect #223344 2:2 9:5 fill\n', 'scene')
+    expect(detectPlateFigure(sprite, coverageMask(sprite))).toBeNull()
+    expect(silhouetteSprite(sprite).plateDetected).toBe(false)
   })
 })

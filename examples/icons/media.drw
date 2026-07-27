@@ -9,7 +9,7 @@ use media                              # local theme (defined below) — family 
 theme media:
   size 32x32
   mode pixel
-  pal:
+  palette:
     k = #20242e                        # ink
     l = #ffffff                        # glyph (white)
     d = #10121a                        # glyph drop-shadow
@@ -33,22 +33,22 @@ theme media:
 
 # ── Tiles (one per native size, parametric on accent) ─────────────────────
 draw tile32(a) 32x32:
-  grad tg = linear(135, a.lighten(16%), a.darken(20%))
+  gradient tg = linear(135, a.lighten(16%), a.darken(20%))
   mask t = rrect(1:1, 30:30, 7)
   fill tg t
-  rim t 0:1 a.lighten(40%) 1
+  fill a.lighten(40%) t.edge(0:1)
 
 draw tile16(a) 16x16:
-  grad tg = linear(135, a.lighten(16%), a.darken(20%))
+  gradient tg = linear(135, a.lighten(16%), a.darken(20%))
   mask t = rrect(1:1, 14:14, 3)
   fill tg t
-  rim t 0:1 a.lighten(40%) 1
+  fill a.lighten(40%) t.edge(0:1)
 
 draw tile64(a) 64x64:
-  grad tg = linear(135, a.lighten(16%), a.darken(20%))
+  gradient tg = linear(135, a.lighten(16%), a.darken(20%))
   mask t = rrect(2:2, 61:61, 14)
   fill tg t
-  rim t 0:1 a.lighten(40%) 1
+  fill a.lighten(40%) t.edge(0:1)
 
 # ── Glyph silhouettes (white on transparent; stamped with a drop shadow) ──
 draw gMusic 32x32:                       # beamed eighth notes
@@ -147,38 +147,7 @@ draw camera64 64x64:
   stamp gCamera64 0:0 shadow 2:2 d.alpha(45%)
 
 # ── Exports ───────────────────────────────────────────────────────────────
-export music media/music:
-  png @1 @2
-  svg
-
-export video media/video:
-  png @1 @2
-  svg
-
-export camera media/camera:
-  png @1 @2
-  svg
-
-export gallery media/gallery:
-  png @1 @2
-  svg
-
-export mic media/mic:
-  png @1 @2
-  svg
-
-export podcast media/podcast:
-  png @1 @2
-  svg
-
-export music16 media/music16:
-  png @1 @2
-  svg
-
-export video16 media/video16:
-  png @1 @2
-  svg
-
-export camera64 media/camera64:
+export music, video, camera, gallery, mic, podcast, music16, video16, camera64:
+  dir media
   png @1 @2
   svg

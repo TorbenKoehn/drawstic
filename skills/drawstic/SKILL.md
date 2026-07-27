@@ -1,344 +1,210 @@
 ---
 name: drawstic
-description: Use this skill when creating or editing deterministic graphics with Drawstic recipes and CLI output: icons, sprites, pixel art, scenes, tilesets, spritesheets, textures, favicons, and game assets. Author .drw recipes, run check/fmt/render, visually verify output, and build PNG/SVG/JPEG artifacts. Do not use for general image editing, non-Drawstic raster manipulation, or conceptual art direction without a reproducible recipe.
+description: Draws deterministic pixel art and vector graphics from a text recipe — sprites, spritesheets, chibi and RO-style game characters, tilesets and atlases, icon families, favicons, app icons, game items, textures and full scenes, exported to PNG, SVG or JPEG. Use when the user asks to draw, generate, design or edit any of those, when a .drw recipe file is involved, or when graphics must be reproducible and version-controlled instead of prompted. Covers authoring .drw recipes and running the drawstic CLI (check, fmt, context, render, sheet, critique, build). Not for editing or filtering an existing photo, and not for art direction without a runnable recipe.
 ---
 
 # Drawstic
 
-Deterministic drawing engine. You author a text **recipe** (`.drw`), the engine renders it —
-same recipe, pixel-identical output on every platform. Recipes are token-optimized,
-self-verifiable text: you can read one and predict the pixels.
+You author a text **recipe** (`.drw`); the engine renders it. Same recipe, pixel-identical output
+everywhere. You can read a recipe and predict the pixels.
 
-Full language + CLI reference: [reference.md](reference.md). Load it when you need a
-construct not covered below.
+<start_here>
 
-## Runner
+**Do these three things before writing a single recipe line.**
 
-Detect once, reuse: Bun → `bunx drawstic`, npm → `npx drawstic`,
-pnpm → `pnpm dlx drawstic`, Yarn → `yarn dlx drawstic`.
-Examples below use `bunx drawstic`. Inside the Drawstic repo itself: `bun run drawstic`.
+**1 — Pick the runner once.** Look for a lockfile in the project and use the matching column for
+*every* command in this skill. Default: `npx drawstic`. If several lockfiles exist, prefer `bun`.
 
-## Workflow — author, verify, build
-
-1. **Context** (only when the file has imports or themes):
-   `bunx drawstic context file.drw` → one flat design brief: merged palette, style guide,
-   importable drawings with ASCII previews, functions, export plans.
-2. **Write** the recipe (anatomy below).
-3. **Check** `bunx drawstic check file.drw --json` → `[]` = OK. Otherwise fix each
-   `{severity, code, message, file, line, col, hint?}` and re-check. Exit code ≠ 0 iff errors.
-   Ragged pixel rows? `check file.drw --rows --json` reports per-row widths — no manual counting.
-4. **Format** `bunx drawstic fmt file.drw` (canonical, idempotent, rewrites in place).
-5. **Look at the output** — never claim success without rendering:
-   - shape check in plain text → `render file.drw#name --ascii` (grayscale luminance ramp)
-   - color check → `render file.drw#name --preview` (ANSI truecolor), add `--fit 80x40` if big
-   - facts → `render file.drw#name --inspect --json` (size, bbox, distinct colors, occupancy,
-     per-palette-key opaque pixel share, per-named-mask bbox/coverage — form-sanity without
-     reading pixels)
-   - shape-only silhouette → `render file.drw#name --silhouette --png@4` (or `--preview`) — flattens
-     every covered pixel to opaque black, so you judge silhouette legibility + modular-part alignment
-     with colour stripped; composes with `--inspect`/`--crop`/`--grid`, `--json` carries
-     `silhouette: true`. (Under `--ascii` black reads as empty — use PNG/`--preview`.)
-   - real file → `render file.drw#name --png@4 --out check.png` (judge at `@4`+; a native `@1`
-     sprite is too small on screen to assess)
-   - locate a placement bug → `render file.drw#name --png@4 --grid 8` (coordinate gridlines +
-     edge labels burned into the PNG only, never `build`; view the PNG)
-   - regression check → `render file.drw#name --diff old.png --json` → `render.diff`
-     `{identical, changedPixelCount, totalPixelCount, changedBBox}` pinpoints an unintended
-     change; compares UNgridded pixels even if `--grid` is also passed
-   - parametric draw → `render file.drw#name(#c04040, 3)` — literal args only (number, color,
-     string, point, boolean); no throwaway wrapper draw needed
-   - family QA (icon set, tileset, any sibling group) → `bunx drawstic sheet file.drw --png@4`
-     composes every `export`ed draw (or `--all` = every non-parametric draw) into one labeled,
-     size-normalized contact grid — the tool for cross-drawing radius/stroke/grey-value/hue
-     consistency; `--json` gives `{cols, rows, cell, cells:[{name, w, h, x, y}]}`, `--cols N` sets
-     columns. Parametric draws are skipped; no renderable draw → `E022`.
-6. **Build** `bunx drawstic build file.drw --out dir --json` → writes every `export`
-   artifact, returns `{diagnostics, artifacts: [{path, bytes}]}`.
-
-## Recipe anatomy
-
-Hand-pixeled sprite — palette keys are one ASCII letter, `.` = transparent (built-in, never declared):
-
-```drw
-draw heart:                  # size inferred from rows (5x5)
-  pal k=#1a1a1a r=#c04040    # inline palette; block form: pal: + indented k = #...
-  pixels:
-    .r.r.
-    rrkrr
-    rrrrr
-    .rrr.
-    ..r..
-
-export heart icons/heart:    # bareword base path; extension appended
-  png @1 @2                  # heart.png + heart@2x.png
-  svg ids classes
-```
-
-Procedural drawing — plain color bindings, no `pal` needed:
-
-```drw
-draw target 16x16:           # one-off procedural: header WxH required (integer literals)
-  k = #1a1a1a
-  bg #fff
-  circle k 8:8 7             # outlined
-  circle k.lighten(30%) 8:8 5 fill
-```
-
-Composition + parameters + theme:
-
-```drw
-from parts eye, tree         # import from ./parts.drw; type inferred
-use themes dusk              # file-level theme: `themes` is a module path (./themes.drw), not a keyword; `use dusk` alone means a LOCAL theme already in scope
-
-draw pebble(c) 6x4:          # parametric: instantiate per stamp
-  ellipse c 3:2 3:2 fill
-
-draw scene 32x24:
-  bg sky                     # gradient/palette names come from the theme
-  stamp tree 6:10
-  stamp eye 3:5
-  stamp eye 10:5 flipx       # draw half, mirror it
-  stamp pebble(#806858) 4:20
-  stamp pebble(#a58a73) 18:21
-```
-
-## Core syntax
-
-- **Three statement shapes:** binding `name = expr` (scan for `=` to find every definition);
-  block `kind name …:` + indent; directive `verb args` (`use`, `with`, `stamp`, `size`, `mode`).
-- **Line-oriented.** One statement per line, blocks by indentation (spaces only, 2 preferred).
-  No `;`, no brackets for lists: `cols = k, y, r` is a list; `xs[i]` / `xs.0` index it.
-- **Calls have two surfaces:** command-form `circle k 8:8 6` (statement position only) ≡
-  paren-form `circle(k, 8:8, 6)` (required inside expressions). UFCS: `x.f(a)` ≡ `f(x, a)`.
-- **Point** `x:y`, origin top-left, y down. Point arithmetic: `c-r`, `4:4 * 2 == 8:8`;
-  group composite coords: `(x+1):(y+2)`. `w`/`h` = current canvas size.
-- **Colors are values:** `#1a1a1a`, `#rrggbbaa`, `oklch(0.78, 0.12, 75)`, `rgb()`, `hsl()`;
-  ops chain: `c.lighten(12%).alpha(80%)`; ramps: `#777.tones(-16%, 0%, 14%)`,
-  `a.mixes(b, 4)`; `transparent`.
-- **Primitives** (**paint FIRST** — paint, geometry, then flags; `fill` = solid, `w2` = stroke width 2):
-  `bg p` · `px p pt` · `line p a b` · `rect p a b [fill]` · `rrect p a b r [fill]` ·
-  `circle p c r [fill]` · `ellipse p c rx:ry [fill]` · `arc p c r a0 a1` ·
-  `quad p p0 c1 p2` · `bezier p p0 c1 c2 p3` · `poly p pt1 pt2 … [fill]` ·
-  `curve p pt1 pt2 pt3 … [w2]` (open spline **through** the points, ≥3) ·
-  `curvePoly p pt1 pt2 pt3 … [fill]` (closed loop through the points; fillable organic mass; a Region without paint, ≥3) ·
-  `profile p span fn [baseline] [fill]` (filled silhouette under `y=f(x)`, one sample/column; `fn` gets normalized x∈[0,1]; a Region without paint) ·
-  `text p pt "s" [font name]` · `flood p pt`.
-- **Stamp** `stamp name[(args)] pt [anchor center|bottom|…] [flipx] [flipy] [rot45] [scale2]
-  [transform t] [tint p 0.3] [shadow 1:1 #0006] [mask r]`.
-- **Control flow:** `for i 0..8:` (half-open; `..=` inclusive) · `repeat n:` · `if c:`/`else:` ·
-  `match x:` · expression `if c then a else b` · `fn f(a, b) = expr`.
-- **Scatter** `scatter p n seed region:` → body n times, `p` = a seeded point drawn uniformly from
-  `region`'s pixels (stars/bubbles/gravel/sparks; deterministic; empty region = no-op).
-- **Mirror** `mirror x=n:` / `mirror y=n:` → draw the body **and** its reflection across the axis
-  (stamps flip; text stays forward; axis pixels paint once; nests for 4-fold symmetry).
-- **Export formats:** `png [@N] [z0-9] [indexed]` · `svg [ids] [classes] [inlineStyles]` ·
-  `jpeg [512] [q80]` · `path` · `tiled`/`atlasJson`/`aseprite` (sheets) · `mode pixel|smooth`.
-
-## Idioms
-
-- **Choose colors per project** — semantic bindings (`sand = #e9bd72`, `sandLite = sand.lighten(12%)`),
-  never generic presets. `pal` only when a color must be a pixel key, palette order matters,
-  or for indexed/sprite export control.
-- **Compose from small stamped parts**, each with its own local palette; parametric draws
-  for variants (`draw chevron(c) 8x8:` → `stamp chevron(k) 0:0`).
-- **Symmetry via `mirror x=n:`** for a whole passage (per-stamp `flipx`/`flipy` for one sprite),
-  regular forms via shape commands, hand detail via `pixels:`,
-  freehand via `path` + `fill`/`stroke`. **Organic shapes** (dunes, hills, waves, fronds, clouds,
-  rocks) via `curve`/`curvePoly` — the line passes *through* the points you give, so prefer them over
-  stacking `bezier`s or ellipses; `curvePoly … fill` is a soft mass, `curvePoly(…)` a Region for masks.
-  A closed `curvePoly` bulges *between* base points — `.intersect(rect(…))` to clamp a flat underside;
-  overlapping translucent loops turn muddy; under ~12px use `pixels:` instead.
-  For a **procedural** horizon from a function (noise dune/ridge) use `profile p 0..w ridgeY fill`
-  instead of a per-column loop — the `fn` gets normalized x∈[0,1], so `noise(seed, nx*4, 0)` is smooth
-  by construction (the integer-lattice trap can't happen); `profile(0..w, ridgeY)` is a Region.
-- **Explicit light**: place shadows as geometry or `shadow`/`castShadow` filters; never assume
-  ambient lighting. `shadeRegion r light base amount` blends `base` as a shadow veil, `amount` =
-  opacity, deepest away from `light` — an opaque `base` is fine (it composites, not repaints).
-  `lightRegion r light paint amount` is the additive mirror (brightest nearest `light`; areal, keep
-  `amount` low). `rim r dir p` lights the edge facing away from `dir` (`0:1` → top edge) — on a
-  **filled** silhouette it strokes the whole contour, so `.intersect(rect(…))` it to the target edge.
-  Full compositing semantics (and the `drawstic 1` `shadeRegion` caveat): reference.md § Gradients & filters.
-- **Scattered marks** (stars, bubbles, gravel, sparks): `scatter p 40 7 rect(0:0, w-1:h-1):` then
-  a mark on `p` — points come uniformly from the region's pixels, so pass a shape to confine them
-  (no manual `rand`+`floor`+bbox loop). `noise(seed, x, y)` for smooth 2D texture. Deterministic.
-- **Themes only for deliberate sets** (icon family, game UI): palette + `style "…"` guide +
-  `size`/`mode`/`font` defaults; compose with `with a, b` (ordered fold, later wins).
-- **A `draw` without an `export` is a component** — it exists to be stamped. One concept for
-  parts and outputs.
-
-## Craft routing
-
-Building a specific kind of graphic? Load the matching craft guide before drawing — this file
-teaches the language, the guides teach the craft:
-
-| Deliverable | Guide |
+| lockfile | run drawstic as |
 |---|---|
-| Full scene (landscape, interior, space, underwater …) | [scene-craft.md](scene-craft.md) |
-| Icon family / app icons (multi-size, PNG+SVG set) | [icon-craft.md](icon-craft.md) |
-| Modular character / game figure (parts, two views, faction recolor) | [character-craft.md](character-craft.md) |
-| Game item / equipment set (weapons, shields, armor, potions, loot) | [item-craft.md](item-craft.md) |
+| `bun.lock` / `bun.lockb` | `bunx drawstic` |
+| `pnpm-lock.yaml` | `pnpm dlx drawstic` |
+| `yarn.lock` | `yarn dlx drawstic` |
+| `package-lock.json`, or none | `npx drawstic` |
 
-## Scenes — masterpiece workflow
+Every command below is written as `drawstic …` — prefix it with your runner. Working inside the
+Drawstic repository itself? Use `bun run drawstic` instead.
 
-For a full scene (landscape, interior, space, underwater), a correct render is not enough. Follow
-this order; the detailed recipes, dosages, and 3D/shadow/water idioms are in
-[scene-craft.md](scene-craft.md) — load it before building any scene ≥~150px.
+**2 — Route to your craft guide and your starter.** Read the guide *before* drawing. Copy the
+starter and restyle it — it already has the right skeleton, and it is verified to build.
 
-**Mandatory order:** (1) **light contract** — bind ONE `sun`/`light` point + warm light + cool
-shadow colour as the first lines; derive *every* shade/light/rim/shadow and every lit tone from it
-(`base.mix(warm, …)`, never bare `lighten`). (2) **terrain is a function** — each ground line is a
-`fn` + `profile`; everything standing calls it for its y (no floating). (3) paint **back-to-front**:
-sky → far layer → haze veil → midground → ground (shape gradient far-light→near-dark, growing sizes)
-→ texture filters (depth-staggered) → **then** detail marks (≥2px, light/dark pair — grain eats 1px)
-→ subjects (contact-AO ellipse + directional shadow + light edge) → foreground frame → vignette.
-(4) each object: `fill → shade/light/AO/rim → then bright accents`.
+| You are making | Read | Copy |
+|---|---|---|
+| a character, figure, chibi, sprite with several views | [character-craft.md](character-craft.md) | [starters/character-3view.drw](starters/character-3view.drw) |
+| an icon family, app icons, a favicon set | [icon-craft.md](icon-craft.md) | [starters/icon-family.drw](starters/icon-family.drw) |
+| game items, equipment, loot, a tileset or atlas | [item-craft.md](item-craft.md) | [starters/item-set.drw](starters/item-set.drw) |
+| a scene, landscape, interior, background | [scene-craft.md](scene-craft.md) | [starters/scene-layers.drw](starters/scene-layers.drw) |
+| one small standalone shape, logo or diagram | nothing extra — the recipe below is enough | — |
 
-**Checklist before "done":** one light source, no floating objects, ground reads as a plane (not a
-wall), hero silhouette crosses a contrast edge, filter dosages sane (scene-craft.md § 5), and you
-**looked at the @4 image** — `check` verifies grammar only; every quality failure is silent.
+**3 — Know where the other two files are.** [verify.md](verify.md) is the verification loop as an
+algorithm plus a code→fix table — read it before your first `check`. [language.md](language.md) is
+the whole language surface with every trap tied to its diagnostic code — open it whenever you are
+unsure of a construct or hit a code you do not recognise. [reference.md](reference.md) is the last
+resort, for something neither one covers. Never used Drawstic before?
+[walkthrough.md](walkthrough.md) is one complete run, request → artifact, with the real diagnostics
+and the real fixes in between.
 
-## Icons — family workflow
+</start_here>
 
-For an app-icon family (6+ siblings, multi-size, PNG+SVG), build the **shared frame first, glyphs
-last** — full recipes, dosages and multi-size rules in [icon-craft.md](icon-craft.md), load it
-before drawing any family.
+## The canonical path
 
-**Mandatory order:** (1) **theme** = palette + a `style` guide that records the family number
-contract (radius, stroke, margin, light dir per size). (2) **one parametric tile/plate per size**
-(accent as arg), stamped by every icon — radius ≈19–22 % of the edge, ONE light contract (light
-top-left / dark bottom-right) via *icon mechanics* — a vertical gradient+rim, a 1px bevel, or two
-fills+a line — **not** scene filters (`shadeRegion`/`rim` are too weak at 16–32px). (3) **white
-silhouette glyphs**, optically centered, stamped on. Multi-size = **redraw, never scale** (fresh
-`WxH` header each; ≤~12px = one hand-pixeled `pixels:` grid); family palette = hue-only oklch or
-accent-derived shades, `grad` stops intra-hue.
+Every shaded or modular asset is built in this order. Use this term for it — *the canonical path* —
+and do not invent a different order.
 
-**Checklist before "done":** silhouette-first (run the mis-reading test; watch the merge-trap),
-optically centered (`--inspect` bbox: `x0+x1 = W−1`; `circle c r` covers `c−r…c+r−1`; notch/bump
-circle r ≤~20 % of the edge), and you ran **`sheet file.drw --png@4`** for cross-sibling consistency
-+ **`--png@1`** to confirm each icon reads at 100 %. SVG target → flat tiles only, counter-check
-`<rect>` count. `check` catches almost nothing here — icon quality is 100 % visual.
+1. **Theme** — one `light` (the single source of truth for shade, rim and cast) plus, for a figure,
+   a `figure:` oracle. Every view and every variant applies the same theme, so they cannot drift.
+2. **Materials** — `material NAME = COLOR RESPONSE`. The response is the *physics*
+   (`metal`/`skin`/`cloth`/`glass`/`glow`/`flat`), never the colour.
+3. **Parts** — each mass is a `Region` binding from a primitive or an organic constructor
+   (`dome`/`lobe`/`crescent`/`ribbon`). A part that will be assembled declares its seams as `pin`s.
+4. **Assembly** — `fit` places a part so its pin lands exactly on another part's pin; contact is
+   structural, not eyeballed. `behind`/`front` set paint order, `aim` orients a held prop.
+5. **Shade** — `model REGION MAT` (smooth, form-following; the default) or `cel REGION MAT N`
+   (N crisp bands). There is no third way and no hand-shading floor.
+6. **`outline`** — one bare pass as the assembly's last statement. It rings the sprite against
+   **transparency**, so it is what separates a part-built asset from its background. A full-bleed
+   scene has no transparency, so there it is a no-op — omit it, as `starters/scene-layers.drw` does.
+7. **`critique` → answer its rubric → `build`.**
 
-## Characters — modular figure workflow
+Icons are the one exception: at 16–32 px a flat plate with a 1 px bevel reads better than `model`.
+icon-craft.md gives the rules.
 
-For a modular game figure (parts stamped into a body, front + side, faction recolor), build the
-**parts first, the body last** — full recipes, ramps, seam + two-view rules in
-[character-craft.md](character-craft.md), load it before building any figure.
+## Workflow
 
-**Mandatory order:** (1) **light contract** in the colour system (`warm`/`cool` + `fn lit/shd/deep`;
-`base.mix(warm, …)`, never bare lighten) — not per-view mirrored, no `shadeRegion`/`rim` at ≤64px.
-(2) **proportions constants** (`headTop/shoulderLine/hipLine/kneeLine/footLine` at module scope; ~4
-heads for 48–64px). (3) **parametric parts** (`draw part(c)`), each with a **socket comment** (its
-seam row in its own space). (4) full body **back-to-front via `stamp`**, contact-shadow
-`ellipse cool.alpha(30–35%)` as the **first** statement (feet cover it). (5) **recolor
-parametrically, never themes** (a theme palette does not cross a `stamp`; pass the 1–2 variant
-colours, thin wrapper per variant). (6) **redraw pose-leading parts for the side, reuse
-pose-invariant ones** (side ≠ flip; far limb via neutral-grey `tint`).
+```
+1  context   drawstic context file.drw            # only when editing a file you did not write
+2  write     theme → materials → parts → assembly → outline → export
+3  check     drawstic check file.drw --lint --json     → must be []
+4  fmt       drawstic fmt file.drw                     # canonical, idempotent, in place
+5  look      drawstic render file.drw#name --png@4 --out /tmp/x.png   # then open the image
+6  critique  drawstic critique file.drw --as <profile> --strict --json
+7  answer    run critique.rubric.renders, answer every rubric item by looking
+8  build     drawstic build file.drw --json
+```
 
-**Checklist before "done":** `--silhouette` black-out reads as the archetype and shows connected
-seams; per-joint `--crop` (bbox overlap ≠ pixel contact); native `@1` reads; no transparent grid
-end-row (**W009**); body adds socket offsets, never a shared `y`; warm materials shaded via `darken`
-(a raw cool `mix` → magenta); `sheet` across the variant wrappers. `check` verifies grammar only —
-every seam/silhouette failure is silent.
+Steps 3 and 6 are loops: **do not proceed to the next step until the current one is green.**
+The full loop, with a code→fix table for every diagnostic you can hit, is in [verify.md](verify.md).
 
-## Items — equipment set workflow
+## A complete recipe
 
-For a game item / equipment set (weapons, shields, armor parts, potions, loot), build the **set
-contract first, the confusing pairs second, the materials third** — full recipes, dosages and
-sidecar patterns live in [item-craft.md](item-craft.md); load it before building any inventory
-family.
+Copy this shape. It is a real recipe: `check --lint` returns `[]`, `critique --as item --strict`
+exits 0 with `pass:true`, and `build` writes both PNGs.
 
-**Mandatory order:** (1) **theme + set contract** = `size 32x32`, transparent inventory sprites, one
-light direction, 2–4 px breathing room, shared axis/footprint, and the outline/material legend in
-`style`. (2) **hardest confusion pairs first** (`shortbow/longbow`, `arrowBundle/bolts`,
-`pickaxe/axe`, `heraldShield/towerShield`, bottle variants by front sign) — solve silhouette
-distance before ornament. (3) **shared scaffolds** — one bottle shell, one shaft angle, one shield
-mass, one armor/material language. (4) **silhouette pass, then material pass** — metal = dark spine,
-mid fill, and 1–2 px glints; wood/leather/cloth stay sparse; glass = left/right strips + liquid
-band; magic/gold/gem accents stay tight. (5) **ship the family** — per-item `png @1 @4`, plus a
-`tileset` export with `tiled` + `atlasJson`; use a separate `atlas ... pad 1` only when the named
-atlas needs its own packed sheet.
+<example>
 
-**Checklist before "done":** run **`sheet file.drw --png@4`** first, then native **`--png@1`** for
-every sibling, then **`--silhouette --png@4`** on the weakest pair. After `build`, open the `.tsj`
-and atlas `.json` and confirm `tilecount`, `columns`, stable frame names, and frame bounds. `check`
-verifies grammar only — pair confusion, weak silhouettes, and mushy materials are silent.
+```drw
+light sun      = dir 1:1 #ffe6b0 amb #2a3a5e 15%   # ONE source: light travels down-right ⇒ up-left edge is lit
+material steel = #8a95a5 metal                     # colour + response; the response is physics, not colour
+material grip  = #6d4527 cloth
 
-## Gotchas
+draw sword 32x64:
+  blade  = poly(16:6, 20:14, 20:40, 12:40, 12:14)  # each mass is a Region binding
+  guard  = rrect(7:40, 25:44, 2)
+  handle = rect(14:44, 18:54)
+  pommel = circle(16:56, 3)
+  model blade steel                                # smooth form shade → rim → AO → cast, all from sun
+  cel   guard #d9a03a metal 3                      # 3 crisp bands; inline COLOR RESPONSE, no named material
+  model handle grip
+  cel   pommel #d9a03a metal 3
+  outline                                          # one bare pass, last
 
-- Pixel keys: exactly one ASCII letter, declared in a visible `pal`/theme; every row equal
-  width; `.` is transparent and never declared. Cells resolve in the **palette namespace only**
-  — a plain value binding of the same letter is never a cell; a letter with no `pal` entry is
-  `E007`. `w`/`h` are **fine** as pal keys (`pal w=#fff`): they shadow the canvas-size binding
-  inside the applying draw — in **both** drawing-local and **theme** palettes — keep them free
-  only if you need the dimension in an expression there.
-- A bare comma-sequence IS a list — `f(a, b, c)` is a 3-arg call; to pass one list, bind it
-  first (`xs = a, b, c` then `f(xs)`).
-- Every painting command is **paint-first** — `circle k 8:8 6`, `poly` included: paint, then
-  geometry, then trailing flags. `poly` takes `fill` but **not** `w<N>` (its variadic point tail
-  eats it → `E001 unknown name 'w2'`); for a wide outline stroke a Region: `stroke p poly(…) w2`.
-- Names are camelCase, never hyphenated — `-` always subtracts, no whitespace needed.
-- Indices must be integers: `xs[row // 8 mod 3]` (`//` floored division, `mod` keyword);
-  `%` is only the percent suffix (`10% == 0.1`).
-- Shape statement without paint = error; shape *call* without paint = Region value (for
-  `mask`, `fill`, `stroke`, set-ops `.union/.intersect/.subtract/.xor`).
-- `stroke` on a **thin** region (short axis ≤2px, or ≤4px with `w2`) paints the *whole* region —
-  the 1px border **is** the region, so the fill shows 0 % (an 8×2 bar stroked = 100 % stroke colour).
-  Fill thin bars/bones/blades; don't stroke them.
-- No cursor in drawings — coordinates are absolute; `rel` movement exists only inside `path`.
-- Canvas `WxH` are integer literals, never expressions; scale via `stamp … scale2` or export `@N`.
-- Drawing-level `use themes x` lines must be the first statements of the body.
-- Scope: `draw`/`path`/`fn`/`theme`/`tileset`/`atlas`/`export` are **module-scope only** (E004
-  inside a `draw` body); `mask`/`grad`/`pal`/`filter`/bindings may also be drawing-local.
-  Full table: reference.md § Definition scope.
-- A `theme` body holds **only** `pal:`/`grad NAME=…`/`size`/`mode`/`font`/`style`/`with`/`filter`/
-  `draw`. A free binding there (`accent = #d8a53a`) is `E004` **at the declaration** — put colours
-  under `pal:`, other constants (radius/margin/alpha) at module scope above the theme (a theme
-  carries no non-colour tokens).
-- Theme/host palettes **don't cross a `stamp` boundary** — a stamped `draw` resolves its own `pal`
-  keys in its own scope (missing key = static `E007`, not a theme fall-through). Recolour a stamped
-  variant **parametrically** (`draw part(c)` + `pal a=c`, or derived `c.darken(…)`) or **post-hoc**
-  with a `replace old new` chain (exact colour match, one line per tone) — not by swapping the theme.
-- `name = expr` **reassigns the nearest in-scope mutable binding** (loop-persistent, like `+=`),
-  declaring a fresh local only when none is reachable — so `g = g.union(…)` inside a `for` now
-  accumulates. The search stops at the draw body (blocks never mutate module scope; `const`/palette/
-  canvas `w`/`h` are not targets).
-- Reserved names as bindings: a **stdlib math name** (`min max abs clamp floor ceil round sign sqrt
-  hypot dist sin cos tan atan2 pow exp log lerp len`), a constant (`pi`/`tau`), or a predefined like
-  `rim` gives a clean `E007` (`'tan' is a predefined, unshadowable name` — caught by `check`), but a
-  **filter/directive** keyword (`shadow`, `tint`, `grain`, `dither`, `replace`, `outline`, `speckle`,
-  `ripple`) parses as its directive — `shadow = …` then `shadow.alpha(…)` fails as `E004` at the
-  **use** site, not the declaration. Also avoid `w`/`h`. Full stdlib list: reference.md § Expressions.
-- SVG export stays compact for flat or row-uniform fills; scanline-varying gradients, veils, texture,
-  and grain can explode `<rect>` count. Full export tradeoffs: reference.md § Export.
-- `dither` is a **raw set, not a blend** — an `alpha(0%)` partner punches a transparency hole.
-  `grain`/`speckle`/`ripple`/`dither` take an **optional leading region** to scope them
-  (`grain sand 0.3 11 p`); without one they hit every opaque pixel (still respecting a `mask …:`
-  block). All shadow forms share one `[region] dx:dy paint` shape (`shadow 1:1 p`,
-  `shadow r 1:1 p`, `castShadow r 1:1 p`, `stamp … shadow 1:1 p`); the whole-frame `shadow`
-  respects a `mask …:` block in language version 2 (`drawstic 1` ignores it). A `stamp … shadow` on
-  a **composite** sprite clumps the whole silhouette into a dark blob — use an `ellipse … fill` ground
-  shadow for standing objects.
-- `radial(c, transparent)` muddies a glow; end on `c.alpha(0%)`. Cross-hue OkLCh blends can drift
-  through muddy/magenta colours; use intra-hue ramps or explicit `rgb`/`hsl` stops. Full colour traps:
-  reference.md § Color and § Gradients & filters.
-- Stamp anchors are visual in language version 2: offset anchors name a spot on the post-transform
-  footprint. Version-history details: reference.md § Determinism & budget.
-- `quad`/`bezier`/`arc` below ~12px rasterize blocky — use `pixels:` instead. `noise(seed, x, 0)`
-  at integer `x` is high-frequency spikes — sample fractional steps (`x * 0.05`) for smoothness, or
-  use `profile` for a silhouette (its `fn` gets normalized x, so the trap can't occur).
-- Runaway loops abort via the step budget — raise with `--budget N` only for legitimately
-  heavy recipes.
-- Out-of-bounds drawing is silently clipped (legal, useful for partial stamps).
-- Imports resolve relative to the recipe file but may not escape the **project root =
-  the CLI's working directory** — run drawstic from the directory tree containing all
-  imported recipes.
+export sword:                                      # path defaults to the name; WITHOUT this block, build writes nothing
+  png @1 @4
+```
 
----
-*Maintenance (Drawstic developers): this skill ships with the package and mirrors
-`docs/language-spec.md` + `src/cli.ts`. Any language or CLI change MUST update SKILL.md and
-reference.md in the same change — without compromising their precision or token economy.
-Ground edits in real recipe runs/evaluation reports, not generic advice. For substantial skill
-changes, compare the new skill against the previous version on 2–3 realistic prompts and grade the
-rendered artifacts with concrete evidence. Add helper scripts only when agents repeatedly rewrite
-the same deterministic logic; scripts need flags/`--help`, no prompts, structured stdout, diagnostics
-on stderr, safe retry behaviour, and an executed test.*
+```
+$ drawstic check sword.drw --lint --json
+{ "diagnostics": [], "census": { … "antiPatterns": { "manualSpread": 0, "stampWithPins": 0, "handShadow": 0 } } }
+
+$ drawstic critique sword.drw --as item --strict --json    # exit 0
+{ "critique": { "pass": true, "failedCodes": [], … } }
+
+$ drawstic build sword.drw --json
+{ "diagnostics": [], "artifacts": [ { "path": "…/sword.png", "bytes": 933 },
+                                    { "path": "…/sword@4x.png", "bytes": 1793 } ] }
+```
+
+</example>
+
+Three things that example is teaching:
+
+- **No `export` block ⇒ `build` writes nothing** and still exits 0. A drawing that is never
+  exported, stamped or fitted also raises lint `W002`. Write the `export` block with the recipe,
+  not after it.
+- **The light is declared once.** A file with exactly one `light` and no theme needs no `light L`
+  argument anywhere — the single binding is found automatically. See the tier list in
+  [language.md](language.md) before you add a second one.
+- **`export` paths are relative to the recipe's own folder.** `build` writes next to the recipe;
+  `--out <dir>` overrides. A path that starts with the recipe's own directory name raises `W016`.
+
+**A family shares one export block** — comma-separated targets, a shared `dir`, one format list:
+
+```drw
+export chat, phone, contacts:   # one block, three drawings
+  dir communication              # shared prefix; a target keeping its own path still wins over it
+  png @1 @2
+```
+
+Add `file "{kebab base}"` only when names need reshaping for the block (e.g. camelCase drawing
+names → kebab-case files) — skip it whenever the drawing name is already the filename you want.
+Full precedence, `dir`/`file` grammar and the six inflectors: [language.md](language.md) §13.
+
+## Verification default
+
+There are several render modes. **Use this one unless you have a reason not to:**
+
+```
+drawstic render file.drw#name --png@4 --out /tmp/x.png     # then open the image and look
+```
+
+`@1` is too small on screen to judge; `--ascii` cannot show colour or a silhouette. The other modes
+(`--silhouette`, `--inspect`, `--explain`, `--grid`, `--diff`, `--preview`, `sheet`) each answer one
+specific question — [verify.md](verify.md) says which question each one answers. `critique --json`
+also prints a `rubric.renders` list of the exact commands to run for *your* category; when it does,
+run those instead of guessing.
+
+## Definition of done
+
+All four, every time. There is no fifth condition and no "accepted anyway" clause.
+
+1. `drawstic check file.drw --lint --json` → `diagnostics` is `[]` **and** all three
+   `census.antiPatterns` counters are `0`.
+2. `drawstic critique file.drw --as <profile> --strict --json` → **exit code 0**. That is the
+   must-fix subset — `C001`, `C007`, `C013`, plus `C003` for `icon` — and it is not negotiable.
+   Then read **every** code in `critique.failedCodes` and, for each, either fix it or name it and
+   say why it stands. Each carries a `fix` field that tells you how. Codes outside the must-fix
+   subset are advisory *by design*, because each has a legitimate exception — `C009` between
+   siblings that share a silhouette on purpose (a faction recolor, a shared plate or bottle shell),
+   `C012` on a sprite whose padding is a deliberate baseline, `C004` on a near-black subject. An
+   unexplained advisory code is a defect you did not look at; an explained one is a decision.
+3. Every item in `critique.rubric.items` answered **by looking at a rendered image**, not by
+   reasoning about the recipe. A clean `critique` verifies structure; only your eyes verify craft.
+4. `drawstic build file.drw --json` → every artifact in the list has `bytes > 0`.
+
+`critique.pass` goes `false` on *any* fired check, advisory ones included, so it is stricter than
+the exit code and stricter than this gate. Read it as a prompt to explain, not as a failure.
+
+If you cannot reach all four, say so and report the outstanding codes. Do not describe an unbuilt
+or unviewed asset as finished.
+
+## Map
+
+| File | What is in it |
+|---|---|
+| [language.md](language.md) | the whole language surface + every trap tied to its error code |
+| [verify.md](verify.md) | the verification loop as an algorithm + diagnostic→fix table |
+| [walkthrough.md](walkthrough.md) | one complete run, request → artifact, plus short worked pairs |
+| [character-craft.md](character-craft.md) · [icon-craft.md](icon-craft.md) · [item-craft.md](item-craft.md) · [scene-craft.md](scene-craft.md) | craft rules per category |
+| [starters/](starters/) | runnable, verified recipes to copy and restyle |
+| [reference.md](reference.md) | exhaustive CLI + language reference; the last resort |
+
+<details>
+<summary>Maintenance note (Drawstic developers only)</summary>
+
+This skill ships in the npm package and is the only thing a consuming agent reads. It mirrors
+`docs/language-spec.md` and `src/cli.ts`: any language or CLI change MUST update SKILL.md,
+language.md, verify.md and reference.md in the same change, without loosening their precision or
+token economy. Ground edits in real recipe runs, never in generic advice. Constructs removed from
+the language (the raw shading quartet `rim`/`shadeRegion`/`lightRegion`/`ao`, the `lit L:` block,
+`replace`, `tileset`, `cap`/`join`, the `drawstic N` pragma) must not reappear in any example here.
+</details>

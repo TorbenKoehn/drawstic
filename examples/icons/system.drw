@@ -1,3 +1,5 @@
+glyphWhite = #f7faff
+
 use system
 
 # ── System app-icon family ─────────────────────────────────────────
@@ -5,9 +7,9 @@ use system
 # bottom darker); glyphs are bold near-white masses, optically centered.
 
 theme system:
-  pal:
+  palette:
     k = #20242c
-    l = #f7faff
+    l = glyphWhite
     s = #6c7789
     b = #3b82f0
     r = #ef5d52
@@ -17,10 +19,14 @@ theme system:
     p = #57e08a
   size 32x32
   mode pixel
+  light sun = dir 1:1 #fff6e0 amb #2a3a5e 20%
   style """System app-icon family. Rounded-square tiles (radius 6, 2px margin).
-One light source top-left: tile gradient lighter at top, darker at bottom.
+One light source top-left — the theme's `sun`: tile gradient lighter at top, darker
+at bottom, and the one modelled glyph (the 64px gear) reads the same source.
 Bold near-white glyphs, ~2-3px strokes, optically centered. Consistent corner
 radii, stroke weights and palette across every size."""
+
+material gearM = glyphWhite flat
 
 # Shared tile: identical radius / margin / light model for the whole family.
 draw tile(c) 32x32:
@@ -97,35 +103,11 @@ draw settings64 64x64:
   stamp tile64(s) 0:0
   teeth = circle(49:32, 4).union(circle(44:44, 4)).union(circle(32:49, 4)).union(circle(20:44, 4)).union(circle(15:32, 4)).union(circle(20:20, 4)).union(circle(32:15, 4)).union(circle(44:20, 4))
   gear = circle(32:32, 15).union(teeth).subtract(circle(32:32, 7))
-  fill l gear
-  shadeRegion gear -20:-20 k 26%
+  model gear gearM
   stroke s.darken(28%) circle(32:32, 7)
 
 # ── Exports: png @1 @2 + svg per icon, base path system/<name> ───────
-export settings system/settings:
-  png @1 @2
-  svg
-export files system/files:
-  png @1 @2
-  svg
-export trash system/trash:
-  png @1 @2
-  svg
-export search system/search:
-  png @1 @2
-  svg
-export downloads system/downloads:
-  png @1 @2
-  svg
-export terminal system/terminal:
-  png @1 @2
-  svg
-export search16 system/search16:
-  png @1 @2
-  svg
-export downloads16 system/downloads16:
-  png @1 @2
-  svg
-export settings64 system/settings64:
+export settings, files, trash, search, downloads, terminal, search16, downloads16, settings64:
+  dir system
   png @1 @2
   svg

@@ -1,9 +1,11 @@
 # 72. Visual stamp anchors (language version 2)
 
-- Status: Accepted
+- Status: Accepted (made unconditional — no longer version-gated, the through-transform legacy
+  path removed — by [ADR-0088](0088-in-place-v1-break.md); this mapping is now the sole anchor
+  semantics)
 - Date: 2026-07-08
 - Deciders: t.koehn, Claude
-- Refines: [ADR-0064](0064-stamp-anchors.md); gated by [ADR-0029](0029-language-version-pragma.md)
+- Refines: [ADR-0064](0064-stamp-anchors.md); gated by [ADR-0029](0029-language-version-pragma.md) (gate removed by [ADR-0088](0088-in-place-v1-break.md))
 
 ## Context
 

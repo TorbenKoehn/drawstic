@@ -1,5 +1,5 @@
 theme armorTheme:
-  pal:
+  palette:
     k = #241722
     s = #59687c
     m = #8d9db1
@@ -165,26 +165,12 @@ draw cloak 64x64:
   line o 41:21 40:44
   outline k
 
-tileset armorSheet 64x64:
-  tiles helm, breastplate, gloves, boots, belt, cloak
+atlas armorSheet:
+  sprites helm, breastplate, gloves, boots, belt, cloak
+  tile 64x64
   cols 3
 
-export helm helm:
-  png @1 @4
-
-export breastplate breastplate:
-  png @1 @4
-
-export gloves gloves:
-  png @1 @4
-
-export boots boots:
-  png @1 @4
-
-export belt belt:
-  png @1 @4
-
-export cloak cloak:
+export helm, breastplate, gloves, boots, belt, cloak:
   png @1 @4
 
 export armorSheet armor-set:

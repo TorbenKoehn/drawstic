@@ -8,7 +8,8 @@
       "!**/dist",
       "!bench/corpus",
       "!bench/reports",
-      "!examples/**/*.svg"
+      "!examples/**/*.svg",
+      "!examples/**/*.json"
     ]
   },
   "formatter": {

@@ -1,0 +1,57 @@
+# Healing potion — 48x48 transparent inventory sprite.
+# Canonical path: light -> materials -> parts -> shade -> glass front wall -> outline.
+# ONE light, `dir 1:1` (travels down-right) => the source sits up-left, so every lit
+# band is on the top/left of the bottle and every shade band on the bottom/right.
+# The whole silhouette is mirror-symmetric about x = 23.5 (every pair of x sums to 47).
+
+k = #150d1a                                    # the one outline ink
+
+light sun = dir 1:1 #ffe9c2 amb #2b3c62 18%
+
+material flask  = #a8dbe9 glass spread 135%    # pale aqua bottle glass
+material elixir = #e0405e glass spread 155%    # crimson healing brew
+material cork   = #a3703d cloth spread 150%    # stopper
+material brass  = #dfaa4a metal                # neck collar
+material mark   = #fff0f2 flat                 # the front sign, so it reads at @1
+
+draw potion 48x48:
+  # --- one bottle shell: body + shoulder taper + neck ---
+  body     = rrect(8:25, 39:43, 9)
+  shoulder = poly(19:20, 28:20, 33:27, 14:27)
+  neck     = rect(19:12, 28:21)
+  shell    = body.union(shoulder).union(neck)
+
+  capTop   = rrect(18:4, 29:9, 2)
+  capShaft = rect(21:9, 26:13)
+  stopper  = capTop.union(capShaft)
+  collar   = rrect(16:16, 31:20, 1)
+
+  # --- liquid: flat surface at y=30, 3px glass wall left and right, 2px floor ---
+  liquid   = rrect(11:27, 36:41, 6).intersect(rect(0:30, 47:41))
+  cross    = rect(22:33, 25:40).union(rect(19:35, 28:38)).intersect(liquid)
+  bubbles  = circle(31:34, 1).union(circle(30:39, 1)).union(circle(17:33, 1)).intersect(liquid)
+
+  # --- glass front wall reads, painted after the liquid so they sit in front of it ---
+  halo     = shell.intersect(rect(0:22, 47:30))
+  shine    = rrect(12:29, 15:38, 1)
+  glint    = circle(15:26, 1)
+
+  model shell flask
+  model liquid elixir
+  fill #ff92a6.alpha(72%) liquid.edge(0:1)     # lit meniscus — the surface faces the source
+  fill #5c0d20.alpha(50%) liquid.edge(0:-1, 2) # settled dark floor
+  model cross mark
+  fill #ffd8de.alpha(82%) bubbles
+  cel stopper cork 3
+  cel collar brass 3
+  fill linear(90, transparent, #ff5a74.alpha(72%)) halo   # the brew's warm bounce up the empty glass
+  fill #ffffff.alpha(40%) shell.edge(1:0, 2)   # lit left wall
+  fill #16233f.alpha(44%) shell.edge(-1:0, 3)  # shaded right wall — away from the source
+  fill #16233f.alpha(30%) shell.edge(0:-1, 2)  # shaded underside
+  fill #ffffff.alpha(30%) shell.edge(0:1)      # lit rim across the top
+  fill #ffffff.alpha(62%) shine                # the long specular strip
+  fill #ffffff.alpha(88%) glint                # the one hard highlight dot
+  outline k
+
+export potion:
+  png @1 @4

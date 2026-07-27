@@ -11,7 +11,7 @@ import type { Sprite } from '../../src/values.js'
 let n = 0
 const render = (src: string, drawing: string): Sprite => {
   const engine = new Engine(process.cwd())
-  const mod = engine.loadSource(src, `${process.cwd()}\\mem${n++}.drw`, 'mem.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `mem${n++}.drw`), 'mem.drw')
   const entry = mod.definitions.get(drawing)
   if (!entry) {
     throw new Error(`no drawing ${drawing}`)
@@ -27,7 +27,7 @@ const px = (s: Sprite, x: number, y: number): [number, number, number, number] =
 describe('evaluator', () => {
   test('pixels block renders through the palette', () => {
     const s = render(
-      'draw heart 5x5:\n  pal k=#1a1a1a  r=#c04040\n  pixels:\n    .r.r.\n    rrkrr\n    rrrrr\n    .rrr.\n    ..r..\n',
+      'draw heart 5x5:\n  palette k=#1a1a1a  r=#c04040\n  pixels:\n    .r.r.\n    rrkrr\n    rrrrr\n    .rrr.\n    ..r..\n',
       'heart',
     )
     expect(s.w).toBe(5)
@@ -38,17 +38,17 @@ describe('evaluator', () => {
   })
 
   test('size inferred from pixels; header mismatch is an error', () => {
-    const s = render('draw gem:\n  pal y=#e0b070\n  pixels:\n    .y.\n    yyy\n', 'gem')
+    const s = render('draw gem:\n  palette y=#e0b070\n  pixels:\n    .y.\n    yyy\n', 'gem')
     expect(s.w).toBe(3)
     expect(s.h).toBe(2)
     expect(() =>
-      render('draw bad 4x4:\n  pal y=#e0b070\n  pixels:\n    .y.\n    yyy\n', 'bad'),
+      render('draw bad 4x4:\n  palette y=#e0b070\n  pixels:\n    .y.\n    yyy\n', 'bad'),
     ).toThrow(/pixels row 1 is 3 wide; expected 4/)
   })
 
   test('pixels size diagnostics point at offending rows', () => {
     try {
-      render('draw bad:\n  pal y=#e0b070\n  pixels:\n    yy\n    y\n', 'bad')
+      render('draw bad:\n  palette y=#e0b070\n  pixels:\n    yy\n    y\n', 'bad')
       expect(false).toBe(true)
     } catch (e) {
       expect(e).toBeInstanceOf(DrawsticError)
@@ -63,7 +63,7 @@ describe('evaluator', () => {
       }
     }
     try {
-      render('draw bad 2x3:\n  pal y=#e0b070\n  pixels:\n    yy\n    yy\n', 'bad')
+      render('draw bad 2x3:\n  palette y=#e0b070\n  pixels:\n    yy\n    yy\n', 'bad')
       expect(false).toBe(true)
     } catch (e) {
       expect(e).toBeInstanceOf(DrawsticError)
@@ -85,7 +85,7 @@ describe('evaluator', () => {
 
   test('bg, px, circle fill', () => {
     const s = render(
-      'draw t 16x16:\n  pal k=#1a1a1a  r=#c04040\n  circle k 8:8 7\n  circle r 8:8 5 fill\n  circle k 8:8 2 fill\n',
+      'draw t 16x16:\n  palette k=#1a1a1a  r=#c04040\n  circle k 8:8 7\n  circle r 8:8 5 fill\n  circle k 8:8 2 fill\n',
       't',
     )
     expect(px(s, 8, 8)).toEqual([26, 26, 26, 255]) // centre: inner disc
@@ -96,7 +96,7 @@ describe('evaluator', () => {
 
   test('circle radius has balanced icon padding', () => {
     const s = render(
-      'draw circleIcon 16x16:\n  pal:\n    k = #1a1a1a\n    r = #c04040\n  bg #fff\n  circle k 8:8 7\n  circle r 8:8 5 fill\n',
+      'draw circleIcon 16x16:\n  palette:\n    k = #1a1a1a\n    r = #c04040\n  bg #fff\n  circle k 8:8 7\n  circle r 8:8 5 fill\n',
       'circleIcon',
     )
     expect(px(s, 8, 0)).toEqual([255, 255, 255, 255])
@@ -111,7 +111,7 @@ describe('evaluator', () => {
 
   test('paths: local cursor and rel segments', () => {
     const s = render(
-      'path corner 4x4:\n  move 0:0\n  line rel 3:0\n  line rel 0:3\n\ndraw f 4x4:\n  pal k=#000\n  stroke k corner\n',
+      'path corner 4x4:\n  move 0:0\n  line rel 3:0\n  line rel 0:3\n\ndraw f 4x4:\n  palette k=#000\n  stroke k corner\n',
       'f',
     )
     expect(px(s, 0, 0)[3]).toBe(255)
@@ -122,7 +122,7 @@ describe('evaluator', () => {
 
   test('paths fill, mask, and boolean composition', () => {
     const s = render(
-      'path box 6x6:\n  move 1:1\n  line 5:1\n  line 5:5\n  line 1:5\n  close\n\npath cut 6x6:\n  move 3:1\n  line 5:3\n  line 3:5\n  line 1:3\n  close\n\npath frame = box.subtract(cut)\n\ndraw f 6x6:\n  pal k=#000 r=#f00\n  fill k box\n  mask frame.fill():\n    bg r\n',
+      'path box 6x6:\n  move 1:1\n  line 5:1\n  line 5:5\n  line 1:5\n  close\n\npath cut 6x6:\n  move 3:1\n  line 5:3\n  line 3:5\n  line 1:3\n  close\n\npath frame = box.subtract(cut)\n\ndraw f 6x6:\n  palette k=#000 r=#f00\n  fill k box\n  mask frame.fill():\n    bg r\n',
       'f',
     )
     expect(px(s, 1, 1)).toEqual([255, 0, 0, 255])
@@ -131,7 +131,7 @@ describe('evaluator', () => {
 
   test('loops, lists, fn, floored // and mod', () => {
     const s = render(
-      'fn band(row) = row // 2 mod 2\n\ndraw stripes 4x4:\n  pal k=#000000  y=#ffffff\n  cols = k, y\n  for row 0..h:\n    poly cols[band(row)] 0:row w:row\n',
+      'fn rowBand(row) = row // 2 mod 2\n\ndraw stripes 4x4:\n  palette k=#000000  y=#ffffff\n  cols = k, y\n  for row 0..h:\n    poly cols[rowBand(row)] 0:row w:row\n',
       'stripes',
     )
     expect(px(s, 0, 0)).toEqual([0, 0, 0, 255])
@@ -140,7 +140,7 @@ describe('evaluator', () => {
 
   test('range expressions produce lists and for iterates lists', () => {
     const s = render(
-      'nums = 1..=3\n\ndraw d 5x2:\n  pal k=#000\n  for x nums:\n    px k x:0\n  for x 1, 3:\n    px k x:1\n',
+      'nums = 1..=3\n\ndraw d 5x2:\n  palette k=#000\n  for x nums:\n    px k x:0\n  for x 1, 3:\n    px k x:1\n',
       'd',
     )
     expect(px(s, 0, 0)[3]).toBe(0)
@@ -154,7 +154,7 @@ describe('evaluator', () => {
 
   test('negative // and mod are floored (ADR-0037)', () => {
     const s = render(
-      'draw d 2x2:\n  pal k=#000\n  x = -7 // 2\n  y = -7 mod 2\n  if x == -4 & y == 1:\n    bg k\n',
+      'draw d 2x2:\n  palette k=#000\n  x = -7 // 2\n  y = -7 mod 2\n  if x == -4 & y == 1:\n    bg k\n',
       'd',
     )
     expect(px(s, 0, 0)[3]).toBe(255)
@@ -168,7 +168,7 @@ describe('evaluator', () => {
 
   test('xs.cycle(i) is sugar for xs[i mod len(xs)] (ADR-0079)', () => {
     const s = render(
-      'draw d 2x2:\n  pal k=#000\n  xs = 10, 20, 30\n  if xs.cycle(1) == xs[1]:\n    bg k\n',
+      'draw d 2x2:\n  palette k=#000\n  xs = 10, 20, 30\n  if xs.cycle(1) == xs[1]:\n    bg k\n',
       'd',
     )
     expect(px(s, 0, 0)[3]).toBe(255)
@@ -176,7 +176,7 @@ describe('evaluator', () => {
 
   test('cycle wraps an out-of-range index back to the start', () => {
     const s = render(
-      'draw d 2x2:\n  pal k=#000\n  xs = 10, 20, 30\n  if xs.cycle(3) == 10 & xs.cycle(4) == 20:\n    bg k\n',
+      'draw d 2x2:\n  palette k=#000\n  xs = 10, 20, 30\n  if xs.cycle(3) == 10 & xs.cycle(4) == 20:\n    bg k\n',
       'd',
     )
     expect(px(s, 0, 0)[3]).toBe(255)
@@ -184,7 +184,7 @@ describe('evaluator', () => {
 
   test('cycle wraps a negative index positively (Euclidean mod)', () => {
     const s = render(
-      'draw d 2x2:\n  pal k=#000\n  xs = 10, 20, 30\n  if xs.cycle(-1) == 30 & xs.cycle(-2) == 20:\n    bg k\n',
+      'draw d 2x2:\n  palette k=#000\n  xs = 10, 20, 30\n  if xs.cycle(-1) == 30 & xs.cycle(-2) == 20:\n    bg k\n',
       'd',
     )
     expect(px(s, 0, 0)[3]).toBe(255)
@@ -207,13 +207,13 @@ describe('evaluator', () => {
 
   test('cycle in a for-loop over a color ramp avoids off-by-one (volcano #5)', () => {
     const s = render(
-      'draw stripes 1x4:\n  pal a=#111111 b=#222222 c=#333333\n  ramp = a, b, c\n  for row 0..h:\n    px ramp.cycle(row) 0:row\n',
+      'draw stripes 1x4:\n  palette a=#111111 b=#222222 c=#333333\n  cols = a, b, c\n  for row 0..h:\n    px cols.cycle(row) 0:row\n',
       'stripes',
     )
     expect(px(s, 0, 0)).toEqual([17, 17, 17, 255])
     expect(px(s, 0, 1)).toEqual([34, 34, 34, 255])
     expect(px(s, 0, 2)).toEqual([51, 51, 51, 255])
-    expect(px(s, 0, 3)).toEqual([17, 17, 17, 255]) // row 3 wraps back to ramp[0]
+    expect(px(s, 0, 3)).toEqual([17, 17, 17, 255]) // row 3 wraps back to cols[0]
   })
 
   test('regions: union/subtract mask + fill/stroke eliminators', () => {
@@ -224,6 +224,111 @@ describe('evaluator', () => {
     expect(px(s, 8, 5)[3]).toBe(255) // in the circle
     expect(px(s, 7, 12)[3]).toBe(255) // in the rect
     expect(px(s, 1, 12)[3]).toBe(0) // outside
+  })
+
+  // ADR-0097 §2 — `R.edge(DX:DY [, N])` ≡ `R.subtract(R.shift(sign(DX)·N : sign(DY)·N))`.
+  // Region algebra, not a light: it takes an arbitrary paint (the corpus uses it with *dark*
+  // colours, which a material rim dose — always toward the light colour — can never produce).
+  describe('region method .edge() (ADR-0097)', () => {
+    const strip = (body: string): ReturnType<typeof render> =>
+      render(`draw d 8x8:\n  r = rect(2:2, 5:5)\n${body}`, 'd')
+
+    test('direction picks the side, and reads like the removed rim (0:1 = the TOP edge)', () => {
+      // `0:1` means the light travels DOWN, so the lit band is the top row of the region.
+      const top = strip('  fill #ff0000 r.edge(0:1)\n')
+      expect(px(top, 3, 2)).toEqual([255, 0, 0, 255]) // top row painted
+      expect(px(top, 3, 5)[3]).toBe(0) // bottom row untouched
+      expect(px(top, 3, 3)[3]).toBe(0) // interior untouched
+
+      const left = strip('  fill #ff0000 r.edge(1:0)\n')
+      expect(px(left, 2, 3)).toEqual([255, 0, 0, 255]) // left column painted
+      expect(px(left, 5, 3)[3]).toBe(0) // right column untouched
+
+      const bottomRight = strip('  fill #ff0000 r.edge(-1:-1)\n')
+      expect(px(bottomRight, 5, 5)).toEqual([255, 0, 0, 255]) // the bottom-right corner band
+      expect(px(bottomRight, 2, 2)[3]).toBe(0)
+    })
+
+    test('only the sign of the direction matters — magnitude is not a width', () => {
+      const one = strip('  fill #ff0000 r.edge(0:1)\n')
+      const nine = strip('  fill #ff0000 r.edge(0:9)\n')
+      for (let x = 0; x < 8; x++) {
+        for (let y = 0; y < 8; y++) {
+          expect(px(nine, x, y)).toEqual(px(one, x, y))
+        }
+      }
+    })
+
+    test('N widens the band with uniform coverage — a translucent paint never stacks', () => {
+      const wide = strip('  fill #ff0000 r.edge(0:1, 2)\n')
+      expect(px(wide, 3, 2)[3]).toBe(255)
+      expect(px(wide, 3, 3)[3]).toBe(255) // 2px deep
+      expect(px(wide, 3, 4)[3]).toBe(0) // and no deeper
+
+      // the whole band is ONE fill, so both rows land at exactly the paint's own alpha — the
+      // retired `rim … 2` painted N overlapping bands and stacked alpha on the outermost row.
+      const soft = strip('  fill #ff0000.alpha(50%) r.edge(0:1, 2)\n')
+      expect(px(soft, 3, 2)[3]).toBe(px(soft, 3, 3)[3])
+      expect(px(soft, 3, 2)[3]).toBe(128)
+    })
+
+    test('a zero direction (or a zero width) is the empty region', () => {
+      expect(px(strip('  fill #ff0000 r.edge(0:0)\n'), 3, 2)[3]).toBe(0)
+      expect(px(strip('  fill #ff0000 r.edge(0:1, 0)\n'), 3, 2)[3]).toBe(0)
+    })
+
+    test('it is exactly subtract(shift) — the identity the ADR defines it by', () => {
+      const sugar = strip('  fill #ff0000 r.edge(-1:1, 2)\n')
+      const spelled = strip('  fill #ff0000 r.subtract(r.shift(-2:2))\n')
+      for (let x = 0; x < 8; x++) {
+        for (let y = 0; y < 8; y++) {
+          expect(px(sugar, x, y)).toEqual(px(spelled, x, y))
+        }
+      }
+    })
+
+    test('composing with .intersect() clips the EDGE, which is what `rim` could not express', () => {
+      // The defect ADR-0097 §2 names. `rim` fused constructor and eliminator, so the clip could
+      // only ever go on the *region*: `rim R.intersect(C) 0:1 P` rims the clip rect, laying a
+      // straight bar across the middle of the mass. Splitting them lets the clip come last.
+      const clip = 'rect(0:4, 7:7)' // a lower half-plane that cuts the region in two
+
+      // wrong order (all `rim` could say): the clipped region's own top edge — a bar at y=4,
+      // inside the mass, nowhere near the silhouette.
+      const wrongOrder = strip(`  fill #ff0000 r.intersect(${clip}).edge(0:1)\n`)
+      expect(px(wrongOrder, 3, 4)).toEqual([255, 0, 0, 255]) // the artifact bar
+      expect(px(wrongOrder, 3, 2)[3]).toBe(0) // the real top edge is missed entirely
+
+      // right order: the silhouette's top edge, then clipped away — correctly paints nothing.
+      const clipped = strip(`  fill #ff0000 r.edge(0:1).intersect(${clip})\n`)
+      for (let x = 0; x < 8; x++) {
+        for (let y = 0; y < 8; y++) {
+          expect(px(clipped, x, y)[3]).toBe(0)
+        }
+      }
+
+      // and a clip that does overlap the edge keeps exactly that stretch of it
+      const partial = strip('  fill #ff0000 r.edge(0:1).intersect(rect(4:0, 7:7))\n')
+      expect(px(partial, 5, 2)).toEqual([255, 0, 0, 255]) // top edge, inside the clip
+      expect(px(partial, 3, 2)[3]).toBe(0) // top edge, outside the clip
+
+      // it composes the other way too: the edge of a union follows the union's own silhouette,
+      // not the seam between its operands.
+      const unioned = render(
+        'draw d 12x8:\n  a = rect(1:2, 5:5)\n  b = rect(5:2, 10:5)\n  fill #ff0000 a.union(b).edge(0:1)\n',
+        'd',
+      )
+      expect(px(unioned, 7, 2)).toEqual([255, 0, 0, 255])
+      expect(px(unioned, 7, 3)[3]).toBe(0)
+    })
+
+    test('arity and type errors are positioned', () => {
+      expect(() => strip('  fill #ff0000 r.edge()\n')).toThrow(/edge takes 2 or 3 argument/)
+      expect(() => strip('  fill #ff0000 r.edge(0:1, 2, 3)\n')).toThrow(
+        /edge takes 2 or 3 argument/,
+      )
+      expect(() => strip('  fill #ff0000 r.edge(3)\n')).toThrow(/must be a point/)
+    })
   })
 
   test('fn-built region + stroke w2', () => {
@@ -284,7 +389,7 @@ describe('evaluator', () => {
     const src =
       'draw d 24x24:\n  bg #101020\n  curve #e8c 2:20 12:4 22:14 w2\n  curvePoly #6c9 6:12 18:6 20:18 fill\n'
     const eng = new Engine(process.cwd())
-    const mod = eng.loadSource(src, `${process.cwd()}\\memcurve.drw`, 'mem.drw')
+    const mod = eng.loadSource(src, join(process.cwd(), `memcurve.drw`), 'mem.drw')
     const entry = mod.definitions.get('d')
     if (!entry) {
       throw new Error('no drawing d')
@@ -296,10 +401,10 @@ describe('evaluator', () => {
   })
 
   test('profile fills a linear fn as an exact triangle down to the canvas bottom (ADR-0076)', () => {
-    // ramp(nx)=round(nx*7): span 0..=7 → column i sampled at nx=i/7, top-edge y=i,
+    // slope(nx)=round(nx*7): span 0..=7 → column i sampled at nx=i/7, top-edge y=i,
     // filled down to baseline h-1=7. Lower-right triangle, exact.
     const s = render(
-      'fn ramp(nx) = round(nx * 7)\ndraw d 8x8:\n  profile #ff0000 0..=7 ramp fill\n',
+      'fn slope(nx) = round(nx * 7)\ndraw d 8x8:\n  profile #ff0000 0..=7 slope fill\n',
       'd',
     )
     expect(px(s, 0, 0)).toEqual([255, 0, 0, 255]) // col 0: top y=0, fill 0..7
@@ -385,7 +490,7 @@ describe('evaluator', () => {
     const src =
       'fn ridgeY(nx) = 16 + round(noise(3, nx * 4, 0) * 10)\ndraw d 64x32:\n  bg #e8d9b0\n  profile #c9a06b 0..64 ridgeY fill\n'
     const eng = new Engine(process.cwd())
-    const mod = eng.loadSource(src, `${process.cwd()}\\memprofile.drw`, 'mem.drw')
+    const mod = eng.loadSource(src, join(process.cwd(), `memprofile.drw`), 'mem.drw')
     const entry = mod.definitions.get('d')
     if (!entry) {
       throw new Error('no drawing d')
@@ -398,7 +503,7 @@ describe('evaluator', () => {
 
   test('stamp with flipx mirrors', () => {
     const s = render(
-      'draw eye 3x3:\n  pal k=#000\n  pixels:\n    k..\n    k..\n    k..\n\ndraw face 8x8:\n  stamp eye 0:0\n  stamp eye 5:0 flipx\n',
+      'draw eye 3x3:\n  palette k=#000\n  pixels:\n    k..\n    k..\n    k..\n\ndraw face 8x8:\n  stamp eye 0:0\n  stamp eye 5:0 flipx\n',
       'face',
     )
     expect(px(s, 0, 0)[3]).toBe(255)
@@ -408,7 +513,7 @@ describe('evaluator', () => {
 
   test('stamp scale2 and rot90 are lossless', () => {
     const s = render(
-      'draw dot 2x2:\n  pal k=#000\n  pixels:\n    k.\n    ..\n\ndraw d 8x8:\n  stamp dot 0:0 scale2\n  stamp dot 4:0 rot90\n',
+      'draw dot 2x2:\n  palette k=#000\n  pixels:\n    k.\n    ..\n\ndraw d 8x8:\n  stamp dot 0:0 scale2\n  stamp dot 4:0 rot90\n',
       'd',
     )
     expect(px(s, 0, 0)[3]).toBe(255)
@@ -428,8 +533,8 @@ describe('evaluator', () => {
     expect(px(s, 7, 3)).toEqual([255, 0, 0, 255])
   })
 
-  // ADR-0072: v2 named anchors resolve against the *transformed* footprint bbox
-  // (visual); drawstic 1 keeps the legacy through-transform mapping.
+  // ADR-0072/0088: named offset anchors resolve against the *transformed* footprint
+  // bbox (visual) — the sole semantics.
   const part43 = 'draw part 4x3:\n  bg #000000\n\n'
   const solidBBox = (s: Sprite): { x0: number; y0: number; x1: number; y1: number } => {
     let x0 = s.w
@@ -449,7 +554,7 @@ describe('evaluator', () => {
     return { x0, y0, x1, y1 }
   }
 
-  test('v2 visual anchor: bottomLeft + flipx lands visually bottom-left', () => {
+  test('visual anchor: bottomLeft + flipx lands visually bottom-left', () => {
     // pt 8:8, solid 4x3 → the visible bottom-left corner sits AT pt, footprint to the right
     const s = render(`${part43}draw d 16x16:\n  stamp part 8:8 anchor bottomLeft flipx\n`, 'd')
     expect(solidBBox(s)).toEqual({ x0: 8, y0: 6, x1: 11, y1: 8 })
@@ -458,49 +563,28 @@ describe('evaluator', () => {
     expect(px(s, 5, 8)[3]).toBe(0) // nothing to the left of pt
   })
 
-  test('drawstic 1 legacy anchor: bottomLeft + flipx lands bottom-right (through-transform)', () => {
-    const s = render(
-      `drawstic 1\n${part43}draw d 16x16:\n  stamp part 8:8 anchor bottomLeft flipx\n`,
-      'd',
-    )
-    // mirrored corner lands at pt → footprint sits to the LEFT (bottom-right at pt)
-    expect(solidBBox(s)).toEqual({ x0: 5, y0: 6, x1: 8, y1: 8 })
-    expect(px(s, 5, 8)[3]).toBe(255)
-    expect(px(s, 10, 8)[3]).toBe(0)
-  })
-
-  test('unflipped anchor bottomLeft is identical in v1 and v2', () => {
+  test('unflipped anchor bottomLeft lands visually bottom-left', () => {
     const src = `draw d 16x16:\n  stamp part 8:8 anchor bottomLeft\n`
-    const v2 = render(`${part43}${src}`, 'd')
-    const v1 = render(`drawstic 1\n${part43}${src}`, 'd')
-    expect(solidBBox(v2)).toEqual({ x0: 8, y0: 6, x1: 11, y1: 8 })
-    expect(solidBBox(v1)).toEqual(solidBBox(v2))
+    const s = render(`${part43}${src}`, 'd')
+    expect(solidBBox(s)).toEqual({ x0: 8, y0: 6, x1: 11, y1: 8 })
   })
 
-  test('v2 visual anchor: rot90 anchor bottom = visible bottom-centre', () => {
+  test('visual anchor: rot90 anchor bottom = visible bottom-centre', () => {
     // solid 4x2 rotated 90° → 2×4 footprint; its bottom edge sits at pt.y, centred on pt.x
     const part42 = 'draw part 4x2:\n  bg #000000\n\n'
-    const v2 = render(`${part42}draw d 20x20:\n  stamp part 10:10 anchor bottom rot90\n`, 'd')
-    const bb = solidBBox(v2)
+    const s = render(`${part42}draw d 20x20:\n  stamp part 10:10 anchor bottom rot90\n`, 'd')
+    const bb = solidBBox(s)
     expect(bb.y1).toBe(10) // visible bottom row at pt.y
     expect(bb.x1 - bb.x0).toBe(1) // 2px wide (rotated)
     expect(bb.y1 - bb.y0).toBe(3) // 4px tall (rotated)
     expect(bb.x0).toBe(10) // centred on pt.x=10 (2-wide → [10,11])
-    // v1 through-transform maps the source bottom-centre to a side edge → different placement
-    const v1 = render(
-      `drawstic 1\n${part42}draw d 20x20:\n  stamp part 10:10 anchor bottom rot90\n`,
-      'd',
-    )
-    expect(solidBBox(v1).y1).toBe(12)
   })
 
-  test('numeric/symmetric anchor center + scale2 is identical in v1 and v2', () => {
+  test('numeric/symmetric anchor center + scale2', () => {
     const src = `draw d 20x20:\n  stamp part 10:10 anchor center scale2\n`
     const dot = 'draw part 3x3:\n  bg #000000\n\n'
-    const v2 = render(`${dot}${src}`, 'd')
-    const v1 = render(`drawstic 1\n${dot}${src}`, 'd')
-    expect(solidBBox(v2)).toEqual({ x0: 8, y0: 8, x1: 13, y1: 13 })
-    expect(solidBBox(v1)).toEqual(solidBBox(v2))
+    const s = render(`${dot}${src}`, 'd')
+    expect(solidBBox(s)).toEqual({ x0: 8, y0: 8, x1: 13, y1: 13 })
   })
 
   test('parametric drawings instantiate per args', () => {
@@ -514,11 +598,11 @@ describe('evaluator', () => {
 
   test('themes fold: later wins, drawing-level use', () => {
     const src = `theme a:
-  pal:
+  palette:
     k = #111111
 theme b:
   with a
-  pal:
+  palette:
     k = #222222
 
 draw d 2x2:
@@ -531,27 +615,29 @@ draw d 2x2:
 
   test('palette collisions are one-directional: a value may not shadow a palette (ADR-0073)', () => {
     // value binding capturing a live palette key stays an error
-    expect(() => render('draw d 2x2:\n  pal k=#111\n  k = 5\n  bg #fff\n', 'd')).toThrow(/palette/)
-    expect(() => render('draw d 2x2:\n  ink = 5\n  pal i=#111\n  bg #fff\n', 'd')).not.toThrow() // different names — fine
+    expect(() => render('draw d 2x2:\n  palette k=#111\n  k = 5\n  bg #fff\n', 'd')).toThrow(
+      /palette/,
+    )
+    expect(() => render('draw d 2x2:\n  ink = 5\n  palette i=#111\n  bg #fff\n', 'd')).not.toThrow() // different names — fine
     // a pal key MAY now shadow a visible non-palette value binding (reverse direction relaxed)
-    expect(() => render('draw d 2x2:\n  i = 5\n  pal i=#111\n  bg i\n', 'd')).not.toThrow()
+    expect(() => render('draw d 2x2:\n  i = 5\n  palette i=#111\n  bg i\n', 'd')).not.toThrow()
   })
 
   test('pal keys may be w/h and shadow the canvas-size bindings (ADR-0073)', () => {
     const s = render(
-      'draw d 4x4:\n  pal w=#ffffff h=#111111\n  pixels:\n    wwww\n    whhw\n    whhw\n    wwww\n',
+      'draw d 4x4:\n  palette w=#ffffff h=#111111\n  pixels:\n    wwww\n    whhw\n    whhw\n    wwww\n',
       'd',
     )
     expect(px(s, 0, 0)).toEqual([255, 255, 255, 255]) // 'w' cell → white
     expect(px(s, 1, 1)).toEqual([17, 17, 17, 255]) // 'h' cell → #111
     // a pal w/h even shadows the size binding in expressions within the draw
-    const s2 = render('draw d 2x2:\n  pal w=#00ff00\n  bg w\n', 'd')
+    const s2 = render('draw d 2x2:\n  palette w=#00ff00\n  bg w\n', 'd')
     expect(px(s2, 0, 0)).toEqual([0, 255, 0, 255])
   })
 
-  test('a pixel cell naming no visible palette entry is E007 with a pal hint', () => {
+  test('a pixel cell naming no visible palette entry is E007 with a palette hint', () => {
     try {
-      render('draw d 2x2:\n  pal k=#111\n  pixels:\n    kk\n    kz\n', 'd')
+      render('draw d 2x2:\n  palette k=#111\n  pixels:\n    kk\n    kz\n', 'd')
       expect(false).toBe(true)
     } catch (e) {
       expect(e).toBeInstanceOf(DrawsticError)
@@ -559,7 +645,7 @@ draw d 2x2:
         expect(e.toDiagnostic()).toMatchObject({
           code: 'E007',
           message: "pixel key 'z' names no visible palette entry",
-          hint: "declare it in a 'pal' (e.g. 'pal z=<color>')",
+          hint: "declare it in a 'palette' (e.g. 'palette z=<color>')",
         })
       }
     }
@@ -568,7 +654,7 @@ draw d 2x2:
   test('a non-palette value binding is never a pixel cell (palette-only namespace, ADR-0073)', () => {
     // module-scope value `z` must NOT satisfy a `z` cell — cells resolve palette-only
     expect(() =>
-      render('z = 5\n\ndraw d 2x2:\n  pal k=#111\n  pixels:\n    kk\n    zk\n', 'd'),
+      render('z = 5\n\ndraw d 2x2:\n  palette k=#111\n  pixels:\n    kk\n    zk\n', 'd'),
     ).toThrow(/names no visible palette entry/)
   })
 
@@ -582,7 +668,7 @@ draw d 2x2:
     expect(px(s, 16, 6)).toEqual([255, 0, 0, 255]) // final loop circle (was transparent)
     // a plain-number accumulator reassigned inside an `if` block persists too
     const s2 = render(
-      'draw d 6x1:\n  pal k=#000\n  n = 0\n  if true:\n    n = 3\n  px k n:0\n',
+      'draw d 6x1:\n  palette k=#000\n  n = 0\n  if true:\n    n = 3\n  px k n:0\n',
       'd',
     )
     expect(px(s2, 3, 0)[3]).toBe(255) // n became 3
@@ -592,14 +678,14 @@ draw d 2x2:
   test('a block-body `=` never reassigns a module-scope binding (barrier, ADR-0081)', () => {
     // determinism: a draw must not mutate module state; `n = 99` shadow-declares draw-locally
     const s = render(
-      'n = 5\n\ndraw d 4x4:\n  pal k=#000\n  for i 0..3:\n    n = 99\n  if n == 5:\n    bg k\n',
+      'n = 5\n\ndraw d 4x4:\n  palette k=#000\n  for i 0..3:\n    n = 99\n  if n == 5:\n    bg k\n',
       'd',
     )
     expect(px(s, 0, 0)).toEqual([0, 0, 0, 255]) // module `n` stayed 5 → bg filled
   })
 
   test('a theme pal key w/h shadows the canvas size, as paint and cell (ADR-0081, extends ADR-0073)', () => {
-    const pal = 'theme t:\n  pal:\n    w = #ffffff\n    k = #1a1a1a\n\n'
+    const pal = 'theme t:\n  palette:\n    w = #ffffff\n    k = #1a1a1a\n\n'
     // as a paint: `w` resolves to the palette white, not the number 8 (was E006/E013)
     const s = render(`${pal}draw a 8x8:\n  use t\n  bg k\n  circle w 4:4 3 fill\n`, 'a')
     expect(px(s, 4, 4)).toEqual([255, 255, 255, 255])
@@ -614,7 +700,7 @@ draw d 2x2:
   test('a free binding in a theme body is rejected at the declaration site (E004, ADR-0081)', () => {
     try {
       render(
-        'theme t:\n  accent = #d8a53a\n  pal:\n    k = #1a1a1a\n\ndraw a 8x8:\n  use t\n  bg k\n',
+        'theme t:\n  accent = #d8a53a\n  palette:\n    k = #1a1a1a\n\ndraw a 8x8:\n  use t\n  bg k\n',
         'a',
       )
       expect(false).toBe(true)
@@ -628,13 +714,40 @@ draw d 2x2:
         })
       }
     }
-    // grad bindings stay legal in a theme body
+    // gradient bindings stay legal in a theme body
     expect(() =>
       render(
-        'theme t:\n  grad sky = linear(90, #000, #fff)\n\ndraw d 2x4:\n  use t\n  bg sky\n',
+        'theme t:\n  gradient sky = linear(90, #000, #fff)\n\ndraw d 2x4:\n  use t\n  bg sky\n',
         'd',
       ),
     ).not.toThrow()
+  })
+
+  test('any other statement in a theme body is rejected, not silently dropped (E004)', () => {
+    // The parser does not restrict theme bodies, so these all parse and used to fold to nothing
+    // at all — write a helper or an export "in the theme", get no diagnostic and no effect.
+    const cases: readonly (readonly [string, string, number])[] = [
+      ['fn', 'theme t:\n  fn half(x) = x / 2\n  palette:\n    k = #1a1a1a\n', 2],
+      ['export', 'theme t:\n  palette:\n    k = #1a1a1a\n  export a out:\n    png @1\n', 4],
+      ['drawing command', 'theme t:\n  palette:\n    k = #1a1a1a\n  circle k 4:4 3 fill\n', 4],
+      ['control flow', 'theme t:\n  palette:\n    k = #1a1a1a\n  for i 0..2:\n    bg k\n', 4],
+    ]
+    for (const [label, source, line] of cases) {
+      try {
+        render(`${source}\ndraw a 8x8:\n  use t\n  bg k\n`, 'a')
+        throw new Error(`${label} in a theme body was accepted`)
+      } catch (e) {
+        expect(e).toBeInstanceOf(DrawsticError)
+        if (e instanceof DrawsticError) {
+          // The span must land on the offending statement, not on the theme header.
+          expect(e.toDiagnostic()).toMatchObject({
+            code: 'E004',
+            line,
+            message: 'a theme body has no place for this statement',
+          })
+        }
+      }
+    }
   })
 
   test('alpha compositing is pinned source-over', () => {
@@ -643,10 +756,23 @@ draw d 2x2:
     expect(px(s, 0, 0)).toEqual([127, 127, 127, 255])
   })
 
-  test('flood fills 4-connected exact color', () => {
-    const s = render('draw d 4x4:\n  pal k=#000  r=#f00\n  line k 0:0 3:0\n  flood r 0:3\n', 'd')
-    expect(px(s, 0, 3)).toEqual([255, 0, 0, 255])
-    expect(px(s, 0, 0)).toEqual([0, 0, 0, 255]) // line pixel unchanged
+  test('flood was removed (ADR-0094) — points to region fill', () => {
+    expect(() => render('draw d 4x4:\n  flood #f00 0:3\n', 'd')).toThrow(/'flood' was removed/)
+  })
+
+  test('the replace recolor filter was removed (ADR-0094) — points to parametric recolor', () => {
+    expect(() =>
+      render('draw d 4x4:\n  fill #f00 rect(0:0, 3:3)\n  replace #f00 #0f0\n', 'd'),
+    ).toThrow(/'replace' was removed/)
+  })
+
+  test('the lit L: block was removed (ADR-0094) — points to the light argument', () => {
+    expect(() =>
+      render(
+        'light sun = dir 1:1 #ffe6b0\ndraw d 8x8:\n  lit sun:\n    model rect(1:1, 6:6) #8a95a5 metal\n',
+        'd',
+      ),
+    ).toThrow(/'lit L:' block was removed/)
   })
 
   test('text renders bundled small font', () => {
@@ -706,7 +832,7 @@ draw d 2x2:
   })
 
   test('gradients paint across the bbox', () => {
-    const s = render('grad sky = linear(90, #000000, #ffffff)\n\ndraw d 4x8:\n  bg sky\n', 'd')
+    const s = render('gradient sky = linear(90, #000000, #ffffff)\n\ndraw d 4x8:\n  bg sky\n', 'd')
     const top = px(s, 1, 0)
     const bottom = px(s, 1, 7)
     expect(top[0]).toBeLessThan(80)
@@ -722,9 +848,21 @@ draw d 2x2:
     expect(px(s, 3, 3)).toEqual([255, 0, 0, 255])
   })
 
-  test('local shadows, texture filters, and lighting helpers', () => {
+  test('outline: colour and width both optional — bare `outline` derives a dark ink', () => {
+    // bare `outline` → 1px derived-dark ring over the silhouette
+    const bare = render('draw d 6x6:\n  px #50c878 3:3\n  outline\n', 'd')
+    const ring = px(bare, 3, 2)
+    expect(ring[3]).toBe(255)
+    expect(Math.max(ring[0], ring[1], ring[2])).toBeLessThan(90) // near-black
+    expect(px(bare, 3, 3)).toEqual([80, 200, 120, 255]) // #50c878 core untouched
+    // `outline 2` → derived ink, explicit width 2
+    const w2 = render('draw d 8x8:\n  px #50c878 4:4\n  outline 2\n', 'd')
+    expect(px(w2, 2, 4)[3]).toBe(255) // 2px ring reaches two out
+  })
+
+  test('local shadows and texture filters', () => {
     const shadowed = render(
-      'draw d 6x4:\n  r = rect(1:1, 2:2)\n  castShadow r 2:0 #ff0000\n  fill #000000 r\n',
+      'draw d 6x4:\n  r = rect(1:1, 2:2)\n  shadow r 2:0 #ff0000\n  fill #000000 r\n',
       'd',
     )
     expect(px(shadowed, 3, 1)).toEqual([255, 0, 0, 255])
@@ -736,61 +874,50 @@ draw d 2x2:
     )
     expect(px(textured, 0, 0)).toEqual([0, 0, 0, 255])
     expect(px(textured, 3, 3)).toEqual([0, 0, 0, 255])
-
-    const lit = render(
-      'draw d 6x4:\n  r = rect(1:1, 4:2)\n  fill #808080 r\n  shadeRegion r 0:0 #808080 1\n  rim r 1:0 #ffffff 1\n  ambientOcclusion r #000000 0.5\n',
-      'd',
-    )
-    expect(px(lit, 4, 1)[3]).toBe(255)
-    expect(px(lit, 1, 1)[3]).toBe(255)
   })
 
-  test('unified frame shadow shape: dx:dy point form and deprecated two-number alias (ADR-0070)', () => {
+  test('unified frame shadow shape: dx:dy point form; two-number alias is rejected (ADR-0088)', () => {
     // canonical dx:dy point form: whole-frame drop shadow
     const pointForm = render('draw d 4x4:\n  px #000000 1:1\n  shadow 1:1 #0000ff\n', 'd')
     expect(px(pointForm, 1, 1)).toEqual([0, 0, 0, 255]) // original silhouette
     expect(px(pointForm, 2, 2)).toEqual([0, 0, 255, 255]) // shadow at the (1,1) offset
 
-    // deprecated two-number alias stays accepted (error-robustness) and renders identically
-    const twoNumber = render('draw d 4x4:\n  px #000000 1:1\n  shadow 1 1 #0000ff\n', 'd')
-    expect(px(twoNumber, 1, 1)).toEqual([0, 0, 0, 255])
-    expect(px(twoNumber, 2, 2)).toEqual([0, 0, 255, 255])
+    // the deprecated two-bare-number spelling is gone: the first arg must be a dx:dy point or region
+    expect(() => render('draw d 4x4:\n  px #000000 1:1\n  shadow 1 1 #0000ff\n', 'd')).toThrow(
+      /dx:dy offset or region/,
+    )
   })
 
-  test('v2 frame shadow honours an enclosing mask block; drawstic 1 ignores it (ADR-0070)', () => {
+  test('frame shadow always honours an enclosing mask block (ADR-0070)', () => {
     // red at 0:0, a mask over x=3..4; the shadow of the red pixel would land at x=2 (outside the mask)
-    const src = (pragma: string): string =>
-      `${pragma}draw d 6x1:\n  px #ff0000 0:0\n  mask rect(3:0, 4:0):\n    shadow 2:0 #0000ff\n`
-
-    const v2 = render(src(''), 'd')
-    expect(px(v2, 0, 0)).toEqual([255, 0, 0, 255]) // masked-off original preserved
-    expect(px(v2, 2, 0)).toEqual([0, 0, 0, 0]) // shadow clipped to the mask — suppressed outside it
-
-    const v1 = render(src('drawstic 1\n'), 'd')
-    expect(px(v1, 0, 0)).toEqual([255, 0, 0, 255])
-    expect(px(v1, 2, 0)).toEqual([0, 0, 255, 255]) // v1 ignores the mask: whole-buffer shadow
+    const s = render(
+      'draw d 6x1:\n  px #ff0000 0:0\n  mask rect(3:0, 4:0):\n    shadow 2:0 #0000ff\n',
+      'd',
+    )
+    expect(px(s, 0, 0)).toEqual([255, 0, 0, 255]) // masked-off original preserved
+    expect(px(s, 2, 0)).toEqual([0, 0, 0, 0]) // shadow clipped to the mask — suppressed outside it
   })
 
   test('region-scoped texture filters confine to the region; whole-frame form unchanged (ADR-0071)', () => {
-    // grain confined to the left band leaves the rest of the row untouched
+    // grain confined to the left strip leaves the rest of the row untouched
     const grained = render(
-      'draw d 6x1:\n  bg #ffffff\n  band = rect(0:0, 2:0)\n  grain band 1 7 #000000\n',
+      'draw d 6x1:\n  bg #ffffff\n  strip = rect(0:0, 2:0)\n  grain strip 1 7 #000000\n',
       'd',
     )
-    expect(px(grained, 0, 0)).toEqual([0, 0, 0, 255]) // inside band: grained
-    expect(px(grained, 5, 0)).toEqual([255, 255, 255, 255]) // outside band: untouched
+    expect(px(grained, 0, 0)).toEqual([0, 0, 0, 255]) // inside strip: grained
+    expect(px(grained, 5, 0)).toEqual([255, 255, 255, 255]) // outside strip: untouched
 
-    // dither raw-sets only inside the band
+    // dither raw-sets only inside the strip
     const dithered = render(
-      'draw d 6x1:\n  bg #ffffff\n  band = rect(0:0, 2:0)\n  dither band #000000 #ffffff 1\n',
+      'draw d 6x1:\n  bg #ffffff\n  strip = rect(0:0, 2:0)\n  dither strip #000000 #ffffff 1\n',
       'd',
     )
-    expect(px(dithered, 0, 0)).toEqual([0, 0, 0, 255]) // threshold 1 -> paintA inside band
-    expect(px(dithered, 5, 0)).toEqual([255, 255, 255, 255]) // outside band: untouched
+    expect(px(dithered, 0, 0)).toEqual([0, 0, 0, 255]) // threshold 1 -> paintA inside strip
+    expect(px(dithered, 5, 0)).toEqual([255, 255, 255, 255]) // outside strip: untouched
 
     // speckle/ripple accept the leading region too
     const speckled = render(
-      'draw d 6x1:\n  bg #ffffff\n  band = rect(0:0, 2:0)\n  speckle band 1 11 #ff0000\n  ripple band 1 5 #0000ff\n',
+      'draw d 6x1:\n  bg #ffffff\n  strip = rect(0:0, 2:0)\n  speckle strip 1 11 #ff0000\n  ripple strip 1 5 #0000ff\n',
       'd',
     )
     expect(px(speckled, 5, 0)).toEqual([255, 255, 255, 255]) // both filters leave the outside clean
@@ -801,65 +928,110 @@ draw d 2x2:
     expect(px(whole, 3, 0)).toEqual([0, 0, 0, 255])
   })
 
-  test('shadeRegion semantics switch on the drawstic version pragma; lightRegion brightens (ADR-0068/0069)', () => {
-    // v2 (unpinned): amount is the veil opacity; an opaque base does NOT repaint the near side
-    const v2 = render(
-      'draw d 8x1:\n  r = rect(0:0, 7:0)\n  fill #ffffff r\n  shadeRegion r 0:0 #ff0000 1\n',
-      'd',
-    )
-    expect(px(v2, 0, 0)).toEqual([255, 255, 255, 255]) // near the light: untouched
-    expect(px(v2, 7, 0)).toEqual([255, 0, 0, 255]) // far corner: full red veil
-
-    // v1 (drawstic 1): opaque base repaints the whole region, mixing toward black by distance
-    const v1 = render(
-      'drawstic 1\ndraw d 8x1:\n  r = rect(0:0, 7:0)\n  fill #ffffff r\n  shadeRegion r 0:0 #ff0000 1\n',
-      'd',
-    )
-    expect(px(v1, 0, 0)).toEqual([255, 0, 0, 255]) // near the light: repainted red (the v1 trap)
-    expect(px(v1, 7, 0)).toEqual([0, 0, 0, 255]) // far corner: mixed to black
-
-    // lightRegion: additive brightening, strongest nearest the light point
-    const lit = render(
-      'draw d 8x1:\n  r = rect(0:0, 7:0)\n  fill #000000 r\n  lightRegion r 0:0 #ffffff 1\n',
-      'd',
-    )
-    expect(px(lit, 0, 0)).toEqual([255, 255, 255, 255]) // nearest the light: brightest
-    expect(px(lit, 7, 0)).toEqual([0, 0, 0, 255]) // far corner: untouched
+  // ADR-0097: the raw hand-light quartet is gone — `model`/`cel` are the only lighting verbs, and
+  // every other job the quartet did is ordinary region + paint work. Each hint has to name the
+  // *canonical* replacement, and for the two distance veils that means naming both branches: which
+  // one is right depends on whether the region already carries drawn detail (`model` repaints).
+  test.each([
+    ['shadeRegion', 'shadeRegion r 0:0 #ff0000 1', /'shadeRegion' was removed.*model r mat/s],
+    ['lightRegion', 'lightRegion r 0:0 #ffffff 1', /'lightRegion' was removed.*model r mat/s],
+    ['rim', 'rim r 1:0 #ffffff 1', /'rim' was removed.*r\.edge\(dx:dy/s],
+    ['ao', 'ao r #000000 0.5', /'ao' was removed.*stroke p\.alpha\(a\) r/s],
+    // renamed by ADR-0096 §2, then removed outright with the rest of the quartet
+    [
+      'ambientOcclusion',
+      'ambientOcclusion r #000000 0.5',
+      /'ambientOcclusion' was removed.*stroke p\.alpha\(a\) r/s,
+    ],
+  ])('%s was removed (ADR-0097) and its error names the canonical replacement', (_n, stmt, re) => {
+    expect(() =>
+      render(`draw d 8x1:\n  r = rect(0:0, 7:0)\n  fill #ffffff r\n  ${stmt}\n`, 'd'),
+    ).toThrow(re)
   })
 
-  test('while is governed by the budget (E010)', () => {
+  test('the removed light commands stay reserved — a binding of the same name is E007', () => {
+    // Reserved uniformly (ADR-0096 §5) so a stale recipe hits the removal hint rather than
+    // silently resolving a user binding that shadows it.
+    for (const name of ['shadeRegion', 'lightRegion', 'rim', 'ao']) {
+      expect(() => render(`draw d 2x2:\n  ${name} = 3\n  bg #ffffff\n`, 'd')).toThrow()
+    }
+  })
+
+  test('the veil branch: a gradient fill darkens drawn detail without erasing it (ADR-0097)', () => {
+    // The reason the migration is not mechanical. `model` writes opaque tones through putPixel, so
+    // modelling a region that already carries hand-drawn marks *repaints over them*; a gradient
+    // `fill` is a veil and keeps them. This is the replacement for `shadeRegion` over drawn pixels.
+    const veiled = render(
+      [
+        'draw d 8x1:',
+        '  r = rect(0:0, 7:0)',
+        '  fill #ffffff r',
+        '  px #ff0000 6:0', // hand-drawn detail inside the region
+        '  fill linear(0, transparent, #000000.alpha(50%)) r',
+        '',
+      ].join('\n'),
+      'd',
+    )
+    // the mark survives, darkened — still red-dominant, never flattened to the veil's own tone
+    const [r, g, b] = px(veiled, 6, 0)
+    expect(r).toBeGreaterThan(g + 60)
+    expect(r).toBeGreaterThan(b + 60)
+    // and the veil really did grade across the region: the far end is darker than the near end
+    expect(px(veiled, 7, 0)[0]).toBeLessThan(px(veiled, 0, 0)[0])
+  })
+
+  test('while was removed (ADR-0094) — an unbounded loop is a budget hazard for never posed', () => {
     expect(() =>
       render('draw d 2x2:\n  x = 0\n  while true:\n    x += 1\n  bg #fff\n', 'd'),
-    ).toThrow(/budget/)
+    ).toThrow(/'while' was removed/)
   })
 
-  test('tileset bakes a grid and members are addressable', () => {
+  test('atlas (uniform tile) bakes a grid and members are addressable by name', () => {
     const src = `draw a 2x2:
-  pal k=#000
+  palette k=#000
   pixels:
     kk
     kk
 draw b 2x2:
-  pal r=#f00
+  palette r=#f00
   pixels:
     rr
     rr
 
-tileset ts 2x2:
-  tiles a, b
+atlas ts:
+  sprites a, b
+  tile 2x2
   cols 2
 
 draw d 4x2:
-  stamp ts.1 0:0
+  stamp ts.b 0:0
 `
     const s = render(src, 'd')
     expect(px(s, 0, 0)).toEqual([255, 0, 0, 255])
   })
 
+  test('atlas member index addressing (`ts.0`) was removed — name addressing only', () => {
+    expect(() =>
+      render(
+        'draw a 2x2:\n  palette k=#000\n  pixels:\n    kk\n    kk\n\natlas ts:\n  sprites a\n  tile 2x2\n\ndraw d 4x2:\n  stamp ts.0 0:0\n',
+        'd',
+      ),
+    ).toThrow(/cannot index a sprite/)
+  })
+
+  test("atlas member addressed by an unknown name is E015 ('atlas has no member')", () => {
+    expect(() =>
+      render(
+        'draw a 2x2:\n  palette k=#000\n  pixels:\n    kk\n    kk\n\natlas ts:\n  sprites a\n  tile 2x2\n\ndraw d 4x2:\n  stamp ts.nope 0:0\n',
+        'd',
+      ),
+    ).toThrow(/atlas 'ts' has no member 'nope'/)
+  })
+
   test('tile size mismatch is E016', () => {
     expect(() =>
       render(
-        'draw a 2x2:\n  pal k=#000\n  pixels:\n    kk\n    kk\ndraw b 3x2:\n  pal k=#000\n  pixels:\n    kkk\n    kkk\n\ntileset ts 2x2:\n  tiles a, b\n\ndraw d 4x2:\n  stamp ts.0 0:0\n',
+        'draw a 2x2:\n  palette k=#000\n  pixels:\n    kk\n    kk\ndraw b 3x2:\n  palette k=#000\n  pixels:\n    kkk\n    kkk\n\natlas ts:\n  sprites a, b\n  tile 2x2\n\ndraw d 4x2:\n  stamp ts.a 0:0\n',
         'd',
       ),
     ).toThrow(/requires 2x2/)
@@ -867,7 +1039,7 @@ draw d 4x2:
 
   test('drawing silhouette as region', () => {
     const s = render(
-      'draw gem 2x2:\n  pal y=#e0b070\n  pixels:\n    y.\n    yy\n\ndraw d 4x4:\n  m = gem.region.shift(1:1)\n  fill #ff0000 m\n',
+      'draw gem 2x2:\n  palette y=#e0b070\n  pixels:\n    y.\n    yy\n\ndraw d 4x4:\n  m = gem.region.shift(1:1)\n  fill #ff0000 m\n',
       'd',
     )
     expect(px(s, 1, 1)[3]).toBe(255)
@@ -954,17 +1126,113 @@ draw d 4x2:
     expect(px(s, 2, 0)).toEqual([255, 255, 255, 255])
   })
 
+  test('litTone/shadowTone/ramp work via UFCS', () => {
+    const s = render(
+      'draw d 3x1:\n  sh = #e0a878.shadowTone(#3a6fd8, 30%)\n  rr = #c04040.ramp(3)\n  lt = #c04040.litTone(#ffe6b0, 25%)\n  px sh 0:0\n  px rr.2 1:0\n  px lt 2:0\n',
+      'd',
+    )
+    // shadowTone of a warm base — pinned, warm (not magenta)
+    expect(px(s, 0, 0)).toEqual([131, 75, 53, 255])
+    // darkest band of ramp(3) — pinned
+    expect(px(s, 1, 0)).toEqual([50, 0, 18, 255])
+    // litTone lightens toward the warm light
+    expect(px(s, 2, 0)[0]).toBeGreaterThan(192)
+    expect(px(s, 2, 0)[3]).toBe(255)
+  })
+
+  test('ramp/litTone/shadowTone/model/cel are reserved like every builtin (ADR-0096 §5)', () => {
+    for (const name of ['ramp', 'litTone', 'shadowTone', 'model', 'cel']) {
+      expect(() => render(`draw d 2x2:\n  ${name} = 5\n  bg #fff\n`, 'd')).toThrow(
+        /is a predefined, unshadowable name/,
+      )
+    }
+  })
+
+  test('a reserved-name collision (E007) hints at what kind of name it hit and how to escape it', () => {
+    const cases: readonly [string, RegExp][] = [
+      ['rim', /material\/lighting keyword/], // a natural English word (a wheel/boat/plate rim)
+      ['fill', /drawing command/],
+      ['sin', /built-in function/],
+    ]
+    for (const [name, kindRe] of cases) {
+      try {
+        render(`draw d 2x2:\n  ${name} = rect(0:0, 1:1)\n  bg #fff\n`, 'd')
+        expect(false).toBe(true)
+      } catch (e) {
+        expect(e).toBeInstanceOf(DrawsticError)
+        if (e instanceof DrawsticError) {
+          const d = e.toDiagnostic()
+          expect(d.code).toBe('E007')
+          expect(d.message).toBe(`'${name}' is a predefined, unshadowable name`)
+          expect(d.hint).toMatch(kindRe)
+          expect(d.hint).toMatch(/rename/)
+        }
+      }
+    }
+  })
+
+  test('a reserved-name collision at module scope (a drawing named like a builtin) also gets the E007 hint', () => {
+    try {
+      render('draw rim 2x2:\n  bg #fff\n', 'rim')
+      expect(false).toBe(true)
+    } catch (e) {
+      expect(e).toBeInstanceOf(DrawsticError)
+      if (e instanceof DrawsticError) {
+        const d = e.toDiagnostic()
+        expect(d.code).toBe('E007')
+        expect(d.hint).toMatch(/material\/lighting keyword/)
+      }
+    }
+  })
+
+  test('fill missing its drawable argument (E011) names the command and the expected slot', () => {
+    try {
+      render('draw d 2x2:\n  fill #fff\n', 'd')
+      expect(false).toBe(true)
+    } catch (e) {
+      expect(e).toBeInstanceOf(DrawsticError)
+      if (e instanceof DrawsticError) {
+        expect(e.toDiagnostic()).toMatchObject({
+          code: 'E011',
+          message: 'fill: expected a path or region',
+        })
+      }
+    }
+  })
+
+  test('a binding sharing a name with a reserved keyword-arg word (E011) hints at the rename, not just "missing argument"', () => {
+    // `anchor` isn't a builtin (E007 doesn't fire), but it IS one of parser.ts's KW_ARG_ARITY
+    // words (D2) — so `anchor` used later as a value gets read as that keyword's own argument
+    // slot instead, the exact "far from the real cause" trap character-craft.md documents for
+    // cap/join/mask/font/anchor/transform/tint/shadow.
+    try {
+      render('draw d 8x8:\n  anchor = rect(0:0, 3:3)\n  x = 5\n  fill #ffffff anchor x\n', 'd')
+      expect(false).toBe(true)
+    } catch (e) {
+      expect(e).toBeInstanceOf(DrawsticError)
+      if (e instanceof DrawsticError) {
+        const d = e.toDiagnostic()
+        expect(d.code).toBe('E011')
+        expect(d.message).toBe("fill: expected a path or region, got the reserved 'anchor' keyword")
+        expect(d.hint).toMatch(/rename/)
+        expect(d.hint).toContain('anchor')
+      }
+    }
+  })
+
   test('block pal destructures color lists', () => {
     const s = render(
-      'draw d 3x1:\n  pal:\n    a, b, c = #777.tones(-10%, 0%, 10%)\n  pixels:\n    abc\n',
+      'draw d 3x1:\n  palette:\n    a, b, c = #777.tones(-10%, 0%, 10%)\n  pixels:\n    abc\n',
       'd',
     )
     expect(s.pal.map((p) => p.key)).toEqual(['a', 'b', 'c'])
     expect(px(s, 0, 0)[0]).toBeLessThan(px(s, 1, 0)[0])
-    expect(() => render('draw d 1x1:\n  pal:\n    a, b = #fff.tones(0%)\n  bg a\n', 'd')).toThrow(
-      /palette destructuring mismatch/,
+    expect(() =>
+      render('draw d 1x1:\n  palette:\n    a, b = #fff.tones(0%)\n  bg a\n', 'd'),
+    ).toThrow(/palette destructuring mismatch/)
+    expect(() => render('draw d 1x1:\n  palette:\n    a = 1\n  bg a\n', 'd')).toThrow(
+      /must be a color/,
     )
-    expect(() => render('draw d 1x1:\n  pal:\n    a = 1\n  bg a\n', 'd')).toThrow(/must be a color/)
   })
 
   test('point x and y builtins work in prefix and UFCS form', () => {
@@ -999,13 +1267,13 @@ draw d 4x2:
 describe('evaluator: coverage gap-fill', () => {
   test('atlas packs pinned and auto-packed sprites, shelf-packing around collisions', () => {
     const src = `draw logo 4x4:
-  pal k=#000000
+  palette k=#000000
   bg k
 draw play 3x3:
-  pal r=#ff0000
+  palette r=#ff0000
   bg r
 draw pause 2x2:
-  pal g=#00ff00
+  palette g=#00ff00
   bg g
 
 atlas hud:
@@ -1041,7 +1309,7 @@ draw d 12x12:
     const dir = mkdtempSync(join(tmpdir(), 'drawstic-eval-'))
     try {
       const engine = new Engine(dir)
-      writeFileSync(join(dir, 'shape.drw'), 'draw square 2x2:\n  pal k=#000000\n  bg k\n')
+      writeFileSync(join(dir, 'shape.drw'), 'draw square 2x2:\n  palette k=#000000\n  bg k\n')
       writeFileSync(join(dir, 'main.drw'), 'from shape square\n\ndraw d 2x2:\n  stamp square 0:0\n')
       const mod = engine.loadEntry(join(dir, 'main.drw'))
       const mod2 = engine.loadEntry(join(dir, 'main.drw'))
@@ -1148,26 +1416,26 @@ draw d 12x12:
     }
   })
 
-  test('theme grad bindings fold; a non-gradient grad binding is a type error', () => {
+  test('theme gradient bindings fold; a non-gradient binding is a type error', () => {
     const s = render(
-      'theme t:\n  grad sky = linear(90, #000000, #ffffff)\n\ndraw d 2x4:\n  use t\n  bg sky\n',
+      'theme t:\n  gradient sky = linear(90, #000000, #ffffff)\n\ndraw d 2x4:\n  use t\n  bg sky\n',
       'd',
     )
     expect(px(s, 0, 0)[0]).toBeLessThan(80)
     expect(px(s, 0, 3)[0]).toBeGreaterThan(180)
     expect(() =>
-      render('theme t:\n  grad oops = 5\n\ndraw d 2x2:\n  use t\n  bg #fff\n', 'd'),
-    ).toThrow(/'grad' binding must be a gradient/)
+      render('theme t:\n  gradient oops = 5\n\ndraw d 2x2:\n  use t\n  bg #fff\n', 'd'),
+    ).toThrow(/'gradient' binding must be a gradient/)
   })
 
-  test('sprite cache fingerprints theme gradients (no stale sprite across grad-only themes)', () => {
+  test('sprite cache fingerprints theme gradients (no stale sprite across gradient-only themes)', () => {
     const engine = new Engine(process.cwd())
     const src =
       'size 4x4\n' +
-      'theme ta:\n  grad g = linear(0, #000000, #ffffff)\n' +
-      'theme tb:\n  grad g = linear(0, #ffffff, #000000)\n' +
+      'theme ta:\n  gradient g = linear(0, #000000, #ffffff)\n' +
+      'theme tb:\n  gradient g = linear(0, #ffffff, #000000)\n' +
       'draw d:\n  fill g rect(0:0, 3:3)\n'
-    const mod = engine.loadSource(src, `${process.cwd()}\\memgrad${n++}.drw`, 'mem.drw')
+    const mod = engine.loadSource(src, join(process.cwd(), `memgrad${n++}.drw`), 'mem.drw')
     const entry = mod.definitions.get('d')
     if (entry?.kind !== 'draw') {
       throw new Error('no draw d')
@@ -1182,23 +1450,69 @@ draw d 12x12:
     expect([...s1.data]).not.toEqual([...s2.data])
   })
 
-  test('repeat executes its body a fixed number of times', () => {
-    const s = render(
-      'draw d 3x1:\n  pal k=#000000\n  x = 0\n  repeat 3:\n    px k x:0\n    x += 1\n',
-      'd',
+  test('repeat was removed (ADR-0094) — duplicated for; points to it', () => {
+    expect(() =>
+      render('draw d 3x1:\n  palette k=#000000\n  repeat 3:\n    px k 0:0\n', 'd'),
+    ).toThrow(/'repeat' was removed/)
+  })
+
+  test('castShadow was removed (ADR-0096 §1) — byte-identical to shadow', () => {
+    expect(() =>
+      render('draw d 6x4:\n  r = rect(1:1, 2:2)\n  castShadow r 2:0 #ff0000\n', 'd'),
+    ).toThrow(/'castShadow' was removed — use 'shadow r dx:dy p' instead/)
+  })
+
+  test('seed N was removed (ADR-0096 §1) — stored, never read', () => {
+    expect(() => render('seed 5\ndraw d 2x2:\n  bg #fff\n', 'd')).toThrow(/'seed' was removed/)
+  })
+
+  test('a plain `seed` binding is unaffected (contextual, not reserved)', () => {
+    const s = render('seed = 5\ndraw d 2x2:\n  bg #fff\n', 'd')
+    expect(px(s, 0, 0)).toEqual([255, 255, 255, 255])
+  })
+
+  test('grayscale(c) was removed (ADR-0096 §1) — exactly desaturate(c, 100%)', () => {
+    expect(() => render('draw d 2x2:\n  bg #ff0000.grayscale\n', 'd')).toThrow(
+      /'grayscale' was removed — use 'desaturate\(c, 100%\)' instead/,
     )
+  })
+
+  test('a bare-int export size was removed (ADR-0096 §1) — third spelling of a size', () => {
+    expect(() => render('draw d 4x4:\n  bg #fff\n\nexport d out/d:\n  png 512\n', 'd')).toThrow(
+      /bare-int export size was removed/,
+    )
+  })
+
+  test('anchor on fit was removed (ADR-0096 §1) — fit solves contact from the pins', () => {
+    expect(() =>
+      render(
+        'draw torso 12x20:\n  fill #6a5030 rect(0:0, 11:19)\n  pin shoulder 10:3\n\ndraw arm 6x14:\n  fill #8a5a3a rect(0:0, 5:13)\n  pin shoulder 0:2\n\ndraw fig 30x30:\n  stamp torso 4:2\n  pin torso.shoulder 14:5\n  fit arm.shoulder torso.shoulder anchor topLeft\n',
+        'fig',
+      ),
+    ).toThrow(/'anchor' on 'fit' was removed/)
+  })
+
+  test('for still iterates a range as the sole loop', () => {
+    const s = render('draw d 3x1:\n  palette k=#000000\n  for x 0..3:\n    px k x:0\n', 'd')
     expect(px(s, 0, 0)[3]).toBe(255)
     expect(px(s, 1, 0)[3]).toBe(255)
     expect(px(s, 2, 0)[3]).toBe(255)
   })
 
-  test('an unrecognized statement callee falls back to filter-sugar, dropped-value, or unknown-name', () => {
+  test('a bare filter name as a statement was removed (ADR-0096 §1) — use apply', () => {
+    expect(() =>
+      render('filter retro:\n  outline #0000ff\n\ndraw d 6x6:\n  px #ff0000 3:3\n  retro\n', 'd'),
+    ).toThrow(/a bare filter name as a statement was removed — use 'apply retro'/)
+    // the canonical `apply NAME` path still works
     const s = render(
-      'filter retro:\n  outline #0000ff\n\ndraw d 6x6:\n  px #ff0000 3:3\n  retro\n',
+      'filter retro:\n  outline #0000ff\n\ndraw d 6x6:\n  px #ff0000 3:3\n  apply retro\n',
       'd',
     )
     expect(px(s, 3, 2)).toEqual([0, 0, 255, 255])
     expect(px(s, 3, 3)).toEqual([255, 0, 0, 255])
+  })
+
+  test('an unrecognized statement callee falls back to dropped-value or unknown-name', () => {
     expect(() => render('draw d 2x2:\n  bg #fff\n  union\n', 'd')).toThrow(
       /the value of 'union' is dropped/,
     )
@@ -1230,7 +1544,7 @@ draw d 12x12:
 
   test('font glyph maps to an external drawing, with not-found/parametric errors', () => {
     const s = render(
-      'draw runeA 3x3:\n  pal k=#000000\n  pixels:\n    k.k\n    .k.\n    k.k\n\nfont runic 3x3:\n  glyph "A" runeA\n\ndraw d 6x3:\n  text #ff0000 0:0 "A" font runic\n',
+      'draw runeA 3x3:\n  palette k=#000000\n  pixels:\n    k.k\n    .k.\n    k.k\n\nfont runic 3x3:\n  glyph "A" runeA\n\ndraw d 6x3:\n  text #ff0000 0:0 "A" font runic\n',
       'd',
     )
     expect(px(s, 0, 0)).toEqual([0, 0, 0, 255])
@@ -1250,9 +1564,9 @@ draw d 12x12:
     ).toThrow(/glyph drawings must be non-parametric/)
   })
 
-  test('font glyphs bulk-maps a tileset to characters, with tileset/coverage errors', () => {
+  test('font glyphs bulk-maps a uniform-tile atlas to characters, with atlas/coverage errors', () => {
     const s = render(
-      'draw d0 2x2:\n  pal k=#000000\n  bg k\ndraw d1 2x2:\n  pal r=#ff0000\n  bg r\ndraw d2 2x2:\n  pal g=#00ff00\n  bg g\n\ntileset digits 2x2:\n  tiles d0, d1, d2\n  cols 3\n\nfont digitFont 2x2:\n  glyphs digits "012"\n\ndraw d 8x2:\n  text #000000 0:0 "1" font digitFont\n',
+      'draw d0 2x2:\n  palette k=#000000\n  bg k\ndraw d1 2x2:\n  palette r=#ff0000\n  bg r\ndraw d2 2x2:\n  palette g=#00ff00\n  bg g\n\natlas digits:\n  sprites d0, d1, d2\n  tile 2x2\n  cols 3\n\nfont digitFont 2x2:\n  glyphs digits "012"\n\ndraw d 8x2:\n  text #000000 0:0 "1" font digitFont\n',
       'd',
     )
     expect(px(s, 0, 0)).toEqual([255, 0, 0, 255])
@@ -1261,13 +1575,19 @@ draw d 12x12:
         'font digitFont 2x2:\n  glyphs nope "01"\n\ndraw d 8x2:\n  text #000000 0:0 "0" font digitFont\n',
         'd',
       ),
-    ).toThrow(/glyphs tileset 'nope' not found/)
+    ).toThrow(/glyphs atlas 'nope' not found/)
     expect(() =>
       render(
-        'draw d0 2x2:\n  pal k=#000000\n  bg k\ndraw d1 2x2:\n  pal r=#ff0000\n  bg r\n\ntileset digits 2x2:\n  tiles d0, d1\n  cols 2\n\nfont digitFont 2x2:\n  glyphs digits "012"\n\ndraw d 8x2:\n  text #000000 0:0 "2" font digitFont\n',
+        'draw d0 2x2:\n  palette k=#000000\n  bg k\n\natlas digits:\n  sprites d0\n\nfont digitFont 2x2:\n  glyphs digits "0"\n\ndraw d 8x2:\n  text #000000 0:0 "0" font digitFont\n',
         'd',
       ),
-    ).toThrow(/tileset has no tile 2 for character "2"/)
+    ).toThrow(/glyphs atlas 'digits' needs a 'tile WxH' declaration/)
+    expect(() =>
+      render(
+        'draw d0 2x2:\n  palette k=#000000\n  bg k\ndraw d1 2x2:\n  palette r=#ff0000\n  bg r\n\natlas digits:\n  sprites d0, d1\n  tile 2x2\n  cols 2\n\nfont digitFont 2x2:\n  glyphs digits "012"\n\ndraw d 8x2:\n  text #000000 0:0 "2" font digitFont\n',
+        'd',
+      ),
+    ).toThrow(/atlas has no tile 2 for character "2"/)
   })
 
   test('path arc tessellates clockwise and counterclockwise around a center', () => {
@@ -1314,21 +1634,27 @@ draw d 12x12:
     ).toThrow(/scale\(0\) is not invertible/)
   })
 
-  test('mix() reads its color-space argument as a string, defaulting when absent/unrecognized', () => {
+  test('mix() takes its color-space argument as a bare contextual keyword (ADR-0096 §7), defaulting when absent/unrecognized', () => {
     const s = render(
-      'draw d 3x1:\n  b = mix(#000000, #ffffff, 0.5, "hsl")\n  c = mix(#000000, #ffffff, 0.5, 5)\n  px b 1:0\n  px c 2:0\n',
+      'draw d 5x1:\n  a = mix(#000000, #ffffff, 0.5, rgb)\n  b = mix(#000000, #ffffff, 0.5, hsl)\n  c = mix(#000000, #ffffff, 0.5, oklch)\n  d2 = mix(#000000, #ffffff, 0.5, "hsl")\n  e = mix(#000000, #ffffff, 0.5, 5)\n  px a 0:0\n  px b 1:0\n  px c 2:0\n  px d2 3:0\n  px e 4:0\n',
       'd',
     )
-    expect(px(s, 1, 0)).toEqual([128, 128, 128, 255])
-    expect(px(s, 2, 0)).toEqual([99, 99, 99, 255])
+    expect(px(s, 0, 0)).toEqual([128, 128, 128, 255]) // bare rgb
+    expect(px(s, 1, 0)).toEqual([128, 128, 128, 255]) // bare hsl
+    expect(px(s, 2, 0)).toEqual([99, 99, 99, 255]) // bare oklch
+    expect(px(s, 3, 0)).toEqual([128, 128, 128, 255]) // quoted "hsl" still works
+    expect(px(s, 4, 0)).toEqual([99, 99, 99, 255]) // unrecognized (a number) defaults to oklch
   })
 
-  test('stroke accepts cap/join keywords as accepted-but-no-op flags', () => {
-    const s = render(
-      'draw d 8x8:\n  r = rect(1:1, 5:5)\n  stroke #000000 r w2 cap round join bevel\n',
-      'd',
+  test('cap/join were removed (ADR-0096 §1) — parsed but never rendered', () => {
+    // drawFlags() (shape statements, e.g. `rect`)
+    expect(() => render('draw d 8x8:\n  rect #000000 1:1 5:5 cap round\n', 'd')).toThrow(
+      /'cap' was removed/,
     )
-    expect(px(s, 1, 1)).toEqual([0, 0, 0, 255])
+    // strokeFlags() (stroke-only statements, e.g. `line`/`stroke`)
+    expect(() => render('draw d 8x8:\n  line #000000 1:1 5:5 w2 join bevel\n', 'd')).toThrow(
+      /'join' was removed/,
+    )
   })
 
   test('an unconsumed trailing command argument is a positioned E012', () => {
@@ -1360,7 +1686,7 @@ draw d 12x12:
 
       const engine = new Engine(dir)
       const mod = engine.loadSource(
-        `import photo = pic.png sha256 ${realSha}\n\ndraw d 2x2:\n  stamp photo 0:0\n`,
+        `image photo = pic.png sha256 ${realSha}\n\ndraw d 2x2:\n  stamp photo 0:0\n`,
         join(dir, 'main.drw'),
         'main.drw',
       )
@@ -1377,7 +1703,7 @@ draw d 12x12:
       const shaEngine = new Engine(dir)
       try {
         const shaMod = shaEngine.loadSource(
-          'import photo = pic.png sha256 deadbeef\n\ndraw d 2x2:\n  stamp photo 0:0\n',
+          'image photo = pic.png sha256 deadbeef\n\ndraw d 2x2:\n  stamp photo 0:0\n',
           join(dir, 'main2.drw'),
           'main2.drw',
         )
@@ -1401,7 +1727,7 @@ draw d 12x12:
       const notFoundEngine = new Engine(dir)
       expect(() => {
         const m = notFoundEngine.loadSource(
-          'import photo = missing.png\n\ndraw d 2x2:\n  stamp photo 0:0\n',
+          'image photo = missing.png\n\ndraw d 2x2:\n  stamp photo 0:0\n',
           join(dir, 'main3.drw'),
           'main3.drw',
         )
@@ -1415,7 +1741,7 @@ draw d 12x12:
       const extEngine = new Engine(dir)
       expect(() => {
         const m = extEngine.loadSource(
-          'import photo = pic.jpg\n\ndraw d 2x2:\n  stamp photo 0:0\n',
+          'image photo = pic.jpg\n\ndraw d 2x2:\n  stamp photo 0:0\n',
           join(dir, 'main4.drw'),
           'main4.drw',
         )
@@ -1429,7 +1755,7 @@ draw d 12x12:
       const escapeEngine = new Engine(dir)
       expect(() => {
         const m = escapeEngine.loadSource(
-          'import photo = ../outside.png\n\ndraw d 2x2:\n  stamp photo 0:0\n',
+          'image photo = ../outside.png\n\ndraw d 2x2:\n  stamp photo 0:0\n',
           join(dir, 'main5.drw'),
           'main5.drw',
         )
@@ -1444,7 +1770,7 @@ draw d 12x12:
       const decodeEngine = new Engine(dir)
       expect(() => {
         const m = decodeEngine.loadSource(
-          'import photo = bad.png\n\ndraw d 2x2:\n  stamp photo 0:0\n',
+          'image photo = bad.png\n\ndraw d 2x2:\n  stamp photo 0:0\n',
           join(dir, 'main6.drw'),
           'main6.drw',
         )
@@ -1454,6 +1780,39 @@ draw d 12x12:
         }
         decodeEngine.defToSprite(e, { line: 1, column: 1 })
       }).toThrow(/failed to decode 'bad\.png'/)
+
+      // An Adam7-interlaced PNG is a distinct, honestly-reported failure (E027, src/png.ts) — not
+      // decoding it is in scope, but silently surfacing it as an unpositioned bare Error is not.
+      // decodePng never checks CRC, so flipping the IHDR interlace-method byte (offset 28: 8-byte
+      // signature + 4-byte length + 4-byte 'IHDR' type + 12 bytes of IHDR data preceding it) on an
+      // otherwise-valid encoded PNG is enough to exercise the interlaced branch specifically.
+      const interlaced = encodePngRgba(data, 2, 2)
+      interlaced[28] = 1
+      writeFileSync(join(dir, 'interlaced.png'), interlaced)
+      const interlacedEngine = new Engine(dir)
+      let caught: unknown
+      try {
+        const m = interlacedEngine.loadSource(
+          'image photo = interlaced.png\n\ndraw d 2x2:\n  stamp photo 0:0\n',
+          join(dir, 'main7.drw'),
+          'main7.drw',
+        )
+        const e = m.definitions.get('d')
+        if (!e) {
+          throw new Error('no d')
+        }
+        interlacedEngine.defToSprite(e, { line: 1, column: 1 })
+      } catch (e) {
+        caught = e
+      }
+      expect(caught).toBeInstanceOf(DrawsticError)
+      if (caught instanceof DrawsticError) {
+        const diag = caught.toDiagnostic()
+        expect(diag.code).toBe('E027')
+        expect(diag.message).toMatch(/Adam7-interlaced PNGs are not supported/)
+        // span points at the `image photo = interlaced.png` declaration (line 1 of main7.drw)
+        expect(diag.line).toBe(1)
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -1501,6 +1860,12 @@ draw d 12x12:
     expect(px(masked, 2, 2)[3]).toBe(0)
   })
 
+  test('aa is still a bindable name outside a stamp (ADR-0099, contextual not reserved)', () => {
+    const s = render('draw d 6x6:\n  aa = 3\n  fill #ff0000 rect(aa:aa, aa:aa)\n', 'd')
+    expect(px(s, 3, 3)).toEqual([255, 0, 0, 255])
+    expect(px(s, 0, 0)[3]).toBe(0)
+  })
+
   test('apply with a non-name argument is a positioned arity error', () => {
     expect(() => render('draw d 2x2:\n  bg #fff\n  apply 5\n', 'd')).toThrow(/expected a name/)
   })
@@ -1521,7 +1886,7 @@ draw d 12x12:
 
   test('fn/path (and other module-only definitions) nested in a draw get a move-to-module-scope hint (E004)', () => {
     const hint =
-      'move it to module scope, above the draw — mask and grad definitions may stay drawing-local'
+      'move it to module scope, above the draw — mask and gradient definitions may stay drawing-local'
     for (const [src, message] of [
       ['draw d 2x2:\n  fn lerp2(a, b) = a + b\n  bg #fff\n', 'fn definitions live at module scope'],
       [
@@ -1529,7 +1894,7 @@ draw d 12x12:
         'path definitions live at module scope',
       ],
       [
-        'draw d 2x2:\n  theme t2:\n    pal k=#000000\n  bg #fff\n',
+        'draw d 2x2:\n  theme t2:\n    palette k=#000000\n  bg #fff\n',
         'theme definitions live at module scope',
       ],
       [
@@ -1549,9 +1914,9 @@ draw d 12x12:
     }
   })
 
-  test('mask/grad definitions stay legal inside a draw (no module-scope error)', () => {
+  test('mask/gradient definitions stay legal inside a draw (no module-scope error)', () => {
     expect(() =>
-      render('draw d 2x2:\n  grad g = linear(90, #000000, #ffffff)\n  bg g\n', 'd'),
+      render('draw d 2x2:\n  gradient g = linear(90, #000000, #ffffff)\n  bg g\n', 'd'),
     ).not.toThrow()
     expect(() =>
       render('draw d 2x2:\n  mask m = rect(0:0, 1:1)\n  fill #ff0000 m\n', 'd'),
@@ -1646,7 +2011,7 @@ draw d 12x12:
     const eng = new Engine(process.cwd())
     const mod = eng.loadSource(
       'draw d 32x32:\n  scatter p 25 9 rect(0:0, 31:31):\n    px #fff p\n',
-      `${process.cwd()}\\memscatter.drw`,
+      join(process.cwd(), `memscatter.drw`),
       'mem.drw',
     )
     const entry = mod.definitions.get('d')
@@ -1689,7 +2054,7 @@ draw d 12x12:
 
   test('mirror flips stamps (mirror-with-flip)', () => {
     const src =
-      'draw arrow 4x3:\n  pal a=#ff0000\n  pixels:\n    a...\n    aaaa\n    a...\ndraw d 12x3:\n  mirror x=6:\n    stamp arrow 1:0\n'
+      'draw arrow 4x3:\n  palette a=#ff0000\n  pixels:\n    a...\n    aaaa\n    a...\ndraw d 12x3:\n  mirror x=6:\n    stamp arrow 1:0\n'
     const s = render(src, 'd')
     // left copy: stem on the left (col 1), top row red only at col 1
     expect(px(s, 1, 0)).toEqual([255, 0, 0, 255])
@@ -1745,7 +2110,7 @@ draw d 12x12:
     const eng = new Engine(process.cwd())
     const mod = eng.loadSource(
       'draw d 16x8:\n  mirror x=8:\n    rect #ff0000 1:1 3:6 fill\n',
-      `${process.cwd()}\\memmirror.drw`,
+      join(process.cwd(), `memmirror.drw`),
       'mem.drw',
     )
     const entry = mod.definitions.get('d')

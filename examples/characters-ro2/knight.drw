@@ -1,0 +1,286 @@
+# RO-style chibi Knight / Swordsman — front / side / back on one sheet
+# Canonical path: theme(light + figure oracle) -> materials -> parts(pins) -> fit assembly -> outline
+
+# ---- palette (module scope) ----
+skin    = #e8b489
+steel   = #8494ac
+steelHi = #d7e0ee
+capeRed = #a83a36
+gold    = #d9a03a
+leather = #6d4527
+plume   = #c8412f
+visorD  = #26303f
+white   = #f6efe4
+iris    = #4f7bb0
+pupil   = #201a1a
+mouth   = #9a5240
+
+# ---- materials ----
+material steelM   = steel metal
+material skinM    = skin skin
+material capeM    = capeRed cloth drape spread 220%
+material goldM    = gold metal
+material leatherM = leather cloth
+
+# ---- full-body theme: ONE light + figure oracle (heads 3 chibi) ----
+theme ro:
+  mode pixel
+  light sun = dir 1:1 #ffe6b0 amb #2a3a5e 16%
+  figure:
+    heads 3
+    headW 34
+    eyeLine 0.66
+    earLine 0.6
+    eyeSep 12
+
+# ---- head-part theme: same light, heads 1 (part canvas = one head) ----
+theme headKit:
+  mode pixel
+  light sun = dir 1:1 #ffe6b0 amb #2a3a5e 16%
+  figure:
+    heads 1
+    headW 22
+    eyeLine 0.64
+    earLine 0.58
+    eyeSep 11
+
+# ================= HEAD PARTS =================
+
+draw headFront 34x42:
+  use headKit
+  face = ellipse(17:28, 10:12)                       # skin face
+  model face skinM
+  helm = ellipse(17:20, 15:18).subtract(ellipse(17:30, 8:11))   # open-face helm frames the face
+  cel helm steelM 4
+  # eyes on oracle lines
+  fill white ellipse(fig.eyeL, 3:3)
+  fill white ellipse(fig.eyeR, 3:3)
+  circle iris fig.eyeL 2 fill
+  circle iris fig.eyeR 2 fill
+  px pupil fig.eyeL
+  px pupil fig.eyeR
+  px white.alpha(90%) (fig.eyeL - 1:1)
+  px white.alpha(90%) (fig.eyeR - 1:1)
+  line #6a4a30 12:24 15:23                            # brows
+  line #6a4a30 19:23 22:24
+  px skin.darken(20%) 17:31                           # nose tick
+  line mouth 15:34 19:34
+  nasal = rect(16:20, 18:29)                          # metal nasal guard (brow to nose)
+  cel nasal steelM 3
+  fill plume rect(15:1, 19:5)                         # crest base
+  gorget = rect(11:38, 23:42)
+  cel gorget steelM 3
+  pin neck 17:40
+
+draw headSide 34x42:
+  use headKit
+  # side faces +x: face front (right), helm shell to the back (left)
+  face = ellipse(16:28, 12:13).union(lobe(24:29, 28:31, 4))     # face + nose out front
+  model face skinM
+  helm = ellipse(14:20, 14:18).subtract(ellipse(20:29, 7:11))
+  cel helm steelM 4
+  fill white ellipse(fig.side.eye, 3:2)
+  circle iris fig.side.eye 1 fill
+  px pupil fig.side.eye
+  px white.alpha(90%) (fig.side.eye - 1:1)
+  line #6a4a30 18:24 23:24                            # brow
+  px skin.darken(20%) 27:30                           # nostril
+  line mouth 24:34 27:34
+  nasal = rect(24:22, 26:31)
+  cel nasal steelM 3
+  fill plume rect(4:2 , 10:6)                         # crest to the back
+  lobe plume 6:5 1:14 5 fill                          # plume tail
+  gorget = rect(10:38, 22:42)
+  cel gorget steelM 3
+  pin neck 16:40
+
+draw headBack 34x42:
+  use headKit
+  helm = ellipse(17:21, 15:19)                        # full back-of-helm, no face
+  cel helm steelM 4
+  fill plume rect(15:1, 19:6)                         # crest ridge down the back
+  fill plume.darken(14%) rect(16:6, 18:22)
+  napeHair = crescent(17:33, 12:7, 5, 0:1)            # hair peeking under the rim
+  fill leather napeHair.intersect(rect(4:30, 30:40))
+  gorget = rect(11:38, 23:42)
+  cel gorget steelM 3
+  pin neck 17:40
+
+# ================= CAPE =================
+
+draw cape 44x76:
+  use ro
+  cloak = curvePoly(7:2, 22:0, 37:2, 41:74, 3:74)
+  model cloak capeM
+  fill capeRed.darken(16%) rect(21:2, 23:74)          # centre fold
+  fill gold rect(6:2, 38:5)                           # collar band
+  pin attach 22:2
+
+# narrow side cape — hangs down and back (-x), clamped to the body silhouette
+draw capeSide 22x78:
+  use ro
+  cloak = curvePoly(17:2, 5:12, 3:76, 17:74)
+  model cloak capeM
+  fill gold rect(6:2, 17:5)
+  pin attach 17:2
+
+# ================= SWORD (authored blade-up) =================
+
+draw sword 14x66:
+  use ro
+  blade = poly(7:2, 9:8, 9:46, 5:46, 5:8)             # tapered blade, tip up
+  cel blade steelM 3
+  fill steelHi rect(6:9, 6:45)                        # fuller / lit edge
+  guard = rect(1:46, 13:49)
+  cel guard goldM 3
+  grip = rect(6:49, 8:59)
+  model grip leatherM
+  circle gold 7:61 2 fill                             # pommel
+  pin grip 7:57
+  pin tip 7:3
+
+# ================= BODY PARTS =================
+# body-space: neck at top, feet at bottom; feet at y88 -> full 128 when neck lands at fig.chin
+
+draw bodyFront 48x88:
+  use ro
+  # legs + sabatons (drawn first = back layer of body)
+  legL = rrect(15:52, 22:82, 3)
+  legR = rrect(26:52, 33:82, 3)
+  cel legL steelM 4
+  cel legR steelM 4
+  bootL = rrect(12:80, 24:88, 2)
+  bootR = rrect(24:80, 36:88, 2)
+  cel bootL steelM 4
+  cel bootR steelM 4
+  # faulds (armoured skirt)
+  faulds = curvePoly(13:38, 24:36, 35:38, 32:54, 16:54)
+  cel faulds steelM 4
+  # breastplate
+  chestP = curvePoly(9:8, 24:3, 39:8, 34:40, 14:40)
+  cel chestP steelM 4
+  fill steelHi rect(13:10, 14:20)                       # small lit edge
+  line steel.darken(24%) 24:8 24:38                    # centre ridge
+  # pauldrons
+  pL = dome(9:11, 8:9)
+  pR = dome(39:11, 8:9)
+  cel pL steelM 4
+  cel pR steelM 4
+  # arms + gauntlets
+  armL = rrect(2:14, 10:50, 3)
+  armR = rrect(38:14, 46:50, 3)
+  cel armL steelM 4
+  cel armR steelM 4
+  fistL = rrect(2:48, 11:56, 2)
+  fistR = rrect(37:48, 46:56, 2)
+  cel fistL steelM 4
+  cel fistR steelM 4
+  # collar
+  cel rect(19:0, 29:4) steelM 3
+  pin neck   24:2
+  pin capeAnchor 24:6
+  pin grip   6:52
+  pin hip    24:52
+
+draw bodyBack 48x88:
+  use ro
+  legL = rrect(15:52, 22:82, 3)
+  legR = rrect(26:52, 33:82, 3)
+  cel legL steelM 4
+  cel legR steelM 4
+  bootL = rrect(12:80, 24:88, 2)
+  bootR = rrect(24:80, 36:88, 2)
+  cel bootL steelM 4
+  cel bootR steelM 4
+  faulds = curvePoly(13:38, 24:36, 35:38, 32:54, 16:54)
+  cel faulds steelM 4
+  backP = curvePoly(9:8, 24:3, 39:8, 34:40, 14:40)     # smooth backplate
+  cel backP steelM 4
+  line steel.darken(22%) 24:6 24:40                     # spine ridge
+  pL = dome(9:11, 8:9)
+  pR = dome(39:11, 8:9)
+  cel pL steelM 4
+  cel pR steelM 4
+  armL = rrect(2:14, 10:50, 3)
+  armR = rrect(38:14, 46:50, 3)
+  cel armL steelM 4
+  cel armR steelM 4
+  fistL = rrect(2:48, 11:56, 2)
+  fistR = rrect(37:48, 46:56, 2)
+  cel fistL steelM 4
+  cel fistR steelM 4
+  cel rect(19:0, 29:4) steelM 3
+  pin neck   24:2
+  pin capeAnchor 24:6
+  pin grip   41:52                                  # mirrored: 47 - 6, the same hand seen from behind
+  pin hip    24:52
+
+draw bodySide 34x88:
+  use ro
+  # far limbs (tinted back), then near limbs
+  farLeg = rrect(13:52, 21:82, 3)
+  cel farLeg steelM 4
+  farArm = rrect(8:14, 16:50, 3)
+  cel farArm steelM 4
+  nearLeg = rrect(18:52, 26:82, 3)
+  cel nearLeg steelM 4
+  boot = rrect(16:80, 30:88, 2)
+  cel boot steelM 4
+  faulds = curvePoly(11:38, 18:36, 27:40, 26:54, 12:54)
+  cel faulds steelM 4
+  chestP = curvePoly(11:8, 20:4, 27:12, 26:40, 12:40)  # belly bulge forward (+x)
+  cel chestP steelM 4
+  fill steelHi rect(21:10, 23:28)
+  pauldron = dome(15:11, 9:9)
+  cel pauldron steelM 4
+  nearArm = rrect(16:14, 24:50, 3)
+  cel nearArm steelM 4
+  fist = rrect(15:48, 25:56, 2)
+  cel fist steelM 4
+  cel rect(12:0, 22:4) steelM 3
+  pin neck   16:2
+  pin capeAnchor 12:6
+  pin grip   20:52
+  pin hip    16:52
+
+# ================= ASSEMBLIES =================
+
+draw knightFront 64x128:
+  use ro
+  fit bodyFront.neck 32:43                          # root — seeds body pins (harmless W010)
+  fit cape.attach bodyFront.capeAnchor behind bodyFront
+  fit headFront.neck bodyFront.neck
+  fit sword.grip bodyFront.grip aim tip 9:34 front bodyFront
+  outline
+
+draw knightSide 64x128:
+  use ro
+  fit bodySide.neck 32:43
+  fit capeSide.attach bodySide.capeAnchor behind bodySide
+  fit headSide.neck bodySide.neck
+  fit sword.grip bodySide.grip aim tip 40:20 front bodySide
+  outline
+
+draw knightBack 64x128:
+  use ro
+  fit bodyBack.neck 32:43                            # root
+  fit headBack.neck bodyBack.neck
+  fit cape.attach bodyBack.capeAnchor front bodyBack    # cape over the back
+  fit sword.grip bodyBack.grip aim tip 54:34 behind cape # slung sword behind the cape (aim mirrors: 63 - 9)
+  outline
+
+# ================= SHEET =================
+
+draw knightSheet 200x140:
+  bg #12151c
+  stamp knightFront 4:6
+  stamp knightSide 68:6
+  stamp knightBack 132:6
+  text #cfd6e0 14:2 "FRONT" font micro
+  text #cfd6e0 84:2 "SIDE" font micro
+  text #cfd6e0 146:2 "BACK" font micro
+
+# ================= EXPORTS =================
+
+export knightFront knight-front, knightSide knight-side, knightBack knight-back, knightSheet knight-sheet:
+  png @1 @4

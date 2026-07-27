@@ -1,0 +1,111 @@
+# STARTER — app-icon family: one theme, ONE parametric plate, five 32x32 glyphs,
+# one hand-pixeled 16x16. Copy, rename, restyle; keep the order.
+#   theme(palette + number contract) -> plate -> glyphs -> per-size redraw -> export
+# Icons are FLAT: no light/model/cel here. Icon lighting is geometry — one edge-band
+# pair on the plate — because an areal shade veil cannot read at 16-32px.
+
+theme appIcons:
+  palette:
+    k = #141a26          # ink — plate shade band, 16px shadow row
+    l = #f4f8ff          # paper — every glyph is this ONE colour
+    b = #3b82f0          # accent: mail
+    g = #2fa572          # accent: search
+    a = #eda13a          # accent: folder
+    r = #e0574f          # accent: bolt
+    c = #22a3c4          # accent: chat
+  size 32x32
+  mode pixel
+  style """
+  Flat app-icon family. One plate, one accent per icon, one glyph colour (l).
+  32px contract: plate 2..29, radius 6 (19% of the edge), margin 2, glyph inside 6..25.
+  16px contract: margin 1, radius 3, strokes still 2px, contact shadow row at 30% alpha.
+  Light travels down-right (1:1) => lit band on the up-left contour, shade band down-right.
+  Bearing strokes >= 2px at 32px; a diagonal >= 16px long gets w2. No cast shadows.
+  """
+
+use appIcons
+
+# The plate carries radius, margin and the light contract for the whole family, so
+# they cannot drift over six icons. Parametric => `critique` skips it; the icons carry it.
+#
+# `critique --as icon --strict` passes clean on this starter: the shared plate is detected and
+# subtracted before C009 signs a silhouette, so the five glyphs are compared on their own shapes,
+# never on the tile they share. A C009 finding here means two glyphs genuinely read alike —
+# differentiate them, don't wave it off.
+draw plate(t) 32x32:
+  face = rrect(2:2, 29:29, 6)
+  fill t face
+  fill l.alpha(34%) face.edge(1:1, 2)     # light travels 1:1 => the up-left contour is lit
+  fill k.alpha(28%) face.edge(-1:-1, 2)   # ...and the down-right contour takes the shade
+
+draw mail 32x32:
+  stamp plate(b) 0:0
+  fill l rrect(7:11, 24:23, 2)
+  poly b 8:12 23:12 16:19 15:19 fill      # the flap is knocked out of the white body
+
+draw search 32x32:
+  stamp plate(g) 0:0
+  fill l circle(14:14, 8).subtract(circle(14:14, 5))   # 3px ring, not a 1px outline
+  line l 19:19 24:24 w3
+
+draw folder 32x32:
+  stamp plate(a) 0:0
+  fill l rrect(6:12, 25:25, 2).union(poly(6:8, 15:8, 18:12, 6:12))
+  line a 7:16 24:16 w2                    # front pocket, or the folder reads as a card
+
+draw bolt 32x32:
+  stamp plate(r) 0:0
+  fill l poly(18:5, 9:17, 15:17, 13:27, 23:13, 17:13)
+
+draw chat 32x32:
+  stamp plate(c) 0:0
+  fill l rrect(6:7, 25:20, 4).union(poly(11:19, 18:19, 11:25))
+  circle c 11:14 1 fill
+  circle c 16:14 1 fill
+  circle c 21:14 1 fill
+
+# <=16px is REDRAWN by hand, never scaled: the flap loses a step, the radius drops to 3,
+# and the bottom row is a 30%-alpha contact shadow (a fully transparent last row is W009).
+draw mailSmall 16x16:
+  palette s = k.alpha(30%)
+  pixels:
+    ................
+    ....bbbbbbbb....
+    ..bbbbbbbbbbbb..
+    .bbbbbbbbbbbbbb.
+    .bbbbbbbbbbbbbb.
+    .bbllllllllllbb.
+    .bblbllllllblbb.
+    .bbllbllllbllbb.
+    .bblllbllblllbb.
+    .bbllllbbllllbb.
+    .bbllllllllllbb.
+    .bbllllllllllbb.
+    .bbbbbbbbbbbbbb.
+    ..bbbbbbbbbbbb..
+    ....bbbbbbbb....
+    ...ssssssssss...
+
+export mail icons/mail:
+  png @1 @2
+  svg ids classes
+
+export search icons/search:
+  png @1 @2
+  svg ids classes
+
+export folder icons/folder:
+  png @1 @2
+  svg ids classes
+
+export bolt icons/bolt:
+  png @1 @2
+  svg ids classes
+
+export chat icons/chat:
+  png @1 @2
+  svg ids classes
+
+export mailSmall icons/mail-16:
+  png @1 @2
+  svg ids classes

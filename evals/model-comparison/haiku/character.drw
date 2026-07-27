@@ -1,0 +1,123 @@
+# Ragnarok Online-style chibi blacksmith, front view, 64x128
+# Dark outline, cel shading, hammer prop
+
+# ---- colours ----
+skin     = #d4a574
+cloth    = #3a3a3a
+leather  = #5a4527
+iron     = #6a7a8a
+copper   = #b87a3a
+hair     = #4a3a2a
+white    = #f5f0e8
+
+# ---- materials: colour + response ----
+material skinM     = skin skin
+material clothM    = cloth cloth
+material leatherM  = leather cloth spread 200%
+material ironM     = iron metal
+material copperM   = copper metal
+material hairM     = hair cloth
+
+# ---- full-body theme: ONE light, 3-head chibi ----
+theme figThree:
+  mode pixel
+  light sun = dir 1:1 #ffe6b0 amb #2a3a5e 16%
+  figure:
+    heads 3
+    headW 34
+    eyeLine 0.66
+    earLine 0.6
+    eyeSep 12
+
+# ---- head-part theme ----
+theme figHead:
+  mode pixel
+  light sun = dir 1:1 #ffe6b0 amb #2a3a5e 16%
+  figure:
+    heads 1
+    headW 22
+    eyeLine 0.64
+    earLine 0.58
+    eyeSep 11
+
+# ================= HEAD (34x42) =================
+
+draw headFront 34x42:
+  use figHead
+  face = ellipse(17:28, 10:12)
+  model face skinM
+  skull = dome(17:20, 14:15)
+  cel skull hairM 3
+  earL = lobe(7:27, 4:27, 4)
+  earR = lobe(27:27, 30:27, 4)
+  model earL skinM
+  model earR skinM
+  fill white ellipse(fig.eyeL, 3:3)
+  fill white ellipse(fig.eyeR, 3:3)
+  circle #5a5a5a fig.eyeL 2 fill
+  circle #5a5a5a fig.eyeR 2 fill
+  px #1a1a1a fig.eyeL
+  px #1a1a1a fig.eyeR
+  line #3a2a1a 12:24 15:23
+  line #3a2a1a 19:23 22:24
+  px skin.darken(25%) 17:31
+  line #8a5a3a 15:34 19:34
+  pin neck 17:40
+
+# ================= BODY (48x86) =================
+
+draw bodyFront 48x86:
+  use figThree
+  legL = rrect(15:52, 22:78, 3)
+  legR = rrect(26:52, 33:78, 3)
+  cel legL clothM 3
+  cel legR clothM 3
+  bootL = rrect(13:76, 24:86, 2)
+  bootR = rrect(24:76, 35:86, 2)
+  model bootL leatherM
+  model bootR leatherM
+  torso = curvePoly(11:16, 24:10, 37:16, 34:54, 14:54)
+  cel torso clothM 3
+  apron = rect(14:42, 34:76)
+  cel apron leatherM 3
+  chestplate = dome(24:28, 12:14)
+  cel chestplate ironM 3
+  armL = rrect(3:20, 11:50, 3)
+  armR = rrect(37:20, 45:50, 3)
+  cel armL clothM 3
+  cel armR clothM 3
+  handL = rrect(3:48, 12:56, 2)
+  handR = rrect(36:48, 45:56, 2)
+  model handL skinM
+  model handR skinM
+  model rect(20:0, 28:13) skinM
+  pin neck 24:2
+  pin grip 8:52
+  pin hip  24:52
+
+# ================= HAMMER =================
+
+draw hammer 16x68:
+  use figThree
+  handle = rect(6:20, 10:64)
+  cel handle leatherM 3
+  headL = rect(2:12, 8:20)
+  headR = rect(8:12, 14:20)
+  cel headL ironM 3
+  cel headR ironM 3
+  pin grip 8:56
+  pin tip  8:4
+
+# ================= ASSEMBLY =================
+
+draw blacksmith 64x128:
+  use figThree
+  fit bodyFront.neck 32:43
+  fit headFront.neck bodyFront.neck
+  fit hammer.grip bodyFront.grip aim tip 16:24 front bodyFront
+  outline
+
+# ================= EXPORT =================
+
+export blacksmith:
+  png @1 @4

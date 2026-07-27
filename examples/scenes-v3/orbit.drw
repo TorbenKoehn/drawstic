@@ -1,6 +1,12 @@
 # Raumstation im Orbit — space station orbiting an ocean world, starfield behind.
 # Light: the sun sits off-canvas upper-right; everything is lit from up-right,
-# shadowed down-left. `light` is the single shared light point for all shading.
+# shadowed down-left. `sunPt` is the single shared light point for all shading,
+# `planetPt` the cool bounce from the world below.
+
+# A gradient always spans the bbox of the region it paints. A point-light wash is therefore
+# a `radial` fill over a span centred on the light that reaches exactly the target region's
+# farthest corner (d = the largest distance in x and in y).
+fn washSpan(p, d) = rect((p - d), (p + d))
 
 # ===========================================================================
 # STATION COMPONENTS (stamped into the scene)
@@ -41,16 +47,19 @@ draw shuttle 28x15:
   px #ff8a3a 1:7
   px #ffbf72 0:7
 
-draw scene 384x256:
-  light = 470:-70
+draw orbit 384x256:
+  # the sun sits off-canvas upper-right; every wash below is derived from it
+  sunPt = 470:-70
+  # the planet fills the lower frame, so its bounce light comes from below
+  planetPt = 206:430
 
   # --- deep space backdrop -------------------------------------------------
-  grad space = linear(90, #0a0b22, #04040c)
+  gradient space = linear(90, #0a0b22, #04040c)
   bg space
 
   # faint nebula washes (stacked translucent masses, cool + warm)
-  grad neb1 = radial(#3a1f66.alpha(40%), #3a1f66.alpha(0%))
-  grad neb2 = radial(#123f52.alpha(34%), #123f52.alpha(0%))
+  gradient neb1 = radial(#3a1f66.alpha(40%), #3a1f66.alpha(0%))
+  gradient neb2 = radial(#123f52.alpha(34%), #123f52.alpha(0%))
   fill neb1 ellipse(300:60, 120:70)
   fill neb2 ellipse(70:150, 110:80)
 
@@ -66,7 +75,7 @@ draw scene 384x256:
 
   # --- planet (huge sphere; we see its upper-right limb curving the base) ---
   pl = circle(120:430, 300)
-  grad ocean = linear(90, #1f5da0, #123a70)
+  gradient ocean = linear(90, #1f5da0, #123a70)
   fill ocean pl
 
   # continents (organic masses, clipped to the sphere)
@@ -86,12 +95,13 @@ draw scene 384x256:
   fill #eef4ff.alpha(18%) curvePoly(210:352, 300:342, 360:356, 300:366, 214:366).intersect(pl)
 
   # spherical light: warm day highlight near the sun, deep falloff to night
-  lightRegion pl light #fff0cc 0.34
-  shadeRegion pl light #04081a 0.82
+  mask pl:
+    fill radial(#fff0cc.alpha(34%), #fff0cc.alpha(0%)) washSpan(sunPt, 470:325)
+    fill radial(#04081a.alpha(0%), #04081a.alpha(82%)) washSpan(sunPt, 470:325)
 
   # city lights on the night side (alpha keyed to distance from the sun)
   scatter c 130 4 pl:
-    px #ffce74.alpha(clamp((dist(c, light) - 380) / 120, 0, 1) * 0.9) c
+    px #ffce74.alpha(clamp((dist(c, sunPt) - 380) / 120, 0, 1) * 0.9) c
 
   # atmosphere: cyan glow hugging the lit limb — inner haze + stacked outer rings
   fill #8fd8ff.alpha(28%) circle(120:430, 300).subtract(circle(120:430, 293))
@@ -107,15 +117,15 @@ draw scene 384x256:
   cy = 106
   metal = #9aa0ad
   rimLit = #fff4dc
-  grad hullG = linear(90, #d6dbe4, #3c414f)
+  gradient hullG = linear(90, #d6dbe4, #3c414f)
 
   ring = ellipse(cx:cy, 120:46).subtract(ellipse(cx:cy, 98:34))
   backRing = ring.intersect(rect(0:0, 383:cy))
   frontRing = ring.intersect(rect(0:cy, 383:255))
   hub = rrect(158:88, 254:124, 16)
 
-  # back arc of the ring (behind the hub)
-  fill metal backRing
+  # back arc of the ring (behind the hub) — a touch darker, so the torus reads in depth
+  fill metal.darken(20%) backRing
   # central hub cylinder (vertical gradient = round cross-section)
   fill hullG hub
   # recessed panel ribs (drawn before shading so the cylinder light unifies them)
@@ -140,15 +150,20 @@ draw scene 384x256:
     line #474c59 (cx + co * 98):(cy + si * 34) (cx + co * 120):(cy + si * 46)
 
   # global light on all station metal (same sun point as the planet)
-  lightRegion ring light #ffffff 0.26
-  shadeRegion ring light #10131d 0.6
-  shadeRegion hub light #14171f 0.30
-  ambientOcclusion ring #0d0f16 0.5
-  # directional sun rim: only the upper-right outer edge
-  rim ring.intersect(rect(cx:44, 340:cy)) -1:1 rimLit 2
+  mask ring:
+    fill radial(#ffffff.alpha(26%), #ffffff.alpha(0%)) washSpan(sunPt, 384:222)
+    fill radial(#10131d.alpha(0%), #10131d.alpha(60%)) washSpan(sunPt, 384:222)
+  mask hub:
+    fill radial(#14171f.alpha(0%), #14171f.alpha(30%)) washSpan(sunPt, 312:194)
+  stroke #0d0f16.alpha(50%) ring
+  # directional sun rim: `edge` takes the ring's own outer band first, the rect then only
+  # selects the upper-right arc — a clip, never a second edge-giver
+  fill rimLit ring.edge(-1:1, 2).intersect(rect(cx:44, 340:cy))
   # planetshine: faint cool bounce light from the planet below on undersides
-  lightRegion hub 206:430 #5aa0e0 0.14
-  lightRegion ring 206:430 #5aa0e0 0.12
+  mask hub:
+    fill radial(#5aa0e0.alpha(14%), #5aa0e0.alpha(0%)) washSpan(planetPt, 48:342)
+  mask ring:
+    fill radial(#5aa0e0.alpha(12%), #5aa0e0.alpha(0%)) washSpan(planetPt, 120:370)
   # subtle brushed-metal grain
   grain hub 0.05 3 #e8ecf2
   grain ring 0.045 4 #e8ecf2
@@ -184,7 +199,7 @@ draw scene 384x256:
   # --- comms dish on a mast over the hub ------------------------------------
   fill st rect(246:60, 250:90)
   stamp dish 248:60 anchor bottom
-  rim ellipse(248:44, 16:14).intersect(rect(248:30, 264:44)) -1:1 rimLit 1
+  fill rimLit ellipse(248:44, 16:14).edge(-1:1).intersect(rect(248:30, 264:44))
 
   # --- nav beacons on the ring (port red / starboard green) -----------------
   fill #ff3838.alpha(28%) circle(88:106, 6)
@@ -211,5 +226,5 @@ draw scene 384x256:
   line #fff6e0.alpha(50%) 356:6 356:38
   px #ffffff 356:22
 
-export scene scenes-v3/orbit:
+export orbit:
   png @1 @4

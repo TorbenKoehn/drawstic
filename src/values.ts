@@ -2,7 +2,7 @@
 // (ADR-0044), regions (ADR-0036/0039), and rendered sprites.
 
 import type { Color } from './color.js'
-import { dcosDeg, dsinDeg, roundHalfUp } from './dmath.js'
+import { datan2, dcosDeg, dhypot, dsinDeg, PI, roundHalfUp } from './dmath.js'
 
 /**
  * A 2D point. `rel` marks a point built with the `rel` keyword inside a `path` pen block — an
@@ -96,6 +96,101 @@ export type Sprite = {
   pal: { key: string; color: Color; source: string }[]
   title: string | undefined
   desc: string | undefined
+  /**
+   * The drawing's exported attach points (ADR-0087): each `pin NAME PT` in the body registers a
+   * named point in this sprite's own local coordinate space, so `fit` can land one part's pin
+   * exactly on another's. `undefined`/empty for a drawing with no pins. Sprites produced by paths,
+   * image imports, tilesets, and atlases carry none.
+   */
+  pins?: ReadonlyMap<string, { readonly x: number; readonly y: number }>
+  /**
+   * The measured result of each declared `behind`/`front` occlusion relation (ADR-0092), captured
+   * during two-phase assembly for `critique`'s C013 occlusion-parity check. `behind`/`front` name the
+   * two parts (behind = the part meant to be under, front = the occluder); `overlap` is how many
+   * pixels their coverages share; `violating` is how many of those the behind-part is still the
+   * visible top of in the final composite (0 ⇒ the declared occlusion holds). `undefined`/empty for a
+   * drawing with no relations.
+   */
+  occlusions?: readonly OcclusionResult[]
+}
+
+/** One measured occlusion relation (ADR-0092, C013 support). See {@link Sprite.occlusions}. */
+export type OcclusionResult = {
+  readonly behind: string
+  readonly front: string
+  readonly clause: 'behind' | 'front'
+  readonly overlap: number
+  readonly violating: number
+}
+
+/**
+ * A first-class light source (ADR-0086). `dir` is the unit vector of the light's *travel*
+ * direction: `dir 1:1` means light moving down-right, so its source sits up-left and the lit
+ * edge is the up-left one. When `pos` is set the light is a point source at that canvas
+ * coordinate and `dir` is derived per region (source → region) rather than used verbatim —
+ * see {@link Light} consumers in `shading.ts`. `color` is the (warm) light colour, `gain`
+ * scales every derived shading dose (intensity, default 1), and `amb` is the optional
+ * fill/ambient light — a cool colour plus a 0..1 amount that lifts shadows so they never go
+ * pure black. Constructed via {@link light}; `dir` is always normalized.
+ */
+export type Light = {
+  type: 'light'
+  dir: { readonly x: number; readonly y: number }
+  pos: { readonly x: number; readonly y: number } | null
+  color: Color
+  gain: number
+  amb: { readonly color: Color; readonly amount: number } | null
+}
+
+/**
+ * Material response families (ADR-0086); each selects a baked dose profile in `shading.ts`. The
+ * single source of truth is {@link MATERIAL_RESPONSES} — {@link MaterialResponse} derives from it
+ * so the parser's contextual keyword set (a response word is a keyword *only* in a `material`
+ * binding's response slot) and the engine's dose table can never drift apart.
+ */
+export const MATERIAL_RESPONSES = ['flat', 'metal', 'skin', 'cloth', 'glass', 'glow'] as const
+export type MaterialResponse = (typeof MATERIAL_RESPONSES)[number]
+
+/** Whether `s` names a material response — the contextual keyword test used by parser and eval. */
+export const isMaterialResponse = (s: string): s is MaterialResponse =>
+  (MATERIAL_RESPONSES as readonly string[]).includes(s)
+
+/**
+ * Form-shading profiles (ADR-0091): how the Poisson height field inflates a region. `round` (the
+ * default) solves the isotropic 2D field — a disc becomes a hemisphere, a stripe a half-cylinder,
+ * darkening symmetrically toward every boundary. `drape` solves a **per-row 1D** field instead
+ * (curvature only *across* each horizontal row, flat along its length): a hanging cloak/drape reads
+ * as a vertical half-tube that does not darken toward its hem and whose lower edge stands off,
+ * instead of curling into a downward-darkening "turtle shell" the isotropic field produces on a long
+ * skirt. A contextual keyword in a `material` binding's trailing slot, like a response word.
+ */
+export const FORM_PROFILES = ['round', 'drape'] as const
+export type FormProfile = (typeof FORM_PROFILES)[number]
+
+/** Whether `s` names a form profile — the contextual keyword test used by parser and eval. */
+export const isFormProfile = (s: string): s is FormProfile =>
+  (FORM_PROFILES as readonly string[]).includes(s)
+
+/**
+ * A first-class material (ADR-0086, ADR-0091): a base colour plus a `response` that selects a baked
+ * shading dose profile — never the colour, which stays the author's choice. The optional
+ * `shade`/`hi`/`rim`/`ao`/`spec` fields override individual doses of that profile when present;
+ * `puff` overrides the response's surface-curvature gain, and `spread` scales `hi`+`shade`
+ * symmetrically (the one-knob value-spread control that replaces hand `.intersect` tone patches).
+ * Constructed via {@link material}.
+ */
+export type Material = {
+  type: 'material'
+  base: Color
+  response: MaterialResponse
+  shade?: number
+  hi?: number
+  rim?: number
+  ao?: number
+  spec?: number
+  puff?: number
+  spread?: number
+  profile?: FormProfile
 }
 
 export type Value =
@@ -110,6 +205,11 @@ export type Value =
   | Region
   | Path
   | Sprite
+  | Light
+  | Material
+  | Figure
+  | Skeleton
+  | Pose
 
 export const point = (x: number, y: number, rel = false): Point => ({ type: 'point', x, y, rel })
 export const list = (items: Value[]): List => ({ type: 'list', items })
@@ -119,6 +219,370 @@ export const path = (
   viewBox?: { readonly width: number; readonly height: number },
   region?: Region,
 ): Path => ({ type: 'path', contours, commands, viewBox, region })
+
+/** Normalize a 2D vector to unit length; a zero vector falls back to straight-down `(0, 1)`. */
+export const unitVec = (x: number, y: number): { x: number; y: number } => {
+  const len = dhypot(x, y)
+  return len < 1e-9 ? { x: 0, y: 1 } : { x: x / len, y: y / len }
+}
+
+/**
+ * Construct a {@link Light} (pure, deterministic). `dir` — the light's travel direction — is
+ * always normalized; a point light (`pos` set) keeps a nominal `dir` (default straight-down)
+ * that `shading.ts` overrides per region. `gain` defaults to 1, `amb` to none.
+ */
+export const light = (spec: {
+  dir?: { x: number; y: number }
+  pos?: { x: number; y: number } | null
+  color: Color
+  gain?: number
+  amb?: { color: Color; amount: number } | null
+}): Light => ({
+  type: 'light',
+  dir: unitVec(spec.dir?.x ?? 0, spec.dir?.y ?? 1),
+  pos: spec.pos ?? null,
+  color: spec.color,
+  gain: spec.gain ?? 1,
+  amb: spec.amb ?? null,
+})
+
+/**
+ * Construct a {@link Material} (pure, deterministic). `response` defaults to `flat`. Dose
+ * overrides are attached only when defined (satisfies `exactOptionalPropertyTypes`).
+ */
+export const material = (
+  base: Color,
+  response: MaterialResponse = 'flat',
+  overrides: {
+    shade?: number
+    hi?: number
+    rim?: number
+    ao?: number
+    spec?: number
+    puff?: number
+    spread?: number
+    profile?: FormProfile
+  } = {},
+): Material => ({
+  type: 'material',
+  base,
+  response,
+  ...(overrides.shade !== undefined ? { shade: overrides.shade } : {}),
+  ...(overrides.hi !== undefined ? { hi: overrides.hi } : {}),
+  ...(overrides.rim !== undefined ? { rim: overrides.rim } : {}),
+  ...(overrides.ao !== undefined ? { ao: overrides.ao } : {}),
+  ...(overrides.spec !== undefined ? { spec: overrides.spec } : {}),
+  ...(overrides.puff !== undefined ? { puff: overrides.puff } : {}),
+  ...(overrides.spread !== undefined ? { spread: overrides.spread } : {}),
+  ...(overrides.profile !== undefined ? { profile: overrides.profile } : {}),
+})
+
+// ── figure proportions oracle (ADR-0093) ───────────────────────────────────
+
+/** Which projection of a figure a guide point is read for. */
+export const FIGURE_VIEWS = ['front', 'side', 'back'] as const
+export type FigureView = (typeof FIGURE_VIEWS)[number]
+
+/** Whether `s` names a figure view — the contextual keyword test used by the `fig` getters. */
+export const isFigureView = (s: string): s is FigureView =>
+  (FIGURE_VIEWS as readonly string[]).includes(s)
+
+/**
+ * The resolved proportion numbers a {@link Figure} carries (ADR-0093). `heads` is the figure's total
+ * height in head-heights; `headW`/`neckW`/`shoulderW`/`hipW`/`eyeSep` are pixel widths; `eyeLine`/
+ * `earLine` are fractions of the head height measured from the crown. These are the PROJECT's numbers
+ * (declared in a theme's `figure` block) — the engine derives named guide points from them, so an
+ * author reads a position instead of inventing it.
+ */
+export type FigureProps = {
+  readonly heads: number
+  readonly headW: number
+  readonly eyeLine: number
+  readonly earLine: number
+  readonly eyeSep: number
+  readonly neckW: number
+  readonly shoulderW: number
+  readonly hipW: number
+}
+/** The declared subset of {@link FigureProps} (a theme need only state what differs from the defaults). */
+export type FigureSpec = Partial<FigureProps>
+
+/**
+ * A first-class figure proportions value (ADR-0093), bound as `fig` in a drawing whose theme declares
+ * a `figure` block. It maps the theme's proportion numbers onto the drawing's own `w`×`h` canvas and
+ * a `view`, exposing named guide points (`fig.crown`, `fig.eyeL`, `fig.earR`, `fig.neckL`, …) and
+ * scalars (`fig.headH`, `fig.headW`, …) — see {@link figureField}. `fig.front`/`fig.side`/`fig.back`
+ * re-view the same numbers; view-dependent getters take the view from that or an optional argument.
+ */
+export type Figure = {
+  type: 'figure'
+  readonly w: number
+  readonly h: number
+  readonly view: FigureView
+  readonly props: FigureProps
+}
+
+/**
+ * Resolve a {@link FigureSpec} into full {@link FigureProps}: canvas-independent defaults, with the
+ * derived widths (`eyeSep`/`neckW`/`shoulderW`/`hipW`) scaling off `headW` when not stated so a theme
+ * that declares only `headW` still gets a coherent set.
+ */
+export const figure = (
+  w: number,
+  h: number,
+  spec: FigureSpec,
+  view: FigureView = 'front',
+): Figure => {
+  const headW = spec.headW ?? 24
+  const props: FigureProps = {
+    heads: spec.heads ?? 4,
+    headW,
+    eyeLine: spec.eyeLine ?? 0.6,
+    earLine: spec.earLine ?? 0.55,
+    eyeSep: spec.eyeSep ?? headW * 0.42,
+    neckW: spec.neckW ?? headW * 0.5,
+    shoulderW: spec.shoulderW ?? headW * 1.5,
+    hipW: spec.hipW ?? headW * 1.15,
+  }
+  return { type: 'figure', w, h, view, props }
+}
+
+/** The result of reading one {@link Figure} field: a scalar, a guide point, or a re-viewed figure. */
+export type FigureField =
+  | { readonly kind: 'num'; readonly value: number }
+  | { readonly kind: 'point'; readonly x: number; readonly y: number }
+  | { readonly kind: 'figure'; readonly figure: Figure }
+
+/**
+ * Read a named guide value off a figure (ADR-0093), pure and deterministic. The figure is laid out
+ * over its full canvas height: the crown sits at `y=0`, one head is `h/heads` tall, so `chin`, the
+ * eye/ear lines, the shoulder and hip lines all fall out of the head height. Widths come straight from
+ * the props. View selection: `front`/`side`/`back` return a re-viewed figure; every other name is a
+ * scalar (`kind:'num'`) or a guide point (`kind:'point'`). Side view faces `+x`, so its single eye is
+ * shifted forward off centre and its ear sits toward the back — the structural fix for "eyes too
+ * central in profile". Returns `undefined` for an unknown name.
+ */
+export const figureField = (fig: Figure, name: string): FigureField | undefined => {
+  if (isFigureView(name)) {
+    return { kind: 'figure', figure: { ...fig, view: name } }
+  }
+  const { w, h, view, props } = fig
+  const cx = w / 2
+  const headH = props.heads > 0 ? h / props.heads : h
+  const crownY = 0
+  const chinY = headH
+  const eyeY = props.eyeLine * headH
+  const earY = props.earLine * headH
+  const shoulderY = headH * 1.3
+  const hipY = h * 0.5
+  const num = (value: number): FigureField => ({ kind: 'num', value })
+  const pt = (x: number, y: number): FigureField => ({ kind: 'point', x, y })
+  const facing = props.headW * 0.28
+  const earBack = props.headW * 0.18
+  switch (name) {
+    // scalars
+    case 'heads':
+      return num(props.heads)
+    case 'headW':
+      return num(props.headW)
+    case 'headH':
+      return num(headH)
+    case 'eyeLine':
+      return num(props.eyeLine)
+    case 'earLine':
+      return num(props.earLine)
+    case 'eyeSep':
+      return num(props.eyeSep)
+    case 'neckW':
+      return num(props.neckW)
+    case 'shoulderW':
+      return num(props.shoulderW)
+    case 'hipW':
+      return num(props.hipW)
+    case 'center':
+      return num(cx)
+    case 'eyeY':
+      return num(eyeY)
+    case 'earY':
+      return num(earY)
+    case 'crownY':
+      return num(crownY)
+    case 'chinY':
+      return num(chinY)
+    case 'shoulderY':
+      return num(shoulderY)
+    case 'hipY':
+      return num(hipY)
+    // view-independent guide points
+    case 'crown':
+      return pt(cx, crownY)
+    case 'chin':
+      return pt(cx, chinY)
+    case 'neck':
+      return pt(cx, chinY)
+    case 'neckL':
+      return pt(cx - props.neckW / 2, chinY)
+    case 'neckR':
+      return pt(cx + props.neckW / 2, chinY)
+    case 'shoulder':
+      return pt(cx, shoulderY)
+    case 'hip':
+      return pt(cx, hipY)
+    // view-dependent guide points
+    case 'eye':
+      return view === 'side' ? pt(cx + facing, eyeY) : pt(cx, eyeY)
+    case 'eyeL':
+      return view === 'side' ? pt(cx + facing, eyeY) : pt(cx - props.eyeSep / 2, eyeY)
+    case 'eyeR':
+      return view === 'side' ? pt(cx + facing, eyeY) : pt(cx + props.eyeSep / 2, eyeY)
+    case 'ear':
+      return view === 'side' ? pt(cx - earBack, earY) : pt(cx + props.headW / 2, earY)
+    case 'earL':
+      return view === 'side' ? pt(cx - earBack, earY) : pt(cx - props.headW / 2, earY)
+    case 'earR':
+      return view === 'side' ? pt(cx - earBack, earY) : pt(cx + props.headW / 2, earY)
+    case 'shoulderL':
+      return view === 'side'
+        ? pt(cx - props.shoulderW * 0.18, shoulderY)
+        : pt(cx - props.shoulderW / 2, shoulderY)
+    case 'shoulderR':
+      return view === 'side'
+        ? pt(cx + props.shoulderW * 0.18, shoulderY)
+        : pt(cx + props.shoulderW / 2, shoulderY)
+    case 'hipL':
+      return view === 'side' ? pt(cx - props.hipW * 0.18, hipY) : pt(cx - props.hipW / 2, hipY)
+    case 'hipR':
+      return view === 'side' ? pt(cx + props.hipW * 0.18, hipY) : pt(cx + props.hipW / 2, hipY)
+    default:
+      return undefined
+  }
+}
+
+// ── skeleton / pose (ADR-0095) ──────────────────────────────────────────────
+
+/**
+ * One joint of a {@link Skeleton} rig (ADR-0095): a node in the parent-tree. A joint is either
+ * **anchored** (`anchor` set — its position is a fixed point, typically a `fig` guide point, so the
+ * rig binds to the same proportion numbers as the figure oracle, ADR-0093) or **FK** (`anchor` null —
+ * its position is derived by forward kinematics from `restAngle` + `length` off its parent). `limit`
+ * bounds the pose delta this joint may take (degrees); `null` = unconstrained.
+ */
+export type SkeletonJoint = {
+  readonly name: string
+  readonly parent: string | null
+  readonly anchor: { readonly x: number; readonly y: number } | null
+  readonly restAngle: number
+  readonly length: number
+  readonly limit: { readonly min: number; readonly max: number } | null
+}
+
+/**
+ * A skeleton rig (ADR-0095): a named parent-tree of {@link SkeletonJoint}s (parents precede children).
+ * A first-class value, resolved over a drawing's canvas + figure oracle when a `pose` is applied.
+ */
+export type Skeleton = {
+  type: 'skeleton'
+  readonly name: string
+  readonly joints: readonly SkeletonJoint[]
+}
+
+/**
+ * A pose over a skeleton (ADR-0095): per-joint angle **deltas** (added to each joint's rest angle),
+ * the `view` it projects, and per-joint auto-Z **depth** (higher = nearer the viewer). A first-class
+ * value; applied in a drawing with `pose NAME`, which solves the skeleton and binds bone anchors.
+ */
+export type Pose = {
+  type: 'pose'
+  readonly name: string
+  readonly skeleton: string
+  readonly view: FigureView
+  readonly deltas: ReadonlyMap<string, number>
+  readonly depth: ReadonlyMap<string, number>
+}
+
+/**
+ * A joint after forward kinematics (ADR-0095): its posed world position, the world angle in both the
+ * rest and posed configurations, and the accumulated `angleDelta` (posed − rest) a part fitted to the
+ * bone inherits as its orientation. `depth` is the joint's view depth (auto-Z ordering key).
+ */
+export type SolvedJoint = {
+  readonly name: string
+  readonly parent: string | null
+  readonly x: number
+  readonly y: number
+  readonly px: number
+  readonly py: number
+  readonly worldAngle: number
+  readonly restWorldAngle: number
+  readonly angleDelta: number
+  readonly depth: number
+}
+
+/**
+ * Solve a {@link Skeleton} into world-space {@link SolvedJoint}s (ADR-0095), pure and deterministic
+ * (dmath only). Walks the joints in declared order (parents first): an **anchored** joint sits at its
+ * fixed point and its bone direction is measured from its parent; an **FK** joint is placed at
+ * `parent + length·(cos, sin)` of the accumulated world angle. Pose deltas add to each joint's local
+ * angle, so a delta on a parent rotates the whole subtree (proper forward kinematics). A part fitted
+ * to a joint inherits its posed position and its `angleDelta`.
+ */
+export const solveSkeleton = (
+  skel: Skeleton,
+  deltas: ReadonlyMap<string, number>,
+  depth: ReadonlyMap<string, number>,
+): SolvedJoint[] => {
+  const solved = new Map<string, SolvedJoint>()
+  const out: SolvedJoint[] = []
+  for (const j of skel.joints) {
+    const delta = deltas.get(j.name) ?? 0
+    const parent = j.parent !== null ? solved.get(j.parent) : undefined
+    let x: number
+    let y: number
+    let px: number
+    let py: number
+    let restWorldAngle: number
+    let worldAngle: number
+    if (j.anchor) {
+      x = j.anchor.x
+      y = j.anchor.y
+      px = parent ? parent.x : x
+      py = parent ? parent.y : y
+      // The bone direction of an anchored joint is measured from its parent (0 for a parentless root).
+      restWorldAngle = parent ? (datan2(y - py, x - px) * 180) / PI : 0
+      worldAngle = restWorldAngle + delta
+    } else if (parent) {
+      px = parent.x
+      py = parent.y
+      restWorldAngle = parent.restWorldAngle + j.restAngle
+      worldAngle = parent.worldAngle + j.restAngle + delta
+      x = px + j.length * dcosDeg(worldAngle)
+      y = py + j.length * dsinDeg(worldAngle)
+    } else {
+      // FK root with no anchor: sits at the origin, its rest angle is its world base.
+      x = 0
+      y = 0
+      px = 0
+      py = 0
+      restWorldAngle = j.restAngle
+      worldAngle = j.restAngle + delta
+    }
+    const sj: SolvedJoint = {
+      name: j.name,
+      parent: j.parent,
+      x,
+      y,
+      px,
+      py,
+      worldAngle,
+      restWorldAngle,
+      angleDelta: worldAngle - restWorldAngle,
+      depth: depth.get(j.name) ?? 0,
+    }
+    solved.set(j.name, sj)
+    out.push(sj)
+  }
+  return out
+}
 
 export const isObj = (v: Value): v is Exclude<Value, number | boolean | string> =>
   typeof v === 'object' && v !== null
@@ -369,7 +833,8 @@ export const circleSpans = (r: number): number[] => {
  * axis — `2·ri` pixels wide/tall — with the disc centred at the pixel-corner
  * `(cx-0.5, cy-0.5)` so the declared radius yields a balanced pixel-perfect
  * diameter; `r = 0` is a single pixel (ADR-0056, supersedes the odd-footprint rule
- * of ADR-0028 §3).
+ * of ADR-0028 §3). {@link ellipseRegion} shares this convention (ADR-0087), so a
+ * circle is exactly the `rx === ry` ellipse — one centering rule for both shapes.
  */
 export const circleRegion = (cx: number, cy: number, r: number): Region => {
   const ri = Math.max(0, roundHalfUp(r))
@@ -403,88 +868,58 @@ export const circleRegion = (cx: number, cy: number, r: number): Region => {
   }
 }
 
-/** Midpoint-ellipse span table per |dy| (integer two-region algorithm). */
-export const ellipseSpans = (rx: number, ry: number): number[] => {
-  const spans = new Array<number>(ry + 1).fill(-1)
-  if (rx === 0 || ry === 0) {
-    for (let i = 0; i <= ry; i++) {
-      spans[i] = rx === 0 ? 0 : rx
-    }
-    if (ry === 0) {
-      spans[0] = rx
-    }
-    return spans
-  }
-  const rx2 = rx * rx
-  const ry2 = ry * ry
-  let x = 0
-  let y = ry
-  let d1 = ry2 - rx2 * ry + 0.25 * rx2
-  let dx = 2 * ry2 * x
-  let dy = 2 * rx2 * y
-  while (dx < dy) {
-    if ((spans[y] ?? -1) < x) {
-      spans[y] = x
-    }
-    if (d1 < 0) {
-      x++
-      dx += 2 * ry2
-      d1 += dx + ry2
-    } else {
-      x++
-      y--
-      dx += 2 * ry2
-      dy -= 2 * rx2
-      d1 += dx - dy + ry2
-    }
-  }
-  let d2 = ry2 * ((x + 0.5) * (x + 0.5)) + rx2 * ((y - 1) * (y - 1)) - rx2 * ry2
-  while (y >= 0) {
-    if ((spans[y] ?? -1) < x) {
-      spans[y] = x
-    }
-    if (d2 > 0) {
-      y--
-      dy -= 2 * rx2
-      d2 += rx2 - dy
-    } else {
-      y--
-      x++
-      dx += 2 * ry2
-      dy -= 2 * rx2
-      d2 += dx - dy + rx2
-    }
-  }
-  return spans
-}
-
 /**
- * Odd `(2·rx+1) × (2·ry+1)` footprint centred on the integer pixel `(cx, cy)` —
- * unlike {@link circleRegion}, `ellipse` keeps the original integer-radius
- * centering rule (ADR-0028 §3).
+ * Even-diameter ellipse — `circle` with independent `rx`/`ry` (ADR-0087). Mirrors
+ * {@link circleRegion}'s convention exactly: each axis spans a `2·ri` pixel
+ * footprint (`cx-rxi..cx+rxi-1` × `cy-ryi..cy+ryi-1`, `ri = round(r)`) with the disc
+ * centred at the pixel-corner `(cx-0.5, cy-0.5)`, so `ellipseRegion(cx, cy, r, r)`
+ * is pixel-identical to `circleRegion(cx, cy, r)`. A zero axis collapses to the
+ * single integer column/row `cx`/`cy` (the `r=0` dot generalized per axis); both
+ * zero is one pixel. Supersedes the odd integer-pixel-centred rule of ADR-0028 §3
+ * the same way ADR-0056 did for `circle`. The membership test is cross-multiplied
+ * to integers (`dx²·ryi² + dy²·rxi² ≤ (rxi·ryi)²`) so it is exact and reduces to
+ * `circleRegion`'s `dx² + dy² ≤ ri²` when `rxi === ryi`.
  */
 export const ellipseRegion = (cx: number, cy: number, rx: number, ry: number): Region => {
   const rxi = Math.max(0, roundHalfUp(rx))
   const ryi = Math.max(0, roundHalfUp(ry))
-  const spans = ellipseSpans(rxi, ryi)
+  const x0 = rxi === 0 ? cx : cx - rxi
+  const x1 = rxi === 0 ? cx : cx + rxi - 1
+  const y0 = ryi === 0 ? cy : cy - ryi
+  const y1 = ryi === 0 ? cy : cy + ryi - 1
+  const pcx = cx - 0.5
+  const pcy = cy - 0.5
+  const inBox = (x: number, y: number): boolean => x >= x0 && x <= x1 && y >= y0 && y <= y1
+  // Continuous coverage (smooth mode): the same corner-centred ellipse, cross-
+  // multiplied to sidestep a divide-by-zero on a degenerate axis; matches
+  // circleRegion.test when rx === ry.
+  const test = (fx: number, fy: number): boolean => {
+    if (rx === 0 || ry === 0) {
+      return false
+    }
+    const dx = (fx - pcx) * ry
+    const dy = (fy - pcy) * rx
+    return dx * dx + dy * dy <= rx * rx * ry * ry
+  }
+  // A degenerate axis is already a 1px line/dot, so its bbox is its coverage.
+  if (rxi === 0 || ryi === 0) {
+    return { type: 'region', bbox: { x0, y0, x1, y1 }, has: inBox, test }
+  }
+  const rx2 = rxi * rxi
+  const ry2 = ryi * ryi
+  const limit = rx2 * ry2
   return {
     type: 'region',
-    bbox: { x0: cx - rxi, y0: cy - ryi, x1: cx + rxi, y1: cy + ryi },
+    bbox: { x0, y0, x1, y1 },
     has: (x, y) => {
-      const dy = Math.abs(y - cy)
-      if (dy > ryi) {
+      if (!inBox(x, y)) {
         return false
       }
-      return Math.abs(x - cx) <= (spans[dy] ?? -1)
+      const dx = x - pcx
+      const dy = y - pcy
+      return dx * dx * ry2 + dy * dy * rx2 <= limit
     },
-    test: (fx, fy) => {
-      if (rx === 0 || ry === 0) {
-        return false
-      }
-      const dx = (fx - cx) / rx
-      const dy = (fy - cy) / ry
-      return dx * dx + dy * dy <= 1
-    },
+    test,
   }
 }
 
@@ -709,6 +1144,190 @@ export const regionXor = (a: Region, b: Region): Region => ({
   has: (x, y) => a.has(x, y) !== b.has(x, y),
   test: (fx, fy) => a.test(fx, fy) !== b.test(fx, fy),
 })
+
+// ── organic region constructors (ADR-0093) ──────────────────────────────────
+// Style-neutral parametric shapes for heads/ears/hair/headwear: LLMs are poor at inventing point
+// lists but good at parametrising named forms. All four share the even-diameter, corner-centred
+// convention (ADR-0056/ADR-0087) — membership is sampled at the pixel corner so a symmetric shape
+// gets a balanced `2·r` footprint — and are exact analytic tests (no polyline blocking at small
+// sizes). Each is a first-class Region: maskable, model/cel-shadeable, and outline-able.
+
+/**
+ * Dome / cap (ADR-0093): the upper half of {@link ellipseRegion}`(cx, cy, rx, ry)` with a flat
+ * bottom edge — a skull, helmet, or hat crown. It occupies rows `cy-ry .. cy-1` (the flat edge is the
+ * widest row `cy-1`), so `(cx, cy)` is the pixel-corner centre of the flat base. By construction
+ * `dome(c, rx, ry).has(x, y) === ellipse(c, rx, ry).has(x, y) && y <= cy-1` — one convention shared
+ * with the ellipse it is half of.
+ */
+export const domeRegion = (cx: number, cy: number, rx: number, ry: number): Region => {
+  const rxi = Math.max(0, roundHalfUp(rx))
+  const ryi = Math.max(0, roundHalfUp(ry))
+  if (rxi === 0 || ryi === 0) {
+    return emptyRegion
+  }
+  const full = ellipseRegion(cx, cy, rx, ry)
+  return {
+    type: 'region',
+    bbox: { x0: cx - rxi, y0: cy - ryi, x1: cx + rxi - 1, y1: cy - 1 },
+    has: (x, y) => y <= cy - 1 && full.has(x, y),
+    test: (fx, fy) => fy <= cy - 0.5 && full.test(fx, fy),
+  }
+}
+
+/**
+ * Lobe / teardrop (ADR-0093): round at `base` (a semicircle cap of diameter `w`), tapering smoothly
+ * to a point at `tip` — ears, hair strands, a side nose, a plume, a hat tassel. The half-width along
+ * the base→tip axis is `w/2` at the base and shrinks as a half-ellipse to 0 at the tip (C¹-smooth at
+ * the base join). Exact analytic membership (axial + perpendicular projection), sampled at the pixel
+ * corner so a vertical lobe gets a symmetric even footprint.
+ */
+export const lobeRegion = (bx: number, by: number, tx: number, ty: number, w: number): Region => {
+  const r = Math.max(0.5, w / 2)
+  const dx = tx - bx
+  const dy = ty - by
+  const len = dhypot(dx, dy)
+  const ux = len < 1e-9 ? 0 : dx / len
+  const uy = len < 1e-9 ? 1 : dy / len
+  const inside = (px: number, py: number): boolean => {
+    const rx0 = px - bx
+    const ry0 = py - by
+    const s = rx0 * ux + ry0 * uy // axial distance from base
+    const perp = Math.abs(-rx0 * uy + ry0 * ux) // perpendicular distance
+    if (s < 0) {
+      return dhypot(s, perp) <= r // rounded base cap
+    }
+    if (s > len) {
+      return false
+    }
+    const frac = len < 1e-9 ? 0 : s / len
+    const hw = r * Math.sqrt(Math.max(0, 1 - frac * frac))
+    return perp <= hw
+  }
+  const pad = Math.ceil(r) + 1
+  const x0 = Math.floor(Math.min(bx, tx)) - pad
+  const y0 = Math.floor(Math.min(by, ty)) - pad
+  const x1 = Math.ceil(Math.max(bx, tx)) + pad
+  const y1 = Math.ceil(Math.max(by, ty)) + pad
+  return {
+    type: 'region',
+    bbox: { x0, y0, x1, y1 },
+    has: (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1 && inside(x + 0.5, y + 0.5),
+    test: (fx, fy) => inside(fx + 0.5, fy + 0.5),
+  }
+}
+
+/**
+ * Crescent / lune (ADR-0093): an outer {@link ellipseRegion} with an inner ellipse — `thick` px
+ * smaller on each axis and shifted `thick` px toward `dir` — subtracted out. The band is thickest on
+ * the side opposite `dir` and tapers to nothing on the `dir` side, opening the crescent that way:
+ * hair fringes, hat-brim curves, eyelids, shells. Because it is built from two `ellipseRegion`s it
+ * inherits their even-diameter convention exactly. A `thick` at/above a radius yields the full
+ * (solid) ellipse.
+ */
+export const crescentRegion = (
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  thick: number,
+  dirx: number,
+  diry: number,
+): Region => {
+  const t = Math.max(0, thick)
+  const outer = ellipseRegion(cx, cy, rx, ry)
+  const irx = rx - t
+  const iry = ry - t
+  if (irx <= 0 || iry <= 0) {
+    return outer
+  }
+  const u = unitVec(dirx, diry)
+  const inner = ellipseRegion(cx + roundHalfUp(u.x * t), cy + roundHalfUp(u.y * t), irx, iry)
+  return regionSubtract(outer, inner)
+}
+
+/**
+ * Ribbon (ADR-0093; ADR-0096 §2 renamed from `band` — `band` already means cel band, ripple
+ * band, gradient band): a constant-width sweep of `w` px along the quadratic arc that passes
+ * through `p0`, `p1` (mid), and `p2` — a curved hat band, a belt, and, stacked, turban wraps.
+ * The arc is flattened to a dense polyline (so there is no low-resolution bezier blocking) and
+ * membership is the exact min-distance-to-the-polyline test, giving round end caps and a smooth,
+ * even-width ribbon at any size. Sampled at the pixel corner for a balanced footprint.
+ */
+export const ribbonRegion = (
+  p0x: number,
+  p0y: number,
+  p1x: number,
+  p1y: number,
+  p2x: number,
+  p2y: number,
+  w: number,
+): Region => {
+  const hw = Math.max(0.5, w / 2)
+  // Control point of the quadratic Bézier that interpolates p1 at t=0.5 (a true 3-point arc).
+  const cxc = 2 * p1x - (p0x + p2x) / 2
+  const cyc = 2 * p1y - (p0y + p2y) / 2
+  const chord = dhypot(p1x - p0x, p1y - p0y) + dhypot(p2x - p1x, p2y - p1y)
+  const n = Math.max(8, Math.min(160, Math.ceil(chord)))
+  const pts: { x: number; y: number }[] = []
+  for (let i = 0; i <= n; i++) {
+    const s = i / n
+    const om = 1 - s
+    pts.push({
+      x: om * om * p0x + 2 * om * s * cxc + s * s * p2x,
+      y: om * om * p0y + 2 * om * s * cyc + s * s * p2y,
+    })
+  }
+  const segDist2 = (
+    px: number,
+    py: number,
+    ax: number,
+    ay: number,
+    bx: number,
+    by: number,
+  ): number => {
+    const vx = bx - ax
+    const vy = by - ay
+    const wx = px - ax
+    const wy = py - ay
+    const vv = vx * vx + vy * vy
+    const tt = vv < 1e-12 ? 0 : Math.max(0, Math.min(1, (wx * vx + wy * vy) / vv))
+    const qx = ax + tt * vx - px
+    const qy = ay + tt * vy - py
+    return qx * qx + qy * qy
+  }
+  const hw2 = hw * hw
+  const inside = (px: number, py: number): boolean => {
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i] as { x: number; y: number }
+      const b = pts[i + 1] as { x: number; y: number }
+      if (segDist2(px, py, a.x, a.y, b.x, b.y) <= hw2) {
+        return true
+      }
+    }
+    return false
+  }
+  let bx0 = Number.POSITIVE_INFINITY
+  let by0 = Number.POSITIVE_INFINITY
+  let bx1 = Number.NEGATIVE_INFINITY
+  let by1 = Number.NEGATIVE_INFINITY
+  for (const p of pts) {
+    bx0 = Math.min(bx0, p.x)
+    by0 = Math.min(by0, p.y)
+    bx1 = Math.max(bx1, p.x)
+    by1 = Math.max(by1, p.y)
+  }
+  const pad = Math.ceil(hw) + 1
+  const x0 = Math.floor(bx0) - pad
+  const y0 = Math.floor(by0) - pad
+  const x1 = Math.ceil(bx1) + pad
+  const y1 = Math.ceil(by1) + pad
+  return {
+    type: 'region',
+    bbox: { x0, y0, x1, y1 },
+    has: (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1 && inside(x + 0.5, y + 0.5),
+    test: (fx, fy) => inside(fx + 0.5, fy + 0.5),
+  }
+}
 
 /** Apply a first-class transform to a region: inverse-map membership. */
 export const regionTransform = (

@@ -1,4 +1,5 @@
 // Unit tests for the family contact-sheet composer (src/sheet.ts, ADR-0082):
+import { join } from 'node:path'
 // selection rules and deterministic layout math, driven directly against the
 // Engine rather than through the CLI.
 
@@ -9,7 +10,7 @@ import { buildSheet, composeSheet, selectSheetDrawings } from '../../src/sheet.j
 let n = 0
 const load = (src: string): { engine: Engine; mod: ModuleRecord } => {
   const engine = new Engine(process.cwd())
-  const mod = engine.loadSource(src, `${process.cwd()}\\sheet${n++}.drw`, 'sheet.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `sheet${n++}.drw`), 'sheet.drw')
   return { engine, mod }
 }
 

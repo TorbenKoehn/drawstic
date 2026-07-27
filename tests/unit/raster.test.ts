@@ -15,12 +15,10 @@ import {
   filterDither,
   filterGrain,
   filterOutline,
-  filterReplace,
   filterRipple,
   filterShadow,
   filterSpeckle,
   filterTint,
-  flood,
   lightRegion,
   type Paint,
   PixelSink,
@@ -31,8 +29,6 @@ import {
   quantInt,
   rimRegion,
   scaleBitmap,
-  shadeRegion,
-  shadeRegionLegacy,
   stampSprite,
   strokeLine,
   strokePath,
@@ -40,15 +36,20 @@ import {
   type UserFontResolved,
 } from '../../src/raster.js'
 import {
+  aboutPoint,
   circleRegion,
+  compose,
   type Grad,
+  IDENTITY,
   multiplyMatrix,
   perspectiveMatrix,
   type Region,
   rectRegion,
+  rotationDeg,
   rotationYDeg,
   type Sprite,
   scaling,
+  translation,
 } from '../../src/values.js'
 
 const ctx = (w: number, h: number, mode: 'pixel' | 'smooth' = 'pixel'): Context => ({
@@ -358,35 +359,6 @@ describe('strokePath', () => {
   })
 })
 
-describe('flood', () => {
-  test('no-ops when the seed is off-canvas', () => {
-    const c = ctx(4, 4)
-    flood(c, -1, -1, red, () => {})
-    expect(px(c, 0, 0)).toEqual([0, 0, 0, 0])
-  })
-
-  test('4-connected fill from a canvas corner, revisiting cells via the visited set', () => {
-    const c = ctx(5, 5)
-    let ticks = 0
-    flood(c, 0, 0, red, () => {
-      ticks++
-    })
-    expect(ticks).toBeGreaterThan(0)
-    expect(px(c, 0, 0)).toEqual([255, 0, 0, 255])
-    expect(px(c, 4, 4)).toEqual([255, 0, 0, 255])
-  })
-
-  test('stops at an exact-color boundary and leaves the boundary itself untouched', () => {
-    const c = ctx(6, 1)
-    c.buffer.set(3, 0, black)
-    flood(c, 0, 0, red, () => {})
-    expect(px(c, 0, 0)).toEqual([255, 0, 0, 255])
-    expect(px(c, 2, 0)).toEqual([255, 0, 0, 255])
-    expect(px(c, 3, 0)).toEqual([0, 0, 0, 255]) // boundary unchanged
-    expect(px(c, 5, 0)).toEqual([0, 0, 0, 0]) // beyond the boundary, untouched
-  })
-})
-
 describe('stampSprite', () => {
   const sprite: Sprite = {
     type: 'sprite',
@@ -454,6 +426,259 @@ describe('stampSprite', () => {
   })
 })
 
+describe('stampSprite aa (ADR-0099 opt-in filtered resampling)', () => {
+  test('half-pixel shift spreads one texel across two at alpha 128', () => {
+    const onePx: Sprite = {
+      type: 'sprite',
+      name: 't',
+      w: 1,
+      h: 1,
+      data: new Uint8Array([255, 0, 0, 255]),
+      pal: [],
+      title: undefined,
+      desc: undefined,
+    }
+    const m = translation(0.5, 0)
+    const aa = ctx(4, 2)
+    stampSprite(aa, onePx, 0, 0, m, undefined, undefined, true)
+    expect(px(aa, 0, 0)).toEqual([255, 0, 0, 128])
+    expect(px(aa, 1, 0)).toEqual([255, 0, 0, 128])
+    expect(px(aa, 2, 0)).toEqual([0, 0, 0, 0])
+    expect(px(aa, 3, 0)).toEqual([0, 0, 0, 0])
+    expect(px(aa, 0, 1)).toEqual([0, 0, 0, 0])
+    expect(px(aa, 1, 1)).toEqual([0, 0, 0, 0])
+    expect(px(aa, 2, 1)).toEqual([0, 0, 0, 0])
+    expect(px(aa, 3, 1)).toEqual([0, 0, 0, 0])
+
+    // without aa: single nearest-neighbour texel at (0, 0)
+    const nn = ctx(4, 2)
+    stampSprite(nn, onePx, 0, 0, m)
+    expect(px(nn, 0, 0)).toEqual([255, 0, 0, 255])
+    expect(px(nn, 1, 0)).toEqual([0, 0, 0, 0])
+  })
+
+  test('interior texel boundary blends 50/50 in gamma sRGB', () => {
+    // discriminates the blend space: linear-light averaging gives ~188 per channel,
+    // an OkLCh mix nothing close to (128, 0, 128) — only premultiplied gamma sRGB lands here.
+    const twoPx: Sprite = {
+      type: 'sprite',
+      name: 't',
+      w: 2,
+      h: 1,
+      data: new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]),
+      pal: [],
+      title: undefined,
+      desc: undefined,
+    }
+    const c = ctx(3, 1)
+    stampSprite(c, twoPx, 0, 0, translation(0.5, 0), undefined, undefined, true)
+    expect(px(c, 0, 0)).toEqual([255, 0, 0, 128])
+    expect(px(c, 1, 0)).toEqual([128, 0, 128, 255])
+    expect(px(c, 2, 0)).toEqual([0, 0, 255, 128])
+  })
+
+  // An asymmetric sprite (every texel a distinct colour) with one transparent hole, so an
+  // alpha-0 texel round-trips too.
+  const asymSprite = (w: number, h: number): Sprite => {
+    const data = new Uint8Array(w * h * 4)
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4
+        data[i] = (x * 70 + 10) % 256
+        data[i + 1] = (y * 45 + 20) % 256
+        data[i + 2] = ((x + y) * 30 + 5) % 256
+        data[i + 3] = x === w - 1 && y === h - 1 ? 0 : 255
+      }
+    }
+    return { type: 'sprite', name: 't', w, h, data, pal: [], title: undefined, desc: undefined }
+  }
+
+  /** The flag matrix exactly as eval.ts's `#buildStampMatrix` builds it: flip → scale → rotate. */
+  const flagMatrix = (
+    w: number,
+    h: number,
+    f: { flipx?: boolean; flipy?: boolean; scale?: number; rot?: number },
+  ): readonly number[] => {
+    const cx = (w - 1) / 2
+    const cy = (h - 1) / 2
+    let m = IDENTITY
+    if (f.flipx) {
+      m = compose(m, aboutPoint(scaling(-1, 1), cx, cy))
+    }
+    if (f.flipy) {
+      m = compose(m, aboutPoint(scaling(1, -1), cx, cy))
+    }
+    if (f.scale) {
+      m = compose(m, aboutPoint(scaling(f.scale, f.scale), -0.5, -0.5))
+    }
+    if (f.rot) {
+      m = compose(m, aboutPoint(rotationDeg(f.rot), cx, cy))
+    }
+    return m
+  }
+
+  /** Renders the same placement twice (aa off, aa on) and returns both buffers. */
+  const nnVsAa = (s: Sprite, m: readonly number[]): [Uint8Array, Uint8Array] => {
+    const nn = ctx(40, 40)
+    const aa = ctx(40, 40)
+    expect(stampSprite(nn, s, 15, 15, m)).toBe(true)
+    expect(stampSprite(aa, s, 15, 15, m, undefined, undefined, true)).toBe(true)
+    return [nn.buffer.data, aa.buffer.data]
+  }
+
+  // odd/odd, even/even, and both mixed-parity orders — the parity split is the whole point.
+  const SIZES: readonly (readonly [number, number])[] = [
+    [3, 5],
+    [4, 4],
+    [4, 5],
+    [3, 4],
+    [6, 4],
+  ]
+
+  test('mirrors, rot180, integer scale and integer shift are byte-identical with and without aa — at every sprite size', () => {
+    const cases: Record<string, (w: number, h: number) => readonly number[]> = {
+      flipx: (w, h) => flagMatrix(w, h, { flipx: true }),
+      flipy: (w, h) => flagMatrix(w, h, { flipy: true }),
+      rot180: (w, h) => flagMatrix(w, h, { rot: 180 }),
+      scale2: (w, h) => flagMatrix(w, h, { scale: 2 }),
+      scale3: (w, h) => flagMatrix(w, h, { scale: 3 }),
+      'flipx flipy scale2 rot180': (w, h) =>
+        flagMatrix(w, h, { flipx: true, flipy: true, scale: 2, rot: 180 }),
+      'integer shift(3,-2)': () => translation(3, -2),
+    }
+    for (const [w, h] of SIZES) {
+      for (const [label, build] of Object.entries(cases)) {
+        const [nn, aa] = nnVsAa(asymSprite(w, h), build(w, h))
+        expect(aa, `${label} on ${w}x${h}: aa vs nn buffer`).toEqual(nn)
+      }
+    }
+  })
+
+  test('a quarter-turn is byte-identical to nearest-neighbour only at equal parity (ADR-0099 §3, amended 2026-07-27)', () => {
+    // rot90/rot270 pivot about ((w−1)/2, (h−1)/2), so the inverse map carries the offsets cx∓cy.
+    // Integral iff w and h share a parity — then every tap rounds to the point sample's texel.
+    for (const [w, h] of SIZES.filter(([sw, sh]) => (sw - sh) % 2 === 0)) {
+      for (const rot of [90, 270]) {
+        const [nn, aa] = nnVsAa(asymSprite(w, h), flagMatrix(w, h, { rot }))
+        expect(aa, `rot${rot} on ${w}x${h}: aa vs nn buffer`).toEqual(nn)
+        // and it stays exact when the quarter-turn is composed with the size-free flags
+        const [nn2, aa2] = nnVsAa(
+          asymSprite(w, h),
+          flagMatrix(w, h, { flipx: true, scale: 2, rot }),
+        )
+        expect(aa2, `flipx scale2 rot${rot} on ${w}x${h}`).toEqual(nn2)
+      }
+    }
+    // At mixed parity every tap lands exactly on the roundHalfUp boundary, the taps split 8/8 per
+    // axis, and `aa` genuinely resamples. Anyone reinstating the old "quarter-turns are always
+    // byte-identical" claim in code fails here.
+    for (const [w, h] of [
+      [4, 5],
+      [3, 4],
+      [2, 3],
+      [5, 6],
+    ] as const) {
+      for (const rot of [90, 270]) {
+        const [nn, aa] = nnVsAa(asymSprite(w, h), flagMatrix(w, h, { rot }))
+        expect(aa, `rot${rot} on ${w}x${h}: aa must differ from nn`).not.toEqual(nn)
+      }
+    }
+  })
+
+  test('a mixed-parity quarter-turn averages a 2x2 texel block (the 16 taps split 4/4/4/4)', () => {
+    // 2x3, six distinct opaque texels; rot90 about cx=0.5, cy=1.
+    const s: Sprite = {
+      type: 'sprite',
+      name: 't',
+      w: 2,
+      h: 3,
+      // (0,0) red   (1,0) green
+      // (0,1) blue  (1,1) yellow
+      // (0,2) cyan  (1,2) magenta
+      data: new Uint8Array([
+        255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255, 0, 255, 255, 255, 255, 0,
+        255, 255,
+      ]),
+      pal: [],
+      title: undefined,
+      desc: undefined,
+    }
+    const m = flagMatrix(2, 3, { rot: 90 })
+    const nn = ctx(12, 12)
+    const aa = ctx(12, 12)
+    stampSprite(nn, s, 4, 4, m)
+    stampSprite(aa, s, 4, 4, m, undefined, undefined, true)
+
+    // nearest-neighbour: the exact 3x2 turned sprite, every texel opaque and unblended
+    expect(px(nn, 4, 4)).toEqual([0, 255, 255, 255]) // cyan
+    expect(px(nn, 5, 5)).toEqual([255, 255, 0, 255]) // yellow
+    expect(px(nn, 3, 5)).toEqual([0, 0, 0, 0]) // nothing left of the footprint
+
+    // aa: (4,5) is fully covered by four taps each of cyan, blue, magenta and yellow —
+    // r = (0+0+255+255)/4 = 127.5 → 128, g = (255+0+0+255)/4 → 128, b = (255+255+255+0)/4 = 191.25 → 191
+    expect(px(aa, 4, 5)).toEqual([128, 128, 191, 255])
+    // (5,5): the neighbouring 2x2 block — blue, red, yellow, green ⇒ b = 255/4 = 63.75 → 64
+    expect(px(aa, 5, 5)).toEqual([128, 128, 64, 255])
+    // and the fringe reaches one pixel further left than nearest-neighbour ever writes:
+    // 8 of 16 taps land on the sprite, cyan + magenta ⇒ (128, 128, 255) at alpha 8·255/16 → 128
+    expect(px(aa, 3, 5)).toEqual([128, 128, 255, 128])
+  })
+
+  test('identity blit ignores aa', () => {
+    const s: Sprite = {
+      type: 'sprite',
+      name: 't',
+      w: 2,
+      h: 2,
+      data: new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 0, 0, 0, 0]),
+      pal: [],
+      title: undefined,
+      desc: undefined,
+    }
+    const withAa = ctx(6, 6)
+    const withoutAa = ctx(6, 6)
+    stampSprite(withAa, s, 2, 3, undefined, undefined, undefined, true)
+    stampSprite(withoutAa, s, 2, 3, undefined, undefined, undefined, false)
+    expect(withAa.buffer.data).toEqual(withoutAa.buffer.data)
+  })
+
+  test('aa never ticks the budget for an empty pixel', () => {
+    const solid = new Uint8Array(6 * 6 * 4)
+    for (let i = 0; i < solid.length; i += 4) {
+      solid[i] = 200
+      solid[i + 1] = 60
+      solid[i + 2] = 30
+      solid[i + 3] = 255
+    }
+    const solidSprite: Sprite = {
+      type: 'sprite',
+      name: 't',
+      w: 6,
+      h: 6,
+      data: solid,
+      pal: [],
+      title: undefined,
+      desc: undefined,
+    }
+    const c = ctx(20, 20)
+    let writes = 0
+    c.buffer.onWrite = () => {
+      writes++
+    }
+    const m = aboutPoint(rotationDeg(37), 2.5, 2.5) // non-lattice: a fringe ring is expected
+    const ok = stampSprite(c, solidSprite, 7, 7, m, undefined, undefined, true)
+    expect(ok).toBe(true)
+    let opaque = 0
+    for (let i = 3; i < c.buffer.data.length; i += 4) {
+      if ((c.buffer.data[i] ?? 0) > 0) {
+        opaque++
+      }
+    }
+    expect(opaque).toBeGreaterThan(0)
+    expect(writes).toBe(opaque)
+  })
+})
+
 describe('scaleBitmap', () => {
   test('nearest-neighbour upscale and downscale', () => {
     const src = new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255])
@@ -483,15 +708,39 @@ describe('filters', () => {
     expect(px(none, 0, 1)).toEqual([0, 0, 0, 0])
   })
 
-  test('filterReplace swaps exact matches and respects the mask', () => {
-    const c = ctx(3, 1)
-    c.buffer.set(0, 0, black)
-    c.buffer.set(1, 0, black)
-    c.mask = rectRegion(1, 0, 1, 0)
-    filterReplace(c, black, red)
-    expect(px(c, 0, 0)).toEqual([0, 0, 0, 255]) // masked out, unchanged
-    expect(px(c, 1, 0)).toEqual([255, 0, 0, 255]) // replaced
-    expect(px(c, 2, 0)).toEqual([0, 0, 0, 0]) // no match, untouched
+  test('filterOutline silhouette floors at 50% coverage: a soft (<128 alpha) pixel is not ringed', () => {
+    const soft = ctx(5, 5)
+    soft.buffer.set(2, 2, color(0, 0, 0, 97)) // a 38%-alpha contact-shadow-like pixel
+    filterOutline(soft, red, 1)
+    expect(px(soft, 1, 2)).toEqual([0, 0, 0, 0]) // not treated as silhouette → no ring
+    expect(px(soft, 2, 2)).toEqual([0, 0, 0, 97]) // soft pixel itself untouched
+
+    const solid = ctx(5, 5)
+    solid.buffer.set(2, 2, color(0, 0, 0, 200)) // ≥128 → silhouette
+    filterOutline(solid, red, 1)
+    expect(px(solid, 1, 2)).toEqual([255, 0, 0, 255]) // ringed
+  })
+
+  test('filterOutline never eats a thin feature: a 1px line keeps its core, gains only an outer ring', () => {
+    const c = ctx(5, 7)
+    for (let y = 1; y <= 5; y++) {
+      c.buffer.set(2, y, blue) // a 1px-wide vertical bar
+    }
+    filterOutline(c, black, 1)
+    expect(px(c, 2, 3)).toEqual([0, 0, 255, 255]) // core survives
+    expect(px(c, 1, 3)).toEqual([0, 0, 0, 255]) // left ring
+    expect(px(c, 3, 3)).toEqual([0, 0, 0, 255]) // right ring
+  })
+
+  test('filterOutline with null paint derives a near-black ink from the silhouette', () => {
+    const c = ctx(5, 5)
+    c.buffer.set(2, 2, color(80, 200, 120, 255)) // a green figure pixel
+    filterOutline(c, null, 1)
+    const ring = px(c, 1, 2)
+    expect(ring[3]).toBe(255) // opaque ring
+    // near-black (L≈0.15): every channel well below the source's brightest
+    expect(Math.max(ring[0], ring[1], ring[2])).toBeLessThan(90)
+    expect(px(c, 2, 2)).toEqual([80, 200, 120, 255]) // figure pixel untouched
   })
 
   test('filterTint mixes into opaque pixels, skips transparent, and respects the mask', () => {
@@ -515,32 +764,22 @@ describe('filters', () => {
     expect(px(c, 0, 0)).toEqual([0, 0, 0, 255]) // original restored even where shadow clipped
   })
 
-  test('filterShadow honours the mask only when respectMask is set (ADR-0070 v2 gating)', () => {
-    // a 6x1 buffer: opaque red at x=1; a mask covering only x=3..4
-    const build = (): Context => {
-      const c = ctx(6, 1)
-      c.buffer.set(1, 0, red)
-      c.mask = rectRegion(3, 0, 4, 0)
-      return c
-    }
-    // respectMask=false (drawstic 1): whole-buffer rebuild, mask ignored — shadow lands at x=3
-    const v1 = build()
-    filterShadow(v1, 2, 0, blue)
-    expect(px(v1, 1, 0)).toEqual([255, 0, 0, 255]) // original content survives
-    expect(px(v1, 3, 0)).toEqual([0, 0, 255, 255]) // shadow at x=1+2, outside the mask — still painted
-
-    // respectMask=true (v2): shadow only writes inside the mask; masked-off pixels keep content
-    const v2 = build()
-    filterShadow(v2, 2, 0, blue, true)
-    expect(px(v2, 1, 0)).toEqual([255, 0, 0, 255]) // masked-off original untouched
-    expect(px(v2, 3, 0)).toEqual([0, 0, 255, 255]) // shadow lands in the mask
+  test('filterShadow always confines to an enclosing mask (ADR-0070/0088 — single semantics)', () => {
+    // a 6x1 buffer: opaque red at x=1; a mask covering only x=3..4. The shadow is cast from the
+    // whole buffer but lands only inside the mask, and masked-off pixels keep their content.
+    const c = ctx(6, 1)
+    c.buffer.set(1, 0, red)
+    c.mask = rectRegion(3, 0, 4, 0)
+    filterShadow(c, 2, 0, blue)
+    expect(px(c, 1, 0)).toEqual([255, 0, 0, 255]) // masked-off original untouched
+    expect(px(c, 3, 0)).toEqual([0, 0, 255, 255]) // shadow at x=1+2 lands inside the mask
   })
 
-  test('filterShadow respectMask leaves masked-off content when the shadow would land outside', () => {
+  test('filterShadow leaves masked-off content when the shadow would land outside', () => {
     const c = ctx(6, 1)
     c.buffer.set(0, 0, red) // shadow would land at x=2, outside the mask
     c.mask = rectRegion(4, 0, 5, 0)
-    filterShadow(c, 2, 0, blue, true)
+    filterShadow(c, 2, 0, blue)
     expect(px(c, 0, 0)).toEqual([255, 0, 0, 255]) // masked-off original preserved
     expect(px(c, 2, 0)).toEqual([0, 0, 0, 0]) // shadow suppressed — destination outside the mask
   })
@@ -633,21 +872,24 @@ describe('filters', () => {
   })
 })
 
-describe('shadeRegion / rimRegion / ambientOcclusion', () => {
-  test('shadeRegion (v2) veils by distance from the light without repainting the near side', () => {
-    // an 8px opaque-white strip, light at the left end
+// The raw `shadeRegion`/`lightRegion`/`rim`/`ao` commands were removed by ADR-0097; these three
+// helpers survive as the *internals* of the declarative pipeline (`lightRegion` = the `glow` response's
+// self-light, `rimRegion`/`ambientOcclusion` = the material `rim`/`ao` doses), so their pixel
+// contracts still need locking down.
+describe('lightRegion / rimRegion / ambientOcclusion (internal material-dose primitives)', () => {
+  test('lightRegion brightens by proximity to the light', () => {
     const strip = rectRegion(0, 0, 7, 0)
     const c = ctx(8, 1)
-    fillRegion(c, strip, white)
-    shadeRegion(c, strip, { x: 0, y: 0 }, red, 1)
-    expect(px(c, 0, 0)).toEqual([255, 255, 255, 255]) // at the light: t=0, untouched — no repaint
-    expect(px(c, 3, 0)).toEqual([255, 146, 146, 255]) // a graded veil, not a flat repaint
-    expect(px(c, 7, 0)).toEqual([255, 0, 0, 255]) // far corner: full base veil (a = base.a * amount)
+    fillRegion(c, strip, black)
+    lightRegion(c, strip, { x: 0, y: 0 }, white, 1)
+    expect(px(c, 0, 0)).toEqual([255, 255, 255, 255]) // nearest the light: strongest (a = paint.a * amount)
+    expect(px(c, 3, 0)).toEqual([146, 146, 146, 255]) // a graded brightening
+    expect(px(c, 7, 0)).toEqual([0, 0, 0, 255]) // far corner: untouched
   })
 
-  test('shadeRegion (v2) no-ops with no bbox and honours bounds/mask/region gating', () => {
+  test('lightRegion no-ops with no bbox and honours bounds/mask/region gating', () => {
     const c = ctx(4, 4)
-    shadeRegion(
+    lightRegion(
       c,
       { type: 'region', bbox: null, has: () => true, test: () => true },
       { x: 0, y: 0 },
@@ -659,28 +901,9 @@ describe('shadeRegion / rimRegion / ambientOcclusion', () => {
     const c3 = ctx(8, 8)
     c3.mask = rectRegion(0, 0, 3, 7)
     const disc = circleRegion(4, 4, 3)
-    shadeRegion(c3, disc, { x: 4, y: 4 }, white, 1)
+    lightRegion(c3, disc, { x: 4, y: 4 }, white, 1)
     expect(px(c3, 5, 4)).toEqual([0, 0, 0, 0]) // masked out
     expect(px(c3, 1, 1)).toEqual([0, 0, 0, 0]) // outside the region (bbox corner, not in disc)
-  })
-
-  test('shadeRegionLegacy (v1 / drawstic 1) repaints with base and mixes toward black', () => {
-    const strip = rectRegion(0, 0, 7, 0)
-    const c = ctx(8, 1)
-    fillRegion(c, strip, white)
-    shadeRegionLegacy(c, strip, { x: 0, y: 0 }, red, 1)
-    expect(px(c, 0, 0)).toEqual([255, 0, 0, 255]) // opaque base repaints the near side (the v1 trap)
-    expect(px(c, 7, 0)).toEqual([0, 0, 0, 255]) // far corner mixes fully to black
-  })
-
-  test('lightRegion (v2) brightens by proximity to the light — mirror of shadeRegion', () => {
-    const strip = rectRegion(0, 0, 7, 0)
-    const c = ctx(8, 1)
-    fillRegion(c, strip, black)
-    lightRegion(c, strip, { x: 0, y: 0 }, white, 1)
-    expect(px(c, 0, 0)).toEqual([255, 255, 255, 255]) // nearest the light: strongest (a = paint.a * amount)
-    expect(px(c, 3, 0)).toEqual([146, 146, 146, 255]) // a graded brightening
-    expect(px(c, 7, 0)).toEqual([0, 0, 0, 255]) // far corner: untouched
   })
 
   test('rimRegion no-ops on a zero direction, paints a band otherwise, and clamps width', () => {

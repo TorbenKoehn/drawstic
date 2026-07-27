@@ -1,5 +1,3 @@
-drawstic 2
-
 # Desert caravan, golden hour
 # Light: low sun at right (238:58); all shadows fall left.
 
@@ -13,7 +11,7 @@ haze = oklch(0.85, 0.06, 75)
 dusk = oklch(0.34, 0.06, 295)
 cloudC = dusk.mix(skyMd, 55%).alpha(70%)
 
-grad sky = linear(90, (skyHi, 0%), (skyMd, 52%), (skyLo, 84%), (gold, 100%))
+gradient sky = linear(90, (skyHi, 0%), (skyMd, 52%), (skyLo, 84%), (gold, 100%))
 
 # Sand — Tiefenstaffelung via mix Richtung Dunst
 sand = oklch(0.74, 0.09, 70)
@@ -23,15 +21,20 @@ d2bc = sand.mix(haze, 33%)
 d3c = sand.mix(haze, 15%)
 d4c = sand.darken(22%).saturate(10%)
 
-grad hazeV = linear(90, haze.alpha(22%), haze.alpha(0%))
-grad d3g = linear(90, d3c.lighten(6%), d3c.darken(14%))
-grad d4g = linear(90, d4c.lighten(4%), d4c.darken(18%))
+gradient hazeV = linear(90, haze.alpha(22%), haze.alpha(0%))
+gradient d3g = linear(90, d3c.lighten(6%), d3c.darken(14%))
+gradient d4g = linear(90, d4c.lighten(4%), d4c.darken(18%))
 
 # Karawane
 camelC = oklch(0.40, 0.055, 60)
 camelD = camelC.darken(20%)
 robes = #a03028, #274068, #b07830, #705890
 ropeC = #4a3a28
+
+# Ein Gradient spannt immer die BBox der Region, die er malt. Ein Punktlicht-Wasch ist
+# deshalb ein `radial`-Fill ueber einen Span, der um das Licht zentriert ist und genau bis
+# zur fernsten Ecke der Zielregion reicht (d = groesster Abstand in x bzw. y).
+fn washSpan(p, d) = rect((p - d), (p + d))
 
 # Kammlinien (absolute y, nx = normiertes x)
 fn bump(nx, c, k) = exp(0 - pow((nx - c) * k, 2))
@@ -68,7 +71,7 @@ draw camelLoaded(cb, cd, robe, m) 30x28:
     line robe.darken(35%) 10:8 15:8
 
 draw camelFar 12x8:
-  pal f = #6b5540
+  palette f = #6b5540
   pixels:
     ....f.....f.
     ...fff...fff
@@ -80,7 +83,7 @@ draw camelFar 12x8:
     ..f.f..f.f..
 
 draw bird 5x3:
-  pal k = #2a2118
+  palette k = #2a2118
   pixels:
     k...k
     .k.k.
@@ -99,6 +102,9 @@ draw rock(c) 14x9:
 
 draw desert 320x180:
   sun = 238:58
+  # Alle Duenen laufen bis zum unteren Bildrand, teilen also einen Wasch-Span:
+  # fernste Ecke ist immer 0:179.
+  duneWash = washSpan(sun, 238:121)
 
   # ── Himmel ──
   rect sky 0:0 319:104 fill
@@ -130,12 +136,14 @@ draw desert 320x180:
   # ── Fern-Grat ──
   mask m1 = profile(0..w, r1)
   fill d1c m1
-  lightRegion m1 sun gold 30%
+  mask m1:
+    fill radial(gold.alpha(30%), gold.alpha(0%)) duneWash
 
   # ── Grat 2 + Fern-Karawane ──
   mask m2 = profile(0..w, r2)
   fill d2c m2
-  lightRegion m2 sun gold 18%
+  mask m2:
+    fill radial(gold.alpha(18%), gold.alpha(0%)) duneWash
   for j 0..5:
     fx = 246 + j * 15
     fy = r2(fx / 319) + 1
@@ -148,17 +156,19 @@ draw desert 320x180:
   # ── Zwischengrat (Tiefen-Trittstein links) ──
   mask m2b = profile(0..w, r2b)
   fill d2bc m2b
-  lightRegion m2b sun gold 12%
+  mask m2b:
+    fill radial(gold.alpha(12%), gold.alpha(0%)) duneWash
 
   # Main dune
   mask m3 = profile(0..w, r3)
   fill d3g m3
-  shadeRegion m3 sun dusk 48%
-  lightRegion m3 sun gold 15%
+  mask m3:
+    fill radial(dusk.alpha(0%), dusk.alpha(48%)) duneWash
+    fill radial(gold.alpha(15%), gold.alpha(0%)) duneWash
   ripple m3 0.25 9 sand.lighten(18%).alpha(50%)
   ripple m3 0.2 12 dusk.alpha(25%)
   # Kamm-Rimlicht rechts vom Scheitel
-  rim m3.intersect(rect(176:100, 310:126)) 0:1 gold.alpha(85%) 1
+  fill gold.alpha(85%) m3.edge(0:1).intersect(rect(176:100, 310:126))
   # Windstreifen auf der Sonnenflanke
   sy1 = r3(210 / 319)
   sy2 = r3(265 / 319)
@@ -188,7 +198,7 @@ draw desert 320x180:
     fill dusk.alpha(26%) shadowR.intersect(m3).intersect(rect((0):(fy3 - 1), (319):(fy3 + 12)))
     ellipse dusk.alpha(35%) (cx):(fy3) 9:2 fill
     stamp camelLoaded(camelC, camelD, robe, m) (tlx):(tly)
-    rim camR.intersect(rect((tlx):(tly), (tlx + 29):(tly + 15))) (0 - 1):1 gold.alpha(65%) 1
+    fill gold.alpha(65%) camR.edge((0 - 1):1).intersect(rect((tlx):(tly), (tlx + 29):(tly + 15)))
     if k < 3:
       # Seil zum nachfolgenden Tier
       fcx = 210 - (k + 1) * 54 - ((k + 1) mod 2) * 7
@@ -204,11 +214,15 @@ draw desert 320x180:
   # Foreground dune
   mask m4 = profile(0..w, r4)
   fill d4g m4
-  shadeRegion m4 sun dusk 45%
+  mask m4:
+    fill radial(dusk.alpha(0%), dusk.alpha(45%)) duneWash
   ripple m4 0.5 7 sand.lighten(10%).alpha(50%)
   ripple m4 0.4 13 dusk.alpha(35%)
   grain m4 0.2 5 dusk.alpha(45%)
-  rim m4.intersect(rect(150:140, 319:172)) 0:1 sand.lighten(25%).alpha(55%) 1
+  # Kammlicht: `edge` schneidet erst die Silhouette, der Clip kommt danach. Nur so ist
+  # das Rechteck eine reine Auswahl (rechte Haelfte) und kein zweiter Kantengeber — der
+  # untere Rand darf den Grat nicht mehr stillschweigend abschneiden.
+  fill sand.lighten(25%).alpha(55%) m4.edge(0:1).intersect(rect(150:0, 319:172))
   # Windlinien, dem Kamm folgend
   wy1 = r4(60 / 319) + 5
   wy2 = r4(160 / 319) + 4
@@ -223,16 +237,16 @@ draw desert 320x180:
   ellipse dusk.alpha(40%) 31:164 9:2 fill
   ellipse dusk.alpha(25%) 16:165 11:2 fill
   stamp rock(#5f4a38) 24:156
-  shadeRegion region(rock(#5f4a38)).shift(24:156) sun dusk 35%
+  fill linear(154, dusk.alpha(33%), dusk.alpha(35%)) region(rock(#5f4a38)).shift(24:156)
   line #8a6f52.alpha(80%) 31:157 36:158
   ellipse dusk.alpha(30%) 44:166 5:1 fill
   stamp rock(#564334) 40:162
-  shadeRegion region(rock(#564334)).shift(40:162) sun dusk 35%
+  fill linear(154, dusk.alpha(33%), dusk.alpha(35%)) region(rock(#564334)).shift(40:162)
   stamp tuft(#665c34) 280:148
   stamp tuft(#575030) 300:158
 
   # ── globale Lichtvereinheitlichung ──
-  shadeRegion rect(0:0, 319:179) sun dusk 14%
+  fill radial(dusk.alpha(0%), dusk.alpha(14%)) duneWash
 
-export desert desert:
+export desert:
   png @1 @4

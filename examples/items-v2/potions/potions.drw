@@ -1,5 +1,5 @@
 theme potionSet:
-  pal:
+  palette:
     k = #24161f
     g = #a4d7ff
     h = #f2fbff
@@ -120,26 +120,13 @@ draw emptyVial 64x64:
   fill x rect(28:2, 35:7)
   stroke k shell w1
 
-tileset potionSheet 64x64:
-  tiles healingPotion, manaPotion, poisonPotion, elixirPotion, bombPotion, emptyVial
+atlas potionSheet:
+  sprites healingPotion, manaPotion, poisonPotion, elixirPotion, bombPotion, emptyVial
+  tile 64x64
   cols 3
 
-export healingPotion healing-potion:
-  png @1 @4
-
-export manaPotion mana-potion:
-  png @1 @4
-
-export poisonPotion poison-potion:
-  png @1 @4
-
-export elixirPotion elixir-potion:
-  png @1 @4
-
-export bombPotion bomb-potion:
-  png @1 @4
-
-export emptyVial empty-vial:
+export healingPotion, manaPotion, poisonPotion, elixirPotion, bombPotion, emptyVial:
+  file "{kebab base}"
   png @1 @4
 
 export potionSheet potions:

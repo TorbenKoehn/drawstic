@@ -32,7 +32,7 @@ This is a single library project.
 
 ```
 package.json    # Library package.json (bin: drawstic → dist/bin.js; subpath exports, no barrel — ADR-0065)
-tsconfig.json   # Strict TypeScript config (src + bench + tests)
+tsconfig.json   # Strict TypeScript config (src + tests)
 tsconfig.build.json # Emit config for dist/ (per-file ESM + .d.ts via plain tsc — ADR-0065)
 biome.json      # Formatter/linter config
 AGENTS.md       # This file - project rules and structure
@@ -69,11 +69,18 @@ src/            # Main library code (also code when importing from BunJS/Deno)
 dist/           # Compiled library output (bun run build; only in NPM package)
 tests/          # Tests
   unit/           # lexer/parser/dmath/eval/fmt + e2e (render → PNG → decode → assert)
-    bench/         # Tests for the bench dev tooling
-bench/          # token-efficiency bench suite (see bench/README.md)
-examples/
+examples/         # ONE canonical generation per category (ADR-0096 / release D3) — superseded
+                  # generations live in git history, never side by side in the tree
   basic-shapes/   # circle.drw, square.drw
+  characters-ro2/ # RO-style chibis: theme+figure oracle, skeleton/pose, fit, model/cel
+  scenes-v3/      # large scenes: layered back-to-front composition
+  items-v2/       # game-item sets with tileset/atlas sidecars
+  icons/          # icon families, PNG + SVG
+  text/           # font/text surface
   showcase/       # showcase.drw + parts.drw + themes.drw — full-surface e2e example
+evals/           # Measured, as-produced corpora — never craft-gated, never touched up (ADR-0100)
+  model-comparison/ # <model>/<category>.drw + BRIEFS.md; a recipe here is FROZEN once rendered —
+                  # fix a weak result by adding a new dated corpus, never by editing the recipe
 skills/          # User-facing agent skills, consumable by LLM agents (the actual "product"; shipped in the npm package)
   drawstic/      # How an LLM agent uses Drawstic: SKILL.md (workflow, core syntax, idioms) + reference.md (full CLI + language reference)
 .claude/
@@ -113,7 +120,7 @@ skills/          # User-facing agent skills, consumable by LLM agents (the actua
 - [Recipe examples](docs/dsl-examples.md) — worked Recipes showing the language in use.
 - [Motif cookbook](docs/motif-cookbook.md) — tested, copyable snippets for recurring scene motifs (palm, cloud, water, night lighting, dunes, starfield).
 - [Code style](docs/code-style.md) — detailed code style rules.
-- [Bench suite](bench/README.md) — token-efficiency + readability/editability benchmarking.
+- [Release 1.0 Programme](docs/release-1.0/README.md) — Release-1.0-Programm: Audits, Entscheidungen, Phasen.
 - [Scene-DX Evaluation 2026-07-08](docs/scene-dx-evaluation-2026-07-08.md) - first multi-agent LLM-authoring evaluation for seven scenes; overall grade 1.9; main gaps were lighting ergonomics, organic closed shapes, verification workflow, and composition guidance.
 - [Scene-DX Rerun Evaluation 2026-07-08](docs/scene-dx-rerun-evaluation-2026-07-08.md) - blind rebuild of all seven scenes after the first fix wave; overall grade improved from 1.9 to 1.7, with clear gains in lighting and diagnostics.
 - [Scene-DX Masterpiece Evaluation 2026-07-08](docs/scene-dx-masterpiece-evaluation-2026-07-08.md) - larger-canvas scene rebuild with masks, transforms, and richer composition; overall grade improved to 1.6; remaining gaps shifted from syntax to craft discipline.
@@ -121,6 +128,7 @@ skills/          # User-facing agent skills, consumable by LLM agents (the actua
 - [Character-DX Evaluation 2026-07-09](docs/character-dx-evaluation-2026-07-09.md) - first modular-character run with front/side views and colour variants; overall grade 1.8; main gaps were attach discipline, seam detection, and silhouette review.
 - [Item-DX Evaluation 2026-07-09](docs/item-dx-evaluation-2026-07-09.md) - first game-item-set run: seven sets of six items, PNG @1/@4, `atlasJson`, and Tiled `.tsj`; overall grade 1.7; sidecars held, near-neighbour differentiation remained the main craft gap.
 - [Item-DX v2 Evaluation 2026-07-09](docs/item-dx-v2-evaluation-2026-07-09.md) - 64x64 item rerun in `examples/items-v2/`; overall grade stayed 1.7; material readability improved while silhouette and contact-sheet QA remained mandatory.
+- [Character-DX Evaluation 2026-07-10](docs/character-dx-evaluation-2026-07-10.md) - RO-style chibi rerun (3 views, 64×128, declarative pipeline; those recipes were superseded by `examples/characters-ro2/` and live on in git history); `pin`/`fit` eliminated seam gaps, but an authoritative human review (grades 2.4–5.5) diverged from the builder self-grades (1.4–1.8) and all-green `critique --strict` — headline finding: the automated gate verifies structure, not craft (harsh shading, misplaced parts, faces, outlines, prop orientation all shipped undetected).
 - [Decisions](docs/decisions/) — Architectural Decision Records (ADRs) for all material decisions, including language updates such as [ADR-0059](docs/decisions/0059-relative-point-expressions.md).
   Latest packaging update: [ADR-0084](docs/decisions/0084-minimal-npm-package-contents.md) keeps npm package contents to compiled code, product skill, README, and license.
 

@@ -95,7 +95,8 @@ export const ERROR_CODE = {
   typeError: 'E006',
   paletteCollision: 'E007',
   importError: 'E008',
-  versionPragma: 'E009',
+  // E009 retired (ADR-0088): the `drawstic N` pragma is inert, so no version boundary can be
+  // violated. Slot reserved — never renumber or reuse.
   budget: 'E010',
   arity: 'E011',
   badFlag: 'E012',
@@ -110,4 +111,11 @@ export const ERROR_CODE = {
   format: 'E021',
   renderTarget: 'E022',
   diffMismatch: 'E023',
+  noLight: 'E024',
+  occlusionCycle: 'E025',
+  unknownFlag: 'E026',
+  pngUnsupported: 'E027',
+  // ADR-0098: a `file` name template in an `export` block is malformed, or names something that is
+  // neither the one template variable (`base`) nor one of the six inflectors.
+  template: 'E028',
 } as const

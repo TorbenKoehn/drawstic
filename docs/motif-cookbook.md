@@ -93,7 +93,7 @@ name a motif's base color the same as its `draw`.
 
 ## Water shimmer + foam bands
 
-`bg` a vertical `grad`, then two bright glint rects at the surface, then per-column
+`bg` a vertical `gradient`, then two bright glint rects at the surface, then per-column
 `noise()` thresholds at several fixed depths paint short foam-colored rects — each depth
 uses its own noise seed/threshold so the bands don't line up. A `ripple` filter on top adds
 the shimmer. This is deliberately *raw* `noise(seed, x, y)` at integer `x` (no `* 0.05`
@@ -105,7 +105,7 @@ foam = #e9fbff
 foamSoft = #92dceb
 
 draw waterShimmer 64x24:
-  grad water = linear(90, (seaLite, 0%), (seaMid, 45%), (seaDeep, 100%))
+  gradient water = linear(90, (seaLite, 0%), (seaMid, 45%), (seaDeep, 100%))
   bg water
   rect #ddf8ff 0:0 63:1 fill        # bright glint line right at the surface
   rect #5ecae2 0:2 63:3 fill        # secondary glint band
@@ -124,12 +124,15 @@ draw waterShimmer 64x24:
 ## Night lighting
 
 Moon as a radial-gradient halo + solid disc + darkened crater + a lit-rim `arc`, over a
-vertical night-sky `grad`. The lit hillside pairs `shadeRegion` and `lightRegion` aimed at the
-moon (`48:14`): `shadeRegion`'s `amount` is the veil **opacity** (deepest on the far, bottom-left
-corner) and it **composites over** the `fill` rather than repainting it, so an opaque shadow
-colour is fine; `lightRegion` then adds a cool moon glow, brightest on the hill nearest the moon.
-(This is the language-version-2 `shadeRegion`; a `drawstic 1` recipe would need `base` alpha
-instead — the single costliest bug of the evaluation, 7/7 graders.)
+vertical night-sky `gradient`. The lit hillside is **one** `model` under a point `light` placed on
+the moon itself (`at 48:14`) — the whole shade/rim/AO set falls out of that one source, so nothing
+can point the wrong way. Give the light a low `gain` and the material a wide `spread` and moonlight
+reads as moonlight: a narrow lit crest, a deep cool body.
+
+The crest lip is *not* part of the material's rim dose — a material rim always tints toward the
+light colour, and here we want a specific pale green — so it is a plain
+`fill p hill.edge(1:-1)` edge band (ADR-0097). Direction `1:-1` means "the light travels
+down-left", i.e. the up-right edge lights, which is the side facing the moon.
 
 The halo gradient ends on `haloCol.alpha(0%)` (the rim hue at zero alpha), **not** `transparent`:
 `transparent` is black at alpha 0, so a radial fade through it lerps the RGB toward black and reads
@@ -144,29 +147,26 @@ skyHorizon = oklch(0.34, 0.10, 220)
 moonCore = #f6f3e2
 moonRim = #cfd6a8
 haloCol = moonRim.alpha(25%)
-shadowCol = #0c1830
 hillLit = skyMid.darken(10%)
 
+light moon    = at 48:14 moonRim amb #0c1830 20% gain 0.8   # the moon IS the source
+material hillM = hillLit cloth spread 170%                  # wide range: narrow crest, deep body
+
 draw nightLighting 64x48:
-  grad night = linear(90, skyDeep, skyMid, skyHorizon)
+  gradient night = linear(90, skyDeep, skyMid, skyHorizon)
   bg night
 
   # moon: halo (radial gradient) + disc + rim light + one crater
-  grad halo = radial(haloCol, haloCol.alpha(0%))   # end on the rim hue at alpha 0, NOT `transparent`
+  gradient halo = radial(haloCol, haloCol.alpha(0%))   # end on the rim hue at alpha 0, NOT `transparent`
   circle halo 48:14 18 fill
   circle moonCore 48:14 8 fill
   circle moonRim.darken(10%) 45:12 1 fill
   arc moonRim.alpha(55%) 48:14 11 200 340
 
-  # lit hillside: shadeRegion veils toward the shadow colour (amount = opacity, deepest away
-  # from the moon at 48:14) and composites over the fill; lightRegion adds the moon glow,
-  # brightest on the hill nearest the moon; rim + AO finish the edge and contact shadow.
+  # lit hillside: ONE model under the moon light — form shade + rim + AO all aimed at 48:14.
   mask hill = poly(0:48, 0:30, 20:24, 40:28, 64:22, 64:48)
-  fill hillLit hill
-  shadeRegion hill 48:14 shadowCol 0.7
-  lightRegion hill 48:14 moonRim.alpha(55%) 0.45
-  rim hill 1:-1 moonRim.alpha(50%) 1
-  ambientOcclusion hill shadowCol 0.35
+  model hill hillM light moon
+  fill moonRim.alpha(50%) hill.edge(1:-1)   # crest lip: light travels down-left ⇒ up-right edge
 ```
 
 Verification note: `--ascii` maps by ink-density, not luminance (tracked separately —
@@ -188,7 +188,7 @@ reflWarm = #db6a26
 reflCool = #d8cc95
 
 draw waterReflection 64x32:
-  grad lake = linear(90, waterTop, waterDeep)
+  gradient lake = linear(90, waterTop, waterDeep)
   bg lake
   lightX = 32                              # x directly below the light source above the water line
   for y 0..24:

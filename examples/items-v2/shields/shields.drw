@@ -1,7 +1,5 @@
-drawstic 2
-
 theme shieldSet:
-  pal:
+  palette:
     k = #241a20
     n = #4d5568
     s = #93a0b5
@@ -165,30 +163,24 @@ draw magicBarrier:
   stroke a body w1
   stroke c core w1
 
-tileset shieldsGrid 64x64:
-  tiles roundShield, heraldShield, towerShield, buckler, woodShield, magicBarrier
+# One construct, two layouts — this set is where the corpus shows both.
+# With `tile`: every member sits in a fixed WxH slot on a `cols`-wide grid. That is what a
+# tilemap editor needs, and it is the only form `tiled` accepts.
+atlas shieldsGrid:
+  sprites roundShield, heraldShield, towerShield, buckler, woodShield, magicBarrier
+  tile 64x64
   cols 3
+  pad 1
 
+# Without `tile`: members are shelf-packed to their own bounds, so a sheet of unequal sprites
+# wastes no space. Runtime atlases (TexturePacker/Phaser/Pixi) read the frame rects from the
+# JSON and do not care about a grid.
 atlas shieldsAtlas:
   sprites roundShield, heraldShield, towerShield, buckler, woodShield, magicBarrier
   pad 1
 
-export roundShield round-shield:
-  png @1 @4
-
-export heraldShield herald-shield:
-  png @1 @4
-
-export towerShield tower-shield:
-  png @1 @4
-
-export buckler buckler:
-  png @1 @4
-
-export woodShield wood-shield:
-  png @1 @4
-
-export magicBarrier magic-barrier:
+export roundShield, heraldShield, towerShield, buckler, woodShield, magicBarrier:
+  file "{kebab base}"
   png @1 @4
 
 export shieldsGrid shields-grid:

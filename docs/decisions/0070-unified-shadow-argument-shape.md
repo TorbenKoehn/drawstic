@@ -1,9 +1,10 @@
 # 70. Unified shadow argument shape (and v2 mask-respecting frame shadow)
 
-- Status: Accepted
+- Status: Accepted (mask-respecting behaviour made unconditional, and the deprecated
+  two-number `shadow dx dy` alias removed, by [ADR-0088](0088-in-place-v1-break.md))
 - Date: 2026-07-08
 - Deciders: t.koehn, Claude
-- Refines: [ADR-0062](0062-scoped-shadow-and-texture-filters.md); mask change gated by [ADR-0029](0029-language-version-pragma.md)
+- Refines: [ADR-0062](0062-scoped-shadow-and-texture-filters.md); mask change gated by [ADR-0029](0029-language-version-pragma.md) (gate removed by [ADR-0088](0088-in-place-v1-break.md))
 
 ## Context
 

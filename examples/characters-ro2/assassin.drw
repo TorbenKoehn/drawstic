@@ -1,0 +1,302 @@
+theme ro:
+  mode pixel
+  light sun = dir 1:1 #ffe6b0 amb #2a3a5e 16%
+  figure:
+    heads 3.5
+    headW 22
+    eyeLine 0.62
+    earLine 0.58
+    eyeSep 10
+
+use ro
+
+theme roHead:
+  mode pixel
+  light sun = dir 1:1 #ffe6b0 amb #2a3a5e 16%
+  figure:
+    heads 1
+    headW 22
+    eyeLine 0.62
+    earLine 0.58
+    eyeSep 10
+
+skinC = #d9a06f
+hoodC = #443a5e
+hoodLite = #4a3f63
+cloakC = #40365a
+cloakLite = #453a5c
+turbC = #4a3f63
+turbLite = #5d5079
+turbDark = #2c2438
+steelC = #b8c4d6
+steelDark = #5a6478
+strapC = #4a3624
+leatherC = #3a2a1c
+whiteC = #f2ece0
+irisC = #4a3628
+pupilC = #1a1410
+mouthC = #7a4a3a
+gemC = #7fc9c1
+
+material skinM = skinC skin
+material hoodM = hoodC cloth shade 100% hi 46%
+material cloakM = cloakC cloth drape shade 100% hi 46%
+material turbM = turbC cloth spread 260%
+material steelM = steelC metal
+material strapM = strapC cloth
+material leatherM = leatherC cloth
+
+skeleton rig:
+  headF at fig.neck
+  chestF at fig.shoulder
+  shLF at fig.shoulderL
+  shRF at fig.shoulderR
+  hipF at fig.hip
+  beltL at fig.hipL
+  beltR at fig.hipR
+  headS at fig.neck
+  chestS at fig.shoulder
+  shS at fig.shoulderR
+  hipS at fig.hip
+  beltS at fig.hipR
+  headB at fig.neck
+  chestB at fig.shoulder
+  shLB at fig.shoulderR
+  shRB at fig.shoulderL
+  hipB at fig.hip
+
+pose front over rig:
+  view front
+  headF 0 z 3
+  chestF 0 z 1
+  shLF 0 z 2
+  shRF 0 z 2
+  hipF 0 z 0
+  beltL 0 z 2
+  beltR 0 z 2
+
+pose side over rig:
+  view side
+  headS 0 z 3
+  chestS 0 z 1
+  shS 0 z 2
+  hipS 0 z 0
+  beltS 0 z 2
+
+pose back over rig:
+  view back
+  headB 0 z 3
+  chestB 0 z 1
+  shLB 0 z 2
+  shRB 0 z 2
+  hipB 0 z 0
+  beltL 0 z 2
+  beltR 0 z 2
+
+draw headFront 32x38:
+  use roHead
+  skull = ellipse(16:24, 11:13).union(lobe(fig.earL, 3:25, 3)).union(lobe(fig.earR, 29:25, 3))
+  model skull skinM
+  fill whiteC ellipse(fig.eyeL, 2:2)
+  fill whiteC ellipse(fig.eyeR, 2:2)
+  circle irisC fig.eyeL 1 fill
+  circle irisC fig.eyeR 1 fill
+  px pupilC fig.eyeL
+  px pupilC fig.eyeR
+  px whiteC.alpha(85%) (fig.eyeL - 1:1)
+  px whiteC.alpha(85%) (fig.eyeR - 1:1)
+  px skinC.darken(20%) 16:28
+  line mouthC 14:31 18:31
+  turbCap = dome(16:14, 14:14)
+  model turbCap turbM
+  ribbon turbLite 1:15 16:8 31:15 7 fill
+  ribbon turbC 0:19 16:12 32:19 7 fill
+  ribbon turbDark 1:23 16:16 31:23 6 fill
+  fill turbLite rect(13:11, 19:17)
+  circle gemC 16:13 1 fill
+  tail = lobe(28:22, 32:33, 4)
+  fill turbDark tail
+  pin chin 16:37
+
+draw headSide 32x38:
+  use roHead
+  skull = ellipse(16:24, 12:13).union(lobe(fig.side.ear, 3:26, 4)).union(lobe(26:25, 31:28, 3))
+  model skull skinM
+  fill whiteC ellipse(fig.side.eye, 2:2)
+  circle irisC fig.side.eye 1 fill
+  px pupilC fig.side.eye
+  px skinC.darken(22%) 28:28
+  line mouthC 22:32 26:32
+  turbCap = dome(14:14, 14:14)
+  model turbCap turbM
+  ribbon turbLite 0:15 14:8 29:16 7 fill
+  ribbon turbC 0:19 14:12 30:20 7 fill
+  ribbon turbDark 0:23 14:16 29:24 6 fill
+  fill turbLite rect(10:11, 17:17)
+  circle gemC 14:13 1 fill
+  tail = lobe(4:23, 1:34, 4)
+  fill turbDark tail
+  pin chin 15:37
+
+draw headBack 32x38:
+  use roHead
+  skull = ellipse(16:24, 11:13)
+  model skull skinM
+  turbCap = dome(16:14, 14:14)
+  model turbCap turbM
+  ribbon turbLite 1:15 16:8 31:15 7 fill
+  ribbon turbC 0:19 16:12 32:19 7 fill
+  ribbon turbDark 1:23 16:16 31:23 6 fill
+  fill turbDark rect(13:11, 19:17)
+  tail = lobe(24:26, 27:37, 5)
+  fill turbDark tail
+  pin nape 16:37
+
+draw torsoFront 41x40:
+  use ro
+  neck = rect(17:0, 24:11)
+  bodyBase = poly(6:14, 35:14, 38:38, 3:38)
+  collarShape = rect(15:10, 26:15)
+  torsoU = bodyBase.union(collarShape)
+  model neck skinM
+  cel bodyBase hoodM 3 over torsoU
+  cel collarShape hoodM 3 over torsoU
+  fill hoodLite rect(19:16, 22:36)
+  fill strapC rect(4:30, 37:33)
+  pin collar 20:12
+  pin shoulderL 4:13
+  pin shoulderR 36:13
+
+draw torsoSide 26x40:
+  use ro
+  neck = rect(10:0, 16:11)
+  bodyBase = poly(6:14, 22:14, 24:38, 3:38)
+  collarShape = rect(9:10, 18:15)
+  torsoU = bodyBase.union(collarShape)
+  model neck skinM
+  cel bodyBase hoodM 3 over torsoU
+  cel collarShape hoodM 3 over torsoU
+  fill strapC rect(4:30, 22:33)
+  pin collar 13:12
+  pin shoulder 20:13
+
+draw torsoBack 41x40:
+  use ro
+  neck = rect(17:0, 24:11)
+  bodyBase = poly(6:14, 35:14, 38:38, 3:38)
+  collarShape = rect(15:10, 26:16)
+  torsoU = bodyBase.union(collarShape)
+  model neck skinM
+  cel bodyBase hoodM 3 over torsoU
+  cel collarShape hoodM 3 over torsoU
+  line hoodLite.darken(10%) 20:16 20:36
+  fill strapC rect(4:30, 37:33)
+  pin collar 20:12
+  pin shoulderL 4:13
+  pin shoulderR 36:13
+  pin cloakAttach 20:11
+
+draw armFront 10x26:
+  use ro
+  sleeve = poly(2:0, 8:0, 9:20, 6:24, 3:23, 1:20)
+  hand = ellipse(5:22, 3:3)
+  armU = sleeve.union(hand)
+  cel sleeve hoodM 3 over armU
+  model hand skinM over armU
+  pin shoulder 5:1
+
+draw legsFront 30x58:
+  use ro
+  thighL = rect(3:0, 12:24)
+  shinL = rect(4:24, 11:46)
+  bootL = poly(2:46, 13:46, 13:57, 1:57)
+  legL = thighL.union(shinL).union(bootL)
+  cel thighL hoodM 3 over legL
+  cel shinL hoodM 3 over legL
+  cel bootL leatherM 3 over legL
+  thighR = rect(17:0, 26:24)
+  shinR = rect(18:24, 25:46)
+  bootR = poly(16:46, 27:46, 28:57, 17:57)
+  legR = thighR.union(shinR).union(bootR)
+  cel thighR hoodM 3 over legR
+  cel shinR hoodM 3 over legR
+  cel bootR leatherM 3 over legR
+  pin hip 15:2
+
+draw legsSide 20x58:
+  use ro
+  thigh = rect(4:0, 15:24)
+  shin = rect(5:24, 14:46)
+  boot = poly(3:46, 17:46, 18:57, 2:57)
+  legU = thigh.union(shin).union(boot)
+  cel thigh hoodM 3 over legU
+  cel shin hoodM 3 over legU
+  cel boot leatherM 3 over legU
+  pin hip 10:2
+
+draw cloakFront 50x64:
+  use ro
+  body = curvePoly(6:2, 44:2, 48:32, 38:60, 12:60, 2:32)
+  cel body cloakM 3
+  pin attach 25:2
+
+draw cloakSide 38x64:
+  use ro
+  body = curvePoly(4:2, 30:2, 34:32, 26:60, 6:60, 1:32)
+  cel body cloakM 3
+  pin attach 17:2
+
+draw cloakBack 50x68:
+  use ro
+  body = curvePoly(6:2, 44:2, 48:34, 38:64, 12:64, 2:34)
+  cel body cloakM 3
+  pin attach 25:2
+
+draw dagger 6x22:
+  use ro
+  pommel = circle(3:2, 2)
+  hilt = rect(1:4, 5:9)
+  blade = poly(2:9, 4:9, 5:19, 3:22, 1:19)
+  bladeU = pommel.union(hilt).union(blade)
+  model pommel steelM over bladeU
+  model hilt strapM over bladeU
+  model blade steelM over bladeU
+  pin grip 3:6
+
+draw assassinFront 64x128:
+  pose front
+  fit legsFront.hip bone hipF ground
+  fit torsoFront.collar bone chestF
+  fit cloakFront.attach bone chestF behind torsoFront
+  fit armFront.shoulder bone shLF
+  fit armFront.shoulder bone shRF flipx
+  fit dagger.grip bone beltL
+  fit dagger.grip bone beltR flipx
+  fit headFront.chin bone headF
+  outline
+
+draw assassinSide 64x128:
+  pose side
+  fit legsSide.hip bone hipS ground
+  fit torsoSide.collar bone chestS
+  fit cloakSide.attach bone chestS behind torsoSide
+  fit armFront.shoulder bone shS
+  fit dagger.grip bone beltS
+  fit headSide.chin bone headS
+  outline
+
+draw assassinBack 64x128:
+  pose back
+  fit legsFront.hip bone hipB ground
+
+  fit torsoBack.collar bone chestB
+  fit cloakBack.attach bone chestB front torsoBack
+  fit armFront.shoulder bone shLB
+  fit armFront.shoulder bone shRB flipx
+  fit dagger.grip bone beltL front cloakBack
+  fit dagger.grip bone beltR flipx front cloakBack
+  fit headBack.nape bone headB
+  outline
+
+export assassinFront assassin-front, assassinSide assassin-side, assassinBack assassin-back:
+  png @1 @4

@@ -1,31 +1,29 @@
 # Drawstic icon craft
 
-How to make an **app-icon family** (6+ siblings, multi-size, PNG+SVG) read as one coherent,
-production set — not six unrelated glyphs. SKILL.md § Icons gives the mandatory order + checklist;
-this is the detail. Every rule here comes from a shipped, check-clean recipe
-(`examples/icons/*.drw`) or a rendered probe. `check` verifies grammar only — silhouette legibility
-and family consistency are **100 % visual and silent to `check`**; a render, and the contact
-`sheet`, are the only judges.
+How to make an **app-icon family** (6+ siblings, multi-size, PNG+SVG) read as one coherent set, not six
+unrelated glyphs. Icons are the one exception to the canonical path (SKILL.md): at 16–32px a flat plate
+with a 1px bevel reads better than `model`/`cel` form shading, so drop that step entirely. Keep only two
+things from the canonical path: one light *direction* (as geometry, not a shading pass) and "look at the
+render." Copy [starters/icon-family.drw](starters/icon-family.drw) — a complete, `check`-clean,
+`critique --as icon --strict`-passing 6-icon family with a shared tile, five glyphs and a hand-pixeled
+16px redraw — and mutate it. `check` verifies grammar only; silhouette legibility and family consistency
+are **100% visual** — a render, and the family `sheet`, are the only judges.
 
-Icons are **not scenes.** Drop the scene-craft warm/cool sun contract, haze veils and terrain
-functions. Keep only two things: one light direction, and "look at the render."
+## 1. Family before glyphs — the build order
 
-## 1. Family before glyphs — the fixed build order
+Build the shared frame first; draw glyphs onto it last:
 
-Build the shared frame first; draw glyphs onto it last. The order that wins on the first attempt:
-
-1. **Theme** — palette + `size`/`mode` defaults + a `style """…"""` guide that doubles as the
-   *family number contract*: corner radius, stroke weight, margin, light direction, shadow-alpha
-   **per size**. `context` surfaces this string, so write the numbers down *before* the first
-   `draw` — over 6+ icons consistency drifts unnoticed otherwise. A theme carries no non-colour
-   constants (radius/margin are literals in each tile), so the style guide is where they live.
-2. **Parametric tile/plate component**, one per canvas size, accent as the argument, stamped by
-   every icon → radius, margin and light model **cannot diverge**.
-3. **Glyphs** — bold white (or paper+ink) silhouettes, optically centered, stamped onto the tile.
+1. **Theme** — palette + `size`/`mode` defaults + a `style """…"""` guide that doubles as the family's
+   number contract: corner radius, margin, light direction, stroke weight per size. `context` surfaces
+   this string — write the numbers down before the first `draw`, or consistency drifts unnoticed across
+   6+ icons.
+2. **One parametric tile**, stamped by every icon with the accent as its argument — radius, margin and
+   the light contract then cannot diverge between siblings.
+3. **Glyphs** — a bold, near-white silhouette, optically centered, stamped onto the tile.
 
 ```drw
 theme system:
-  pal:
+  palette:
     k = #20242c
     l = #f7faff
     b = #3b82f0                  # one accent hue per app
@@ -36,144 +34,144 @@ theme system:
 use system
 ```
 
-(Weather was the only family that skipped the stamped tile — per-icon masks instead — and it cost
-the most iterations. Build the tile.)
+## 2. The tile — radius, margin, one light contract
 
-## 2. The tile/plate — radius, and ONE light contract
+`face = rrect(margin, size−1−margin, radius)`. **Radius ≈ 19–22% of the edge**, the same proportion at
+every size (32→6, 16→3, 64→12); margin 1–2px.
 
-`face = rrect(margin, size−1−margin, radius)` → fill → edge light. **Radius ≈ 19–22 % of the
-edge**, identical proportion at every size (32→6, 16→3, 64→12); margin 1–2px.
+**Default contract — an edge-band pair, no filter.** `REGION.edge(dx:dy[, n])` is a one-sided band in
+the direction the light travels; give the tile a lit band and a shade band with the same geometry and
+opposite colours:
 
-One light direction for the whole family: **light top-left, dark bottom-right.** Icon *mechanics*
-carry it — geometry, a rim pair, discrete zones — **not** scene filters: at 16–32px
-`shadeRegion`/`lightRegion` are too weak and areal, and `rim` is a thin band. Three verified
-contracts; pick one per family:
+<example>
 
-- **Vertical gradient + 1px rim/highlight** (productivity, system) — row-uniform, cheap SVG:
-  ```drw
-  draw tile(c) 32x32:
-    rrect linear(90, c.mix(l, 20%), c.darken(14%)) 2:2 29:29 6 fill
-    line c.mix(l, 52%) 9:2 22:2          # 1px top highlight
-  ```
-- **1px bevel lines** (communication) — flattest, best SVG, production-clean:
-  ```drw
-  rrect t 1:1 30:30 6 fill
-  line l 7:1 24:1                         # light: top + left edges
-  line l 1:7 1:24
-  line d 7:30 24:30                       # shadow: bottom + right edges
-  line d 30:7 30:24
-  ```
-- **Two fills + one line** (weather) — flat-friendly, works where filters are too weak:
-  ```drw
-  fill base face
-  fill shade face.intersect(rect(2:16, 29:29))   # darker lower half
-  line light 4:4 12:4                             # short top-left highlight
-  ```
+```drw
+draw plate(t) 32x32:
+  face = rrect(2:2, 29:29, 6)
+  fill t face
+  fill l.alpha(34%) face.edge(1:1, 2)     # light travels 1:1 ⇒ the up-left contour is lit
+  fill k.alpha(28%) face.edge(-1:-1, 2)   # …and the down-right contour takes the shade
+```
 
-A 135° `linear` gradient (media) also reads well but varies along scanlines → heavy SVG (§8).
-`rim` on a **filled** silhouette strokes the whole contour — on a `rrect` region it hits the edge,
-which is what you want here.
+</example>
+
+This is `starters/icon-family.drw`'s actual tile — flat-friendly, the cheapest SVG output, and it holds
+up at 16px where an areal shade veil is too weak to read at all. `n` widens the band while keeping
+**uniform** coverage (one region, one fill — a translucent paint never stacks toward the outer row).
+
+**Escape hatch — a vertical gradient** when a family wants more visual weight than two flat bands. It
+stays SVG-cheap because it is *row-uniform* (a horizontal or 135° gradient is not — §8):
+
+```drw
+draw tile(c) 32x32:
+  rrect linear(90, c.mix(l, 20%), c.darken(14%)) 2:2 29:29 6 fill
+  line c.mix(l, 52%) 9:2 22:2          # 1px top highlight
+```
+
+Pick one contract for the whole family — never mix the two between siblings.
 
 ## 3. Glyph = white silhouette, disambiguated
 
-The glyph is a bold near-white mass on the tile (detailed families: paper `p` + ink `k` + at most
-**one** accent detail; secondary detail as `k.mix(p, 40%)` steps, never new hues). Give it a 1px
-drop shadow *with the stamp* — correct on a single-colour silhouette, not the scene "composite
-clump" case:
+The glyph is a bold near-white mass on the tile (detailed families: paper `l` + ink `k` + at most **one**
+accent detail; secondary detail as `k.mix(l, 40%)` steps, never a new hue). A 1px drop shadow on the
+`stamp` reads correctly here — a single-colour silhouette, not the composite-clump case a scene's
+multi-part sprite would hit:
 
 ```drw
-draw mail:
+draw mail 32x32:
   stamp plate(b) 0:0
   stamp mailGlyph 6:9 shadow 0:1 k.alpha(35%)
 ```
 
-**Silhouette-first: run the mis-reading test before rendering.** Every glyph can collapse into a
-wrong reading at native size — mic→wine glass, play→arrow, tag→gem, videocall→arrow. Name the wrong
-reading, then add the ONE feature that kills it (mic cradle, note beam, camera lens hole).
+**Run the mis-reading test with `--silhouette --png@6`** (the plate auto-detects and subtracts, leaving
+just the glyph). Every glyph can collapse into a wrong reading at native size — mic→wine glass,
+play→arrow, tag→gem. Name it, then add the one feature that kills it (mic cradle, note beam, camera lens
+hole).
 
-**Merge-trap:** two abutting filled sub-forms of equal height/width fuse into a single silhouette
-(videocall body + wedge → "arrow"). Make the appended sub-form visibly narrower (a notch) or split
-it off with one background pixel — the part boundary must survive in the outline. On an asymmetric
-master, keep one asymmetric anchor (tip, hole) alive in the 16px reduction, or it reads generic.
+**Merge trap:** two abutting filled sub-forms of equal height/width fuse into one silhouette (a body +
+wedge reads as an arrow). Make the appended sub-form visibly narrower, or split it off with one
+background pixel — the part boundary must survive in the outline.
 
-## 4. Optical centering on even canvases (probe-verified)
+## 4. Optical centering on even canvases
 
-An even canvas puts the visual centre on a **half-pixel**. Verified on 32px:
+An even canvas puts the visual centre on a half-pixel:
 
-- `circle c r fill` covers **`c−r … c+r−1`** (2r px), visual centre **`c−0.5`**. `circle 16:16 10`
-  → bbox `{x:6, w:20}` = cols 6..25, centre 15.5. Put circle centres on `16`, not on a guessed 15.
-- A glyph is centred when its bbox satisfies **`x0 + x1 = W−1`** (=31 on 32px) — equal left/right
-  margin. Confirm with `--inspect` `alphaCoverageBBox`; don't eyeball it.
-- A `stamp … shadow 0:1` shifts visual mass ~0.3px down → set an already-centred glyph 1px
-  **higher** (mandatory at 16px, taste at 32).
-- **Edge-centred subtract/union circles (notch/bump): r ≤ ~20 % of the block edge.** Probe on a
-  16px-wide body: r3 (19 %) = a shallow notch; r6 (40 %) gouges a hemisphere and splits the
-  silhouette into two prongs. Always verify with `--png@4 --grid`.
+- `circle c r fill` covers `c−r … c+r−1` (2r px), visual centre `c−0.5`. `circle 16:16 10` on a 32px
+  canvas gives bbox `{x:6, w:20}` — centre 15.5. Put circle/ellipse centres on `16`, not a guessed `15`
+  ([language.md](language.md) §4 has the full rule; it applies identically to both axes of `ellipse`).
+- A glyph is centred when its bbox satisfies `x0 + x1 = W−1` (=31 on 32px). Confirm with
+  `render … --inspect --json`'s `alphaCoverageBBox` — don't eyeball it.
+- A hand-built `poly`/`curvePoly` (a compass rose, dial ticks) gets none of `circle`'s automatic
+  half-pixel handling — every vertex is a literal coordinate, so a shape authored around a guessed
+  integer centre inherits its bias wholesale and sits half a pixel off whatever else shares the
+  frame. Build every opposite point pair as a span that sums to `W−1` (not from one centre variable),
+  then confirm with the same bbox check above.
+- A `stamp … shadow 0:1` shifts visual mass ~0.3px down — set an already-centred glyph 1px **higher** to
+  compensate (mandatory at 16px, taste at 32).
+- An edge-centred notch/bump (subtract/union circle): keep `r` ≤ ~20% of the block edge, or it gouges a
+  hemisphere and splits the silhouette into two prongs. Verify with `--png@4 --grid`.
 
-## 5. Stroke weight & the 16px legibility budget
+## 5. Stroke weight & the 16px budget
 
-- Bearing strokes **≥2px @32**; a 1px diagonal reads thinner than a 1px straight, so **diagonals
-  ≥~16px long get `w2`** (envelope flap, clock hand). Horizontals/verticals 1–2px by weight.
+- Bearing strokes ≥2px @32; a diagonal reads thinner than a straight line of the same width, so a
+  diagonal ≥~16px long gets `w2`.
 - **@16 the budget is brutal:** margin ≤1px (tiles go full-bleed), radius ~3, strokes still ≥2px.
-  **Decide what drops before writing coordinates** — a strike-list comment first (feet, tick marks,
-  a third ornament), then the points. (Weather's 16px icons landed first try behind a strike-list;
-  its 32px masters without one cost 2–4 iterations each.)
-- `poly` takes no trailing `w<N>`; stroke a Region for a wide outline. `arc`/`quad`/`bezier` below
-  ~12px rasterize blocky — hand-pixel instead. (Both SKILL.md § Gotchas.)
+  Decide what drops *before* writing coordinates — a one-line strike-list comment (feet, tick marks, a
+  third ornament), then the points.
+- `poly` takes no trailing `w<N>` and `arc`/`quad`/`bezier` rasterize blocky below ~12px — both traps
+  and their fixes are in [language.md](language.md) §4.
+- **Small filled circles square off.** `circle c 3 fill` covers a 6×6 box with only its four corner
+  pixels clipped — verified via `--inspect --json`'s `occupancy`, it reads as a black square, not a
+  dot. Below r≈4 don't lean on `circle` for a round accent — size it up, or hand-pixel the mark.
 
 ## 6. Multi-size = redraw, never scale
 
-Never scale a master. Each size is a fresh `draw` with its own explicit `WxH` header — a size-less
-draw **silently inherits the theme `size`** (a real, expensive trap) — its own proportioned tile,
-and re-thickened strokes.
+Each size is a fresh `draw` with its own explicit `WxH` header (a size-less draw silently inherits the
+theme `size` — a real, expensive trap), its own proportioned tile, and re-thickened strokes.
 
-- **Paradigm threshold ~12px glyph area:** below it, hand-pixel the whole icon (tile + glyph
-  together) as **one `pixels:` grid** using theme `pal` keys — identical corner cut-outs to its
-  siblings, no stamp-order pitfalls. Above it, primitives.
-- **64px is a detail redraw, not an enlargement:** add detail (fluting, glints, vents, a modelled
-  lens), keep the *same* contract (radius %, light direction, palette). W004 no longer fires on
-  48/64/128 detail sizes (reference.md).
+- **Below ~12px glyph area:** hand-pixel the whole icon (tile + glyph together) as one `pixels:` grid
+  using the theme's `palette` keys — identical corner cut-outs to its siblings, no stamp-order pitfalls.
+  `starters/icon-family.drw`'s `mailSmall` is this pattern, verified.
+- **64px is a detail redraw, not an enlargement:** add detail (fluting, glints, a modelled lens), keep
+  the same contract (radius %, light direction, palette).
 
 ## 7. Family palette
 
-- One accent per app; derive every shade with `.mix/.lighten/.darken/.alpha` chains off that accent
-  so a single recolour flows through the family.
-- **Hue-only oklch** = instant coherence: fix L and C, rotate hue only — `oklch(0.62, 0.15, h)` per
-  app (media). Six apps, one line each, guaranteed equal visual weight.
-- `grad` stops **intra-hue** (`x.lighten` ↔ `x.darken` of one base); cross-hue interpolates the
-  short OkLCh arc through magenta/grey (SKILL.md § Gotchas).
-- Theme `pal` keys are single letters — keep a one-line legend in the `style` guide. Never
-  `w`/`h`/`shadow`/`rim`/`tint`/`grain`/… as keys or bindings (SKILL.md § Gotchas covers the
-  reserved-name and theme-scope traps).
+One accent per app; derive every shade with `.mix`/`.lighten`/`.darken`/`.alpha` off that accent, so one
+recolour flows through the family. **Hue-only oklch** gives instant coherence across many apps: fix `L`
+and `C`, rotate hue only — `oklch(0.62, 0.15, h)` per app, one line each, guaranteed equal visual weight.
+Theme `palette` keys are single letters — keep a one-line legend in the `style` guide.
 
 ## 8. SVG targets = flat tiles
 
-Pixel-mode SVG merges *horizontal* runs, so anything varying **along a scanline** — a horizontal or
-135° gradient, a `shadeRegion`/`lightRegion` veil, `grain` — breaks the merge into ~1 `<rect>`/pixel
-(5–25×; measured 3.7 → 50.8 KB for one 32px icon). For SVG-export families use the **flat-tile or
-1px-bevel contract (§2)** or 2–3 discrete `pal` zones; reserve gradient/veil tiles for PNG-only. The
-row-uniform vertical gradient (§2, first option) is the exception — it stays compact. Full detail:
-SKILL.md § Gotchas. **Counter-check `<rect>` count ≪ pixel count after `build`.**
+Pixel-mode SVG merges *horizontal* runs into one `<rect>` — anything varying **along a scanline** (a
+horizontal or 135° gradient, `model` form shade, `grain`) breaks the merge into roughly one `<rect>` per
+pixel (measured 5–25× file-size growth on a 32px icon). Use the edge-band or vertical-gradient contract
+(§2) for any family that exports SVG; reserve scanline-varying gradients for PNG-only targets. Counter-
+check after `build`: `<rect>` count should stay far below pixel count.
 
 ## 9. Verification cadence
 
-`check` catches almost nothing on icons — quality is 100 % visual. After each edit batch:
+Beyond the loop in [verify.md](verify.md), an icon family adds:
 
-1. `check --json` = `[]` (+ `--rows` for `pixels:` grids, `--lint` to catch W002 orphan draws).
-2. **`sheet file.drw --png@4`** — the family contact sheet: every `export`ed draw size-normalized
-   and labeled in one grid. This is the cross-sibling consistency judge (radius / stroke /
-   grey-value / hue balance) the language previously lacked. **Look here first.**
-3. Single **`--png@4`** for the form of one icon; **`--png@1` for the truth** — every icon must read
-   at 100 % zoom on its native size.
-4. **`--inspect --json`** — `alphaCoverageBBox` as the centering proof (§4); equal
+0. **Gate:** `critique --as icon --strict --json` → must-fix `C003` (centering) is clean; then answer
+   the rubric it prints (misread test + merge trap) by looking. The shared tile/plate is detected and
+   subtracted before `C009` signs, so a finding there means two *glyphs* genuinely collapse
+   ([verify.md](verify.md)) — differentiate them.
+1. **`sheet file.drw --png@4`** first — the family contact sheet, every exported icon size-normalized
+   and labeled in one grid. This is the cross-sibling judge for radius/stroke/grey-value/hue drift.
+2. `render …#name --png@1` — the truth at native zoom; `--png@4` for form.
+3. `render …#name --inspect --json` — `alphaCoverageBBox` is the centering proof (§4); equal
    `opaquePixelCount` across sibling tiles is a cheap consistency check.
-5. SVG target → open one `.svg` (§8 counter-check).
-6. Placement bug → `--png@4 --grid 8` locates it in one render.
+4. SVG target → open one `.svg` (§8 counter-check).
+5. Placement bug → `--png@4 --grid 8` locates it in one render.
 
 ## 10. Export pattern
 
-Every icon: PNG `@1 @2` + `svg`, base path `<family>/<name>`. `svg ids classes` yields CSS-classed,
-`<title>`-tagged output (communication):
+Every icon: PNG `@1 @2` + `svg`, base path `<family>/<name>` — export paths are relative to the
+recipe's own folder, so `<family>` is the recipe's own file stem (`productivity.drw` → exports
+`productivity/mail`), never the recipe's *directory* name (that repeat is lint `W016`). `svg ids
+classes` yields CSS-classed, `<title>`-tagged output:
 
 ```drw
 export mail productivity/mail:

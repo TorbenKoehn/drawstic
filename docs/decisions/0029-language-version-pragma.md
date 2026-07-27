@@ -1,6 +1,8 @@
 # 29. Language version pragma for cross-version reproducibility
 
-- Status: Accepted
+- Status: Accepted (point 3 — newer-than-supported error — and the retain-old-semantics
+  obligation superseded by [ADR-0088](0088-in-place-v1-break.md): the engine collapses to one
+  semantics; the pragma is still parsed but no longer read)
 - Date: 2026-06-17
 - Deciders: t.koehn, Claude
 - Refines: [ADR-0007](0007-visual-not-byte-determinism.md)

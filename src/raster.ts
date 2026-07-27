@@ -1,8 +1,18 @@
 // Rasterization (spec §8–§9, ADR-0028, ADR-0023, ADR-0025, ADR-0043):
 // pinned primitives, region eliminators, gradients (ordered-dithered in
-// pixel mode), stamps (inverse-mapped NN), filters, text.
+// pixel mode), stamps (inverse-mapped NN; opt-in 4×4 area-sampled AA —
+// ADR-0099), filters, text.
 
-import { type Color, mix, TRANSPARENT } from './color.js'
+import {
+  type Color,
+  color,
+  inkTone,
+  litTone,
+  mix,
+  nearestColor,
+  shadowTone,
+  TRANSPARENT,
+} from './color.js'
 import { dcosDeg, dhypot, dsinDeg, roundHalfUp } from './dmath.js'
 import { type BitmapFont, missingGlyph } from './fonts.js'
 import type { Framebuffer } from './framebuffer.js'
@@ -11,6 +21,7 @@ import {
   type BBox,
   bresenham,
   circleSpans,
+  type FormProfile,
   type Grad,
   invertMatrix,
   type Region,
@@ -298,14 +309,20 @@ const regionBounds = (ctx: Context, r: Region): BBox | null => {
   return b.x0 > b.x1 || b.y0 > b.y1 ? null : b
 }
 
+/**
+ * The pinned 4×4 subsample grid (ADR-0040): `−0.5 + (2k+1)/8` for `k = 0..3`, i.e.
+ * `{−3/8, −1/8, +1/8, +3/8}` about a pixel centre. Shared by `coverageAt` (region
+ * eliminators, `mode smooth`) and `stampTexelAA` (opt-in stamp resampling, ADR-0099) —
+ * one AA grid in the whole engine.
+ */
+const SUBSAMPLE_OFFSETS = [-0.375, -0.125, 0.125, 0.375]
+
 /** Smooth-mode coverage: 4×4 supersamples on the 1/16 grid (ADR-0040). */
 const coverageAt = (r: Region, x: number, y: number): number => {
   let hit = 0
-  for (let sy = 0; sy < 4; sy++) {
-    for (let sx = 0; sx < 4; sx++) {
-      const fx = x - 0.5 + (2 * sx + 1) / 8
-      const fy = y - 0.5 + (2 * sy + 1) / 8
-      if (r.test(fx, fy)) {
+  for (const oy of SUBSAMPLE_OFFSETS) {
+    for (const ox of SUBSAMPLE_OFFSETS) {
+      if (r.test(x + ox, y + oy)) {
         hit++
       }
     }
@@ -624,93 +641,6 @@ export const strokePath = (
   }
 }
 
-// ── flood fill (ADR-0028 §1) ────────────────────────────────────────────────
-
-/**
- * Push the in-bounds 4-connected neighbours of (px, py) onto the flood stack (N/E/S/W only, canvas-clipped).
- */
-const pushNeighbors = (
-  stack: number[],
-  idx: number,
-  px: number,
-  py: number,
-  w: number,
-  h: number,
-): void => {
-  if (px > 0) {
-    stack.push(idx - 1)
-  }
-  if (px < w - 1) {
-    stack.push(idx + 1)
-  }
-  if (py > 0) {
-    stack.push(idx - w)
-  }
-  if (py < h - 1) {
-    stack.push(idx + w)
-  }
-}
-
-// paint replaces the flooded area (set, not blend, so the seed color is
-// replaced even when the paint carries alpha over the same color)
-const paintFlood = (ctx: Context, sink: PixelSink, paint: Paint): void => {
-  if (sink.xs.length === 0) {
-    return
-  }
-  const bbox: BBox = { x0: sink.x0, y0: sink.y0, x1: sink.x1, y1: sink.y1 }
-  for (let i = 0; i < sink.xs.length; i++) {
-    const fx = sink.xs[i]
-    const fy = sink.ys[i]
-    if (fx === undefined || fy === undefined) {
-      continue
-    }
-    if (ctx.mask && !ctx.mask.has(fx, fy)) {
-      continue
-    }
-    ctx.buffer.set(fx, fy, paintAt(paint, fx, fy, bbox, ctx.mode))
-  }
-}
-
-/**
- * A 4-connected flood fill (ADR-0028 §1) from (x, y): spreads to every pixel exactly RGBA-equal to
- * the seed, never diagonally. The `budget()` hook is called once per stack pop — the evaluation-step
- * hook (throws DrawsticError E010 via the evaluator's step counter; independent of the pixel-write
- * budget). No-op when the seed point is off-canvas.
- */
-export const flood = (
-  ctx: Context,
-  x: number,
-  y: number,
-  paint: Paint,
-  budget: () => void,
-): void => {
-  if (!ctx.buffer.inBounds(x, y)) {
-    return
-  }
-  const seed = ctx.buffer.get(x, y)
-  const eq = (c: Color): boolean =>
-    c.r === seed.r && c.g === seed.g && c.b === seed.b && c.a === seed.a
-  const sink = new PixelSink()
-  const visited = new Set<number>()
-  const stack: number[] = [y * ctx.buffer.width + x]
-  while (stack.length > 0) {
-    budget()
-    const idx = stack.pop()
-    if (idx === undefined || visited.has(idx)) {
-      continue
-    }
-    visited.add(idx)
-    const px = idx % ctx.buffer.width
-    const py = Math.floor(idx / ctx.buffer.width)
-    if (!eq(ctx.buffer.get(px, py))) {
-      continue
-    }
-    sink.add(px, py)
-    pushNeighbors(stack, idx, px, py, ctx.buffer.width, ctx.buffer.height)
-  }
-  paintFlood(ctx, sink, paint)
-}
-
 // ── stamp (ADR-0043/0044) ───────────────────────────────────────────────────
 
 /** Optional uniform tint: mix in color at amount, applied to sampled pixels before compositing. */
@@ -841,10 +771,70 @@ const stampTexelAt = (
 }
 
 /**
+ * Opt-in 4×4 area-sampled resample of a dest pixel through the inverse matrix (ADR-0099 §3): 16
+ * taps on the pinned {@link SUBSAMPLE_OFFSETS} grid, each mapped independently through
+ * `applyMatrix` (never stepped incrementally — that would depend on float accumulation order) and
+ * read via the *same* inverse-map + `roundHalfUp` path {@link stampTexelAt} uses. Accumulates
+ * premultiplied, gamma-encoded sRGB in exact integers (`A ≤ 4080`, `R,G,B ≤ 1 040 400`), so the sum
+ * is order-independent by construction. `null` when every tap misses (off-sprite or zero-alpha) —
+ * the caller's "nothing to write" contract, identical to the NN path.
+ */
+const stampTexelAA = (
+  sprite: Sprite,
+  inverse: readonly number[],
+  px: number,
+  py: number,
+  dx: number,
+  dy: number,
+): Color | null => {
+  let A = 0
+  let R = 0
+  let G = 0
+  let B = 0
+  for (const oy of SUBSAMPLE_OFFSETS) {
+    for (const ox of SUBSAMPLE_OFFSETS) {
+      const p = applyMatrix(inverse, dx + ox - px, dy + oy - py)
+      if (!p) {
+        continue
+      }
+      const sx = roundHalfUp(p.x)
+      const sy = roundHalfUp(p.y)
+      if (sx < 0 || sy < 0 || sx >= sprite.w || sy >= sprite.h) {
+        continue
+      }
+      const c = spriteTexel(sprite, sx, sy)
+      if (!c) {
+        continue
+      }
+      A += c.a
+      R += c.r * c.a
+      G += c.g * c.a
+      B += c.b * c.a
+    }
+  }
+  if (A === 0) {
+    return null
+  }
+  return {
+    type: 'color',
+    r: roundHalfUp(R / A),
+    g: roundHalfUp(G / A),
+    b: roundHalfUp(B / A),
+    a: roundHalfUp(A / 16),
+  }
+}
+
+/**
  * Blit a sprite at (px, py) with an optional source-space transform:
  * dest = (px, py) + M(src). Inverse-mapped nearest-neighbour; alpha
  * honoured; identity blits directly. Each written destination pixel ticks
  * Framebuffer.onWrite (the pixel-write budget hook) via blendColor.
+ * `aa` (ADR-0099) opts one placement into the 4×4 area-sampled
+ * {@link stampTexelAA} instead of {@link stampTexelAt} — byte-identical to
+ * nearest-neighbour under the lattice-identity lemma (mirrors, `rot180`,
+ * integer scale/shift at any size; the quarter-turns only when the sprite's
+ * `w` and `h` share a parity — ADR-0099 §3, amended 2026-07-27) and ignored
+ * by the identity (`!matrix`) fast path, which has no fringe to resample.
  */
 export const stampSprite = (
   ctx: Context,
@@ -854,6 +844,7 @@ export const stampSprite = (
   matrix?: readonly number[],
   tint?: Tint,
   extraMask?: Region,
+  aa = false,
 ): boolean => {
   if (!matrix) {
     blitIdentity(ctx, sprite, px, py, tint, extraMask)
@@ -867,12 +858,13 @@ export const stampSprite = (
   if (!bounds) {
     return false
   }
+  const sampleTexel = aa ? stampTexelAA : stampTexelAt
   for (let dy = bounds.y0; dy <= bounds.y1; dy++) {
     for (let dx = bounds.x0; dx <= bounds.x1; dx++) {
       if (stampMasked(ctx, extraMask, dx, dy)) {
         continue
       }
-      const c = stampTexelAt(sprite, inverse, px, py, dx, dy)
+      const c = sampleTexel(sprite, inverse, px, py, dx, dy)
       if (c) {
         ctx.buffer.blendColor(dx, dy, applyTint(c, tint))
       }
@@ -938,43 +930,53 @@ const dilateStep = (
 }
 
 /**
- * N-pixel outline filter: dilate the opaque silhouette width times (4-connected) and paint the
- * newly-covered, still-non-opaque ring.
+ * Silhouette-coverage floor: only pixels at least half-covered count as the figure, so a soft
+ * contact shadow (`alpha 38%`) or an anti-aliased fringe is *not* treated as silhouette and does
+ * not get ringed — the outline hugs the solid figure at its 50 %-coverage contour.
  */
-export const filterOutline = (ctx: Context, paint: Paint, width: number): void => {
+const OUTLINE_ALPHA_MIN = 128
+
+/**
+ * N-pixel silhouette outline (spec §12): build the figure's silhouette from substantially-opaque
+ * pixels (≥ {@link OUTLINE_ALPHA_MIN}), dilate it `width` times (4-connected — no diagonal corner
+ * nubs, the pixel-art-correct hug) and paint the newly-covered outer/interior-hole ring. Because it
+ * only ever paints *outside* the silhouette, it never eats thin features (a 1px staff/finger keeps
+ * its core). Run once over the *composited* figure (the last statement of the assembly draw) for a
+ * single clean contour; run per-part and the seams between parts get ringed too. When `paint` is
+ * null the colour is derived from the silhouette's mean via {@link inkTone} — one consistent dark
+ * contour with a hint of the figure's own hue.
+ */
+export const filterOutline = (ctx: Context, paint: Paint | null, width: number): void => {
   const buffer = ctx.buffer
   const opaque = new Uint8Array(buffer.width * buffer.height)
+  let sr = 0
+  let sg = 0
+  let sb = 0
+  let count = 0
   for (let y = 0; y < buffer.height; y++) {
     for (let x = 0; x < buffer.width; x++) {
-      if (buffer.alphaAt(x, y) > 0) {
+      if (buffer.alphaAt(x, y) >= OUTLINE_ALPHA_MIN) {
         opaque[y * buffer.width + x] = 1
+        if (!paint) {
+          const c = buffer.get(x, y)
+          sr += c.r
+          sg += c.g
+          sb += c.b
+          count++
+        }
       }
     }
   }
+  if (count === 0 && !paint) {
+    return
+  }
+  const resolved: Paint = paint ?? inkTone(color(sr / count, sg / count, sb / count))
   let current: Uint8Array = opaque
   const sink = new PixelSink()
   for (let n = 0; n < width; n++) {
     current = dilateStep(current, opaque, sink, buffer.width, buffer.height)
   }
-  sink.paint(ctx, paint)
-}
-
-/**
- * Replace every pixel whose committed RGBA exactly equals from with to (raw set, not blended); mask-respecting.
- */
-export const filterReplace = (ctx: Context, from: Color, to: Color): void => {
-  const buffer = ctx.buffer
-  for (let y = 0; y < buffer.height; y++) {
-    for (let x = 0; x < buffer.width; x++) {
-      if (ctx.mask && !ctx.mask.has(x, y)) {
-        continue
-      }
-      const color = buffer.get(x, y)
-      if (color.r === from.r && color.g === from.g && color.b === from.b && color.a === from.a) {
-        buffer.set(x, y, to)
-      }
-    }
-  }
+  sink.paint(ctx, resolved)
 }
 
 /** Mix paint into every opaque pixel at OkLCh amount, preserving each pixel's original alpha. */
@@ -999,21 +1001,13 @@ export const filterTint = (ctx: Context, paint: Color, amount: number): void => 
  * Offset-silhouette drop shadow: render the alpha silhouette shifted by (dx, dy) in paint
  * underneath, then composite the original content back over it.
  *
- * When `respectMask` is set (language version 2, ADR-0070) an enclosing `mask …:` block confines
- * the effect — only mask-visible pixels are rewritten (the shadow is cast from the whole buffer
- * but lands only inside the mask; masked-off pixels keep their content), consistent with the
- * texture filters and region shadow forms. Under `drawstic 1` (`respectMask` false) it rebuilds
- * the whole buffer, ignoring the mask — the pinned v1 behaviour.
+ * An enclosing `mask …:` block confines the effect (ADR-0070) — only mask-visible pixels are
+ * rewritten (the shadow is cast from the whole buffer but lands only inside the mask; masked-off
+ * pixels keep their content), consistent with the texture filters and the region shadow forms.
  */
-export const filterShadow = (
-  ctx: Context,
-  dx: number,
-  dy: number,
-  paint: Color,
-  respectMask = false,
-): void => {
+export const filterShadow = (ctx: Context, dx: number, dy: number, paint: Color): void => {
   const buffer = ctx.buffer
-  const mask = respectMask ? ctx.mask : null
+  const mask = ctx.mask
   const original = buffer.clone()
   // clear only the pixels we may write (in-mask, or all when unmasked); masked-off pixels retain
   // their content so the shadow stays confined to the mask
@@ -1197,10 +1191,35 @@ export const filterDither = (
 }
 
 /**
+ * Palette reduction (ADR-0093): remap every opaque pixel's RGB to its perceptually nearest colour in
+ * `palette` (OkLab distance, first-declared wins ties — {@link nearestColor}), keeping the source
+ * alpha. Deterministic; the pipeline half of the import-assist workflow (external PNG →
+ * `import … sha256` → `quantize` → `outline` → `critique`). An empty palette is a no-op. An optional
+ * leading region scope confines it, like the other texture filters.
+ */
+export const filterQuantize = (
+  ctx: Context,
+  palette: readonly Color[],
+  region?: Region | null,
+): void => {
+  if (palette.length === 0) {
+    return
+  }
+  forOpaquePixels(
+    ctx,
+    (x, y, source) => {
+      const near = nearestColor(source, palette)
+      ctx.buffer.set(x, y, color(near.r, near.g, near.b, source.a))
+    },
+    region,
+  )
+}
+
+/**
  * Iterate every in-bounds, in-mask, in-region pixel of `region`, invoking `paint(x, y, t)` with
  * `t` = the pixel's distance from `light` normalized to the region bbox's farthest corner (clamped
- * to [0,1]; 0 at `light`, 1 at the far corner). Shared spine of the distance-scaled lighting helpers
- * (ADR-0063, ADR-0068, ADR-0069) so `shadeRegion`/`lightRegion` stay pixel-consistent.
+ * to [0,1]; 0 at `light`, 1 at the far corner). The distance spine of {@link lightRegion}
+ * (ADR-0063, ADR-0068, ADR-0069).
  */
 const forRegionDistance = (
   ctx: Context,
@@ -1232,48 +1251,12 @@ const forRegionDistance = (
 }
 
 /**
- * v2 directional distance shading (ADR-0068): blend `base` as a shadow veil over `region` with
- * opacity `base.a × amount × t`, where `t` is the pixel's normalized distance from `light`. Nearest
- * to `light` is untouched; the far corner reaches `base.a × amount`. Here `amount` is the veil
- * opacity — an opaque `base` no longer repaints the region, it just makes the veil reach full black.
- */
-export const shadeRegion = (
-  ctx: Context,
-  region: Region,
-  light: { readonly x: number; readonly y: number },
-  base: Color,
-  amount: number,
-): void => {
-  const strength = clamp01(amount)
-  forRegionDistance(ctx, region, light, (x, y, t) => {
-    ctx.buffer.blend(x, y, base.r, base.g, base.b, roundHalfUp(base.a * strength * t))
-  })
-}
-
-/**
- * v1 directional distance shading (ADR-0063), retained for `drawstic 1` recipes: mix `base` toward
- * black within `region` at constant `base.a` veil opacity, the black-mix fraction scaled by distance
- * from `light` and `amount`. Superseded by {@link shadeRegion} from language version 2 (ADR-0068),
- * where `base` alpha no longer doubles as veil opacity.
- */
-export const shadeRegionLegacy = (
-  ctx: Context,
-  region: Region,
-  light: { readonly x: number; readonly y: number },
-  base: Color,
-  amount: number,
-): void => {
-  const dark = { type: 'color' as const, r: 0, g: 0, b: 0, a: base.a }
-  forRegionDistance(ctx, region, light, (x, y, t) => {
-    ctx.buffer.blendColor(x, y, mix(base, dark, clamp01(t * amount)))
-  })
-}
-
-/**
- * v2 additive counterpart to {@link shadeRegion} (ADR-0069): blend `paint` as a light veil over
- * `region` with opacity `paint.a × amount × (1 − t)`, where `t` is the pixel's normalized distance
- * from `light`. Nearest to `light` is brightest (up to `paint.a × amount`); the far corner is
- * untouched. Mirror-symmetric to `shadeRegion` — that darkens by `t`, this brightens by `1 − t`.
+ * Distance-scaled light veil (ADR-0069): blend `paint` over `region` with opacity
+ * `paint.a × amount × (1 − t)`, where `t` is the pixel's normalized distance from `light`. Nearest
+ * to `light` is brightest (up to `paint.a × amount`); the far corner is untouched.
+ *
+ * Internal only since ADR-0097 removed the raw `lightRegion` command — its one caller is the `glow`
+ * response's self-light, which brightens a region from its own centre outward.
  */
 export const lightRegion = (
   ctx: Context,
@@ -1291,6 +1274,10 @@ export const lightRegion = (
 /**
  * Width-pixel directional rim light: paints the band of region not covered by region shifted
  * in the opposite direction, one shift-step per pixel of width.
+ *
+ * Internal only since ADR-0097 removed the raw `rim` command — its one caller is the material `rim`
+ * dose. Authors reach the same geometry through the region method `R.edge(dx:dy, n)`, which paints
+ * the whole band in *one* pass (uniform coverage) instead of stacking `n` overlapping fills.
  */
 export const rimRegion = (
   ctx: Context,
@@ -1318,7 +1305,11 @@ export const rimRegion = (
   }
 }
 
-/** Convenience filter: a 1px inner-boundary stroke of region at paint alpha scaled by amount. */
+/**
+ * A 1px inner-boundary stroke of region at paint alpha scaled by amount — the contact darkening at
+ * a form's seated edge. Internal only since ADR-0097 removed the raw `ao` command (pixel-identical
+ * to `stroke p.alpha(a) r`); its one caller is the material `ao` dose.
+ */
 export const ambientOcclusion = (
   ctx: Context,
   region: Region,
@@ -1326,6 +1317,386 @@ export const ambientOcclusion = (
   amount: number,
 ): void => {
   strokeRegion(ctx, region, { ...paint, a: roundHalfUp(paint.a * clamp01(amount)) }, 1)
+}
+
+// ── form (normal-based) shading (ADR-0089) ───────────────────────────────────
+
+/** A 3D unit vector; `z` is the out-of-plane axis, positive toward the viewer/light. */
+export type Vec3 = { readonly x: number; readonly y: number; readonly z: number }
+
+/**
+ * Fully-resolved parameters for {@link formShade} (ADR-0089, ADR-0091), built from a `Material` +
+ * `Light` by `shading.ts`. `base` is the material colour; `warm`/`cool` the highlight/shadow tint
+ * targets; `light` the unit *toward-light* vector (in-plane direction + `z` elevation); `shade`/`hi`
+ * the max shadow / highlight doses; `spec` the Blinn specular dose and `specPow` its exponent
+ * (higher ⇒ tighter hotspot); `puff` the surface-curvature gain of the Poisson height field
+ * (higher ⇒ rounder, more form); `ambient` the shadow floor in `[0,1]` (the lit fraction the darkest
+ * pixel keeps, so shadows never crush to black); `bands` is `null` for the smooth default or `N` for
+ * a crisp `N`-band cel quantization of the *same* intensity field.
+ */
+export type FormSpec = {
+  readonly base: Color
+  readonly warm: Color
+  readonly cool: Color
+  readonly light: Vec3
+  readonly shade: number
+  readonly hi: number
+  readonly spec: number
+  readonly specPow: number
+  readonly puff: number
+  readonly ambient: number
+  readonly bands: number | null
+  /**
+   * The height-field profile (ADR-0091): `round` inflates the isotropic 2D Poisson field
+   * (hemisphere/half-cylinder, darkening toward every boundary); `drape` inflates a per-row 1D
+   * field (horizontal curvature only, flat down its length) so a hanging cloth reads as a vertical
+   * half-tube that does not darken toward its hem.
+   */
+  readonly profile: FormProfile
+}
+
+/** Intensity at which the tone equals `base`; brighter lifts toward `warm`, darker toward `cool`. */
+const FORM_MID = 0.5
+/**
+ * **Dither policy** (ADR-0091 amendment). Neither shading path dithers:
+ *
+ * - smooth (`bands === null`): `formTone` is continuous, so there are no quantization steps to break
+ *   up — jittering its input only adds speckle ("noise in the shadows").
+ * - `cel N`: the whole point is `N` crisp bands. Jittering the band index in *intensity* space
+ *   widens into a large *spatial* stipple zone wherever the form gradient is slow (a cloak's whole
+ *   surface), which is the same noise defect wearing a different hat. Softer steps come from more
+ *   bands, or from `model`.
+ *
+ * Deliberate stipple stays explicit and controllable: the `dither` filter, `grain`/`speckle`,
+ * `quantize`, or a pixel-mode gradient.
+ */
+/** How far a specular hotspot lifts toward the light colour (the tint target `mix`es toward). */
+const SPEC_TINT = 0.85
+/** The Poisson height-field source constant `c` in `∇²P = −c` (scales P linearly ⇒ absorbed by `puff`). */
+const POISSON_SOURCE = 1
+/** Per-pixel Jacobi cost gain: iterations ≈ `POISSON_ITER_GAIN · maxBoundsDim`, capped. */
+const POISSON_ITER_GAIN = 0.6
+/** Floor / ceiling on Jacobi iterations — keeps small parts cheap and bounds the worst case (O(iters·area)). */
+const POISSON_ITER_MIN = 8
+const POISSON_ITER_MAX = 48
+
+/**
+ * Map a Lambert intensity `lit ∈ [0,1]` to a surface tone (ADR-0089): at {@link FORM_MID} it is
+ * `base`; above, a warm highlight via {@link litTone} toward `spec.warm` scaled by `spec.hi`; below,
+ * a cool shadow via {@link shadowTone} toward `spec.cool` scaled by `spec.shade` (whose lightness
+ * floor keeps a dark base legible, never `#000000`). Continuous, so the terminator is a soft
+ * gradient rather than the hard linear step the old distance-ramp produced.
+ */
+const formTone = (spec: FormSpec, lit: number): Color => {
+  if (lit >= FORM_MID) {
+    return litTone(spec.base, spec.warm, ((lit - FORM_MID) / (1 - FORM_MID)) * spec.hi)
+  }
+  return shadowTone(spec.base, spec.cool, ((FORM_MID - lit) / FORM_MID) * spec.shade)
+}
+
+/**
+ * Felzenszwalb–Huttenlocher exact 1-D squared-distance transform: fills `d[q]` with
+ * `min over p of (q − p)² + f[p]`. Deterministic — only `+ − * /` and comparisons (ADR-0027) — with
+ * a large finite sentinel (never `Infinity`, which would produce `NaN` for two adjacent object
+ * cells). `v`/`z` are caller-provided scratch (parabola sites / lower-envelope breakpoints).
+ */
+const edt1d = (
+  f: Float64Array,
+  d: Float64Array,
+  v: Int32Array,
+  z: Float64Array,
+  n: number,
+): void => {
+  let k = 0
+  v[0] = 0
+  z[0] = Number.NEGATIVE_INFINITY
+  z[1] = Number.POSITIVE_INFINITY
+  for (let q = 1; q < n; q++) {
+    const fq = f[q] ?? 0
+    let vk = v[k] ?? 0
+    let s = (fq + q * q - ((f[vk] ?? 0) + vk * vk)) / (2 * q - 2 * vk)
+    while (k > 0 && s <= (z[k] ?? 0)) {
+      k--
+      vk = v[k] ?? 0
+      s = (fq + q * q - ((f[vk] ?? 0) + vk * vk)) / (2 * q - 2 * vk)
+    }
+    k++
+    v[k] = q
+    z[k] = s
+    z[k + 1] = Number.POSITIVE_INFINITY
+  }
+  k = 0
+  for (let q = 0; q < n; q++) {
+    while ((z[k + 1] ?? 0) < q) {
+      k++
+    }
+    const vk = v[k] ?? 0
+    d[q] = (q - vk) * (q - vk) + (f[vk] ?? 0)
+  }
+}
+
+/**
+ * Squared **inner** Euclidean distance-to-boundary field over the padded grid `[bx,by]+w×h`: seed
+ * every out-of-region cell to 0 and every in-region cell to a large finite value, then run the
+ * separable {@link edt1d} down columns and across rows. Result[i] is the squared distance from cell
+ * `i` to the nearest non-region cell — the exact SDF interior the form normals are read from. The
+ * one-cell pad ring is out-of-region, so an edge-flush region still sees a boundary (and every
+ * row/column has a seed, so no NaN).
+ */
+const innerDistance2 = (
+  region: Region,
+  bx: number,
+  by: number,
+  w: number,
+  h: number,
+): Float64Array => {
+  const INF = 1e20
+  const grid = new Float64Array(w * h)
+  for (let gy = 0; gy < h; gy++) {
+    for (let gx = 0; gx < w; gx++) {
+      grid[gy * w + gx] = region.has(bx + gx, by + gy) ? INF : 0
+    }
+  }
+  const maxd = Math.max(w, h)
+  const f = new Float64Array(maxd)
+  const d = new Float64Array(maxd)
+  const v = new Int32Array(maxd)
+  const z = new Float64Array(maxd + 1)
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) {
+      f[y] = grid[y * w + x] ?? 0
+    }
+    edt1d(f, d, v, z, h)
+    for (let y = 0; y < h; y++) {
+      grid[y * w + x] = d[y] ?? 0
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      f[x] = grid[y * w + x] ?? 0
+    }
+    edt1d(f, d, v, z, w)
+    for (let x = 0; x < w; x++) {
+      grid[y * w + x] = d[x] ?? 0
+    }
+  }
+  return grid
+}
+
+/**
+ * **Poisson-inflation height field** (ADR-0091) — the ridge-free replacement for the old
+ * `H = sqrt(D / Dmax)` inner-distance tent. Solves `∇²P = −c` on the region interior with a
+ * homogeneous Dirichlet boundary (`P = 0` on every out-of-region cell) by Jacobi relaxation, then
+ * returns `H = sqrt(P)`. This inflates a disc to an exact hemisphere and a stripe to a half-cylinder
+ * cross-section: the field is smooth (no medial-axis crease), and because the boundary condition is
+ * purely *local*, a thin limb bulges in proportion to its **own** width — no global `Dmax` flattens
+ * it. The **linear** inner-distance field (`sqrt(dist2)`, the EDT) seeds the solve as a warm start:
+ * it carries the per-part magnitude so thick masses reach full height in few sweeps, and — unlike the
+ * *squared* field, whose gradient is a constant-slope cone that Jacobi needs many sweeps to round off
+ * — its cone smooths into a dome within a handful of iterations (no hard terminator shoulder).
+ * Iterations are a fixed, deterministic function of the bounds size (capped), so cost is
+ * `O(iters · area)` with a bounded worst case. Deterministic: `+ − * /`, `Math.sqrt` of a
+ * non-negative field, no RNG, ping-pong buffers (order-independent Jacobi, not Gauss–Seidel).
+ */
+const poissonHeight = (dist2: Float64Array, w: number, h: number): Float64Array => {
+  const iters = Math.max(
+    POISSON_ITER_MIN,
+    Math.min(POISSON_ITER_MAX, Math.round(Math.max(w, h) * POISSON_ITER_GAIN)),
+  )
+  let cur = new Float64Array(w * h)
+  let next = new Float64Array(w * h)
+  // warm start: P₀ = the linear inner-distance field (0 on the boundary, per-part magnitude inside)
+  for (let i = 0; i < dist2.length; i++) {
+    const d2 = dist2[i] ?? 0
+    cur[i] = d2 > 0 ? Math.sqrt(d2) : 0
+  }
+  for (let it = 0; it < iters; it++) {
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x
+        if ((dist2[i] ?? 0) <= 0) {
+          next[i] = 0 // Dirichlet boundary (out-of-region / concavity cell held at 0)
+          continue
+        }
+        const l = cur[i - 1] ?? 0
+        const r = cur[i + 1] ?? 0
+        const u = cur[i - w] ?? 0
+        const d = cur[i + w] ?? 0
+        next[i] = (l + r + u + d + POISSON_SOURCE) / 4
+      }
+    }
+    const tmp = cur
+    cur = next
+    next = tmp
+  }
+  const height = new Float64Array(w * h)
+  for (let i = 0; i < height.length; i++) {
+    const p = cur[i] ?? 0
+    height[i] = p > 0 ? Math.sqrt(p) : 0
+  }
+  return height
+}
+
+/**
+ * **Anisotropic drape height field** (ADR-0091) — the `drape` profile's replacement for the
+ * isotropic {@link poissonHeight}. Instead of the 2D field it inflates each horizontal row's run of
+ * in-region cells (length `n`) to a **1D half-cylinder** cross-section `H[i] = sqrt(0.5·i·(n+1−i))`
+ * (the discrete `−P'' = 1`, `P = 0` at the two *left/right* run ends only — the top and bottom edges
+ * are never pinned). A hanging cloak/skirt therefore curves only left↔right (a vertical half-tube)
+ * and does **not** accumulate the downward darkening the isotropic field bakes into a long region
+ * (the "turtle-shell" defect), because the hem is not a height-zero boundary. The raw per-row field
+ * has integer row-to-row steps where the silhouette slopes (the run's start/length jump by whole
+ * pixels), which would read as faint horizontal bands, so a few **vertical-only Neumann smoothing
+ * passes** average each cell with its in-region vertical neighbours (out-of-region neighbours fall
+ * back to the cell itself — a free top/bottom edge that keeps the hem lift). This flattens the steps
+ * while preserving the horizontal curvature and the un-darkened hem. Deterministic: `+ − * /` and
+ * `Math.sqrt` of a non-negative value; `dist2 > 0` marks the in-region cells.
+ */
+const drapeHeight = (dist2: Float64Array, w: number, h: number): Float64Array => {
+  let cur = new Float64Array(w * h)
+  for (let gy = 0; gy < h; gy++) {
+    let gx = 0
+    while (gx < w) {
+      if ((dist2[gy * w + gx] ?? 0) <= 0) {
+        gx++
+        continue
+      }
+      const start = gx
+      while (gx < w && (dist2[gy * w + gx] ?? 0) > 0) {
+        gx++
+      }
+      const n = gx - start
+      for (let k = 0; k < n; k++) {
+        const i = k + 1
+        const p = 0.5 * i * (n + 1 - i)
+        cur[start + k + gy * w] = p > 0 ? Math.sqrt(p) : 0
+      }
+    }
+  }
+  // vertical-only Neumann smoothing: remove the per-row discretization steps without pinning (and
+  // thus darkening) the top/bottom edges. Iterations scale with height like the isotropic solve.
+  const iters = Math.max(
+    POISSON_ITER_MIN,
+    Math.min(POISSON_ITER_MAX, Math.round(h * POISSON_ITER_GAIN)),
+  )
+  let next = new Float64Array(w * h)
+  for (let it = 0; it < iters; it++) {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x
+        if ((dist2[i] ?? 0) <= 0) {
+          next[i] = 0
+          continue
+        }
+        const self = cur[i] ?? 0
+        const u = y > 0 && (dist2[i - w] ?? 0) > 0 ? (cur[i - w] ?? 0) : self
+        const d = y < h - 1 && (dist2[i + w] ?? 0) > 0 ? (cur[i + w] ?? 0) : self
+        next[i] = (self + u + d) / 3
+      }
+    }
+    const tmp = cur
+    cur = next
+    next = tmp
+  }
+  return cur
+}
+
+/**
+ * **Form (normal-based) shading** — the ADR-0089/0091 default that replaces the old form-ignoring
+ * distance-from-a-point veil in `model`. From the region's own geometry it derives an inner-distance
+ * SDF ({@link innerDistance2}), inflates it to a **Poisson height field** ({@link poissonHeight};
+ * disc → hemisphere, stripe → half-cylinder, no medial ridge) — or, for the `drape` profile, the
+ * anisotropic per-row {@link drapeHeight} — reads a per-pixel surface normal
+ * `n = normalize(−∂H/∂x·puff, −∂H/∂y·puff, 1)`, and shades each pixel by the Lambert term
+ * `clamp(n · light, 0..1)` lifted by the `ambient` floor. The intensity is mapped to a tone by
+ * {@link formTone}: brightest where the normal faces the light, softly terminating into a cool
+ * shadow on the far side. A **Blinn specular** hotspot `s = clamp(n · h)^specPow` (`h` the halfway
+ * vector between the light and the viewer) then lifts the tone toward the light colour by `s·spec` —
+ * a soft mix in smooth mode, a hard glint above `s > 0.5` in cel mode (the classic pixel-art metal
+ * look). `bands === null` renders the smooth default (Bayer-dithered **always**, ADR-0091, so the
+ * terminator stipples cleanly); `bands === N` snaps the field into `N` crisp cel bands whose
+ * boundaries are themselves Bayer-dithered across a ±0.5-band zone (dithered pixel-art band edges).
+ * Only pixels of `region` are written (through {@link putPixel}, so mask + budget are honoured);
+ * deterministic throughout (dmath-only arithmetic, no RNG).
+ *
+ * `fieldRegion` (ADR-0091 `over`) decouples the surface from the paint mask: the height field and
+ * normals are derived from `fieldRegion` (default: `region` itself), but only `region`'s pixels are
+ * toned. Passing a **union** of two adjacent parts as `fieldRegion` makes them share **one**
+ * continuous form — a leg and its boot shade as a single limb instead of restarting the field at the
+ * part seam — while each part keeps its own material/tone.
+ */
+export const formShade = (
+  ctx: Context,
+  region: Region,
+  spec: FormSpec,
+  fieldRegion: Region = region,
+): void => {
+  const b = regionBounds(ctx, fieldRegion)
+  if (!b) {
+    return
+  }
+  const bx = b.x0 - 1
+  const by = b.y0 - 1
+  const w = b.x1 - b.x0 + 3
+  const h = b.y1 - b.y0 + 3
+  const dist2 = innerDistance2(fieldRegion, bx, by, w, h)
+  const height = spec.profile === 'drape' ? drapeHeight(dist2, w, h) : poissonHeight(dist2, w, h)
+  // Gate painting to `region` only when co-shading over a larger field (otherwise `dist2 > 0` ⇔
+  // in-region, so no per-pixel membership test is needed).
+  const paintGate = fieldRegion === region ? null : region
+  const bbox: BBox = region.bbox ?? b
+  const L = spec.light
+  // Blinn halfway vector between the toward-light direction and the viewer (straight out, +z).
+  const hx = L.x
+  const hy = L.y
+  const hz = L.z + 1
+  const hlen = Math.sqrt(hx * hx + hy * hy + hz * hz)
+  const specColor = litTone(spec.base, spec.warm, SPEC_TINT)
+  const amb = clamp01(spec.ambient)
+  const bands = spec.bands
+  for (let y = b.y0; y <= b.y1; y++) {
+    for (let x = b.x0; x <= b.x1; x++) {
+      const gx = x - bx
+      const gy = y - by
+      if ((dist2[gy * w + gx] ?? 0) <= 0) {
+        continue // out of field region (SDF 0)
+      }
+      if (paintGate && !paintGate.has(x, y)) {
+        continue // in the shared field but outside this part's own paint mask (`over`)
+      }
+      const hL = height[gy * w + (gx - 1)] ?? 0
+      const hR = height[gy * w + (gx + 1)] ?? 0
+      const hU = height[(gy - 1) * w + gx] ?? 0
+      const hD = height[(gy + 1) * w + gx] ?? 0
+      const nx = -(hR - hL) * 0.5 * spec.puff
+      const ny = -(hD - hU) * 0.5 * spec.puff
+      const nlen = Math.sqrt(nx * nx + ny * ny + 1)
+      const raw = (nx * L.x + ny * L.y + L.z) / nlen
+      const lit0 = amb + (1 - amb) * clamp01(raw)
+      // Blinn specular: normalized-normal · normalized-halfway, raised to the response's exponent.
+      const ndoth = clamp01((nx * hx + ny * hy + hz) / (nlen * hlen))
+      const s = spec.spec > 0 ? clamp01(ndoth ** spec.specPow) : 0
+      let tone: Color
+      if (bands !== null && bands >= 1) {
+        // snap to a band centre — crisp, undithered edges (that is what `cel N` means)
+        const u = amb >= 1 ? 0 : clamp01((lit0 - amb) / (1 - amb))
+        const band = Math.max(0, Math.min(bands - 1, Math.floor(u * bands)))
+        tone = formTone(spec, amb + (1 - amb) * ((band + 0.5) / bands))
+        // cel specular: a hard glint in the spec colour above the threshold — no soft mix
+        if (spec.spec > 0 && s > 0.5) {
+          tone = specColor
+        }
+      } else {
+        // smooth: `formTone` is continuous, so there is nothing to break up — dithering here would
+        // only add speckle (the "noise in the shadows" defect). Deliberate stipple is `cel N`.
+        tone = formTone(spec, lit0)
+        if (s > 0) {
+          tone = mix(tone, specColor, clamp01(s * spec.spec))
+        }
+      }
+      putPixel(ctx, x, y, tone, bbox)
+    }
+  }
 }
 
 /**

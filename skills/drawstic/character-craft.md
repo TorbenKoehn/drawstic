@@ -1,186 +1,283 @@
 # Drawstic character craft
 
-How to build a **modular game figure** (48–64px, front + side view, faction recolor) that reads as
-the archetype on the **first attempt with few iterations**. SKILL.md § Characters gives the mandatory
-order + checklist; this is the detail. Every rule comes from a shipped, check-clean recipe
-(`examples/characters/*.drw`) or a rendered probe. `check` verifies grammar only — **seam contact,
-silhouette legibility, a genuine side view, and archetype/sex reading are 100 % visual and silent to
-`check`; the render, the `--silhouette` black-out, and a per-joint `--crop` are the only judges.**
+How to build a **modular game figure** (chibi or realistic, one or three views) that reads as the
+archetype on the first attempt. The canonical path (SKILL.md) applies unchanged; a figure adds four
+things to it: a **figure oracle** for proportions, **organic head construction**, a **seam contract**
+(`pin`/`fit`) that guarantees limb contact, and **multi-view redraw discipline**. Copy
+[starters/character-3view.drw](starters/character-3view.drw) — a complete, `check`-clean,
+`critique --as character --strict`-passing 64×128 three-view chibi — and mutate it; every idiom below
+is verified against it or an equally clean recipe, never invented.
 
-Characters are **not scenes and not icons.** Keep from scene-craft: **one** light contract baked into
-the colour system + the contact-shadow ellipse. Keep from icon-craft: small-raster discipline (no
-`shadeRegion`/`rim` at ≤64px — too weak). Add what is character-specific: parts, **seams**, two
-views, faction recolor. The dominant bug class here is the **floating limb / 2–3px seam gap** (5 of 7
-first-run builds hit it) — §4 makes it structurally impossible.
+`check` verifies grammar only. Seam contact, a genuine side view, and archetype/sex reading are **100 %
+visual** — a rendered image, a `--silhouette` black-out, and a per-joint `--crop` are the only judges. A
+clean `critique --strict` verifies structure, not craft.
 
-## 1. The fixed build order
+## 1. The canonical path, for a figure
 
-The order that wins on the first attempt — do not reorder:
+1. **Theme = one `light` + a `figure:` oracle** (§2). The light makes cross-view lighting structural;
+   the oracle makes eye/ear/neck/shoulder positions structural — neither can drift between views or
+   recolor variants.
+2. **Materials** — metal/skin/cloth as `material` bindings, tuned with `spread`/`drape`/`over` (§7).
+3. **Parts** — each mass a `Region` from a primitive or an organic constructor (§3), each declaring its
+   seam rows as **`pin`s**.
+4. **Assembly by `fit`** (§4) — a root `fit` seeds every pin that follows; contact is engine-checked,
+   not eyeballed. `behind`/`front` order props, `aim` orients a held one.
+5. **One bare `outline`**, last statement of the assembly draw.
+6. **`critique --as character --strict`** → exit 0, then answer its rubric by looking (§9).
 
-1. **Light contract** — `warm`/`cool` + `fn lit/shd/deep`, the first lines (§6).
-2. **Material ramps + faction colour set** — metal/skin/cloth/bone as module bindings; **only the
-   1–2 varying colours become draw params**, everything else fixed (§7).
-3. **Proportions-constant head** — `headTop/shoulderLine/hipLine/kneeLine/footLine` as module
-   constants, before the first part (§2).
-4. **Parametric parts** — non-exported `draw part(c)`, each with a **socket comment** (§3, §4).
-5. **Full body back-to-front via `stamp`**, contact-shadow `ellipse` as the **first** statement (§5).
-6. **Bright accents last** (emissive lights, glints, orbs) — like scene-craft, so the shade pass
-   never dims them.
+Three views (§5) and faction recolor (§6) repeat steps 1–5 with the same theme and the same parts.
 
-## 2. Proportions constants — the head before the first part
+## 2. Proportions — the figure oracle
 
-The character pendant to scene-craft's *"terrain is a function"*: put the vertical layout in **module
-constants** so every part and both views read the same lines. This one block eliminates most of the
-trial-and-error coordinate hunting.
+Declare the proportion numbers **once, in the theme**, and read **named guide points** instead of
+hand-picked coordinates — the engine derives them, so eyes/ears/neck/shoulder can't drift and the side
+view's eye lands forward automatically:
 
 ```drw
-# proportions for a ~56–60px figure (~4 heads tall). Shared by front AND side.
-headTop      = 2
-shoulderLine = 17
-hipLine      = 34
-kneeLine     = 44
-footLine     = 55
+theme figThree:
+  light sun = dir 1:1 #ffe6b0 amb #2a3a5e 16%
+  figure:
+    heads 3          # the whole figure is 3 head-heights tall
+    headW 34
+    eyeLine 0.66     # eye line as a fraction of head height from the crown
+    earLine 0.6
+    eyeSep 12
 ```
 
-| Figure | Canvas | Head:body | Notes |
-|---|---|---|---|
-| Normal (knight, archer, mage, robot) | 40–52 × **60–64** | **~1:3.5–4** | head+headgear ≈ 40 % of height; figure fills ~85–90 % of canvas |
-| Stocky (dwarf smith) | 44–48 × **56** | **~1:2.5** | short legs, wide torso; same `footLine` discipline |
-| Contact ellipse room | — | — | `footLine ≈ canvasH − 5`; ellipse 1px below it |
+In any drawing applying the theme, `fig` is bound over that drawing's own `w`×`h`. Full grammar and
+every `fig.*` name are in [language.md](language.md) §9 — the craft rule on top of it:
 
-**Share the vertical lines across views; re-derive horizontal attach-x per view** (§5) — a profile
-shifts its mass forward, so the same `shoulderLine` is safe but the same shoulder-x is not.
-Confirm centering with `--inspect` `alphaCoverageBBox`.
+- **A head *part* is one head tall.** The oracle lays `heads` over the drawing it applies to, so a
+  standalone 34×42 head part needs its **own** tiny theme with `heads 1` (the part canvas *is* one
+  head); the full-body assembly keeps the real `heads` (3 for a chibi, more for a realistic figure).
+  `starters/character-3view.drw` declares exactly this pair (`figThree` / `figHead`) — copy it rather
+  than re-deriving the split.
+- **Side faces `+x`.** `fig.side.eye`/`fig.side.ear` are already shifted forward/back — never hand-nudge
+  a profile eye toward the front; read the oracle point instead.
+- Chibi vs. realistic vs. mech is only **different numbers** in one `figure:` block, never a different
+  construction method.
 
-## 3. Faction recolor — parametric parts, never themes
+## 3. Head & headwear — organic constructors, copied and mutated
 
-A theme palette **does not cross a `stamp` boundary** (SKILL.md § Gotchas) — a stamped part resolves
-its `pal` in its own scope, so a host theme-swap never reaches it. **All 7 first-run builds converged
-on the parametric path**; it is also the best-scoring axis (recolor Ø 1,4). Pass the 1–2 variant
-colours as a draw param, derive the rest, and make a **thin non-parametric wrapper per variant** — the
-only export price:
+Build heads, hair and hats from the **organic constructors**, never hand poly-lists: `dome(c, rx:ry)`
+(flat-based upper ellipse — skull, helmet, hat crown), `lobe(base, tip, w)` (teardrop — ear, nose, hair
+strand, plume), `crescent(c, rx:ry, thick, dir)` (tapering band — fringe, brim), `ribbon(p0, p1, p2, w)`
+(width-`w` band through 3 points — **stacked ribbons over a dome read as a turban, not a helmet**). Full
+grammar: [language.md](language.md) §4.
+
+Drawstic ships no character library — it gives you the mechanism, you own the style. Four silhouette
+approaches cover most archetypes; each is one line of `head = …` construction, not a different
+technique:
+
+| Archetype | Head silhouette |
+|---|---|
+| Round chibi | one wide `ellipse`/`circle` skull + `lobe` ears + a `crescent` fringe |
+| Slim / realistic | a `dome` cranium unioned with a tapered `curvePoly` jaw |
+| Angular / mech | a hard `dome` helmet unioned with a `poly` faceplate, `cel`-shaded |
+| Turban / hood | a `dome` cap with 2–3 stacked `ribbon`s wrapped over it |
+
+Shade the skull mass with one `model`/`cel` call so it reads as a single form; layer face features on
+top in this order — skin base, hair mass, eyes, brows, nose, mouth (§8 has the exact marks). Copy
+`starters/character-3view.drw`'s `headFront`/`headSide`/`headBack` (34×42, one head tall, both front
+and side verified) as the running template; restyle the silhouette per the table above and keep the
+oracle points (`fig.eyeL`/`fig.earL`/`fig.side.eye`/…) so the face stays on-line automatically. A
+profile nose belongs strictly between the eye and mouth lines, with a clear gap below the eye first —
+flush against it, any bump reads as a beak, not a nose.
+
+**Trap — verified.** Never name a binding `transform`, `tint`, `mask`, `font`, `cap`, `join`,
+`sha256`, `anchor` or `shadow`: the parser reads it as that keyword's own argument slot the moment
+you pass it as one (`cap = dome(16:15, 14:12)` then `model cap turbM`). `E011` names the hijacked
+keyword and suggests a rename, so it is a one-render detour rather than a mystery — but a qualified
+name (`turbCap`, `hoodMask`) skips it entirely.
+
+## 4. Seam contract — no floating limbs (`pin`/`fit`)
+
+**A bounding-box overlap does not prove pixel contact.** The fix is `pin`/`fit`: a part declares its
+seam rows as `pin`s in its own space, and `fit` *solves* the placement so the pins coincide exactly —
+contact is engine-guaranteed, and a residual gap raises `W010` (render) / `C007` (`critique --strict`,
+must-fix for the `character` profile) instead of shipping silently. Full grammar:
+[language.md](language.md) §7.
+
+<example>
 
 ```drw
-draw torso(c) 16x18:                 # c = the faction cloth colour
+draw bodyFront 48x86:
+  # … legs, torso, arms …
+  pin neck 24:2
+  pin grip 7:52
+  pin hip  24:52
+
+draw heroFront 64x128:
+  fit bodyFront.neck 32:43        # root: paints the part AND seeds every one of its pins
+  fit headFront.neck bodyFront.neck   # lands on the seeded neck pin, no re-declaration
+  fit staff.grip bodyFront.grip aim tip 12:16 front bodyFront
+  outline
+```
+
+```
+$ drawstic render heroes.drw#heroFront --explain --json
+"placements": [
+  { "target": "bodyFront.neck", "landed": { "x": 32, "y": 43 }, "coincident": true, "pinToInk": 0 },
+  { "target": "headFront.neck", "landed": { "x": 32, "y": 43 }, "coincident": true, "pinToInk": 1 },
+  { "target": "staff.grip",     "landed": { "x": 15, "y": 93 }, "coincident": true, "pinToInk": 0 } ]
+```
+
+</example>
+
+This is `starters/character-3view.drw`'s actual assembly — `check --lint --json` on it returns `[]` and
+`critique --as character --strict --json` returns `pass:true`. Five rules:
+
+- **(a) Root-fit first, then chain.** A `fit` on a real part seeds *all* its pins from one anchor, so a
+  later `fit …bodyFront.hip` never re-declares. Plant a standing figure with `ground` (pools under the
+  footprint's own bottom — the feet — never the fit pin), not a hand `ellipse` (that idiom is `W015`).
+- **(b) Cut parts along the overlap, not the anatomy.** A pauldron belongs to the *arm*, not the torso —
+  a slightly off stamp coordinate then can't open a gap between them.
+- **(c) No transparent trailing `pixels:` row.** It silently enlarges the part's footprint and opens a
+  1px seam below whatever fits onto it (`W009`).
+- **(d) Overlap seams by 1–2px** rather than butting them exactly.
+- **(e) A pin must sit *on* the part's own ink — contact ≠ correctness.** A `chin` pinned in the empty
+  rows below the head lands the head floating even with pins coincident; a pin >2px off its part's own
+  ink raises `W011`. `pinToInk` in the `--explain` trace above is exactly this distance — read it before
+  calling a seam done.
+
+**Before "done": render a tight `--crop` per seam.** A full-body `@4` is too small to catch a 1–2px gap
+on a 64×128 figure, and a colour-similar neighbour hides it entirely at any zoom above 1× —
+`--silhouette` is what actually shows a seam.
+
+## 5. Three views — front, side, back
+
+Front, side and back are **three separate assemblies over the same theme and the same parts**, never a
+mirrored copy of one draw — `flipx`/`flipy` only swap left/right *within* one pose.
+
+- **Redraw the parts that lead the pose axis:** head (nose/visor forward, ear toward the back — the
+  side scaffold in §3), torso (front vs. back drape), the leading arm. A profile reads thinner than a
+  front view — widen the side torso toward ~0.8× the head width or the figure looks bobble-headed.
+- **Reuse the parts that don't change with view angle:** boots, a held prop's own geometry, a straight
+  staff or bow shaft.
+- **Grip a held prop, don't hand-flip it.** Give it a `grip` pin (and a second `tip` pin), author it
+  once in true orientation, and `fit prop.grip hand.grip aim tip <pt>` in every view — the grip stays in
+  the hand and `aim` rotates the whole prop about it, so the blade/bow always points the right way. A
+  blanket `stamp prop … flipy` per view points it backwards in side/back. `starters/character-3view.drw`
+  does exactly this for its staff: `fit staff.grip bodyFront.grip aim tip 12:16 front bodyFront`.
+- **A chunky prop (hammer, mace, wide axe head) is the hardest thing to get right.** A wide flat
+  head misreads as the wrong tool (hammer→axe) unless its proportions commit hard, and `aim`'s
+  arbitrary rotation shears that same head thin, reading as a blade — reserve `aim` for slender
+  props (staff, bow, sword) and give a chunky head its own literal orientation per view instead.
+  Lengthen the shaft so the head clears the shoulder line, and give the prop an explicit
+  `behind`/`front` — an unlayered haft plows through the forearm and hides the hand. Check every fix
+  in a cropped `--silhouette`, not the colour render: value and material hide a geometry collision
+  that a black silhouette shows immediately.
+- **Back view: no face.** Build the back head from the same skull/hair mass, minus every eye/brow/mouth
+  mark — a front-posed limb redrawn "facing front" from behind is the tell that gives away a reused
+  front part.
+- **Front and back mirror left↔right at the shoulder/hip attach**, not the part itself: reuse the
+  identical arm part and swap which pin it fits to (`armA.shoulder → torso.shoulderL` in front becomes
+  `→ torso.shoulderR` in back). When the body is one draw rather than separate limbs, the same rule is
+  a **mirrored pin coordinate** — `pin grip 7:52` in a 48-wide front body becomes `pin grip 40:52`
+  (`w - 1 - x`, the same axis `flipx` mirrors about), and the `aim` target mirrors with it
+  (`12:16` → `51:16` on a 64-wide
+  canvas). Copying the front pin verbatim is the classic back-view bug: the prop stays on the viewer's
+  left, so the character silently swaps hands between views — `check --lint` catches a repeated
+  off-centre pin here as `W017`. This also collapses `critique`'s `C009` sibling-silhouette check by
+  construction for a subject's own views — it never fires between `…Front`/`…Side`/`…Back` of one name
+  stem.
+- **A dominating prop is an explicit layer, not auto-order.** A slung sword or a back cape doesn't ride
+  a bone, so give it its own `behind <part>` / `front <part>` clause (`fit sword.grip a.grip aim tip
+  3:34 behind cape`) — `critique`'s `C013` (must-fix under `--strict`) verifies the relation actually
+  holds in the composite.
+
+**Larger or animated rigs:** declare the attach points once as a `skeleton`, then make each view a `pose`
+of it — a joint's `z` depth then drives auto-Z (paint order falls out of the pose, no hand
+`behind`/`front` on the body itself). Full grammar and a worked rig: [language.md](language.md) §7.
+
+## 6. Faction recolor — parametric parts, never a theme swap
+
+A theme **palette** does not cross a `stamp`/`fit` boundary (a stamped part resolves its own `palette`
+in its own scope) — but a theme **light** does, since `use` applies the whole theme to every drawing as
+it renders. So: theme for the light, **parameters for the recolor**.
+
+<example>
+
+```drw
+light sun = dir 1:1 #ffe6b0 amb #2a3a5e 16%
+
+draw torso(c) 16x18:                  # c = the faction cloth colour
   body = poly(2:0, 13:0, 12:17, 3:17)
-  fill c body
-  fill lit(c) body.intersect(rect(0:0, 6:17))    # toward light
-  fill shd(c) body.intersect(rect(10:0, 15:17))  # away from light
-  # (pixels: parts derive pal keys from the arg instead — knight: `pal: f = c`)
+  model body c cloth                  # form shading supplies the tone range — no hand patch
 
-draw figure(c) 24x60: …             # composer takes the same param
-draw figureRed 24x60:               # thin wrapper — 1 literal = 1 faction
-  stamp figure(#a83a36) 0:0
+draw figureRed 16x18:                 # thin non-parametric wrapper: one literal per faction
+  stamp torso(#a83a36) 0:0
+
+export figureRed figureRed:
+  png @1
 ```
 
-**Post-hoc alternative** (verified pixel-identical to the parametric result): stamp one variant, then
-a `replace` chain, one line per tone — exact colour match required:
-
-```drw
-stamp torso(red) 0:0
-replace red blue
-replace lit(red) lit(blue)
-replace shd(red) shd(blue)
+```
+$ drawstic check faction.drw --lint --json
+{ "diagnostics": [], "census": { … "antiPatterns": { "manualSpread": 0, "stampWithPins": 0, "handShadow": 0 } } }
 ```
 
-## 4. Seam contract — no floating limbs
+</example>
 
-The character-specific core bug (5/7 first runs; each gap cost ~1 full iteration). **A bbox overlap
-does not prove pixel contact** (smith's fist↔haft overlapped in bbox, rendered separate). Four rules
-make gaps structurally impossible:
+For a whole-variant push without a second parameter, `tint c 0.3` on the `stamp`/`fit` is the cheaper
+alternative — a **neutral grey** tint (`R==G==B`) is always safe; a **chromatic** one only on
+already-cool material (a warm base swings toward magenta otherwise, [language.md](language.md) §3).
 
-- **(a) Socket comment + body adds offsets, never a shared `y`.** Each part documents its seam row in
-  its **own** coordinate space; the body computes each stamp from the shared line. Verified:
+## 7. Materials, light & shading dosage
 
-  ```drw
-  # head: bottom-center seam at row 15 (silhouette reaches row 15 — no buffer row)
-  # torso: top seam at row 0, bottom seam at row 17
-  draw figure(c) 24x60:
-    fill cool.alpha(30%) ellipse(12:56, 8:2)   # contact shadow FIRST — feet cover it
-    stamp torso(c) 4:(shoulderLine - 2)         # top seam overlaps head by 2px
-    stamp head(c) 4:(shoulderLine - 15)         # bottom seam (row 15) sits on shoulderLine
-  ```
+One `light` in the theme, applied once via `use`, is what keeps front/side/back and every recolor
+variant reading the same world-space source — never re-declare it per drawing. `model REGION MAT` is
+the default even at chibi scale (smooth, form-following, no medial ridge); `cel REGION MAT N` renders
+the same body as `N` crisp bands (pick 3–4 for an RO look). Full grammar and the light-resolution tiers:
+[language.md](language.md) §6.
 
-- **(b) Cut parts along the overlap, not the anatomy.** Pauldron belongs to the *arm* (covers the
-  torso shoulder when stamped), faulds/skirt to the *torso* (covers the leg tops) → a slightly wrong
-  stamp coordinate cannot open a gap.
-- **(c) The silhouette reaches the canvas edge on the seam side** — **no transparent buffer row**. In
-  a `pixels:` grid a fully-transparent **last** row silently enlarges the footprint and seams a 1px
-  gap below the next part — that is **W009** (`check --lint`); it was the knight's #1 gap cause.
-- **(d) Overlap the seams by 1–2px** from the start (archer/mage did this and never floated) rather
-  than butting them exactly.
+Three material knobs replace every hand tone patch (trailing on the `material` binding):
 
-**Per-joint crop before "done":** for every seam (neck, shoulder/hip, hand↔prop) render a tight
-`--crop` zoom — the full-body @4 is too small on a 56px figure to trust, and a colour-similar
-neighbour can hide a multi-pixel gap (villager's torso rip showed **only** under `--silhouette`).
+- **`spread N%`** widens `hi`+`shade` symmetrically — the fix for a dark base reading flat (`C004`).
+  Verified working ranges: 140–260% for most cloth/leather, up to ~440% for a large near-black drape.
+  Never a hand `litTone(…).intersect(rect…)` corner patch — that is lint `W013` / census
+  `manualSpread`.
+- **`drape`** — a hanging cloak/skirt shaded with the default `round` field curls into a "turtle-shell"
+  (darkens toward the hem); `drape` gives it a per-row half-tube instead, so the hem stays lit.  Use it
+  **only** for things that actually hang.
+- **`over UNION`** — a leg + boot shaded as two separate passes restarts the height field at the seam;
+  shade both `over` their union (§4's dosage example does this for `leg.union(boot)`) so they co-shade
+  as one continuous limb, each keeping its own material.
 
-## 5. Two views — side ≠ flip
+Spec/highlight as a 2–3px cluster top-left; core shadow as the dark column on the light-averted side.
+**Never `stroke` a form whose short axis is ≤~4px** — the border eats the whole fill; contour thin
+bones/blades via colour + value instead.
 
-Front→side is a **different pose**, not a mirror (`flip`/`mirror` only swaps left/right *within* a
-pose). All 7 runs confirmed the split:
+**One bare `outline`, last statement of the assembly draw.** Per-part outlines survive assembly as
+internal dark seams — bare `outline` derives its own colour and stays at width 1 for a chibi; it floors
+the silhouette at 50% alpha, so a soft contact shadow is never ringed.
 
-- **Redraw** the parts that **lead the pose axis**: head (nose/visor/brim point forward), torso
-  (front vs. back drape), the leading arm.
-- **Reuse** the **pose-invariant** parts: bow, quiver, staff, hammer, boot, leg. A held weapon may be
-  `flipy`ed (knight `stamp sword(c) 6:26 flipy`).
-- **Push the far limb back** with a **neutral-grey** `tint` (`tint #2b2b2b 40%`, R=G=B — the cheapest
-  depth cue) + a small offset. A **chromatic** `tint cool 40%` is safe **only on already-cool
-  material** (knight steel, mage boot); on warm/saturated material it rotates the hue (§6).
-- **Symmetric pair once, not twice:** draw one limb, mirror it — `mirror x=24: stamp leg(e) 20:36
-  anchor top`, or `flipx` on the second stamp. Both work first-try; don't hand-copy two near-identical
-  stamps (skeleton did and paid the boilerplate).
+## 8. Chibi face — five marks
 
-## 6. Material ramps & light (baked in the colour system)
+A face at chibi part-scale reads as "two dots" if you stop at pupils. In order, on the head part:
 
-One named contract, every part derives its tones — light consistency becomes structural, not
-disciplinary. **Do not mirror the light per view** (side-facing-right ⇒ back lit, chest shaded).
+1. **Skin base via `model`, not `cel 2`.** `cel skin 2` throws half the face into a dark band and reads
+   as stubble — want cel on a face, use `N ≥ 3`.
+2. **Eyes: white + iris + pupil + one catch-light pixel** — four layers, not a bare dot.
+3. **Brows: a short 1px stroke above each eye**, with ≥2px of skin between bang and brow or they merge.
+4. **Nose: one 1–2px shadow tick**, never an outline (a stroked bridge reads as a wart).
+5. **Mouth: one short `line` at ~70% alpha**, not a filled shape (that reads as a wound).
 
-```drw
-warm = #ffe8bf                       # light colour
-cool = #2c3550                       # cool shadow complement, never pure black
-fn lit(c)  = c.mix(warm, 22%)        # toward light — MIX, not bare lighten
-fn shd(c)  = c.darken(10%).mix(cool, 20%)
-fn deep(c) = c.darken(20%).mix(cool, 34%)
-```
+## 9. Verification cadence
 
-**Shade warm materials with `darken()`, never a raw cool `mix`** — `skin.mix(cool, 20%)` runs the
-short OkLCh arc through magenta → a pink "shadow" (hit by archer, villager, smith; robot on emissive
-via `tint`). Full rule + the safe `darken().mix(cool, 12%)` recipe: SKILL.md / reference.md § Color.
-A raw `mix(cool)` is safe only on **already-cool** cloth (mage's indigo robe).
+`check` catches almost nothing here — quality is ~100% visual, and a clean `critique --strict` verifies
+structure, not craft (the render you look at is the actual gate). Beyond the loop in
+[verify.md](verify.md), a figure adds:
 
-Verified ramps (module bindings; each part pulls its tones from these):
-
-| Material | Tones (light → dark) | Source |
-|---|---|---|
-| **Metal (5-tone)** | `#eaf2fa` `#b6c3d6` `#8494ac` `#55617c` `#232838` | knight (spec/lite/mid/dark/ink) |
-| Metal (mecha) | `#cfd6e0` `#949cab` `#656d7c` `#454b58` `#22262e` + joint `#383c46` | robot |
-| **Skin** | `#d69b64` / `#e8b489`, shade via `darken` | archer / mage |
-| **Cloth (faction)** | red `#a83a36`, green `#3f7a3e`, indigo `#40357e` → `lit/shd/deep` | archer / mage |
-| Leather / wood | `#6d4527` / `#925c2c`, dark `#402616` | archer |
-| **Bone** | one base + `accent.lighten(16%)` / `.darken(18%)` steps | skeleton |
-
-Spec/highlight only as a 2–3px cluster top-left; core shadow as the dark column on the light-averted
-side; give a helmet/knee **one** glint pixel. Thin blades/staves: core 2–3px, light edge (spec) on
-the lit side **without** an outline, dark edge as the outline — a full outline both sides makes every
-blade a club. **Never `stroke` a form ≤~4px min-extent** — the inner border eats the whole fill
-(skeleton's rib erosion; SKILL.md § Gotchas). Contour thin bones/blades via colour contrast + value
-shading instead.
-
-## 7. Verification cadence
-
-`check` catches almost nothing here — quality is ~100 % visual. After each edit batch:
-
-1. `check --lint --json` = `[]` (W002 catches an un-stamped part; **W009** the transparent end-row).
-2. **Part fragment `--png@6–8`** — each part isolated with literal args (`#head(#a83a36)`); reuse the
-   exact numbers in the `stamp` line, no surprises.
-3. **Composite `--png@4`** — the full figure; the light contract and proportions read here.
-4. **`--silhouette --png@4`** (ADR-0083) — the shape-only black-out. Confirms seam contact + a
-   readable archetype signal (helmet+plume, bow-arc+arrow, pointed hat) that a colour render can hide.
-5. **Native `--png@1`** — every figure must read as its archetype at 100 %.
-6. **Per-joint `--crop`** on each seam (§4) — bbox overlap ≠ pixel contact.
-7. **`sheet file.drw --png@4`** over the export wrappers — cross-view × cross-faction consistency
-   (grey-value / ramp / hue) in one grid.
-8. `build` → look at the artifacts.
-
-The cheapest runs (2–3 full iterations) followed this cascade top to bottom; the expensive ones
-(9–11) skipped the `--silhouette`/joint-crop steps and rediscovered each seam gap in a full render.
+0. **Gate:** `critique --as character --strict --json` → exit 0 (`C007` catches a floating/seamed
+   part; `C009` never fires between a subject's own front/side/back, nor across canvas sizes — it
+   does fire between different same-size characters, which is expected), then answer its
+   `seam-contact` rubric item by looking.
+1. **Part fragment `--png@6-8`** — each part isolated with literal args before assembly.
+2. **Composite `--png@4`** — light contract + proportions read here.
+3. **`--silhouette --png@4`** — seam contact + archetype signal, colour stripped, every view including
+   back.
+4. **Native `--png@1`** — the figure must read as its archetype at 100%.
+5. **Per-seam `--crop`** (§4) — a bbox overlap is not pixel contact.
+6. **`sheet file.drw --png@4`** over the exported views — cross-view and cross-faction consistency.
+7. `build` → look at the artifacts.

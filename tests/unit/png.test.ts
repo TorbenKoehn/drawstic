@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { deflateSync, inflateSync } from 'node:zlib'
 import { type Color, color } from '../../src/color.js'
 import { Engine } from '../../src/eval.js'
-import { decodePng, encodePngIndexed, encodePngRgba } from '../../src/png.js'
+import { decodePng, encodePngIndexed, encodePngRgba, PngDecodeError } from '../../src/png.js'
 
 // ── hand-crafted PNG byte assembly (mirrors src/png.ts's own chunk layout,
 //    but independent so we can build malformed/edge-case inputs). decodePng
@@ -139,8 +140,8 @@ let n = 0
 const renderHeart = (): { w: number; h: number; data: Uint8Array; pal: Color[] } => {
   const engine = new Engine(process.cwd())
   const mod = engine.loadSource(
-    'draw heart 5x5:\n  pal k=#1a1a1a  r=#c04040\n  pixels:\n    .r.r.\n    rrkrr\n    rrrrr\n    .rrr.\n    ..r..\n',
-    `${process.cwd()}\\mem-png-heart${n++}.drw`,
+    'draw heart 5x5:\n  palette k=#1a1a1a  r=#c04040\n  pixels:\n    .r.r.\n    rrkrr\n    rrrrr\n    .rrr.\n    ..r..\n',
+    join(process.cwd(), `mem-png-heart${n++}.drw`),
     'mem.drw',
   )
   const entry = mod.definitions.get('heart')
@@ -239,19 +240,45 @@ describe('encodePngIndexed', () => {
 })
 
 describe('decodePng error paths', () => {
+  // Every failure mode is a structured PngDecodeError (a stable `code`), never a bare `Error` —
+  // callers at the `import`/`--diff` boundary rewrap it into a positioned DrawsticError (E027).
   test('rejects a bad signature', () => {
     expect(() => decodePng(new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0]))).toThrow('not a PNG file')
+    let caught: unknown
+    try {
+      decodePng(new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0]))
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(PngDecodeError)
+    expect((caught as PngDecodeError).code).toBe('bad-signature')
   })
 
-  test('rejects interlaced images', () => {
+  test('rejects interlaced (Adam7) images', () => {
     const raw = filterScanlines([[100]], 1, [0])
     const png = buildPng({ w: 1, h: 1, bitDepth: 8, colorType: 0, interlace: 1, raw })
-    expect(() => decodePng(png)).toThrow('interlaced PNGs are not supported')
+    expect(() => decodePng(png)).toThrow('Adam7-interlaced PNGs are not supported')
+    let caught: unknown
+    try {
+      decodePng(png)
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(PngDecodeError)
+    expect((caught as PngDecodeError).code).toBe('interlaced')
   })
 
   test('rejects an unrecognized filter byte', () => {
     const png = buildPng({ w: 1, h: 1, bitDepth: 8, colorType: 0, raw: [5, 0] })
     expect(() => decodePng(png)).toThrow(/unknown PNG filter 5/)
+    let caught: unknown
+    try {
+      decodePng(png)
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(PngDecodeError)
+    expect((caught as PngDecodeError).code).toBe('bad-filter')
   })
 })
 

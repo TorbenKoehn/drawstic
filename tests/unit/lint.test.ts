@@ -1,33 +1,69 @@
 import { describe, expect, test } from 'bun:test'
+import { join } from 'node:path'
 import type { ModuleRecord } from '../../src/eval.js'
 import { Engine } from '../../src/eval.js'
-import { lintModule } from '../../src/lint.js'
+import { censusModule, lintModule } from '../../src/lint.js'
 
 let n = 0
 const load = (src: string): { engine: Engine; mod: ModuleRecord } => {
   const engine = new Engine(process.cwd())
-  const mod = engine.loadSource(src, `${process.cwd()}\\lint${n++}.drw`, 'lint.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `lint${n++}.drw`), 'lint.drw')
   return { engine, mod }
 }
 
 describe('lintModule', () => {
-  test('W002: flags a drawing that is neither exported nor stamped', () => {
-    const { engine, mod } = load('draw orphan 2x2:\n  pal k=#000000\n  pixels:\n    kk\n    kk\n')
+  test('W002: flags a drawing that is neither exported, stamped, nor fitted', () => {
+    // The module exports something, so it is not a library module and the leftover is real.
+    const { engine, mod } = load(
+      'draw kept 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n\ndraw orphan 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n\nexport kept kept:\n  png\n',
+    )
     const diags = lintModule(engine, mod)
     expect(diags).toHaveLength(1)
     expect(diags[0]).toMatchObject({
       severity: 'warning',
       code: 'W002',
-      message: "drawing 'orphan' is neither exported nor stamped",
+      message: "drawing 'orphan' is neither exported, stamped, nor fitted",
       file: 'lint.drw',
-      hint: 'export it or stamp it from another drawing',
+      hint: 'export it, stamp it, or fit it from another drawing',
     })
+  })
+
+  // `examples/showcase/parts.drw` is this shape — `showcase.drw` does `from parts gem, eye` and
+  // stamps both — and `check` only ever sees one file, so it cannot observe the importer.
+  test('W002 is silent in a module with no exports at all (a library module)', () => {
+    const { engine, mod } = load('draw gem 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n')
+    expect(lintModule(engine, mod).some((d) => d.code === 'W002')).toBe(false)
   })
 
   test('W002 is avoided by exporting a drawing or by stamping it from another', () => {
     const { engine, mod } = load(
-      'draw dot 2x2:\n  pal k=#000000\n  pixels:\n    kk\n    kk\n\ndraw scene 4x4:\n  stamp dot 1:1\n\nexport scene icons/scene:\n  png\n',
+      'draw dot 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n\ndraw scene 4x4:\n  stamp dot 1:1\n\nexport scene icons/scene:\n  png\n',
     )
+    expect(lintModule(engine, mod)).toEqual([])
+  })
+
+  test('W002 is avoided when the only use of a drawing is a `fit` target (pin/fit-built character)', () => {
+    const { engine, mod } = load(
+      [
+        'draw torso 12x20:',
+        '  fill #6a5030 rect(0:0, 11:19)',
+        '  pin shoulder 10:3',
+        '',
+        'draw arm 6x14:',
+        '  fill #8a5a3a rect(0:0, 5:13)',
+        '  pin shoulder 0:2',
+        '',
+        'draw fig 30x30:',
+        '  stamp torso 4:2',
+        '  pin torso.shoulder 14:5',
+        '  fit arm.shoulder torso.shoulder',
+        '',
+        'export fig chars/fig:',
+        '  png',
+        '',
+      ].join('\n'),
+    )
+    // `arm` is never `stamp`ed or `export`ed — only `fit`-attached — and must not W002.
     expect(lintModule(engine, mod)).toEqual([])
   })
 
@@ -35,7 +71,7 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       [
         'draw snowflake 2x2:',
-        '  pal w=#ffffff',
+        '  palette w=#ffffff',
         '  pixels:',
         '    ww',
         '    ww',
@@ -57,13 +93,13 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       [
         'draw wing 2x2:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kk',
         '    kk',
         '',
         'draw bird 2x2:',
-        '  pal b=#3366aa',
+        '  palette b=#3366aa',
         '  pixels:',
         '    bb',
         '    bb',
@@ -86,13 +122,13 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       [
         'draw snowflake 2x2:',
-        '  pal w=#ffffff',
+        '  palette w=#ffffff',
         '  pixels:',
         '    ww',
         '    ww',
         '',
         'draw unused 2x2:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kk',
         '    kk',
@@ -112,14 +148,14 @@ describe('lintModule', () => {
     expect(diags[0]).toMatchObject({
       severity: 'warning',
       code: 'W002',
-      message: "drawing 'unused' is neither exported nor stamped",
-      hint: 'export it or stamp it from another drawing',
+      message: "drawing 'unused' is neither exported, stamped, nor fitted",
+      hint: 'export it, stamp it, or fit it from another drawing',
     })
   })
 
   test('W001: flags unused local palette keys declared via both entry and destructured pal forms', () => {
     const { engine, mod } = load(
-      'draw swatch 3x1:\n  pal k=#111111  r=#ff0000\n  pal:\n    a, b, c = #cccccc.tones(-12%, 0%, 12%)\n  pixels:\n    kab\n\nexport swatch ui/swatch:\n  png\n',
+      'draw swatch 3x1:\n  palette k=#111111  r=#ff0000\n  palette:\n    a, b, c = #cccccc.tones(-12%, 0%, 12%)\n  pixels:\n    kab\n\nexport swatch ui/swatch:\n  png\n',
     )
     const diags = lintModule(engine, mod)
     expect(diags).toHaveLength(2)
@@ -137,45 +173,19 @@ describe('lintModule', () => {
     })
   })
 
-  test('W004: flags a procedural drawing larger than 128px on an axis', () => {
+  test('W004 is retired: a large procedural drawing lints clean', () => {
+    // The old "preview this with --fit" nudge fired on every scene-sized canvas (90 emissions in
+    // the session history, the most-emitted diagnostic of all) and carried no action. Verifying a
+    // big drawing belongs to the render-and-look loop, not to a lint. The code is never reused.
     const { engine, mod } = load(
       'draw bigProcedural 200x100:\n  circle #202020 100:50 40 fill\n\nexport bigProcedural shapes/big:\n  png\n',
-    )
-    const diags = lintModule(engine, mod)
-    expect(diags).toHaveLength(1)
-    expect(diags[0]).toMatchObject({
-      severity: 'warning',
-      code: 'W004',
-      message: "large procedural drawing 'bigProcedural' should be previewed with --fit",
-      hint: 'use drawstic render <file>#bigProcedural --preview --fit 80x40',
-    })
-  })
-
-  test('W004 does not fire on icon-sized detail variants up to 128px (the icon-evaluation carry-over)', () => {
-    // 64px and 128px procedural detail redraws are deliberate icon sizes, not
-    // accidental oversized scenes — the raised threshold keeps them quiet.
-    const { engine, mod } = load(
-      [
-        'draw detail64 64x64:',
-        '  circle #202020 32:32 28 fill',
-        '',
-        'draw detail128 128x128:',
-        '  circle #202020 64:64 60 fill',
-        '',
-        'export detail64 icons/d64:',
-        '  png',
-        '',
-        'export detail128 icons/d128:',
-        '  png',
-        '',
-      ].join('\n'),
     )
     expect(lintModule(engine, mod)).toEqual([])
   })
 
   test('W003: flags a stamp whose footprint lands completely outside the host canvas', () => {
     const { engine, mod } = load(
-      'draw dot 2x2:\n  pal k=#000000\n  pixels:\n    kk\n    kk\n\ndraw offscreen 4x4:\n  stamp dot 10:10\n\nexport offscreen icons/offscreen:\n  png\n',
+      'draw dot 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n\ndraw offscreen 4x4:\n  stamp dot 10:10\n\nexport offscreen icons/offscreen:\n  png\n',
     )
     const diags = lintModule(engine, mod)
     expect(diags).toHaveLength(1)
@@ -207,7 +217,7 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       [
         'draw box2 2x2:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kk',
         '    kk',
@@ -241,7 +251,7 @@ describe('lintModule', () => {
 
   test('walks every statement and expression shape while collecting used palette names', () => {
     // Exercises the generic AST walkers (walkStatements/walkStatementExprs/walkArg/walkExpr)
-    // across if/else, match, for, while, repeat, maskBlock, compound assignment, and
+    // across if/else, match, for, maskBlock, compound assignment, and
     // list/range/binary/ifExpression/index/dotIndex/method/keyword-argument expressions —
     // all of it real, renderable code (nothing dead), plus one genuinely out-of-bounds
     // stamp (negative coordinates) to also hit literalNumber's unary-minus branch.
@@ -250,20 +260,20 @@ describe('lintModule', () => {
         'mask localMask = circle(5:5, 3)',
         '',
         'draw dot2 2x2:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kk',
         '    kk',
         '',
         'draw richDraw 10x10:',
-        '  pal j=#111111 k=#222222 m=#333333 n=#444444 o=#555555',
-        '  pal p=#666666 q=#777777 s=#888888 t=#999999 u=#aaaaaa',
-        '  pal v=#bbbbbb z=#cccccc',
+        '  palette k=#222222 m=#333333 n=#444444 o=#555555',
+        '  palette p=#666666 q=#777777 s=#888888 t=#999999 u=#aaaaaa',
+        '  palette v=#bbbbbb z=#cccccc',
         '  cols = k, m',
         '  idx = cols[0]',
         '  dx = cols.0',
         '  lighter = n.lighten(10%)',
-        '  plain = o.grayscale',
+        '  plain = o.desaturate(100%)',
         '  px p 5:0',
         '  bexp = 1 == 2',
         '  iexp = if 1 == 2 then q else s',
@@ -278,10 +288,6 @@ describe('lintModule', () => {
         '    else: px v 1:0',
         '  for row 0..3:',
         '    px z 2:0',
-        '  while false:',
-        '    px z 3:0',
-        '  repeat 2:',
-        '    px j 4:0',
         '  mask localMask:',
         '    bg m',
         '  stamp dot2 1:1 tint k 0.3',
@@ -299,66 +305,6 @@ describe('lintModule', () => {
       code: 'W003',
       message: "stamp 'dot2' is completely clipped outside 'richDraw'",
     })
-  })
-
-  test('W005: flags shadeRegion called with a fully opaque literal base paint (v1)', () => {
-    const { engine, mod } = load(
-      'drawstic 1\ndraw scene 20x20:\n  mask r = circle(10:10, 8)\n  shadeRegion r 0:0 #223344 0.5\n\nexport scene test/scene:\n  png\n',
-    )
-    const diags = lintModule(engine, mod)
-    expect(diags).toHaveLength(1)
-    expect(diags[0]).toMatchObject({
-      severity: 'warning',
-      code: 'W005',
-      message: "shadeRegion's opaque base repaints the whole region",
-      hint: 'give it alpha or call it before details',
-    })
-  })
-
-  test('W005: flags a v1 shadeRegion base resolved through a module-scope colour binding (the arctic igloo case)', () => {
-    const { engine, mod } = load(
-      'drawstic 1\nblockShade = #b4c6dc\n\ndraw igloo 20x20:\n  mask dome = circle(10:10, 8)\n  shadeRegion dome 0:0 blockShade 0.45\n\nexport igloo test/igloo:\n  png\n',
-    )
-    const diags = lintModule(engine, mod)
-    expect(diags).toHaveLength(1)
-    expect(diags[0]).toMatchObject({
-      severity: 'warning',
-      code: 'W005',
-      message: "shadeRegion's opaque base repaints the whole region",
-    })
-  })
-
-  test('W005 (v1) is avoided by giving base explicit alpha', () => {
-    const { engine, mod } = load(
-      'drawstic 1\ndraw scene 20x20:\n  mask r = circle(10:10, 8)\n  shadeRegion r 0:0 #22334480 0.5\n\nexport scene test/scene:\n  png\n',
-    )
-    expect(lintModule(engine, mod)).toEqual([])
-  })
-
-  test('W005 is retired under language version 2 — opaque base is the intuitive v2 call (ADR-0068)', () => {
-    const { engine, mod } = load(
-      'draw scene 20x20:\n  mask r = circle(10:10, 8)\n  shadeRegion r 0:0 #223344 0.5\n\nexport scene test/scene:\n  png\n',
-    )
-    expect(lintModule(engine, mod)).toEqual([])
-  })
-
-  test('W005 (v1) is not guessed for a shadeRegion base that only resolves at call time (a draw parameter)', () => {
-    const { engine, mod } = load(
-      [
-        'drawstic 1',
-        'draw dome(c) 12x12:',
-        '  mask d = circle(6:6, 5)',
-        '  shadeRegion d 0:0 c 0.5',
-        '',
-        'draw scene 12x12:',
-        '  stamp dome(#223344) 0:0',
-        '',
-        'export scene test/scene:',
-        '  png',
-        '',
-      ].join('\n'),
-    )
-    expect(lintModule(engine, mod)).toEqual([])
   })
 
   test('W006: flags dither called with a fully transparent partner paint', () => {
@@ -386,7 +332,7 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       [
         'draw fox 4x4:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kkkk',
         '    kkkk',
@@ -394,7 +340,7 @@ describe('lintModule', () => {
         '    kkkk',
         '',
         'draw igloo 6x6:',
-        '  pal b=#ffffff',
+        '  palette b=#ffffff',
         '  pixels:',
         '    bbbbbb',
         '    bbbbbb',
@@ -426,7 +372,7 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       [
         'draw fox 4x4:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kkkk',
         '    kkkk',
@@ -454,7 +400,7 @@ describe('lintModule', () => {
     const { engine, mod } = load(
       [
         'draw fox 4x4:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kkkk',
         '    kkkk',
@@ -601,9 +547,12 @@ describe('lintModule', () => {
 
   test('W009: flags a pixels grid whose last row is fully transparent (the seam-footprint case)', () => {
     const { engine, mod } = load(
+      // No `WxH` on the header: the grid itself sets the footprint, so the trailing row really does
+      // make this 4x4 instead of 4x3 — that is the seam case. (With a declared size the header
+      // fixes the canvas and the row is harmless padding; see the test below.)
       [
-        'draw part 4x4:',
-        '  pal k=#000000',
+        'draw part:',
+        '  palette k=#000000',
         '  pixels:',
         '    kkkk',
         '    kkkk',
@@ -628,11 +577,32 @@ describe('lintModule', () => {
     expect(diags[0]?.line).toBe(7)
   })
 
+  // examples/icons/games.drw#heart16 centres an 8-row heart in a declared 16x16 canvas and was
+  // flagged before this exemption, which put a bundled example outside the skill's own done gate.
+  test('W009 is silent when the draw declares its own size (padding, not footprint drift)', () => {
+    const { engine, mod } = load(
+      [
+        'draw part 4x4:',
+        '  palette k=#000000',
+        '  pixels:',
+        '    kkkk',
+        '    kkkk',
+        '    kkkk',
+        '    ....',
+        '',
+        'export part parts/part:',
+        '  png',
+        '',
+      ].join('\n'),
+    )
+    expect(lintModule(engine, mod).some((d) => d.code === 'W009')).toBe(false)
+  })
+
   test('W009 is silent when the grid has no transparent last row', () => {
     const { engine, mod } = load(
       [
         'draw part 4x3:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kkkk',
         '    kkkk',
@@ -651,7 +621,7 @@ describe('lintModule', () => {
     const firstRow = load(
       [
         'draw part 4x4:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    ....',
         '    kkkk',
@@ -670,7 +640,7 @@ describe('lintModule', () => {
     const lastCol = load(
       [
         'draw part 4x4:',
-        '  pal k=#000000',
+        '  palette k=#000000',
         '  pixels:',
         '    kkk.',
         '    kkk.',
@@ -699,5 +669,556 @@ describe('lintModule', () => {
       ].join('\n'),
     )
     expect(lintModule(engine, mod)).toEqual([])
+  })
+})
+
+describe('canonical-path lints + construct census (W013–W015, ADR-0094/0097)', () => {
+  const codes = (src: string): string[] => {
+    const { engine, mod } = load(src)
+    return lintModule(engine, mod).map((d) => d.code)
+  }
+
+  test('W012 is retired and unfireable — a raw rim beside a model now only reports `retired`', () => {
+    // ADR-0097 removed `rim`/`shadeRegion`/`lightRegion`, so the lint that flagged them beside a
+    // `model` can never fire again. The code stays reserved; the recipe is caught *earlier*, by the
+    // census `retired` flag, which does not need a `model` in the same drawing to notice.
+    const withModel = [
+      'light sun = dir 1:1 #ffe6b0',
+      'material m = #8a95a5 metal',
+      'draw part 12x12:',
+      '  r = rect(1:1, 10:10)',
+      '  model r m light sun',
+      '  rim r 1:1 #ffffff 1',
+      '',
+      'export part p/part:',
+      '  png',
+      '',
+    ].join('\n')
+    expect(codes(withModel)).not.toContain('W012')
+    const { engine, mod } = load(withModel)
+    const rim = censusModule(engine, mod).constructs.find((c) => c.construct === 'rim')
+    expect(rim?.retired).toBe(true)
+    expect(rim?.specOnly).toBeUndefined()
+  })
+
+  test('W013 fires on a litTone .intersect corner patch over a model', () => {
+    const src = [
+      'light sun = dir 1:1 #ffe6b0',
+      'material m = #8a95a5 cloth',
+      'draw part 12x12:',
+      '  r = rect(1:1, 10:10)',
+      '  model r m light sun',
+      '  fill litTone(#8a95a5, #ffe6b0, 30%) r.intersect(rect(1:1, 5:5))',
+      '',
+      'export part p/part:',
+      '  png',
+      '',
+    ].join('\n')
+    expect(codes(src)).toContain('W013')
+  })
+
+  test('W014 fires on a stamp of a pinned part, exempts a pin-seeded root', () => {
+    const parts = ['draw pinned 8x8:', '  fill #888888 rect(0:0, 7:7)', '  pin top 4:0', ''].join(
+      '\n',
+    )
+    const stampNoSeed = `${parts}draw asm 20x20:\n  stamp pinned 2:2\n\nexport asm a/asm:\n  png\n`
+    expect(codes(stampNoSeed)).toContain('W014')
+    // a pin-seeded root (its canvas pins declared) is the two-phase assembly idiom — no W014.
+    const seededRoot = `${parts}draw asm 20x20:\n  stamp pinned 2:2\n  pin pinned.top 6:2\n\nexport asm a/asm:\n  png\n`
+    expect(codes(seededRoot)).not.toContain('W014')
+  })
+
+  test('W015 fires on a hand contact-shadow ellipse in the foot zone of a fitted figure', () => {
+    const src = [
+      'draw child 8x40:',
+      '  fill #888888 rect(0:0, 7:39)',
+      '  pin hip 4:0',
+      'draw fig 32x64:',
+      '  fill #223344.alpha(45%) ellipse(16:60, 10:3)',
+      '  pin a.hip 16:10',
+      '  fit child.hip a.hip',
+      '',
+      'export fig f/fig:',
+      '  png',
+      '',
+    ].join('\n')
+    expect(codes(src)).toContain('W015')
+  })
+
+  test('census counts constructs and flags the anti-patterns deterministically', () => {
+    const src = [
+      'draw pinned 8x8:',
+      '  fill #888888 rect(0:0, 7:7)',
+      '  pin top 4:0',
+      'draw part 20x20:',
+      '  stamp pinned 2:2',
+      '',
+      'export part p/part:',
+      '  png',
+      '',
+    ].join('\n')
+    const { engine, mod } = load(src)
+    const census = censusModule(engine, mod)
+    expect(census.antiPatterns).toEqual({ manualSpread: 0, stampWithPins: 1, handShadow: 0 })
+    const stamp = census.constructs.find((c) => c.construct === 'stamp')
+    expect(stamp?.count).toBe(1)
+    expect(stamp?.nonCanonical).toBe(true)
+    const pixels = census.constructs.find((c) => c.construct === 'pixels')
+    expect(pixels).toBeUndefined()
+    // deterministic: two runs give the identical census.
+    expect(censusModule(engine, mod)).toEqual(census)
+  })
+
+  test('census flags the whole removed hand-light quartet as retired (ADR-0097)', () => {
+    // All four still parse and load — they only fail at render — so the census is the *static*
+    // diagnosis a stale recipe gets from `check --lint`/`critique` before it is ever rendered.
+    for (const [construct, stmt] of [
+      ['rim', 'rim r 1:1 #ffffff 1'],
+      ['shadeRegion', 'shadeRegion r -4:-4 #000000 0.3'],
+      ['lightRegion', 'lightRegion r -4:-4 #ffffff 0.2'],
+      ['ao', 'ao r #000000 0.3'],
+    ] as const) {
+      const { engine, mod } = load(
+        `draw part 12x12:\n  r = rect(1:1, 10:10)\n  fill #808080 r\n  ${stmt}\n\nexport part p/part:\n  png\n`,
+      )
+      const entry = censusModule(engine, mod).constructs.find((c) => c.construct === construct)
+      expect(entry?.count).toBe(1)
+      expect(entry?.retired).toBe(true)
+      expect(entry?.specOnly).toBeUndefined()
+    }
+  })
+
+  test('census counts the `palette` construct under its current name (was `pal`, ADR-0096 §2)', () => {
+    const { engine, mod } = load(
+      'draw part 2x2:\n  palette k=#000000\n  pixels:\n    kk\n    kk\n\nexport part p/part:\n  png\n',
+    )
+    const census = censusModule(engine, mod)
+    expect(census.constructs.find((c) => c.construct === 'palette')?.count).toBe(1)
+    expect(census.constructs.some((c) => c.construct === 'pal')).toBe(false)
+  })
+
+  test('census flags a retired construct so a stale recipe is diagnosed without rendering it (ADR-0096 §1)', () => {
+    // `castShadow` has its own statement shape (a call); `grayscale` (call- and UFCS-form) has
+    // none of its own — both still load and census fine even though rendering either would now
+    // throw the ADR-0096 §1 removal error.
+    const src = [
+      'draw part 6x4:',
+      '  r = rect(1:1, 2:2)',
+      '  castShadow r 2:0 #ff0000',
+      '  bg #ff0000.grayscale',
+      '  fill #00ff00.grayscale.hue(30) r',
+      '',
+      'export part p/part:',
+      '  png',
+      '',
+    ].join('\n')
+    const { engine, mod } = load(src)
+    const census = censusModule(engine, mod)
+    const castShadow = census.constructs.find((c) => c.construct === 'castShadow')
+    expect(castShadow?.count).toBe(1)
+    expect(castShadow?.retired).toBe(true)
+    const grayscale = census.constructs.find((c) => c.construct === 'grayscale')
+    expect(grayscale?.count).toBe(2) // the bare call and the UFCS chain, one statement each
+    expect(grayscale?.retired).toBe(true)
+  })
+})
+
+describe("W016: export path repeats the recipe's own directory (ADR-0096 §6)", () => {
+  /** Like `load`, but places the recipe in a directory named `dir` so the W016 check has something
+   *  to compare the export path's first segment against. Built with `join`, not a literal `\`:
+   *  W016 derives the directory via `dirname`, and posix `dirname` reads a backslash as an ordinary
+   *  filename character, so a hardcoded separator makes this test pass on Windows and silently stop
+   *  testing anything on Linux CI. */
+  const loadIn = (dir: string, src: string): { engine: Engine; mod: ModuleRecord } => {
+    const engine = new Engine(process.cwd())
+    const mod = engine.loadSource(src, join(process.cwd(), dir, `recipe${n++}.drw`), 'recipe.drw')
+    return { engine, mod }
+  }
+
+  test('flags an export path whose first segment repeats the recipe directory name', () => {
+    const { engine, mod } = loadIn(
+      'showcase',
+      'draw scene 2x2:\n  bg #fff\n\nexport scene showcase/scene:\n  png\n',
+    )
+    const diags = lintModule(engine, mod)
+    expect(diags).toContainEqual({
+      severity: 'warning',
+      code: 'W016',
+      message: "export path 'showcase/scene' repeats the recipe's own directory 'showcase'",
+      file: 'recipe.drw',
+      // Positioned on the target token `scene` (col 8-13), not the `export` keyword: a block
+      // expands to one definition per target, each carrying its own span (ADR-0098 §9).
+      line: 4,
+      column: 8,
+      endLine: 4,
+      endColumn: 13,
+      hint: "build writes next to the recipe — drop the 'showcase/' prefix",
+    })
+  })
+
+  test('a bare export path (no repeated prefix) does not fire', () => {
+    const { engine, mod } = loadIn(
+      'showcase',
+      'draw scene 2x2:\n  bg #fff\n\nexport scene scene:\n  png\n',
+    )
+    expect(lintModule(engine, mod).some((d) => d.code === 'W016')).toBe(false)
+  })
+
+  test('a family-style prefix that differs from the recipe directory does not fire', () => {
+    // examples/icons/communication.drw exporting 'communication/chat' — the recipe directory is
+    // 'icons', not 'communication', so this is the intended family/name convention, not a repeat.
+    const { engine, mod } = loadIn(
+      'icons',
+      'draw chat 2x2:\n  bg #fff\n\nexport chat communication/chat:\n  png\n',
+    )
+    expect(lintModule(engine, mod).some((d) => d.code === 'W016')).toBe(false)
+  })
+})
+
+describe('W017: Front/Back view pair repeats an off-centre pin x (mirrored-prop hand swap)', () => {
+  /** Two 20x10 draws (mirror axis (20-1)/2 = 9.5) sharing a name stem, `bodyFront`/`bodyBack`,
+   *  each carrying its own pin lines — the shape every real Front/Back part pair has. */
+  const bodyPair = (frontPins: string, backPins: string): string =>
+    [
+      'draw bodyFront 20x10:',
+      '  fill #808080 rect(0:0, 19:9)',
+      frontPins,
+      '',
+      'draw bodyBack 20x10:',
+      '  fill #808080 rect(0:0, 19:9)',
+      backPins,
+      '',
+      'export bodyFront b/front:',
+      '  png',
+      '',
+      'export bodyBack b/back:',
+      '  png',
+      '',
+    ].join('\n')
+
+  test('fires on a lone off-centre pin repeated verbatim across Front/Back', () => {
+    const { engine, mod } = load(bodyPair('  pin grip 2:5', '  pin grip 2:5'))
+    const diags = lintModule(engine, mod).filter((d) => d.code === 'W017')
+    expect(diags).toHaveLength(1)
+    expect(diags[0]).toMatchObject({
+      severity: 'warning',
+      code: 'W017',
+      message:
+        "pin 'grip' has the same x (2) in 'bodyFront' and 'bodyBack' — a Front/Back pair is the same figure turned 180°",
+      hint: "mirror it: x=17 here (w - 1 - x on canvas width 20 — the axis 'flipx' mirrors about)",
+    })
+    // span sits on the BACK draw's own pin statement, never the front one and never a draw header.
+    expect(diags[0]?.line).toBe(7)
+  })
+
+  test('is silent on an L/R pair — the pin SET is already mirror-symmetric', () => {
+    const { engine, mod } = load(
+      bodyPair('  pin gripL 2:5\n  pin gripR 17:5', '  pin gripL 2:5\n  pin gripR 17:5'),
+    )
+    expect(lintModule(engine, mod).filter((d) => d.code === 'W017')).toEqual([])
+  })
+
+  test('is silent on a centred pin (within 4px of the mirror axis)', () => {
+    const { engine, mod } = load(bodyPair('  pin neck 9:5', '  pin neck 9:5'))
+    expect(lintModule(engine, mod).filter((d) => d.code === 'W017')).toEqual([])
+  })
+
+  test('is silent when Front and Back canvas widths differ', () => {
+    const src = [
+      'draw bodyFront 20x10:',
+      '  fill #808080 rect(0:0, 19:9)',
+      '  pin grip 2:5',
+      '',
+      'draw bodyBack 24x10:',
+      '  fill #808080 rect(0:0, 23:9)',
+      '  pin grip 2:5',
+      '',
+      'export bodyFront b/front:',
+      '  png',
+      '',
+      'export bodyBack b/back:',
+      '  png',
+      '',
+    ].join('\n')
+    const { engine, mod } = load(src)
+    expect(lintModule(engine, mod).filter((d) => d.code === 'W017')).toEqual([])
+  })
+
+  test('is silent when only one of the paired views exists', () => {
+    const src = [
+      'draw bodyFront 20x10:',
+      '  fill #808080 rect(0:0, 19:9)',
+      '  pin grip 2:5',
+      '',
+      'export bodyFront b/front:',
+      '  png',
+      '',
+    ].join('\n')
+    const { engine, mod } = load(src)
+    expect(lintModule(engine, mod).filter((d) => d.code === 'W017')).toEqual([])
+  })
+})
+
+describe('W018: aa on a provably exact placement is a no-op (ADR-0099, amended 2026-07-27)', () => {
+  const part = 'draw part 4x4:\n  fill #888888 rect(0:0, 3:3)\n\n'
+  const codes = (src: string): string[] => {
+    const { engine, mod } = load(src)
+    return lintModule(engine, mod).map((d) => d.code)
+  }
+
+  test('fires on aa with a size-free lattice transform (scale2, flipx, or bare)', () => {
+    const scale = `${part}draw d 20x20:\n  stamp part 0:0 scale2 aa\n\nexport d w/d:\n  png\n`
+    expect(codes(scale).filter((c) => c === 'W018')).toHaveLength(1)
+
+    const flip = `${part}draw d 20x20:\n  stamp part 0:0 flipx aa\n\nexport d w/d:\n  png\n`
+    expect(codes(flip).filter((c) => c === 'W018')).toHaveLength(1)
+
+    const bare = `${part}draw d 20x20:\n  stamp part 0:0 aa\n\nexport d w/d:\n  png\n`
+    expect(codes(bare).filter((c) => c === 'W018')).toHaveLength(1)
+  })
+
+  test('stays silent on a real (non-lattice) transform', () => {
+    const rot45 = `${part}draw d 20x20:\n  stamp part 0:0 rot45 aa\n\nexport d w/d:\n  png\n`
+    expect(codes(rot45)).not.toContain('W018')
+
+    const rot37 = `${part}draw d 20x20:\n  stamp part 0:0 rot37 aa\n\nexport d w/d:\n  png\n`
+    expect(codes(rot37)).not.toContain('W018')
+
+    const dynamicTransform = `${part}draw d 20x20:\n  t = rotate(37)\n  stamp part 0:0 transform t aa\n\nexport d w/d:\n  png\n`
+    expect(codes(dynamicTransform)).not.toContain('W018')
+  })
+
+  test('fires on a quarter-turn only when the sprite sides share a parity', () => {
+    // 4x4: rot90 pivots about (1.5, 1.5), cx−cy = 0 ⇒ every tap rounds to the point sample's texel.
+    const equal = `${part}draw d 20x20:\n  stamp part 0:0 rot90 aa\n\nexport d w/d:\n  png\n`
+    expect(codes(equal).filter((c) => c === 'W018')).toHaveLength(1)
+
+    const equalComposed = `${part}draw d 20x20:\n  stamp part 0:0 flipx scale2 rot270 aa\n\nexport d w/d:\n  png\n`
+    expect(codes(equalComposed).filter((c) => c === 'W018')).toHaveLength(1)
+  })
+
+  test('stays silent on a mixed-parity quarter-turn — there aa really does resample', () => {
+    // 4x5: cx−cy = −1/2, so all 16 taps sit on the roundHalfUp boundary and split 4/4/4/4 over a
+    // 2x2 texel block. Claiming a no-op here was the ADR's false lemma.
+    const mixed = 'draw part 4x5:\n  fill #888888 rect(0:0, 3:4)\n\n'
+    const rot90 = `${mixed}draw d 20x20:\n  stamp part 0:0 rot90 aa\n\nexport d w/d:\n  png\n`
+    expect(codes(rot90)).not.toContain('W018')
+
+    const rot270 = `${mixed}draw d 20x20:\n  stamp part 0:0 scale2 rot270 aa\n\nexport d w/d:\n  png\n`
+    expect(codes(rot270)).not.toContain('W018')
+
+    // …while the size-free flags still warn on the very same mixed-parity sprite.
+    const flip = `${mixed}draw d 20x20:\n  stamp part 0:0 flipy aa\n\nexport d w/d:\n  png\n`
+    expect(codes(flip).filter((c) => c === 'W018')).toHaveLength(1)
+  })
+
+  test('stays silent on a quarter-turn whose sprite size is not statically known', () => {
+    const parametric =
+      'draw part(c) 4x4:\n  fill c rect(0:0, 3:3)\n\ndraw d 20x20:\n  stamp part(#888888) 0:0 rot90 aa\n\nexport d w/d:\n  png\n'
+    expect(codes(parametric)).not.toContain('W018')
+  })
+
+  test("fires on a fit whose flags are lattice-exact for the fitted part's size", () => {
+    const src = [
+      'draw torso 12x20:',
+      '  fill #6a5030 rect(0:0, 11:19)',
+      '  pin shoulder 10:3',
+      '',
+      'draw arm 6x14:', // even/even — a quarter-turn is exact here
+      '  fill #8a5a3a rect(0:0, 5:13)',
+      '  pin shoulder 0:2',
+      '',
+      'draw fig 30x30:',
+      '  stamp torso 4:2',
+      '  pin torso.shoulder 14:5',
+      '  fit arm.shoulder torso.shoulder rot90 aa',
+      '',
+      'export fig chars/fig:',
+      '  png',
+      '',
+    ].join('\n')
+    expect(codes(src).filter((c) => c === 'W018')).toHaveLength(1)
+    // the same fit of a mixed-parity part is a real resample — silent
+    expect(codes(src.replace('draw arm 6x14:', 'draw arm 7x14:'))).not.toContain('W018')
+  })
+
+  test("stays silent on a fit whose rotation comes from 'aim' (ADR-0099 §2's own example)", () => {
+    // `aim` solves its angle at runtime and composes it onto the fit's matrix *outside* the flag
+    // list, so the transform is not statically lattice-preserving — the same "not statically known"
+    // carve-out a `transform EXPR` flag gets.
+    const src = [
+      'draw torso 12x20:',
+      '  fill #6a5030 rect(0:0, 11:19)',
+      '  pin shoulder 10:3',
+      '',
+      'draw arm 6x14:',
+      '  fill #8a5a3a rect(0:0, 5:13)',
+      '  pin shoulder 0:2',
+      '  pin tip 5:13',
+      '',
+      'draw fig 30x30:',
+      '  stamp torso 4:2',
+      '  pin torso.shoulder 14:5',
+      '  fit arm.shoulder torso.shoulder aim tip 26:24 aa',
+      '',
+      'export fig chars/fig:',
+      '  png',
+      '',
+    ].join('\n')
+    expect(codes(src)).not.toContain('W018')
+  })
+})
+
+describe('W020: a name is rebound to a different kind than an earlier binding', () => {
+  const codes = (src: string): string[] => {
+    const { engine, mod } = load(src)
+    return lintModule(engine, mod).map((d) => d.code)
+  }
+
+  test('fires: a mask is overwritten by a same-named material in the same drawing', () => {
+    const src = [
+      'draw d 8x8:',
+      '  mask liquid = rect(0:0, 3:3)',
+      '  material liquid = #3388cc metal',
+      '  fill #ffffff rect(0:0, 7:7)',
+      '',
+    ].join('\n')
+    const { engine, mod } = load(src)
+    const diags = lintModule(engine, mod).filter((d) => d.code === 'W020')
+    expect(diags).toHaveLength(1)
+    expect(diags[0]).toMatchObject({
+      severity: 'warning',
+      code: 'W020',
+      message:
+        "'liquid' rebinds a mask (line 2) as a material — different kinds sharing a name silently overwrite each other",
+      hint: "give one of them its own name — only 'draw'/'path'/'theme'/'fn'/'atlas'/'skeleton'/'pose' collide loudly (E007); every other kind of binding silently overwrites",
+    })
+    // positioned on the SECOND (overwriting) binding's own line, not the first.
+    expect(diags[0]?.line).toBe(3)
+  })
+
+  test('fires: a mask is overwritten by a same-named material even at module scope', () => {
+    const src = [
+      'mask spot = rect(0:0, 3:3)',
+      'material spot = #3388cc metal',
+      '',
+      'draw d 8x8:',
+      '  bg #ffffff',
+      '',
+    ].join('\n')
+    const { engine, mod } = load(src)
+    const diags = lintModule(engine, mod).filter((d) => d.code === 'W020')
+    expect(diags).toHaveLength(1)
+    expect(diags[0]).toMatchObject({
+      code: 'W020',
+      message:
+        "'spot' rebinds a mask (line 1) as a material — different kinds sharing a name silently overwrite each other",
+    })
+    expect(diags[0]?.line).toBe(2)
+  })
+
+  test('fires again on a further rebind back to the original kind — every kind change is reported', () => {
+    const src = [
+      'draw d 8x8:',
+      '  mask spot = rect(0:0, 3:3)',
+      '  material spot = #3388cc metal',
+      '  mask spot = rect(0:0, 5:5)',
+      '  fill #ffffff spot',
+      '',
+    ].join('\n')
+    expect(codes(src).filter((c) => c === 'W020')).toHaveLength(2)
+  })
+
+  test('fires: a nested branch overwrites an outer name with a different kind (assignLocal reaches outward)', () => {
+    const src = [
+      'draw d 8x8:',
+      '  mask spot = rect(0:0, 3:3)',
+      '  if true:',
+      '    material spot = #3388cc metal',
+      '  fill #ffffff rect(0:0, 7:7)',
+      '',
+    ].join('\n')
+    const { engine, mod } = load(src)
+    const diags = lintModule(engine, mod).filter((d) => d.code === 'W020')
+    expect(diags).toHaveLength(1)
+    expect(diags[0]?.message).toBe(
+      "'spot' rebinds a mask (line 2) as a material — different kinds sharing a name silently overwrite each other",
+    )
+    expect(diags[0]?.line).toBe(4)
+  })
+
+  test('fires: two different kinds collide within the same loop body', () => {
+    const src = [
+      'draw d 8x8:',
+      '  for i 0..3:',
+      '    mask spot = rect(0:0, 3:3)',
+      '    material spot = #3388cc metal',
+      '  fill #ffffff rect(0:0, 7:7)',
+      '',
+    ].join('\n')
+    expect(codes(src).filter((c) => c === 'W020')).toHaveLength(1)
+  })
+
+  test('stays silent on a same-kind loop-persistent rebind (ADR-0081 accumulator idiom)', () => {
+    const src = [
+      'draw gear 20x12:',
+      '  g = circle(4:6, 2)',
+      '  for i 0..3:',
+      '    g = g.union(circle((8 + i * 4):6, 2))',
+      '  fill #c0c0c0 g',
+      '',
+    ].join('\n')
+    expect(codes(src)).not.toContain('W020')
+  })
+
+  test('stays silent on a plain sequential same-kind rebind outside any loop', () => {
+    const src = [
+      'draw d 8x8:',
+      '  mask m = rect(0:0, 3:3)',
+      '  mask m = rect(0:0, 5:5)',
+      '  fill #ffffff m',
+      '',
+    ].join('\n')
+    expect(codes(src)).not.toContain('W020')
+  })
+
+  test('stays silent when mutually exclusive if/else branches each freshly introduce the same new name as different kinds', () => {
+    const src = [
+      'draw d 8x8:',
+      '  if true:',
+      '    mask spot = rect(0:0, 3:3)',
+      '  else:',
+      '    material spot = #3388cc metal',
+      '  fill #ffffff rect(0:0, 7:7)',
+      '',
+    ].join('\n')
+    expect(codes(src)).not.toContain('W020')
+  })
+
+  test('stays silent when two match arms each freshly introduce the same new name as different kinds', () => {
+    const src = [
+      'draw d 8x8:',
+      '  x = 1',
+      '  match x:',
+      '    1: mask spot = rect(0:0, 3:3)',
+      '    else: material spot = #3388cc metal',
+      '  fill #ffffff rect(0:0, 7:7)',
+      '',
+    ].join('\n')
+    expect(codes(src)).not.toContain('W020')
+  })
+
+  test('stays silent on a drawing-local name shadowing a module-level binding of a different kind', () => {
+    // `assignLocal` never crosses the draw's own barrier out to module scope (ADR-0081) — a
+    // draw-local re-declaration is a fresh, intentional local binding, not a silent overwrite.
+    const src = [
+      'material accent = #223344 metal',
+      '',
+      'draw d 8x8:',
+      '  mask accent = rect(0:0, 3:3)',
+      '  fill #ffffff accent',
+      '',
+    ].join('\n')
+    expect(codes(src)).not.toContain('W020')
   })
 })

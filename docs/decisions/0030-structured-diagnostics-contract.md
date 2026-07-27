@@ -1,6 +1,7 @@
 # 30. Structured diagnostics contract (`--json`) for the agent loop
 
-- Status: Accepted
+- Status: Accepted (`C###` diagnostic family added by [ADR-0085](0085-critique-command.md),
+  alongside `E###`/`W###`/`I###`)
 - Date: 2026-06-17
 - Deciders: t.koehn, Claude
 - Refines: [ADR-0008](0008-cli-design-brief.md)

@@ -132,6 +132,7 @@
     "lint": "biome check .",
     "build": "tsc -p tsconfig.build.json",
     "drawstic": "bun run src/cli.ts",
+    "build:examples": "bun -e \"for (const f of new Bun.Glob('examples/**/*.drw').scanSync()) { const p = Bun.spawnSync(['bun','run','src/bin.ts','build',f],{stdout:'inherit',stderr:'inherit'}); if (p.exitCode !== 0) process.exit(p.exitCode) }\"",
     "prepublishOnly": "biome check . && tsc --noEmit && bun test && bun run build"
   },
   "devDependencies": {

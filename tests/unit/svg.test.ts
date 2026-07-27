@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { color, toHexColor } from '../../src/color.js'
 import { Engine } from '../../src/eval.js'
 import { encodePathSvg, encodeSvg } from '../../src/svg.js'
@@ -9,7 +10,7 @@ let n = 0
 
 const renderPath = (src: string, name: string): Path => {
   const engine = new Engine(process.cwd())
-  const mod = engine.loadSource(src, `${process.cwd()}\\mem-svg-path${n++}.drw`, 'mem.drw')
+  const mod = engine.loadSource(src, join(process.cwd(), `mem-svg-path${n++}.drw`), 'mem.drw')
   const entry = mod.definitions.get(name)
   if (entry?.kind !== 'path') {
     throw new Error(`no path ${name}`)
@@ -177,8 +178,8 @@ describe('encodeSvg', () => {
   test('a real rendered sprite encodes to structurally valid SVG', () => {
     const engine = new Engine(process.cwd())
     const mod = engine.loadSource(
-      'draw heart 5x5:\n  pal k=#1a1a1a  r=#c04040\n  pixels:\n    .r.r.\n    rrkrr\n    rrrrr\n    .rrr.\n    ..r..\n',
-      `${process.cwd()}\\mem-svg-real${n++}.drw`,
+      'draw heart 5x5:\n  palette k=#1a1a1a  r=#c04040\n  pixels:\n    .r.r.\n    rrkrr\n    rrrrr\n    .rrr.\n    ..r..\n',
+      join(process.cwd(), `mem-svg-real${n++}.drw`),
       'mem.drw',
     )
     const entry = mod.definitions.get('heart')

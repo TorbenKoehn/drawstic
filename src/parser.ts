@@ -6,21 +6,28 @@ import type {
   Argument,
   AtlasDefinition,
   DrawDefinition,
+  ExportDefinition,
+  ExportGroup,
   Expression,
   FontDefinition,
   FontItem,
   FormatLine,
   MatchArm,
+  MaterialOverrideKey,
+  MaterialOverrides,
   Module,
   PaletteEntry,
   PathCommand,
   PathDefinition,
+  PoseEntryAst,
+  SkeletonJointAst,
   Statement,
   ThemeDefinition,
-  TilesetDefinition,
 } from './ast.js'
+import { MATERIAL_OVERRIDE_KEYS } from './ast.js'
 import { ERROR_CODE, error, type TextSpan } from './diagnostic.js'
 import { lex, type Token } from './lexer.js'
+import { isFormProfile, isMaterialResponse } from './values.js'
 
 // Keyword-prefixed sequences that form one argument (D2): the keyword plus
 // this many trailing expressions, e.g. `tint k 0.3` (arity 2) or `mask m`
@@ -31,9 +38,12 @@ const KW_ARG_ARITY: Record<string, number> = {
   tint: 2,
   mask: 1,
   font: 1,
+  // `cap`/`join` parse here so a draw command's trailing `cap X`/`join X` still forms one
+  // argument unit; eval.ts's Args.drawFlags/strokeFlags then raise the ADR-0096 §1 removal
+  // error instead of the old silent accept-and-discard. `mode` had no consumer anywhere
+  // (ADR-0096 §1 dead code) and is deleted outright, not replaced by an error.
   cap: 1,
   join: 1,
-  mode: 1,
   sha256: 1,
   anchor: 1,
   shadow: 2,
@@ -45,6 +55,135 @@ const KW_ARG_ARITY: Record<string, number> = {
 // `by`-expression (path-local `rel` replaced it) and ADR-0073 unreserved
 // the now-dead word, so `by` is an ordinary bindable name again.
 const RESERVED = new Set(['rel', 'if', 'then', 'else', 'true', 'false', 'transparent', 'mod', 'as'])
+
+// ── `file` name templates (ADR-0098 §3–§6) ─────────────────────────────
+//
+// Template-only, deliberately not expression-level functions: `title` is already a statement
+// keyword and `upper`/`lower`/`base` are attractive binding names, so promoting them would reserve
+// six words everywhere to serve a language that has no string-producing operation at all. Holes
+// exist only in `file` position — making `{` significant in every string would break `glyph "{"` in
+// the bundled fonts on day one (§4).
+
+/** One compiled piece of a `file` template: verbatim text, or a hole applying inflectors to `base`. */
+type TemplatePart =
+  | { readonly kind: 'literal'; readonly text: string }
+  | { readonly kind: 'hole'; readonly inflectors: readonly string[]; readonly variable: 'base' }
+
+/** ASCII-only, locale-free case maps — legal by construction: a NAME is `[A-Za-z][A-Za-z0-9_]*` (D5). */
+const lowerAscii = (s: string): string =>
+  s.replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32))
+const upperAscii = (s: string): string =>
+  s.replace(/[a-z]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 32))
+const capitalizeAscii = (w: string): string => upperAscii(w.slice(0, 1)) + lowerAscii(w.slice(1))
+
+/**
+ * The one word-splitting rule shared by every case inflector (ADR-0098 §5) — total and
+ * dictionary-free: split at each `_`/`-` (separator consumed), at each lower→upper boundary
+ * (`coinPouch` → `coin`, `Pouch`), and inside an acronym run before its final capital when a
+ * lowercase follows (`HTMLIcon` → `HTML`, `Icon`). A digit is neither upper nor lower, so it never
+ * opens a word: `chat16`/`videocall64` stay one word and every inflector is a no-op on them, rather
+ * than a silent rename.
+ */
+const splitWords = (s: string): string[] => {
+  const words: string[] = []
+  let current = ''
+  const flush = (): void => {
+    if (current !== '') {
+      words.push(current)
+      current = ''
+    }
+  }
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i] ?? ''
+    if (c === '_' || c === '-') {
+      flush()
+      continue
+    }
+    if (c >= 'A' && c <= 'Z' && current !== '') {
+      const prev = s[i - 1] ?? ''
+      const next = s[i + 1] ?? ''
+      const lowerBefore = prev >= 'a' && prev <= 'z'
+      const acronymEnd = prev >= 'A' && prev <= 'Z' && next >= 'a' && next <= 'z'
+      if (lowerBefore || acronymEnd) {
+        flush()
+      }
+    }
+    current += c
+  }
+  flush()
+  return words
+}
+
+/** The six inflectors (ADR-0098 §5). Every one is a total, pure function of its input's characters. */
+const INFLECTORS = new Map<string, (s: string) => string>([
+  ['snake', (s) => splitWords(s).map(lowerAscii).join('_')],
+  ['kebab', (s) => splitWords(s).map(lowerAscii).join('-')],
+  [
+    'camel',
+    (s) =>
+      splitWords(s)
+        .map((w, i) => (i === 0 ? lowerAscii(w) : capitalizeAscii(w)))
+        .join(''),
+  ],
+  ['pascal', (s) => splitWords(s).map(capitalizeAscii).join('')],
+  ['upper', upperAscii],
+  ['lower', lowerAscii],
+])
+
+const INFLECTOR_NAMES = 'snake, camel, pascal, kebab, upper, lower'
+
+/**
+ * Applies `inflectors` to `name`, **rightmost first** (`{upper snake base}` → `COIN_POUCH`). Every
+ * name was validated when the template was compiled, so the lookup can never miss at render time.
+ */
+const applyInflectors = (inflectors: readonly string[], name: string): string => {
+  let out = name
+  for (let i = inflectors.length - 1; i >= 0; i--) {
+    out = INFLECTORS.get(inflectors[i] ?? '')?.(out) ?? out
+  }
+  return out
+}
+
+/** One `E028` message plus its teach-the-replacement hint (ADR-0094, ADR-0098 §10). */
+type TemplateProblem = { readonly message: string; readonly hint: string | undefined }
+
+/** Drawstic has no clock: a date would break output-is-a-pure-function-of-source (ADR-0007). */
+const DATE_PROBLEM: TemplateProblem = {
+  message: "'date' is not a template variable — Drawstic has no clock",
+  hint: "a recipe's output is a pure function of its source (ADR-0007); a date would make the same recipe write different filenames on two runs",
+}
+
+/** The diagnostic for a hole's variable word — the last word of `{ … base }`. */
+const variableProblem = (name: string): TemplateProblem => {
+  if (name === 'ext' || name === 'full') {
+    return {
+      message: `'{${name}}' is not a template variable — the format line owns the extension`,
+      hint: `write 'file "{snake base}"'; a png+svg block would render two different names`,
+    }
+  }
+  if (name === 'date') {
+    return DATE_PROBLEM
+  }
+  return {
+    message: `unknown template variable '${name}' — the only variable is 'base' (the target's drawing name)`,
+    hint: undefined,
+  }
+}
+
+/** The diagnostic for a hole's inflector word — any word before the variable. */
+const inflectorProblem = (name: string): TemplateProblem => {
+  if (name === 'date') {
+    return DATE_PROBLEM
+  }
+  const message = `unknown inflector '${name}' — available: ${INFLECTOR_NAMES}`
+  if (name === 'plural' || name === 'singular') {
+    return {
+      message,
+      hint: "pluralization needs a dictionary and cannot be deterministic — name the target's path explicitly: 'export coin coins:'",
+    }
+  }
+  return name === 'title' ? { message, hint: "use 'pascal'" } : { message, hint: undefined }
+}
 
 /**
  * Recursive-descent parser over one file's token stream (see module header
@@ -138,18 +277,16 @@ class Parser {
   // ── module ────────────────────────────────────────────────────────────
 
   /**
-   * Entry rule: `module = [version-pragma] { top-stmt } EOF` (§17.4). The
-   * optional `drawstic N` pragma (ADR-0029) is only recognized as the
-   * file's first line, sniffed by 3-token lookahead so a plain `drawstic`
-   * binding elsewhere in the file is unaffected.
+   * Entry rule: `module = { top-stmt } EOF` (§17.4). The `drawstic N` version pragma
+   * (ADR-0029) was removed (ADR-0096 §1): inert since ADR-0088 (one engine semantics,
+   * nothing ever branched on `N`). Still sniffed by the same 3-token lookahead, as the
+   * file's first line only, so a plain `drawstic` binding elsewhere in the file is
+   * unaffected — only the pragma shape at line 1 errors.
    */
   parseModule = (): Module => {
-    let pragma: number | undefined
     this.#skipNLs()
     if (this.#atName('drawstic') && this.#peek(1).kind === 'int' && this.#peek(2).kind === 'nl') {
-      this.#next()
-      pragma = this.#next().num
-      this.#next()
+      this.#fail("the 'drawstic N' version pragma was removed — delete the line", this.#peek())
     }
     const stmts: Statement[] = []
     this.#skipNLs()
@@ -157,7 +294,7 @@ class Parser {
       stmts.push(this.#parseStmt(true))
       this.#skipNLs()
     }
-    return { pragma, statements: stmts, file: this.#file }
+    return { statements: stmts, file: this.#file }
   }
 
   /**
@@ -237,11 +374,10 @@ class Parser {
         }
         break
       case 'seed':
+        // `seed N` was removed (ADR-0096 §1) — stored, never read. `seed = …` (name binding)
+        // still works; only the directive shape errors.
         if (this.#peek(1).kind === 'int') {
-          this.#next()
-          const n = this.#next().num
-          this.#expectNL()
-          return { kind: 'seedDirective', seed: n, span: s }
+          this.#fail("'seed' was removed — it was stored but never read; delete the line", t)
         }
         break
       case 'font': {
@@ -323,14 +459,22 @@ class Parser {
           return this.#parseFnDef()
         }
         break
-      case 'grad':
+      case 'gradient':
         if (this.#peek(1).kind === 'name' && this.#peek(2).text === '=') {
           this.#next()
           const name = this.#next().text
           this.#next() // =
           const e = this.#parseExprSeq()
           this.#expectNL()
-          return { kind: 'binding', names: [name], expression: e, bindKind: 'grad', span: s }
+          return { kind: 'binding', names: [name], expression: e, bindKind: 'gradient', span: s }
+        }
+        break
+      case 'grad':
+        // `grad NAME = expr` was renamed to `gradient NAME = expr` (ADR-0096 §2) — an abbreviation
+        // that bought nothing. `grad = …` (name binding) is untouched; only the gradient-binding
+        // shape errors, matching the ADR-0094 removal precedent.
+        if (this.#peek(1).kind === 'name' && this.#peek(2).text === '=') {
+          this.#fail("'grad' was renamed to 'gradient' — write 'gradient NAME = expr'", t)
         }
         break
       case 'mask': {
@@ -352,6 +496,83 @@ class Parser {
         const body = this.#parseBlock()
         return { kind: 'maskBlock', expression, body, span: s }
       }
+      case 'light':
+        // D7: `light NAME =` → a Light value binding; anything else leaves `light`
+        // an ordinary bindable/call name (contextual).
+        if (this.#peek(1).kind === 'name' && this.#peek(2).text === '=') {
+          return this.#parseLightBinding()
+        }
+        break
+      case 'material':
+        // D7: `material NAME =` → a Material value binding; else `material` stays a name.
+        if (this.#peek(1).kind === 'name' && this.#peek(2).text === '=') {
+          return this.#parseMaterialBinding()
+        }
+        break
+      case 'figure':
+        // D7: `figure:` → a theme proportions block (ADR-0093); `figure` stays a bindable name.
+        if (this.#peek(1).kind === 'op' && this.#peek(1).text === ':' && this.#peek(1).blockColon) {
+          return this.#parseFigureBlock()
+        }
+        break
+      case 'lit':
+        // The `lit L:` light-scoping block was removed (ADR-0094): the theme default light
+        // and an explicit `light L` argument on `model`/`cel` cover both real cases. `lit` as
+        // an ordinary bindable/call name (`lit = …`) is untouched — only the block shape errors.
+        if (
+          this.#peek(1).kind === 'name' &&
+          this.#peek(2).kind === 'op' &&
+          this.#peek(2).text === ':' &&
+          this.#peek(2).blockColon
+        ) {
+          this.#fail(
+            "the 'lit L:' block was removed — pass 'light L' to each model/cel, or set the theme's default light",
+            t,
+          )
+        }
+        break
+      case 'pin':
+        // D7: `pin NAME …` / `pin part.name …` → an attach-point declaration; `pin = …`, `pin(…)`,
+        // or `pin` as a value all leave it an ordinary bindable/call name (contextual).
+        if (this.#peek(1).kind === 'name') {
+          return this.#parsePinDeclaration()
+        }
+        break
+      case 'fit':
+        // D7: `fit REF REF` → an anchored-assembly placement; `fit = …`, `fit(…)`, or `fit` as a
+        // value leave it an ordinary bindable/call name (contextual).
+        if (this.#peek(1).kind === 'name') {
+          return this.#parseFit()
+        }
+        break
+      case 'skeleton':
+        // D7: `skeleton NAME:` → a rig block (ADR-0095); `skeleton` stays a bindable name otherwise.
+        if (
+          this.#peek(1).kind === 'name' &&
+          this.#peek(2).kind === 'op' &&
+          this.#peek(2).text === ':' &&
+          this.#peek(2).blockColon
+        ) {
+          return this.#parseSkeletonBlock()
+        }
+        break
+      case 'pose': {
+        // D7: `pose NAME over SKEL:` → a pose block (module); `pose NAME` (no `over`) → apply the
+        // pose in a draw body; anything else leaves `pose` an ordinary bindable/call name.
+        if (this.#peek(1).kind === 'name') {
+          const after = this.#peek(2)
+          if (after.kind === 'name' && after.text === 'over') {
+            return this.#parsePoseBlock()
+          }
+          if (after.kind === 'nl' || after.kind === 'dedent' || after.kind === 'eof') {
+            this.#next()
+            const name = this.#next().text
+            this.#expectNL()
+            return { kind: 'poseApply', name, span: s }
+          }
+        }
+        break
+      }
       case 'filter':
         if (
           this.#peek(1).kind === 'name' &&
@@ -361,14 +582,32 @@ class Parser {
           return this.#parseFilterDef()
         }
         break
-      case 'import':
+      case 'image':
         if (this.#peek(1).kind === 'name' && this.#peek(2).text === '=') {
-          return this.#parseImageImport()
+          return this.#parseImage()
+        }
+        break
+      case 'import':
+        // `import NAME = FILE-PATH` was renamed to `image NAME = FILE-PATH` (ADR-0096 §2) —
+        // `import` means module import everywhere else in the language (Drawstic's own module
+        // import is `from`). `import = …` (name binding) is untouched; only the image-load shape
+        // errors, matching the ADR-0094 removal precedent.
+        if (this.#peek(1).kind === 'name' && this.#peek(2).text === '=') {
+          this.#fail(
+            "'import' for a loaded image was renamed to 'image' — write 'image NAME = FILE-PATH'",
+            t,
+          )
         }
         break
       case 'tileset':
+        // `tileset NAME SIZE:` was merged into `atlas` (ADR-0096 §3) — a uniform-tile sheet is now
+        // `atlas NAME:` with a `tile WxH` item. `tileset = …` (name binding) still works; only the
+        // def shape errors.
         if (this.#peek(1).kind === 'name' && this.#peek(2).kind === 'size') {
-          return this.#parseTileset()
+          this.#fail(
+            "'tileset' was merged into 'atlas' — write 'atlas NAME:' with a 'tile WxH' declaration",
+            t,
+          )
         }
         break
       case 'atlas':
@@ -385,8 +624,14 @@ class Parser {
           return this.#parseExport()
         }
         break
+      case 'palette':
+        return this.#parsePalette()
       case 'pal':
-        return this.#parsePal()
+        // `pal` was renamed to `palette` (ADR-0096 §2) — an abbreviation that bought nothing.
+        // `pal` is fully reserved at statement position (unlike the contextual keywords above),
+        // so the old spelling always errors here rather than falling through to a shape check.
+        this.#fail("'pal' was renamed to 'palette' — write 'palette k=… …' or 'palette:'", t)
+        break
       case 'pixels':
         if (this.#peek(1).text === ':' && this.#peek(1).blockColon) {
           return this.#parsePixels()
@@ -396,13 +641,13 @@ class Parser {
         return this.#parseIfStmt()
       case 'match':
         return this.#parseMatch()
-      case 'repeat': {
-        this.#next()
-        const count = this.#parseExpr()
-        this.#expect('op', ':', "':'")
-        const body = this.#parseBlock()
-        return { kind: 'repeat', count, body, span: s }
-      }
+      case 'repeat':
+        // `repeat N:` was removed (ADR-0094) — it duplicated `for`. `repeat = …` (name binding)
+        // still works; only the loop shape errors.
+        if (this.#peek(1).text !== '=') {
+          this.#fail("'repeat' was removed — use 'for i 0..N:' instead", t)
+        }
+        break
       case 'for': {
         this.#next()
         const varName = this.#expect('name', undefined, 'a loop variable').text
@@ -411,13 +656,31 @@ class Parser {
         const body = this.#parseBlock()
         return { kind: 'for', target: varName, iterable, body, span: s }
       }
-      case 'while': {
-        this.#next()
-        const cond = this.#parseExpr()
-        this.#expect('op', ':', "':'")
-        const body = this.#parseBlock()
-        return { kind: 'while', condition: cond, body, span: s }
-      }
+      case 'while':
+        // `while cond:` was removed (ADR-0094) — an unbounded loop is a budget hazard `for`
+        // never poses. `while = …` (name binding) still works; only the loop shape errors.
+        if (this.#peek(1).text !== '=') {
+          this.#fail("'while' was removed — iterate a bounded range with 'for i 0..N:'", t)
+        }
+        break
+      case 'flood':
+        // The `flood` fill command was removed (ADR-0094) — a special case with no distinct
+        // role; fill a Region instead. `flood = …` (name binding) still works.
+        if (this.#peek(1).text !== '=') {
+          this.#fail("'flood' was removed — fill a region: 'fill PAINT REGION'", t)
+        }
+        break
+      case 'replace':
+        // The `replace` recolor filter was removed (ADR-0094) — an exact-RGBA swap is brittle
+        // after shading/AA; recolor parametrically (draw params + `tint`) instead. `replace = …`
+        // (name binding) still works.
+        if (this.#peek(1).text !== '=') {
+          this.#fail(
+            "'replace' was removed — recolor parametrically (draw params + a 'tint' stamp flag), or 'tint' the whole frame",
+            t,
+          )
+        }
+        break
       case 'scatter':
         // D7: `scatter NAME count seed region:` is a block; a bare `scatter =`
         // or `scatter(` leaves it an ordinary bindable/call name (contextual).
@@ -558,6 +821,363 @@ class Parser {
       }
     }
     return null
+  }
+
+  /**
+   * Parses `light NAME = ( "dir" | "at" ) point COLOR [ "amb" COLOR expr ] [ "gain" expr ]`
+   * (§17.4 `light-def`, ADR-0086). Inline args, no constructor parentheses: `dir`/`at` pick a
+   * directional vs point source, `amb`/`gain` are order-free optional tails. Each operand parses
+   * in command-arg mode (D2 whitespace-bounded) so `dir 1:1 #ffe6b0` splits cleanly. `dir`/`at`/
+   * `amb`/`gain` are keywords only here — the dispatch in `#parseStmt` reached this method only on
+   * the `light NAME =` shape, so they never reserve those words elsewhere.
+   */
+  readonly #parseLightBinding = (): Statement => {
+    const s = this.#span(this.#peek())
+    this.#next() // light
+    const name = this.#next().text
+    this.#next() // =
+    const srcTok = this.#peek()
+    if (srcTok.kind !== 'name' || (srcTok.text !== 'dir' && srcTok.text !== 'at')) {
+      this.#fail("light needs 'dir DX:DY …' (directional) or 'at X:Y …' (point source)", srcTok)
+    }
+    const source = this.#next().text as 'dir' | 'at'
+    const vec = this.#parseExpr(true)
+    const color = this.#parseExpr(true)
+    let amb: { readonly color: Expression; readonly amount: Expression } | undefined
+    let gain: Expression | undefined
+    while (!this.#at('nl') && !this.#at('eof') && !this.#at('dedent')) {
+      const kw = this.#peek()
+      if (kw.kind === 'name' && kw.text === 'amb') {
+        this.#next()
+        const ambColor = this.#parseExpr(true)
+        const ambAmount = this.#parseExpr(true)
+        amb = { color: ambColor, amount: ambAmount }
+        continue
+      }
+      if (kw.kind === 'name' && kw.text === 'gain') {
+        this.#next()
+        gain = this.#parseExpr(true)
+        continue
+      }
+      this.#fail(`unexpected '${kw.text || kw.kind}' in a light binding (expected amb or gain)`, kw)
+    }
+    this.#expectNL()
+    return { kind: 'lightBinding', name, source, vec, color, amb, gain, span: s }
+  }
+
+  /**
+   * Parses `material NAME = COLOR [ RESPONSE ]` (§17.4 `material-def`, ADR-0086). `RESPONSE` is one
+   * of `flat|metal|skin|cloth|glass|glow` — a keyword only in this trailing slot; a bare colour
+   * with no response means `flat`. The colour parses in command-arg mode so the response word (if
+   * any) stays a separate whitespace-bounded token.
+   */
+  readonly #parseMaterialBinding = (): Statement => {
+    const s = this.#span(this.#peek())
+    this.#next() // material
+    const name = this.#next().text
+    this.#next() // =
+    const color = this.#parseExpr(true)
+    // Optional response word right after the colour (a keyword only in this slot).
+    let response: string | undefined
+    if (this.#peek().kind === 'name' && isMaterialResponse(this.#peek().text)) {
+      response = this.#next().text
+    }
+    // Optional order-free trailing modifiers (ADR-0091): a form profile (`round`|`drape`, a bare
+    // keyword flag), and dose overrides `shade`/`hi`/`rim`/`ao`/`spec`/`puff`/`spread` (each a value
+    // expression). Keywords only in this slot — bindable names elsewhere.
+    let profile: string | undefined
+    const overrides: MaterialOverrides = {}
+    while (!this.#at('nl') && !this.#at('eof') && !this.#at('dedent')) {
+      const kw = this.#peek()
+      if (kw.kind === 'name' && isFormProfile(kw.text)) {
+        this.#next()
+        profile = kw.text
+        continue
+      }
+      if (kw.kind === 'name' && (MATERIAL_OVERRIDE_KEYS as readonly string[]).includes(kw.text)) {
+        this.#next()
+        overrides[kw.text as MaterialOverrideKey] = this.#parseExpr(true)
+        continue
+      }
+      this.#fail(
+        `unexpected '${kw.text || kw.kind}' in a material binding (a response ` +
+          `flat|metal|skin|cloth|glass|glow, a profile round|drape, or an override ` +
+          `shade|hi|rim|ao|spec|puff|spread N)`,
+        kw,
+      )
+    }
+    this.#expectNL()
+    return { kind: 'materialBinding', name, color, response, profile, overrides, span: s }
+  }
+
+  /**
+   * Parses `figure:` (§Themes, ADR-0093): an indented block of `NAME EXPR` proportion lines
+   * (`heads 3.5`, `headW 22`, `eyeLine 0.62`, …). The field name is a bare contextual keyword (the
+   * evaluator validates it against the known proportion set); the value parses in command-arg mode.
+   * Only reachable via the `figure:` block-colon lookahead, so `figure` stays bindable elsewhere.
+   */
+  readonly #parseFigureBlock = (): Statement => {
+    const s = this.#span(this.#peek())
+    this.#next() // figure
+    this.#next() // :
+    this.#expect('nl')
+    this.#skipNLs()
+    this.#expect('indent', undefined, 'an indented figure body')
+    this.#skipNLs()
+    const fields: { name: string; value: Expression }[] = []
+    while (!this.#at('dedent') && !this.#at('eof')) {
+      const name = this.#expect('name', undefined, 'a figure field name').text
+      const value = this.#parseExpr(true)
+      this.#expectNL()
+      fields.push({ name, value })
+      this.#skipNLs()
+    }
+    if (this.#at('dedent')) {
+      this.#next()
+    }
+    return { kind: 'figureBlock', fields, span: s }
+  }
+
+  /**
+   * A `fit`/`pin` reference head: a bare `NAME` optionally followed by an unspaced `.NAME`
+   * (`torso`, `torso.shoulder`). Returns the head and the pin (`undefined` for the bare form).
+   * Consumes exactly those tokens.
+   */
+  readonly #parseFitRef = (): { readonly head: string; readonly pin: string | undefined } => {
+    const head = this.#expect('name', undefined, 'a part name').text
+    let pin: string | undefined
+    if (this.#at('op', '.') && !this.#peek().spaced && this.#peek(1).kind === 'name') {
+      this.#next() // .
+      pin = this.#next().text
+    }
+    return { head, pin }
+  }
+
+  /** Whether the upcoming tokens form a bare `fit` reference (`NAME` or `NAME.NAME`) rather than a point expression. */
+  readonly #atFitRef = (): boolean => {
+    if (this.#peek().kind !== 'name') {
+      return false
+    }
+    const n1 = this.#peek(1)
+    // bare ref: a lone name ending the line, or a name followed by the trailing `ground` flag
+    // (`shadow` still recognized here so the stale spelling reaches the flags loop below as a
+    // ref, not a misparsed point expression — ADR-0096 §2, was `shadow`).
+    if (n1.kind === 'nl' || n1.kind === 'eof' || n1.kind === 'dedent') {
+      return true
+    }
+    if (n1.kind === 'name' && (n1.text === 'ground' || n1.text === 'shadow')) {
+      return true
+    }
+    // dotted ref: NAME.NAME (unspaced dot). A point expression (`x:y`, `x+1`) instead has an
+    // operator like ':' or '+' at n1, so it falls through to the expression branch.
+    return n1.kind === 'op' && n1.text === '.' && !n1.spaced && this.#peek(2).kind === 'name'
+  }
+
+  /**
+   * Parses `pin KEY PT` (§17.4 `pin-decl`, ADR-0087): the attach-point key (a bare `NAME` or a
+   * dotted `part.name`) followed by a point expression in command-arg mode. Only reached on the
+   * `pin NAME …` shape, so `pin` never reserves the word elsewhere.
+   */
+  readonly #parsePinDeclaration = (): Statement => {
+    const s = this.#span(this.#peek())
+    this.#next() // pin
+    let name = this.#expect('name', undefined, 'an attach-point name').text
+    if (this.#at('op', '.') && !this.#peek().spaced && this.#peek(1).kind === 'name') {
+      this.#next() // .
+      name += `.${this.#next().text}`
+    }
+    const pt = this.#parseCmdArgExpr()
+    this.#expectNL()
+    return { kind: 'pinDeclaration', name, point: pt, span: s }
+  }
+
+  /**
+   * Parses `fit TARGET SOURCE [flags] [ground]` (§17.4 `fit-stmt`, ADR-0087). `TARGET` is always a
+   * reference (`NAME`/`NAME.pin`); `SOURCE` is a reference too, or — when it isn't the bare-ref
+   * shape — a canvas point expression (the ground-placement oracle). Trailing `flags` are the same
+   * `stamp` transform/paint modifiers (`flipx`/`flipy`/`rotN`/`scaleN`/`transform:`/`tint:`/`mask:`,
+   * ADR-0087 amendment 2); the bare `ground` flag (ADR-0096 §2, was `shadow` — distinct from
+   * `stamp … shadow dx:dy p`, which keeps its name) opts into an auto contact-shadow ellipse.
+   * `ground` is always bare in a `fit` (the auto pool), so it is read here directly rather than as
+   * a keyword.
+   */
+  readonly #parseFit = (): Statement => {
+    const s = this.#span(this.#peek())
+    this.#next() // fit
+    const target = this.#parseFitRef()
+    let source:
+      | { readonly kind: 'ref'; readonly head: string; readonly pin: string | undefined }
+      | { readonly kind: 'point'; readonly expression: Expression }
+      | { readonly kind: 'bone'; readonly joint: string }
+    if (
+      this.#peek().kind === 'name' &&
+      this.#peek().text === 'bone' &&
+      this.#peek(1).kind === 'name'
+    ) {
+      this.#next() // bone
+      source = { kind: 'bone', joint: this.#next().text }
+    } else if (this.#atFitRef()) {
+      const ref = this.#parseFitRef()
+      source = { kind: 'ref', head: ref.head, pin: ref.pin }
+    } else {
+      source = { kind: 'point', expression: this.#parseCmdArgExpr() }
+    }
+    // Trailing modifiers: the stamp transform/paint flags (same grammar as a `call`'s arg run) plus
+    // the bare `ground` boolean and the occlusion/aim clauses (`behind`/`front` NAME, `aim` PIN PT,
+    // ADR-0092) — all special-cased before the keyword check so they never eat stamp-flag args.
+    const flags: Argument[] = []
+    let ground = false
+    const behind: string[] = []
+    const front: string[] = []
+    let aim: { readonly pin: string; readonly point: Expression } | undefined
+    while (!this.#at('nl') && !this.#at('eof') && !this.#at('dedent')) {
+      const f = this.#peek()
+      if (f.kind === 'name' && f.text === 'ground') {
+        this.#next()
+        ground = true
+        continue
+      }
+      if (f.kind === 'name' && f.text === 'shadow') {
+        // The bare `shadow` flag on `fit` was renamed to `ground` (ADR-0096 §2) — distinct from
+        // `stamp … shadow dx:dy p`, which keeps its name.
+        this.#fail("'shadow' on 'fit' was renamed to 'ground' — write 'fit … ground'", f)
+      }
+      if (
+        f.kind === 'name' &&
+        (f.text === 'behind' || f.text === 'front') &&
+        this.#peek(1).kind === 'name'
+      ) {
+        const clause = this.#next().text
+        const rel = this.#next().text
+        if (clause === 'behind') {
+          behind.push(rel)
+        } else {
+          front.push(rel)
+        }
+        continue
+      }
+      if (f.kind === 'name' && f.text === 'aim' && this.#peek(1).kind === 'name') {
+        this.#next()
+        const pin = this.#next().text
+        aim = { pin, point: this.#parseCmdArgExpr() }
+        continue
+      }
+      if (f.kind === 'name' && KW_ARG_ARITY[f.text] !== undefined) {
+        const kw = this.#next().text
+        const arity = KW_ARG_ARITY[kw] ?? 1
+        const parts: Expression[] = []
+        for (let i = 0; i < arity; i++) {
+          parts.push(this.#parseCmdArgExpr())
+        }
+        flags.push({ kind: 'keyword', keyword: kw, parts, span: this.#span(f) })
+        continue
+      }
+      flags.push({ kind: 'expression', expression: this.#parseCmdArgExpr(), span: this.#span(f) })
+    }
+    this.#expectNL()
+    return { kind: 'fit', target, source, flags, ground, behind, front, aim, span: s }
+  }
+
+  /**
+   * Parses `skeleton NAME:` (ADR-0095): an indented block of joint lines, each `NAME at POINT`
+   * (anchored) or `NAME from PARENT ANGLE LENGTH` (forward-kinematic), with an optional trailing
+   * `limit MIN:MAX` pose-delta bound. `at`/`from`/`limit` are contextual keywords in this block only.
+   */
+  readonly #parseSkeletonBlock = (): Statement => {
+    const s = this.#span(this.#peek())
+    this.#next() // skeleton
+    const name = this.#next().text
+    this.#next() // :
+    this.#expect('nl')
+    this.#skipNLs()
+    this.#expect('indent', undefined, 'an indented skeleton body')
+    this.#skipNLs()
+    const joints: SkeletonJointAst[] = []
+    while (!this.#at('dedent') && !this.#at('eof')) {
+      const js = this.#span(this.#peek())
+      const jname = this.#expect('name', undefined, 'a joint name').text
+      let parent: string | null = null
+      let anchor: Expression | null = null
+      let angle: Expression | null = null
+      let length: Expression | null = null
+      const kw = this.#peek()
+      if (kw.kind === 'name' && kw.text === 'at') {
+        this.#next()
+        anchor = this.#parseCmdArgExpr()
+      } else if (kw.kind === 'name' && kw.text === 'from') {
+        this.#next()
+        parent = this.#expect('name', undefined, 'a parent joint name').text
+        angle = this.#parseCmdArgExpr()
+        length = this.#parseCmdArgExpr()
+      } else {
+        this.#fail("a joint needs 'at POINT' (anchored) or 'from PARENT ANGLE LENGTH' (FK)", kw)
+      }
+      let limit: { readonly min: Expression; readonly max: Expression } | null = null
+      if (this.#peek().kind === 'name' && this.#peek().text === 'limit') {
+        this.#next()
+        const lp = this.#parseCmdArgExpr()
+        if (lp.kind !== 'point') {
+          this.#fail('limit needs a MIN:MAX range', this.#peek())
+        } else {
+          limit = { min: lp.x, max: lp.y }
+        }
+      }
+      this.#expectNL()
+      joints.push({ name: jname, parent, anchor, angle, length, limit, span: js })
+      this.#skipNLs()
+    }
+    if (this.#at('dedent')) {
+      this.#next()
+    }
+    return { kind: 'skeletonBlock', name, joints, span: s }
+  }
+
+  /**
+   * Parses `pose NAME over SKELETON:` (ADR-0095): a `view front|side|back` line plus `JOINT DELTA
+   * [z Z]` lines. `view`/`z` are contextual keywords in this block only.
+   */
+  readonly #parsePoseBlock = (): Statement => {
+    const s = this.#span(this.#peek())
+    this.#next() // pose
+    const name = this.#next().text
+    this.#next() // over
+    const skeleton = this.#expect('name', undefined, 'a skeleton name').text
+    this.#next() // :
+    this.#expect('nl')
+    this.#skipNLs()
+    this.#expect('indent', undefined, 'an indented pose body')
+    this.#skipNLs()
+    let view: 'front' | 'side' | 'back' = 'front'
+    const entries: PoseEntryAst[] = []
+    while (!this.#at('dedent') && !this.#at('eof')) {
+      const ps = this.#span(this.#peek())
+      const first = this.#peek()
+      if (first.kind === 'name' && first.text === 'view') {
+        this.#next()
+        const v = this.#next().text
+        if (v !== 'front' && v !== 'side' && v !== 'back') {
+          this.#fail("view must be 'front', 'side', or 'back'", first)
+        }
+        view = v as 'front' | 'side' | 'back'
+        this.#expectNL()
+        this.#skipNLs()
+        continue
+      }
+      const joint = this.#expect('name', undefined, 'a joint name').text
+      const delta = this.#parseCmdArgExpr()
+      let depth: Expression | null = null
+      if (this.#peek().kind === 'name' && this.#peek().text === 'z') {
+        this.#next()
+        depth = this.#parseCmdArgExpr()
+      }
+      this.#expectNL()
+      entries.push({ joint, delta, depth, span: ps })
+      this.#skipNLs()
+    }
+    if (this.#at('dedent')) {
+      this.#next()
+    }
+    return { kind: 'poseBlock', name, skeleton, view, entries, span: s }
   }
 
   readonly #parseFnDef = (): Statement => {
@@ -850,13 +1470,14 @@ class Parser {
   }
 
   /**
-   * Parses `image-import` (§17.4): `import NAME = FILE-PATH [sha256 HEX]`. The
-   * trailing `sha256` pin is optional and checked against the loaded
-   * file's content hash at build time (E020 on mismatch), not here.
+   * Parses `image-def` (§17.4): `image NAME = FILE-PATH [sha256 HEX]` (ADR-0096 §2, was
+   * `import` — `import` means module import everywhere else in the language; Drawstic's own
+   * module import is `from`). The trailing `sha256` pin is optional and checked against the
+   * loaded file's content hash at build time (E020 on mismatch), not here.
    */
-  readonly #parseImageImport = (): Statement => {
+  readonly #parseImage = (): Statement => {
     const s = this.#span(this.#peek())
-    this.#next() // import
+    this.#next() // image
     const name = this.#next().text
     this.#expect('op', '=')
     const path = this.#parsePath()
@@ -867,7 +1488,7 @@ class Parser {
       sha = h.text
     }
     this.#expectNL()
-    return { kind: 'imageImport', name, path, sha256: sha, span: s }
+    return { kind: 'image', name, path, sha256: sha, span: s }
   }
 
   // ── draw / theme / font / tileset / atlas / export ───────────────────
@@ -1028,9 +1649,9 @@ class Parser {
         }
         case 'glyphs': {
           this.#next()
-          const ts = this.#expect('name', undefined, 'a tileset name').text
+          const atlasName = this.#expect('name', undefined, 'an atlas name').text
           const chars = this.#expect('string', undefined, 'a character string').str
-          items.push({ kind: 'glyphs', tileset: ts, chars, span: sp })
+          items.push({ kind: 'glyphs', atlas: atlasName, chars, span: sp })
           break
         }
         case 'tracking': {
@@ -1057,55 +1678,18 @@ class Parser {
   }
 
   /**
-   * Parses `tileset-def` (§17.4): `tileset NAME SIZE: { tileset-item }`. `tiles`
-   * may repeat (entries accumulate) and `cols` may repeat (last write
-   * wins) — neither is restricted to appearing once.
-   */
-  readonly #parseTileset = (): Statement => {
-    const s = this.#span(this.#peek())
-    this.#next() // tileset
-    const name = this.#next().text
-    const sz = this.#expect('size')
-    this.#expect('op', ':')
-    this.#expect('nl')
-    this.#skipNLs()
-    this.#expect('indent')
-    const tiles: string[] = []
-    let cols: number | undefined
-    this.#skipNLs()
-    while (!this.#at('dedent') && !this.#at('eof')) {
-      const t = this.#peek()
-      if (this.#atName('tiles')) {
-        this.#next()
-        tiles.push(...this.#parseNameList())
-      } else if (this.#atName('cols')) {
-        this.#next()
-        cols = this.#expect('int').num
-      } else {
-        this.#fail(`unknown tileset item '${t.text}'`)
-      }
-      this.#expectNL()
-      this.#skipNLs()
-    }
-    if (this.#at('dedent')) {
-      this.#next()
-    }
-    const def: TilesetDefinition = {
-      name,
-      tileWidth: sz.num,
-      tileHeight: sz.sizeH,
-      tiles,
-      columns: cols,
-      span: s,
-    }
-    return { kind: 'tilesetDefinition', def, span: s }
-  }
-
-  /**
-   * Parses `atlas-def` (§17.4): `atlas NAME: { atlas-item }`. `place NAME x:y`
-   * reads `x` and `y` as two bare `INT`s around a literal `:` — not
-   * through the point-expression grammar, so `place` coordinates cannot
-   * be arithmetic expressions.
+   * Parses `atlas-def` (§17.4, ADR-0096 §3 — merges the former `tileset`+`atlas` split): `atlas
+   * NAME: { atlas-item }`. `sprites` may repeat (entries accumulate, like the retired `tileset`'s
+   * `tiles`); `tile`/`cols`/`pad` may repeat (last write wins) — none is restricted to appearing
+   * once. `place NAME x:y` reads `x`/`y` as two bare `INT`s around a literal `:` — not through the
+   * point-expression grammar, so `place` coordinates cannot be arithmetic expressions.
+   *
+   * Cross-item shape checks run after the whole body is read (order-independent — `cols`/`place`
+   * may appear before or after `tile` in source): `cols` without `tile` and `place` with `tile`
+   * are both a positioned E004 (a grid has fixed slots either way — nothing to count columns of
+   * without one, and nothing to pin within one); `cols 0` (immediate, at the token) and zero
+   * `sprites` are degenerate-layout guards that would otherwise divide by zero when the sheet is
+   * baked ({@link Engine.buildAtlas}).
    */
   readonly #parseAtlas = (): Statement => {
     const s = this.#span(this.#peek())
@@ -1116,24 +1700,40 @@ class Parser {
     this.#skipNLs()
     this.#expect('indent')
     const sprites: string[] = []
+    let tile: { width: number; height: number } | undefined
+    let cols: number | undefined
+    let colsToken: Token | undefined
     let pad = 0
-    const place: { name: string; x: number; y: number }[] = []
+    const place: { name: string; x: number; y: number; span: TextSpan }[] = []
+    let firstPlaceToken: Token | undefined
     this.#skipNLs()
     while (!this.#at('dedent') && !this.#at('eof')) {
       const t = this.#peek()
       if (this.#atName('sprites')) {
         this.#next()
         sprites.push(...this.#parseNameList())
+      } else if (this.#atName('tile')) {
+        this.#next()
+        const sz = this.#expect('size')
+        tile = { width: sz.num, height: sz.sizeH }
+      } else if (this.#atName('cols')) {
+        colsToken = this.#next()
+        const n = this.#expect('int').num
+        if (n <= 0) {
+          this.#fail(`atlas 'cols' must be a positive integer, got ${n}`, colsToken)
+        }
+        cols = n
       } else if (this.#atName('pad')) {
         this.#next()
         pad = this.#expect('int').num
       } else if (this.#atName('place')) {
-        this.#next()
+        const pt = this.#next()
+        firstPlaceToken ??= pt
         const n = this.#expect('name').text
         const x = this.#expect('int').num
         this.#expect('op', ':')
         const y = this.#expect('int').num
-        place.push({ name: n, x, y })
+        place.push({ name: n, x, y, span: this.#span(pt) })
       } else {
         this.#fail(`unknown atlas item '${t.text}'`)
       }
@@ -1143,30 +1743,250 @@ class Parser {
     if (this.#at('dedent')) {
       this.#next()
     }
-    const def: AtlasDefinition = { name, sprites, padding: pad, place, span: s }
+    if (sprites.length === 0) {
+      throw error(
+        ERROR_CODE.syntax,
+        `atlas '${name}' has no members — add a 'sprites' line`,
+        this.#file,
+        s,
+      )
+    }
+    if (cols !== undefined && !tile) {
+      this.#fail("'cols' needs a 'tile WxH' declaration", colsToken)
+    }
+    if (place.length > 0 && tile) {
+      this.#fail("'place' cannot be used with 'tile' (a grid has fixed slots)", firstPlaceToken)
+    }
+    const def: AtlasDefinition = {
+      name,
+      sprites,
+      tile,
+      columns: cols,
+      padding: pad,
+      place,
+      span: s,
+    }
     return { kind: 'atlasDefinition', def, span: s }
   }
 
-  /** Parses `export-def` (§17.4): `export NAME OUTPUT-PATH: { format-line }`. */
+  /**
+   * Raises the one template error code (`E028`), positioned at `offset` **inside the string
+   * literal** — the column of the opening quote plus its delimiter, so the caret lands on the
+   * offending `{` (or `\`) rather than on the whole `file` line.
+   */
+  readonly #failTemplate = (
+    problem: TemplateProblem,
+    tok: Token,
+    offset: number,
+    hint?: string,
+  ): never => {
+    const delimiter = tok.text.startsWith('"""') ? 3 : 1
+    throw error(
+      ERROR_CODE.template,
+      problem.message,
+      this.#file,
+      { line: tok.line, column: tok.col + delimiter + offset },
+      hint ?? problem.hint,
+    )
+  }
+
+  /**
+   * Compiles a `file` name template (ADR-0098 §1) from a string token's **raw**, pre-unescape
+   * source: literal chunks plus `{ [INFLECTOR …] base }` holes. Only `\{` and `\}` are escapable
+   * here — every other escape the lexer accepts (`\n`, `\t`, `\"`) is a character a filename cannot
+   * carry, so it is `E028` with the reason rather than a broken artifact name.
+   */
+  readonly #parseTemplate = (tok: Token): TemplatePart[] => {
+    const src = tok.raw
+    const parts: TemplatePart[] = []
+    let literal = ''
+    const flush = (): void => {
+      if (literal !== '') {
+        parts.push({ kind: 'literal', text: literal })
+        literal = ''
+      }
+    }
+    for (let i = 0; i < src.length; i++) {
+      const c = src[i] ?? ''
+      if (c === '\\') {
+        const next = src[i + 1] ?? ''
+        if (next !== '{' && next !== '}') {
+          this.#failTemplate(
+            {
+              message: `'\\${next}' is not allowed in a file template`,
+              hint: "a filename cannot contain a newline, tab or quote; only '\\{' and '\\}' are escapable here",
+            },
+            tok,
+            i,
+          )
+        }
+        literal += next
+        i++
+        continue
+      }
+      if (c === '}') {
+        this.#failTemplate(
+          {
+            message: "unmatched '}' in a file template",
+            hint: "escape a literal brace as '\\}'",
+          },
+          tok,
+          i,
+        )
+      }
+      if (c !== '{') {
+        literal += c
+        continue
+      }
+      const end = src.indexOf('}', i + 1)
+      if (end < 0) {
+        this.#failTemplate(
+          {
+            message: "unterminated '{' in a file template",
+            hint: "close it, or escape a literal brace as '\\{'",
+          },
+          tok,
+          i,
+        )
+      }
+      const words = src
+        .slice(i + 1, end)
+        .split(/\s+/)
+        .filter((w) => w !== '')
+      if (words.length === 0) {
+        this.#failTemplate(
+          { message: "empty '{}' in a file template", hint: "name a variable, e.g. '{base}'" },
+          tok,
+          i,
+        )
+      }
+      const inflectors = words.slice(0, -1)
+      for (const inflector of inflectors) {
+        if (!INFLECTORS.has(inflector)) {
+          this.#failTemplate(inflectorProblem(inflector), tok, i)
+        }
+      }
+      if (words[words.length - 1] !== 'base') {
+        this.#failTemplate(variableProblem(words[words.length - 1] ?? ''), tok, i)
+      }
+      flush()
+      parts.push({ kind: 'hole', inflectors, variable: 'base' })
+      i = end
+    }
+    flush()
+    return parts
+  }
+
+  /** Renders a compiled template for one target's drawing `name` — the block's filename stem (§3). */
+  readonly #renderTemplate = (parts: readonly TemplatePart[], name: string): string =>
+    parts.map((p) => (p.kind === 'literal' ? p.text : applyInflectors(p.inflectors, name))).join('')
+
+  /**
+   * Parses `export-def` (§17.4, ADR-0098 §1): a comma-separated target list, each target
+   * `NAME [OUTPUT-PATH]`, then an optional `dir`/`file` header and the format lines. The block is
+   * **expanded here** into one resolved {@link ExportDefinition} per target (§9), `basePath`
+   * composed per §2 (`explicit path ?? render(file) ?? NAME`, prefixed by `dir`), so every
+   * downstream consumer keeps reading one flat list of resolved targets. The single-target form
+   * `export gem icons/gem:` is the `n = 1`, no-option case and parses byte-identically.
+   */
   readonly #parseExport = (): Statement => {
     const s = this.#span(this.#peek())
     this.#next() // export
-    const name = this.#next().text
-    const basePath = this.#parsePath()
+    const targets: {
+      readonly name: string
+      readonly path: string | undefined
+      readonly span: TextSpan
+    }[] = []
+    for (;;) {
+      const nameTok = this.#expect('name', undefined, 'an export target name')
+      // The path is optional (it defaults to NAME) — one is present iff the target is not already
+      // ended by the list comma or the block colon.
+      const path = this.#at('op', ',') || this.#at('op', ':') ? undefined : this.#parsePath()
+      targets.push({ name: nameTok.text, path, span: this.#span(nameTok) })
+      if (!this.#at('op', ',')) {
+        break
+      }
+      const comma = this.#next()
+      if (this.#at('op', ':')) {
+        this.#fail(
+          "trailing ',' in the export target list",
+          comma,
+          'drop it — the list ends at the colon',
+        )
+      }
+    }
     this.#expect('op', ':')
     this.#expect('nl')
     this.#skipNLs()
     this.#expect('indent')
-    const formats: FormatLine[] = []
     this.#skipNLs()
+    let dir: string | undefined
+    let dirSpan: TextSpan | undefined
+    let fileTok: Token | undefined
+    let fileSpan: TextSpan | undefined
+    const formats: FormatLine[] = []
     while (!this.#at('dedent') && !this.#at('eof')) {
+      const t = this.#peek()
+      if (t.kind === 'name' && (t.text === 'dir' || t.text === 'file')) {
+        // §8: the block's shape is fixed — `dir`/`file` first, at most one each — so every block
+        // has exactly one canonical form and the line-based `fmt` never has to reorder anything.
+        if (formats.length > 0) {
+          this.#fail(
+            `'${t.text}' after a format line`,
+            t,
+            "'dir' and 'file' come before the format lines",
+          )
+        }
+        if (t.text === 'dir') {
+          if (dir !== undefined) {
+            this.#fail("a second 'dir' in one export block", t, "at most one 'dir' per block")
+          }
+          dirSpan = this.#span(this.#next())
+          dir = this.#parsePath()
+        } else {
+          if (fileTok !== undefined) {
+            this.#fail("a second 'file' in one export block", t, "at most one 'file' per block")
+          }
+          fileSpan = this.#span(this.#next())
+          fileTok = this.#expect('string', undefined, 'a file name template')
+        }
+        this.#expectNL()
+        this.#skipNLs()
+        continue
+      }
       formats.push(this.#parseFormatLine())
       this.#skipNLs()
     }
     if (this.#at('dedent')) {
       this.#next()
     }
-    return { kind: 'exportDefinition', def: { name, basePath, formats, span: s }, span: s }
+    const template = fileTok ? this.#parseTemplate(fileTok) : undefined
+    const group: ExportGroup = {
+      dir,
+      dirSpan,
+      hasFile: template !== undefined,
+      explicitPaths: targets.map((t) => t.path),
+      span: s,
+    }
+    const defs = targets.map((t): ExportDefinition => {
+      const tail = t.path ?? (template ? this.#renderTemplate(template, t.name) : t.name)
+      if (t.path === undefined && tail.includes('/')) {
+        throw error(
+          ERROR_CODE.exportError,
+          "a 'file' template renders the filename, not a directory — put directories in 'dir'",
+          this.#file,
+          fileSpan ?? t.span,
+        )
+      }
+      return {
+        name: t.name,
+        basePath: dir === undefined ? tail : `${dir}/${tail}`,
+        formats,
+        group,
+        span: t.span,
+      }
+    })
+    return { kind: 'exportDefinition', defs, span: s }
   }
 
   /**
@@ -1210,9 +2030,12 @@ class Parser {
         continue
       }
       if (f.kind === 'int') {
-        this.#next()
-        line.sizes.push({ width: f.num, height: undefined })
-        continue
+        // A bare-int export size (`png 512`) was removed (ADR-0096 §1) — a third spelling
+        // next to `WxH` and `@N`.
+        this.#fail(
+          `bare-int export size was removed — use '${f.num}x${f.num}' (WxH) or an '@N' scale factor`,
+          f,
+        )
       }
       if (f.kind === 'size') {
         this.#next()
@@ -1262,17 +2085,17 @@ class Parser {
     return line
   }
 
-  // ── pal / pixels ──────────────────────────────────────────────────────
+  // ── palette / pixels ──────────────────────────────────────────────────
 
   /**
-   * Parses `pal-stmt` (§17.4): the inline form (`pal k=#235 d=#555`, whitespace-
-   * separated, D2) or the block form (`pal:` + indented entries, one per
+   * Parses `palette-stmt` (§17.4, ADR-0096 §2 — was `pal`): the inline form (`palette k=#235
+   * d=#555`, whitespace-separated, D2) or the block form (`palette:` + indented entries, one per
    * line). Destructuring entries (`r, g, b = rgb`) are accepted only in
    * the block form — the inline form's entries are single-key only.
    */
-  readonly #parsePal = (): Statement => {
+  readonly #parsePalette = (): Statement => {
     const s = this.#span(this.#peek())
-    this.#next() // pal
+    this.#next() // palette
     const entries: PaletteEntry[] = []
     if (this.#at('op', ':') && this.#peek().blockColon) {
       this.#next()
@@ -1281,7 +2104,7 @@ class Parser {
       this.#expect('indent')
       this.#skipNLs()
       while (!this.#at('dedent') && !this.#at('eof')) {
-        entries.push(this.#parsePalEntry(true))
+        entries.push(this.#parsePaletteEntry(true))
         this.#expectNL()
         this.#skipNLs()
       }
@@ -1291,7 +2114,7 @@ class Parser {
     } else {
       // inline form: whitespace-separated key=value entries
       while (!this.#at('nl') && !this.#at('eof')) {
-        entries.push(this.#parsePalEntry(false))
+        entries.push(this.#parsePaletteEntry(false))
       }
       this.#expectNL()
     }
@@ -1299,7 +2122,7 @@ class Parser {
   }
 
   /**
-   * A `pal` entry's key: exactly one ASCII letter (`KEY`, spec §17.2,
+   * A `palette` entry's key: exactly one ASCII letter (`KEY`, spec §17.2,
    * ADR-0049). A longer name fails with {@link ERROR_CODE.paletteCollision}
    * (E007) — reused here for "not a valid key shape", not only for actual
    * name collisions.
@@ -1319,11 +2142,11 @@ class Parser {
   }
 
   /**
-   * Parses `pal-entry` (§17.4, extended): `KEY "=" expr`, or — when
+   * Parses `palette-entry` (§17.4, extended): `KEY "=" expr`, or — when
    * `allowDestructuring` — `KEY {"," KEY} "=" expr` binding several keys
    * positionally from one list-valued expression.
    */
-  readonly #parsePalEntry = (allowDestructuring: boolean): PaletteEntry => {
+  readonly #parsePaletteEntry = (allowDestructuring: boolean): PaletteEntry => {
     const kt = this.#parsePaletteKey()
     const keys = [kt.text]
     while (allowDestructuring && this.#at('op', ',')) {
@@ -1482,6 +2305,20 @@ class Parser {
     const args: Argument[] = []
     while (!this.#at('nl') && !this.#at('eof') && !this.#at('dedent')) {
       const f = this.#peek()
+      // `stamp PART PT behind/front TARGET` (ADR-0092): the occlusion clauses are contextual
+      // keyword args recognized only for the `stamp` command, so `behind`/`front` stay ordinary
+      // bindable names everywhere else. The one trailing token is the target part-name.
+      if (
+        callee === 'stamp' &&
+        f.kind === 'name' &&
+        (f.text === 'behind' || f.text === 'front') &&
+        this.#peek(1).kind === 'name'
+      ) {
+        const kw = this.#next().text
+        const parts: Expression[] = [this.#parseCmdArgExpr()]
+        args.push({ kind: 'keyword', keyword: kw, parts, span: this.#span(f) })
+        continue
+      }
       if (f.kind === 'name' && KW_ARG_ARITY[f.text] !== undefined) {
         const kw = this.#next().text
         const arity = KW_ARG_ARITY[kw] ?? 1
@@ -1503,7 +2340,7 @@ class Parser {
    * A `KW_ARG_ARITY` name is read as a plain value expression (not the
    * keyword form) when the token right after it is a continuation
    * operator (`( , ) . [`) — i.e. when it's being *used*, not applied —
-   * so `f(mask)` and `f(mask.grayscale)` pass `mask` through as a value.
+   * so `f(mask)` and `f(mask.len)` pass `mask` through as a value.
    */
   readonly #parseParenArg = (): Argument => {
     const f = this.#peek()

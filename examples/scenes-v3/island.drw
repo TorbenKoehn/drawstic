@@ -6,20 +6,25 @@ from std/shapes leaf, spark
 fn isleFarY(nx) = 55 - round(sin(nx * pi) * (3 + noise(7, nx * 3, 0) * 5))
 fn isleFar2Y(nx) = 55 - round(sin(nx * pi) * (2 + noise(8, nx * 2.5, 0) * 3))
 
+# A gradient always spans the bbox of the region it paints. A point-light wash is therefore
+# a `radial` fill over a span centred on the light that reaches exactly the target region's
+# farthest corner (d = the largest distance in x and in y).
+fn washSpan(p, d) = rect((p - d), (p + d))
+
 # key regions (module scope so `render --inspect` reports them)
 mask isleR = curvePoly(98:87, 112:77, 132:72, 154:75, 170:81, 178:87).intersect(rect(96:68, 180:86))
 mask seaR = rect(0:55, 191:127)
 mask glitterR = poly(28:56, 46:56, 62:114, 6:114)
 
 draw bird:
-  pal k = #33435c
+  palette k = #33435c
   pixels:
     k...k
     .k.k.
     ..k..
 
 draw boat:
-  pal s = #ffe9c6 d = #d9b98c k = #2e2a33
+  palette s = #ffe9c6 d = #d9b98c k = #2e2a33
   pixels:
     ....k.....
     ...sk.....
@@ -112,7 +117,7 @@ draw frondFg(a, b) 48x44:
 draw island 192x128:
   sun = 36:42
   # ---- sky ----
-  grad skyG = linear(90, (#2c4a80, 0%), (#5c8cba, 42%), (#eeb87e, 84%), (#ffe0ae, 100%))
+  gradient skyG = linear(90, (#2c4a80, 0%), (#5c8cba, 42%), (#eeb87e, 84%), (#ffe0ae, 100%))
   rect skyG 0:0 191:54 fill
   circle #ffc878.alpha(8%) sun 22 fill
   circle #ffc878.alpha(12%) sun 17 fill
@@ -134,17 +139,18 @@ draw island 192x128:
   # distant haze islands, ridge kissed by the low sun
   profile #7e94ae 12..66 isleFarY 55 fill
   profile #92a6bd 70..96 isleFar2Y 55 fill
-  rim profile(12..66, isleFarY, 55) 0:1 #ffd9a0.alpha(55%) 1
+  fill #ffd9a0.alpha(55%) profile(12..66, isleFarY, 55).edge(0:1)
   rect #ffdba6.alpha(25%) 0:50 191:54 fill
   # ---- sea ----
-  grad seaG = linear(90, (#93d2cc, 0%), (#3f8ba6, 36%), (#1f5980, 70%), (#123a5c, 100%))
+  gradient seaG = linear(90, (#93d2cc, 0%), (#3f8ba6, 36%), (#1f5980, 70%), (#123a5c, 100%))
   rect seaG 0:55 191:127 fill
   line #ffe6b8.alpha(65%) 0:55 191:55
   # lagoon shallows around the cay
   ellipse #63c2b4.alpha(45%) 138:88 55:8 fill
   ellipse #8adfcf.alpha(40%) 138:87 42:5 fill
   # warm sun-wash, then depth-graded ripple (calm far, livelier near)
-  lightRegion seaR sun #ffcf8f 26%
+  mask seaR:
+    fill radial(#ffcf8f.alpha(26%), #ffcf8f.alpha(0%)) washSpan(sun, 155:85)
   ripple rect(0:55, 191:79) 0.22 9 #dff2ec
   ripple rect(0:80, 191:127) 0.4 10 #cfeae4
   # waves — spacing widens toward the viewer
@@ -161,8 +167,9 @@ draw island 192x128:
   stamp spark(#ffe4ae) 44:86
   # ---- the cay ----
   fill #d8b478 isleR
-  lightRegion isleR sun #ffe9b8 30%
-  shadeRegion isleR sun #7a4f28 40%
+  # sun low on the left: the cay brightens toward it and falls away to the right
+  fill linear(20, #ffe9b8.alpha(16%), #ffe9b8.alpha(0%)) isleR
+  fill linear(20, #7a4f28.alpha(18%), #7a4f28.alpha(40%)) isleR
   grain isleR 0.25 13 #8a6a42
   grain isleR 0.12 14 #fff0c8
   fill #a5794e.alpha(50%) isleR.intersect(rect(96:83, 180:86))
@@ -183,11 +190,11 @@ draw island 192x128:
   mask rockR = curvePoly(157:86, 161:78, 169:79, 174:86).intersect(rect(155:76, 176:86))
   mask rock2R = curvePoly(149:86, 152:82, 156:83, 158:86).intersect(rect(147:81, 160:86))
   fill #9c9184 rockR
-  shadeRegion rockR sun #2c2622 26%
-  ambientOcclusion rockR #3a2c1e 22%
-  rim rockR.intersect(rect(155:76, 164:86)) 1:0 #e2d3b4 1
+  fill linear(18, #2c2622.alpha(23%), #2c2622.alpha(26%)) rockR
+  stroke #3a2c1e.alpha(22%) rockR
+  fill #e2d3b4 rockR.edge(1:0)
   fill #85796b rock2R
-  shadeRegion rock2R sun #2c2622 35%
+  fill linear(18, #2c2622.alpha(32%), #2c2622.alpha(35%)) rock2R
   fill #3a2c20.alpha(28%) ellipse(172:86, 7:2).intersect(isleR)
   # palm cast shadows (sun left => shadows lie right), clipped to the ground
   pShad = #14283c.alpha(42%)
@@ -220,8 +227,8 @@ draw island 192x128:
   # bright kiss of sun on the horizon below the disc
   line #fff0c8.alpha(80%) 30:56 44:56
   line #ffe9b8.alpha(50%) 27:57 47:57
-  # subtle vignette to pull the eye inward
-  shadeRegion rect(0:0, 191:127) 96:58 #0c1c34 12%
+  # subtle vignette to pull the eye inward, centred just below the composition's focus
+  fill radial(#0c1c34.alpha(0%), #0c1c34.alpha(12%)) washSpan(96:58, 96:69)
 
-export island island:
+export island:
   png @1 @4

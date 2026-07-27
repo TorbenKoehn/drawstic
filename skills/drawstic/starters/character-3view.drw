@@ -1,0 +1,249 @@
+# STARTER — modular chibi character, front / side / back at 64x128.
+# Copy, rename, restyle. The structure below is the canonical path; keep it.
+#   theme(light + figure oracle) -> materials -> parts(pins) -> fit assembly -> outline -> export
+
+# ---- colours (module scope; a palette: block only lives in a theme or a pixels: draw) ----
+skin    = #e8b489
+cloth   = #4a6ea8
+steel   = #8494ac
+leather = #6d4527
+hair    = #5a4132
+white   = #f6efe4
+iris    = #4f7bb0
+mouth   = #9a5240
+
+# ---- materials: colour + response. The response is the physics, never the colour. ----
+material skinM    = skin skin
+material clothM   = cloth cloth
+material steelM   = steel metal
+material leatherM = leather cloth
+material hairM    = hair cloth spread 260%      # spread widens the value range; never hand-patch tones
+
+# ---- full-body theme: ONE light, plus the figure oracle for a 3-head chibi ----
+theme figThree:
+  mode pixel
+  light sun = dir 1:1 #ffe6b0 amb #2a3a5e 16%
+  figure:
+    heads 3
+    headW 34
+    eyeLine 0.66
+    earLine 0.6
+    eyeSep 12
+
+# ---- head-part theme: same light, heads 1 (the part canvas IS one head) ----
+theme figHead:
+  mode pixel
+  light sun = dir 1:1 #ffe6b0 amb #2a3a5e 16%
+  figure:
+    heads 1
+    headW 22
+    eyeLine 0.64
+    earLine 0.58
+    eyeSep 11
+
+# ================= HEAD PARTS (34x42 = one head) =================
+
+draw headFront 34x42:
+  use figHead
+  face = ellipse(17:28, 10:12)
+  model face skinM
+  skull = dome(17:20, 14:15)                      # hair mass over the skull
+  model skull hairM
+  earL = lobe(7:27, 4:27, 4)
+  earR = lobe(27:27, 30:27, 4)
+  model earL skinM
+  model earR skinM
+  fill white ellipse(fig.eyeL, 3:3)
+  fill white ellipse(fig.eyeR, 3:3)
+  circle iris fig.eyeL 2 fill
+  circle iris fig.eyeR 2 fill
+  px #201a1a fig.eyeL
+  px #201a1a fig.eyeR
+  line #6a4a30 12:24 15:23
+  line #6a4a30 19:23 22:24
+  px skin.darken(20%) 17:31
+  line mouth 15:34 19:34
+  pin neck 17:40
+
+draw headSide 34x42:
+  use figHead
+  # side view faces +x: nose protrudes at the front, skull mass to the back (left)
+  face = ellipse(15:28, 11:13).union(lobe(24:33, 28:34, 3))
+  model face skinM
+  skull = dome(14:20, 13:15).subtract(ellipse(22:32, 8:12))
+  model skull hairM
+  ear = lobe(12:27, 8:27, 5)
+  model ear skinM
+  fill white ellipse(fig.side.eye, 3:2)
+  circle iris fig.side.eye 1 fill
+  px #201a1a fig.side.eye
+  line #6a4a30 19:23 24:24
+  px skin.darken(24%) 27:33                    # nostril
+  line mouth 21:35 25:35
+  pin neck 16:40
+
+draw headBack 34x42:
+  use figHead
+  # no face on the back — the hair mass IS the whole head
+  skull = dome(17:20, 15:16).union(ellipse(17:28, 13:12))
+  model skull hairM
+  earL = lobe(6:27, 3:27, 4)
+  earR = lobe(28:27, 31:27, 4)
+  model earL skinM
+  model earR skinM
+  fill #ffe6b0.alpha(30%) skull.edge(1:1, 2)    # 2px lit band on the up-left edge (light travels 1:1)
+  pin neck 17:40
+
+# ================= BODY PARTS (48x86; feet on the last row) =================
+
+draw bodyFront 48x86:
+  use figThree
+  legL = rrect(15:52, 22:78, 3)
+  legR = rrect(26:52, 33:78, 3)
+  model legL clothM
+  model legR clothM
+  bootL = rrect(13:76, 24:86, 2)
+  bootR = rrect(24:76, 35:86, 2)
+  model bootL leatherM
+  model bootR leatherM
+  torso = curvePoly(11:16, 24:10, 37:16, 34:54, 14:54)
+  model torso clothM
+  belt = rect(14:48, 34:53)
+  model belt leatherM
+  pauldL = dome(10:20, 8:8)
+  pauldR = dome(38:20, 8:8)
+  cel pauldL steelM 3
+  cel pauldR steelM 3
+  armL = rrect(3:20, 11:50, 3)
+  armR = rrect(37:20, 45:50, 3)
+  model armL clothM
+  model armR clothM
+  handL = rrect(3:48, 12:56, 2)
+  handR = rrect(36:48, 45:56, 2)
+  model handL skinM
+  model handR skinM
+  model rect(20:0, 28:13) skinM                 # neck — narrow AND long, so every view reads the same neck row
+  pin neck 24:2
+  pin grip 7:52
+  pin hip  24:52
+
+draw bodySide 34x86:
+  use figThree
+  # far limbs first (they read as the back layer), near limbs last
+  farLeg = rrect(12:52, 20:78, 3)
+  model farLeg clothM
+  farArm = rrect(7:20, 15:50, 3)
+  model farArm clothM
+  nearLeg = rrect(17:52, 25:78, 3)
+  model nearLeg clothM
+  boot = rrect(15:76, 30:86, 2)
+  model boot leatherM
+  torso = curvePoly(11:16, 20:11, 27:19, 26:54, 12:54)
+  model torso clothM
+  belt = rect(12:48, 26:53)
+  model belt leatherM
+  pauld = dome(15:20, 9:8)
+  cel pauld steelM 3
+  nearArm = rrect(15:20, 23:50, 3)
+  model nearArm clothM
+  hand = rrect(14:48, 24:56, 2)
+  model hand skinM
+  model rect(13:0, 20:13) skinM                 # neck
+  pin neck 16:2
+  pin grip 19:52
+  pin hip  16:52
+
+draw bodyBack 48x86:
+  use figThree
+  legL = rrect(15:52, 22:78, 3)
+  legR = rrect(26:52, 33:78, 3)
+  model legL clothM
+  model legR clothM
+  bootL = rrect(13:76, 24:86, 2)
+  bootR = rrect(24:76, 35:86, 2)
+  model bootL leatherM
+  model bootR leatherM
+  torso = curvePoly(11:16, 24:10, 37:16, 34:54, 14:54)
+  model torso clothM
+  fill cloth.darken(20%) rect(23:16, 25:52)      # spine seam
+  belt = rect(14:48, 34:53)
+  model belt leatherM
+  pauldL = dome(10:20, 8:8)
+  pauldR = dome(38:20, 8:8)
+  cel pauldL steelM 3
+  cel pauldR steelM 3
+  armL = rrect(3:20, 11:50, 3)
+  armR = rrect(37:20, 45:50, 3)
+  model armL clothM
+  model armR clothM
+  handL = rrect(3:48, 12:56, 2)
+  handR = rrect(36:48, 45:56, 2)
+  model handL skinM
+  model handR skinM
+  model rect(20:0, 28:13) skinM                 # neck
+  pin neck 24:2
+  # MIRROR THE GRIP. The figure is turned 180 degrees, so the hand that held the prop in
+  # front view is now on the far side of the canvas: 47 - 7 = 40 (the engine mirrors about
+  # (w-1)/2, exactly like `flipx`), which lands on handR.
+  # Copying `pin grip 7:52` from bodyFront is the single most common back-view bug — the
+  # prop stays on the viewer's left and the character silently swaps hands.
+  pin grip 40:52
+  pin hip  24:52
+
+# ================= PROP =================
+
+draw staff 12x80:
+  use figThree
+  shaft = rect(4:8, 8:78)                       # 5px, not 1px: C005 flags hairline-dominated sprites
+  model shaft leatherM
+  knob = circle(6:6, 5)
+  cel knob steelM 3
+  pin grip 6:58
+  pin tip  6:2
+
+# ================= ASSEMBLIES =================
+# One root fit seeds the body's pins; every later fit chains off them.
+
+draw heroFront 64x128:
+  use figThree
+  fit bodyFront.neck 32:43
+  fit headFront.neck bodyFront.neck
+  fit staff.grip bodyFront.grip aim tip 12:16 front bodyFront
+  outline
+
+draw heroSide 64x128:
+  use figThree
+  fit bodySide.neck 32:43
+  fit headSide.neck bodySide.neck
+  fit staff.grip bodySide.grip aim tip 56:30 front bodySide
+  outline
+
+draw heroBack 64x128:
+  use figThree
+  fit bodyBack.neck 32:43
+  fit headBack.neck bodyBack.neck
+  fit staff.grip bodyBack.grip aim tip 51:16 behind bodyBack   # aim target mirrors too: 63 - 12
+  outline
+
+draw heroSheet 200x140:
+  bg #12151c
+  stamp heroFront 4:6
+  stamp heroSide 68:6
+  stamp heroBack 132:6
+  text #cfd6e0 14:2 "FRONT" font micro
+  text #cfd6e0 84:2 "SIDE" font micro
+  text #cfd6e0 146:2 "BACK" font micro
+
+# ================= EXPORT (paths are relative to the recipe's own folder) =================
+
+export heroFront hero-front:
+  png @1 @4
+
+export heroSide hero-side:
+  png @1 @4
+
+export heroBack hero-back:
+  png @1 @4
+
+export heroSheet hero-sheet:
+  png @1 @4

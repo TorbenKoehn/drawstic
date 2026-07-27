@@ -9,6 +9,7 @@ import { buildModule } from '../../src/build.js'
 import { Engine } from '../../src/eval.js'
 import { decodePng, encodePngRgba } from '../../src/png.js'
 import { spriteToAscii } from '../../src/preview.js'
+import { encodeSvg } from '../../src/svg.js'
 import type { Sprite } from '../../src/values.js'
 
 const indexedPaletteRgb = (bytes: Uint8Array): number[][] => {
@@ -128,17 +129,17 @@ describe('e2e', () => {
       expect(names).toContain('badge.png')
       expect(names).toContain('stripes.png')
       // decoded @2x is exactly 2x NN
-      const p1 = decodePng(new Uint8Array(readFileSync(join(out, 'showcase', 'scene.png'))))
-      const p2 = decodePng(new Uint8Array(readFileSync(join(out, 'showcase', 'scene@2x.png'))))
+      const p1 = decodePng(new Uint8Array(readFileSync(join(out, 'scene.png'))))
+      const p2 = decodePng(new Uint8Array(readFileSync(join(out, 'scene@2x.png'))))
       expect(p2.w).toBe(p1.w * 2)
       // svg + jpeg exist and are non-trivial
-      expect(readFileSync(join(out, 'showcase', 'scene.svg'), 'utf8')).toContain('<svg')
-      const jpeg = readFileSync(join(out, 'showcase', 'scene.jpeg'))
+      expect(readFileSync(join(out, 'scene.svg'), 'utf8')).toContain('<svg')
+      const jpeg = readFileSync(join(out, 'scene.jpeg'))
       expect(jpeg[0]).toBe(0xff)
       expect(jpeg[1]).toBe(0xd8)
       // indexed badge decodes to the same pixels as an RGBA render
-      expect(existsSync(join(out, 'showcase', 'badge.png'))).toBe(true)
-      const badge = decodePng(new Uint8Array(readFileSync(join(out, 'showcase', 'badge.png'))))
+      expect(existsSync(join(out, 'badge.png'))).toBe(true)
+      const badge = decodePng(new Uint8Array(readFileSync(join(out, 'badge.png'))))
       const entry = mod.definitions.get('badge')
       if (!entry) {
         throw new Error('no badge')
@@ -156,7 +157,7 @@ describe('e2e', () => {
       const engine = new Engine(process.cwd())
       const mod = engine.loadEntry('examples/basic-shapes/circles.drw')
       const artifacts = buildModule(engine, mod, out)
-      expect(artifacts.length).toBe(3) // @1 @2 png + svg
+      expect(artifacts.length).toBe(4) // circleIcon: @1 @2 png + svg; circles: png
     } finally {
       rmSync(out, { recursive: true, force: true })
     }
@@ -195,7 +196,7 @@ describe('e2e', () => {
     try {
       const engine = new Engine(process.cwd())
       const mod = engine.loadSource(
-        'draw ramp:\n  pal:\n    a, b, c = #777.tones(-10%, 0%, 10%)\n  pixels:\n    abc\n\nexport ramp out/ramp:\n  png indexed\n',
+        'draw swatch:\n  palette:\n    a, b, c = #777.tones(-10%, 0%, 10%)\n  pixels:\n    abc\n\nexport swatch out/ramp:\n  png indexed\n',
         join(process.cwd(), 'mem-indexed-ramp.drw'),
         'mem-indexed-ramp.drw',
       )
@@ -334,7 +335,7 @@ describe('e2e', () => {
     try {
       writeFileSync(
         file,
-        'draw part 1x1:\n  bg #000\n\ndraw unused 2x1:\n  pal r=#f00\n  pixels:\n    r.\n\ndraw out 4x4:\n  stamp part 10:10\n\nexport out build/out:\n  png @1 @2\n',
+        'draw part 1x1:\n  bg #000\n\ndraw unused 2x1:\n  palette r=#f00\n  pixels:\n    r.\n\ndraw out 4x4:\n  stamp part 10:10\n\nexport out build/out:\n  png @1 @2\n',
       )
       const check = cli('check', file, '--json', '--rows', '--lint')
       expect(check.exitCode).toBe(0)
@@ -398,30 +399,114 @@ describe('e2e', () => {
     expect(partial).toBeGreaterThan(0)
   })
 
+  const renderMem = (src: string, name: string, file: string): Sprite => {
+    const engine = new Engine(process.cwd())
+    const mod = engine.loadSource(src, join(process.cwd(), file), file)
+    const entry = mod.definitions.get(name)
+    if (!entry) {
+      throw new Error(`no ${name}`)
+    }
+    return engine.defToSprite(entry, { line: 1, column: 1 })
+  }
+
+  const partialAlphaCount = (sprite: Sprite): number => {
+    let n = 0
+    for (let i = 3; i < sprite.data.length; i += 4) {
+      const a = sprite.data[i] ?? 0
+      if (a > 0 && a < 255) {
+        n++
+      }
+    }
+    return n
+  }
+
+  test("aa softens a rot45 stamp and the un-aa'd twin stays crisp", () => {
+    const part = 'draw part 8x8:\n  bg #808080\n\n'
+    const aaSprite = renderMem(
+      `${part}draw d 24x24:\n  stamp part 8:8 rot45 aa\n`,
+      'd',
+      'mem-aa-rot45.drw',
+    )
+    expect(partialAlphaCount(aaSprite)).toBeGreaterThan(0)
+    const nnSprite = renderMem(
+      `${part}draw d 24x24:\n  stamp part 8:8 rot45\n`,
+      'd',
+      'mem-nn-rot45.drw',
+    )
+    expect(partialAlphaCount(nnSprite)).toBe(0)
+  })
+
+  test('aa composes with tint', () => {
+    const src =
+      'draw part 8x8:\n  bg #808080\n\ndraw d 24x24:\n  stamp part 8:8 rot45 aa tint #0000ff 1.0\n'
+    const sprite = renderMem(src, 'd', 'mem-aa-tint.drw')
+    const alphas = new Set<number>()
+    for (let i = 0; i < sprite.data.length; i += 4) {
+      const a = sprite.data[i + 3] ?? 0
+      if (a === 0) {
+        continue
+      }
+      alphas.add(a)
+      expect(sprite.data[i]).toBe(0)
+      expect(sprite.data[i + 1]).toBe(0)
+      expect(sprite.data[i + 2]).toBe(255)
+    }
+    // resample -> tint -> composite: alpha is the resampled coverage, not flattened to one value
+    expect(alphas.size).toBeGreaterThan(1)
+  })
+
+  test('aa shadow carries the soft contour', () => {
+    const src =
+      'draw part 8x8:\n  bg #808080\n\ndraw d 24x24:\n  stamp part 8:8 rot37 aa shadow 2:2 #000000ff\n'
+    const sprite = renderMem(src, 'd', 'mem-aa-shadow.drw')
+    // the shadow tints at amount 1, so its resampled colour collapses to pure black while the
+    // resampled alpha carries the AA contour — a partial-alpha black pixel can only come from the
+    // shadow layer (the part itself is opaque gray, never black).
+    let shadowFringe = 0
+    for (let i = 0; i < sprite.data.length; i += 4) {
+      const a = sprite.data[i + 3] ?? 0
+      if (
+        a > 0 &&
+        a < 255 &&
+        sprite.data[i] === 0 &&
+        sprite.data[i + 1] === 0 &&
+        sprite.data[i + 2] === 0
+      ) {
+        shadowFringe++
+      }
+    }
+    expect(shadowFringe).toBeGreaterThan(0)
+  })
+
+  test('svg export of an aa stamp emits fill-opacity', () => {
+    const src = 'draw part 8x8:\n  bg #808080\n\ndraw d 24x24:\n  stamp part 8:8 rot45 aa\n'
+    const sprite = renderMem(src, 'd', 'mem-aa-svg.drw')
+    const svg = encodeSvg(sprite, { ids: false, classes: false, inlineStyles: false })
+    expect(svg).toContain('fill-opacity="')
+  })
+
   test('island scene render and export smoke', () => {
     const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
     try {
       const engine = new Engine(process.cwd())
-      const mod = engine.loadEntry('examples/scenes/island.drw')
+      const mod = engine.loadEntry('examples/scenes-v3/island.drw')
       const entry = mod.definitions.get('island')
       if (!entry) {
         throw new Error('no island')
       }
       const sprite = engine.defToSprite(entry, { line: 1, column: 1 })
-      expect(sprite.w).toBe(160)
-      expect(sprite.h).toBe(96)
+      expect(sprite.w).toBe(192)
+      expect(sprite.h).toBe(128)
       const stats = spriteStats(sprite)
       expect(stats.distinctOpaqueColorCount).toBeGreaterThan(20)
-      expect(stats.coverageBBox).toEqual({ width: 160, height: 96 })
+      expect(stats.coverageBBox).toEqual({ width: 192, height: 128 })
       const artifacts = buildModule(engine, mod, out)
       const names = artifacts.map((a) => a.path.replace(/\\/g, '/').split('/').slice(-1)[0])
       expect(names).toContain('island.png')
-      expect(names).toContain('island@2x.png')
       expect(names).toContain('island@4x.png')
-      expect(names).toContain('island.svg')
-      const png = decodePng(new Uint8Array(readFileSync(join(out, 'scenes', 'island.png'))))
-      expect(png.w).toBe(160)
-      expect(png.h).toBe(96)
+      const png = decodePng(new Uint8Array(readFileSync(join(out, 'island.png'))))
+      expect(png.w).toBe(192)
+      expect(png.h).toBe(128)
     } finally {
       rmSync(out, { recursive: true, force: true })
     }

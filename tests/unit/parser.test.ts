@@ -19,9 +19,15 @@ const bindingExpr = (src: string): Expression => {
 }
 
 describe('parser', () => {
-  test('version pragma', () => {
-    const m = parse('drawstic 1\nx = 1\n', 't.drw')
-    expect(m.pragma).toBe(1)
+  test('the drawstic N version pragma was removed (ADR-0096) — inert since ADR-0088', () => {
+    expect(() => parse('drawstic 1\nx = 1\n', 't.drw')).toThrow(
+      /'drawstic N' version pragma was removed/,
+    )
+  })
+
+  test('a plain `drawstic` binding elsewhere in the file is unaffected (contextual, not reserved)', () => {
+    const s = one('drawstic = 1\n')
+    expect(s.kind).toBe('binding')
   })
 
   test('binding and destructuring', () => {
@@ -201,9 +207,9 @@ describe('parser', () => {
     }
   })
 
-  test('pal inline and block forms', () => {
-    const a = one('draw d 2x2:\n  pal k=#111  r=#c04040\n')
-    const b = one('draw d 2x2:\n  pal:\n    k = #111\n    r = #c04040\n')
+  test('palette inline and block forms', () => {
+    const a = one('draw d 2x2:\n  palette k=#111  r=#c04040\n')
+    const b = one('draw d 2x2:\n  palette:\n    k = #111\n    r = #c04040\n')
     if (a.kind === 'drawDefinition' && b.kind === 'drawDefinition') {
       const pa = a.def.body[0]
       const pb = b.def.body[0]
@@ -216,22 +222,33 @@ describe('parser', () => {
     }
   })
 
-  test('block pal supports explicit destructuring', () => {
-    const s = one('draw d 2x2:\n  pal:\n    a, b, c = #777.tones(-10%, 0%, 10%)\n')
+  test('block palette supports explicit destructuring', () => {
+    const s = one('draw d 2x2:\n  palette:\n    a, b, c = #777.tones(-10%, 0%, 10%)\n')
     if (s.kind === 'drawDefinition') {
-      const pal = s.def.body[0]
-      expect(pal?.kind).toBe('palette')
-      if (pal?.kind === 'palette') {
-        expect(pal.entries[0]?.kind).toBe('destructure')
-        if (pal.entries[0]?.kind === 'destructure') {
-          expect(pal.entries[0].keys).toEqual(['a', 'b', 'c'])
+      const paletteStmt = s.def.body[0]
+      expect(paletteStmt?.kind).toBe('palette')
+      if (paletteStmt?.kind === 'palette') {
+        expect(paletteStmt.entries[0]?.kind).toBe('destructure')
+        if (paletteStmt.entries[0]?.kind === 'destructure') {
+          expect(paletteStmt.entries[0].keys).toEqual(['a', 'b', 'c'])
         }
       }
     }
   })
 
-  test('multi-letter pal key is a positioned error', () => {
-    expect(() => parse('draw d 2x2:\n  pal ink=#111\n', 't.drw')).toThrow(/one ASCII letter/)
+  test('multi-letter palette key is a positioned error', () => {
+    expect(() => parse('draw d 2x2:\n  palette ink=#111\n', 't.drw')).toThrow(/one ASCII letter/)
+  })
+
+  test('old pal spelling errors, naming palette (ADR-0096 §2)', () => {
+    expect(() => parse('draw d 2x2:\n  pal k=#111\n', 't.drw')).toThrow(/renamed to 'palette'/)
+  })
+
+  test('old grad spelling errors, naming gradient (ADR-0096 §2)', () => {
+    expect(() => parse('gradient sky = linear(90, #000, #fff)\n', 't.drw')).not.toThrow()
+    expect(() => parse('grad sky = linear(90, #000, #fff)\n', 't.drw')).toThrow(
+      /renamed to 'gradient'/,
+    )
   })
 
   test('if / else statement and match', () => {
@@ -294,7 +311,7 @@ describe('parser', () => {
 
   test('theme with composition and style', () => {
     const s = one(
-      'theme dusk:\n  with pixelBase, warmPal\n  pal:\n    g = #3a8a3a\n  style "Organic."\n',
+      'theme dusk:\n  with pixelBase, warmPal\n  palette:\n    g = #3a8a3a\n  style "Organic."\n',
     )
     expect(s.kind).toBe('themeDefinition')
     if (s.kind === 'themeDefinition') {
@@ -305,19 +322,22 @@ describe('parser', () => {
 
   test('export with format flags', () => {
     const s = one(
-      'export gem icons/gem:\n  png @1 @2 @3 z9\n  svg ids classes\n  jpeg 512 q80 mode smooth\n  path\n',
+      'export gem icons/gem:\n  png @1 @2 @3 z9\n  svg ids classes\n  jpeg 512x512 q80 mode smooth\n  path\n',
     )
     expect(s.kind).toBe('exportDefinition')
     if (s.kind === 'exportDefinition') {
-      expect(s.def.basePath).toBe('icons/gem')
-      const png = s.def.formats[0]
+      // One target, so the block expands to exactly one resolved definition (ADR-0098 §9).
+      expect(s.defs).toHaveLength(1)
+      const def = s.defs[0]
+      expect(def?.basePath).toBe('icons/gem')
+      const png = def?.formats[0]
       expect(png?.scales).toEqual([1, 2, 3])
       expect(png?.zlib).toBe(9)
-      const jpeg = s.def.formats[2]
+      const jpeg = def?.formats[2]
       expect(jpeg?.quality).toBe(80)
       expect(jpeg?.mode).toBe('smooth')
-      expect(jpeg?.sizes).toEqual([{ width: 512, height: undefined }])
-      expect(s.def.formats[3]?.format).toBe('path')
+      expect(jpeg?.sizes).toEqual([{ width: 512, height: 512 }])
+      expect(def?.formats[3]?.format).toBe('path')
     }
   })
 
@@ -346,13 +366,17 @@ describe('parser', () => {
     }
   })
 
-  test('image import with sha pin', () => {
-    const s = one('import logo = ../brand/logo.png sha256 abcdef12\n')
-    expect(s.kind).toBe('imageImport')
-    if (s.kind === 'imageImport') {
+  test('image definition with sha pin', () => {
+    const s = one('image logo = ../brand/logo.png sha256 abcdef12\n')
+    expect(s.kind).toBe('image')
+    if (s.kind === 'image') {
       expect(s.path).toBe('../brand/logo.png')
       expect(s.sha256).toBe('abcdef12')
     }
+  })
+
+  test('old import spelling for a loaded image errors, naming image (ADR-0096 §2)', () => {
+    expect(() => one('import logo = ../brand/logo.png\n')).toThrow(/renamed to 'image'/)
   })
 
   test('mask def vs mask block (D7)', () => {
@@ -388,21 +412,55 @@ describe('parser', () => {
     }
   })
 
-  test('tileset and atlas', () => {
-    const t = one('tileset terrain 16x16:\n  tiles grass, dirt\n  cols 4\n')
-    expect(t.kind).toBe('tilesetDefinition')
-    if (t.kind === 'tilesetDefinition') {
+  test('tileset was merged into atlas (ADR-0096 §3)', () => {
+    expect(() => parse('tileset terrain 16x16:\n  tiles grass, dirt\n  cols 4\n', 't.drw')).toThrow(
+      /'tileset' was merged into 'atlas'/,
+    )
+    // `tileset = …` (name binding) still works; only the def shape errors.
+    const s = one('tileset = 1\n')
+    expect(s.kind).toBe('binding')
+  })
+
+  test('atlas: uniform grid (`tile`) and shelf-pack (no `tile`) modes', () => {
+    const t = one('atlas terrain:\n  sprites grass, dirt\n  tile 16x16\n  cols 4\n')
+    expect(t.kind).toBe('atlasDefinition')
+    if (t.kind === 'atlasDefinition') {
+      expect(t.def.tile).toEqual({ width: 16, height: 16 })
       expect(t.def.columns).toBe(4)
     }
     const a = one('atlas hud:\n  sprites play, stop\n  pad 1\n  place logo 0:0\n')
     expect(a.kind).toBe('atlasDefinition')
     if (a.kind === 'atlasDefinition') {
+      expect(a.def.tile).toBeUndefined()
       expect(a.def.padding).toBe(1)
+      expect(a.def.place[0]?.name).toBe('logo')
     }
   })
 
+  test('atlas: cols without tile is E004', () => {
+    expect(() => parse('atlas hud:\n  sprites a, b\n  cols 2\n', 't.drw')).toThrow(
+      /'cols' needs a 'tile WxH' declaration/,
+    )
+  })
+
+  test('atlas: place with tile is E004 (a grid has fixed slots)', () => {
+    expect(() =>
+      parse('atlas terrain:\n  sprites a, b\n  tile 4x4\n  place a 0:0\n', 't.drw'),
+    ).toThrow(/'place' cannot be used with 'tile'/)
+  })
+
+  test('atlas: cols 0 is a positioned error, not a silent divide-by-zero', () => {
+    expect(() => parse('atlas terrain:\n  sprites a, b\n  tile 4x4\n  cols 0\n', 't.drw')).toThrow(
+      /'cols' must be a positive integer/,
+    )
+  })
+
+  test('atlas: no members is a positioned error', () => {
+    expect(() => parse('atlas empty:\n  pad 1\n', 't.drw')).toThrow(/has no members/)
+  })
+
   test('UFCS chain and dot-index', () => {
-    const s = one('c = #235.grayscale.hue(30).lighten(10%)\n')
+    const s = one('c = #235.desaturate(30%).hue(30).lighten(10%)\n')
     if (s.kind === 'binding') {
       expect(s.expression.kind).toBe('method')
     }
@@ -466,7 +524,7 @@ describe('parser', () => {
   })
 
   test('filter definition parses call-only bodies and rejects other statement kinds (E004)', () => {
-    const s = one('filter retro:\n  outline k\n  replace y r\n')
+    const s = one('filter retro:\n  outline k\n  tint r 0.3\n')
     expect(s.kind).toBe('filterDefinition')
     if (s.kind === 'filterDefinition') {
       expect(s.name).toBe('retro')

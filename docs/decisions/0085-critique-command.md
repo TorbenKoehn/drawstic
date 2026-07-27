@@ -1,0 +1,255 @@
+# 85. `critique` — pixel-based, vision-free quality assertions
+
+- Status: Accepted
+- Date: 2026-07-10
+- Deciders: t.koehn, Claude
+- Refines: [ADR-0030](0030-structured-diagnostics-contract.md), [ADR-0031](0031-agent-loop-cli-preview-and-fmt.md); reuses [ADR-0082](0082-sheet-contact-sheet-cli.md), [ADR-0083](0083-render-silhouette.md)
+
+## Context
+
+`check` validates grammar and, with `--lint`, a handful of static authoring smells
+([spec §16](../language-spec.md#16-cli-surface)); neither ever looks at a rendered pixel.
+Across the category evaluations (`docs/scene-dx-*.md`, `docs/icon-dx-*.md`,
+`docs/character-dx-*.md`, `docs/item-dx-*.md`) the recurring finding is the same: **roughly 5
+of 7 expensive bugs per category are visual and silent** — off-center icons, floating/seamed
+character parts, near-identical item silhouettes, flat unshaded regions, transparent trailing
+edge rows — a well-formed recipe that `check` passes clean. Closing them today spends the
+agent's own vision on every render, which is unreliable for a weak or vision-poor model and is
+nowhere documented as a gate: there is no machine quality signal, so "is this good?" has no
+answer besides eyeballing, and `--ascii` can itself mislead (a dark scene renders as a wall of
+`@`).
+
+## Decision
+
+**1 — New CLI verb `drawstic critique <file> [--as icon|scene|character|item] [--family
+a,b,c] [--strict] [--json]`.** It renders the target drawing (and, for family checks, its
+siblings via [`selectSheetDrawings`](0082-sheet-contact-sheet-cli.md)) and runs a fixed catalog
+of **pixel-based, vision-free assertions** against the framebuffer — no LLM vision call, no
+heuristic guess. Metric computation reuses `inspectSprite` (`src/inspect.ts`),
+`silhouetteSprite`/`spritePreviewStats` (`src/preview.ts`, [ADR-0083](0083-render-silhouette.md)),
+the RGBA8 framebuffer, and `src/color.ts` luminance/contrast helpers — no metric is computed
+twice.
+
+```
+drawstic critique examples/items-v2/potion.drw --as item --family vial,flask,potion --json
+```
+
+**2 — A new diagnostic namespace `C0xx`, alongside `E0xx`/`W0xx`.** Every finding is a normal
+structured diagnostic record ([ADR-0030](0030-structured-diagnostics-contract.md)) extended with
+`measured`, `threshold`, and a concrete fix command — auditable and teachable, never a bare
+pass/fail:
+
+```json
+{ "severity": "warning", "code": "C007", "message": "floating part: 3px gap between torso and armLeft",
+  "measured": 3, "threshold": 1, "hint": "fit armLeft.shoulder torso.shoulder, or move armLeft 0:-3" }
+```
+
+**3 — The check catalog** (one metric bundle, computed once, read by every check):
+
+- **C001** empty/near-empty · **C002** edge-clip (opaque pixel touches the canvas edge) ·
+  **C003** optical centering (`x0+x1==W−1`, `y0+y1==H−1` bbox parity) · **C004** value/contrast
+  spread (luminance histogram — catches the "wall of `@`" flat-shading class) · **C005** stroke
+  width (distance transform) · **C006** palette/complexity budget.
+- **C007** floating-part/seam — the #1 character bug: 8-connected alpha components, body = the
+  largest component, a chamfer distance transform from the body; flags only the signature
+  *bbox-overlap **with** a pixel gap ≥1*, so legitimate detachments (a thrown weapon, a
+  separate accessory) are never penalized.
+- **C008** holes/pinholes (border flood-fill; a 1–3px interior gap is almost always a bug).
+- **C009** sibling-silhouette collapse — alpha box-resampled onto a fixed 32×32 grid (scale-
+  and position-invariant), normalized L1 distance between siblings; a pair under ~0.12 is
+  flagged (catches e.g. a shortbow/longbow pair reading as the same shape at a glance).
+  > **Update (release 1.0 hardening):** the signature used to sign a sprite's *full* covered
+  > mask, so an icon built on `icon-craft.md`'s mandatory opaque plate/tile signed as the plate
+  > itself — every glyph on it collapsed to one signature (C009-Plate-Blindheit, formerly a
+  > documented known limitation below). Fixed: `detectPlateFigure` in `src/critique.ts` detects
+  > a plate from pixel evidence (never a `--as` profile assumption) via a tolerant OkLab flood
+  > fill seeded from the canvas-edge margin, gated on touching all four edges *and* covering
+  > ≥50 % of the covered mass, and signs the subtracted *figure* instead when one is found. A
+  > non-plate sprite (a framed character/item/icon glyph, an outlined silhouette) is detected as
+  > such and signs its full covered mask exactly as before.
+  >
+  > **Round 2:** the first pass still failed on `skills/drawstic/starters/icon-family.drw` — the
+  > product skill's own runnable starter, the recipe an agent actually copies. Its `plate(t)` uses
+  > `icon-craft.md`'s "edge band" contract (a flat fill plus a *separate* 2px alpha-blended
+  > lit/shaded contour composited only at the face's edge, `face.edge(dx:dy,2)`), not a continuous
+  > gradient — the tint-to-fill adjacent step (0.085–0.125 across its five glyphs) exceeded the
+  > original `PLATE_STEP_TOLERANCE` (0.06, calibrated only against the corpus's gradient-style
+  > plates), so the flood never crossed it and stayed stuck at the thin ring, under the area-
+  > dominance floor. A global (non-chained) "match any border-band colour" alternative was tried
+  > and rejected: it broke `system.drw#search`, whose bright rim highlight sits only 0.15 from the
+  > glyph white, and several `productivity`/`media` icons, because it drops the flood fill's
+  > spatial-adjacency safety net entirely. Kept the chained, connectivity-respecting flood fill and
+  > *raised* `PLATE_STEP_TOLERANCE` to 0.13 instead — re-swept 0.06→0.20 against the full corpus:
+  > stable through 0.14, cracks at 0.15 (`system.drw#settings64`, `games.drw#dice16` start bleeding
+  > into the plate). 0.13 sits inside the verified `[0.125, 0.15)` window safe for both
+  > populations. See `PLATE_STEP_TOLERANCE`'s doc comment in `src/critique.ts` for the full
+  > measurement, and `tests/unit/critique.test.ts`'s `edgeBandPlateFamily` fixture for the
+  > regression coverage.
+  >
+  > **Round 3 -- C009 is scoped to same-canvas-size siblings.** After round 2, the starter still
+  > failed `--strict` on one pair (`mail` 32x32 <-> `mailSmall` 16x16, distance 0.026) -- a
+  > *different* category of defect, not plate-blindness. `silhouetteSignature` is scale-invariant
+  > by construction (box-resampled onto the fixed 32x32 grid, section 3 above): a correctly-built
+  > size ladder (`icon-craft.md` section 6 "redraw, never scale" -- a 16x16 hand-pixel redraw
+  > beside its 32x32/64x64 masters) signs near-identically *by design*, so comparing across canvas
+  > sizes is a category error the check cannot see, not a collapse. Measured on the full corpus:
+  > **15 of the 23** pre-round-3 findings were cross-size (`settings`<->`settings64`,
+  > `compass`<->`compassSmall`, `dice`<->`dice16`, `controller`<->`controller64`,
+  > `heart`<->`heart16`, `camera`<->`camera64`, `clock16`<->`clock64`, `contacts`<->`chat16`,
+  > `videocall64`<->`chat16`, `mail`<->`mailSmall`, and their mirror pairs) -- a scale-invariant
+  > signature guaranteed every one of them would fire, and the distance it reported was
+  > meaningless (it cannot see scale). Fixed structurally, not by name: the `nearest`-neighbour
+  > search `critiqueFamily` (`src/critique.ts`) uses for the C009 finding is restricted to peers
+  > sharing the same `sprite.w`x`sprite.h`; `distanceMatrix` stays the full raw pairwise matrix
+  > over every member, size included, since it is data, not a finding. This needs no suffix list
+  > (unlike the `character` profile's `viewSubjectStem` front/side/back exemption) and uniformly
+  > covers every differently-named size variant in the corpus plus the cross-subject same-size
+  > pairs. **The four remaining same-size findings are real craft signals and were kept**
+  > (`chat16`<->`phone16` 0, `map`<->`dice` 0.0813, `video`<->`gallery` 0.075,
+  > `calculator`<->`clock` 0.0851) -- two icons that genuinely share a silhouette at the *same*
+  > size is exactly what C009 exists to catch. `examples/items-v2/*` (same-canvas-size sets
+  > throughout) is unaffected: potions (4 findings), shields (4), armor (3), swords (2) are
+  > unchanged, byte-identical -- legitimate same-size shared-scaffold collapses (a round shield, a
+  > buckler and a magic barrier share a circular silhouette), not the defect this round fixes.
+  >
+  > **C011 checked for the same category error, not changed.** `coveredPixelCount` compared
+  > against a median pooled across canvas sizes has the same structural risk (a 64px icon's mass
+  > is ~4x a same-subject 32px one purely from area scaling). Measured: C011 fires **zero** times
+  > anywhere in the bundled corpus (`examples/icons/*`, `characters-ro2/*`, `items-v2/*`) both
+  > before and after this round. The worst measured cross-size ratios stay under the
+  > `PARITY_FACTOR` (6x) gate -- `games.drw#controller64` 5.20x, `weather.drw#weatherDetail`
+  > 5.52x -- close but not crossing it. Per "measure first, don't fix on theory alone", C011's
+  > median is left pooled across sizes unchanged; the closeness of those two ratios is worth
+  > re-measuring if a future family pushes the size spread further.
+  >
+  > **Round 4 -- `detectPlateFigure` moved to `src/preview.ts` and reused by `render --silhouette`
+  > (ADR-0083 amendment).** `--silhouette` silhouetted a plated icon's *full* alpha mask -- which
+  > **is** the plate -- as a featureless black rounded square, carrying zero shape information; a
+  > blind usability run confirmed the consequence (a "sun" icon that actually reads as a
+  > life-ring/aperture rendered as a black square and self-graded as passing). `detectPlateFigure`
+  > was the proven fix for the identical root cause in C009, so it was moved (function + its `Lab`/
+  > flood-fill helpers, unchanged logic) from `src/critique.ts` to `src/preview.ts` -- the home of
+  > every other `render` post-pass sprite transform -- and exported for both callers; `critique.ts`
+  > now imports it. `silhouetteSprite` signs the subtracted *figure* when a plate is detected,
+  > else the untouched full mask exactly as before; a detected plate is announced on stderr
+  > (`plate detected -- showing the glyph silhouette, not the full alpha mask`) and surfaced as
+  > `plateDetected` alongside `silhouette: true` under `--json` -- the caller must never see a
+  > different image than expected without a reason it can read off the output alone.
+  >
+  > **The move surfaced two defects C009 never measured**, because C009's `nearest` is advisory
+  > (`warning`, never `--strict`) and its default family is exported top-level views only
+  > (`selectCritiqueFamily`) -- so a bad figure split never failed a test. `--silhouette` draws the
+  > split as pixels for *any* named drawing, parts included, so both became visible immediately:
+  >
+  > 1. An assembled figure or a full-bleed `scene` legitimately touches all four edge margins (hair/
+  >    feet, sky/ground) with the chained OkLab tolerance then bridging most of its own cel-shaded
+  >    mass -- every `characters-ro2` view and every bundled scene mis-fired. Closed with two new
+  >    gates: a fully-opaque sprite (zero transparent pixels -- a `scene`, painted edge to edge) is
+  >    declined outright, since a plate's own margin ([icon-craft.md](../../skills/drawstic/icon-craft.md))
+  >    always leaves some transparent canvas; and `PLATE_ROW_SPAN_MIN` (0.8) requires the plate's own
+  >    rows to span its full width (a filled tile), not the sparse edge-touching network an organic
+  >    figure's flood produces -- measured 100 % separation between the corpus's real plates (>=93 %,
+  >    `icon-family.drw#mailSmall` the one exception at 86.7 %) and every assembled-figure/scene false
+  >    positive (<=65.3 %, `wizard.drw#wizardFront`).
+  > 2. A lone character/item/scene-prop **part** rendered standalone -- `bodyFront`, `cloakFront`,
+  >    `legsFront`, `market.drw#barrel` -- is *itself* a large solid mass with only a tiny
+  >    high-contrast trim escaping the flood, passing every gate above (the row-span fix does not
+  >    catch it: a solid part's rows genuinely do span its own bbox). This is the debug case
+  >    `character-craft.md` names for `--silhouette` explicitly, so it is not a corner case. Closed
+  >    with `PLATE_MIN_FIGURE_FRACTION` (0.15): the subtracted figure must keep at least 15 % of the
+  >    covered mass, not just the pre-existing 4px absolute floor. Measured over the *entire* bundled
+  >    corpus with `all: true` (229 drawings -- every non-parametric draw, parts and scene props
+  >    included, not just the exported views): the worst part-level false positive keeps 13.7 %
+  >    (`market.drw#barrel`); the thinnest real icon glyph below that line is `finance.drw#bank` at
+  >    13.5 %. 0.15 sits just above both -- trading a handful of thin glyphs (`chat16`, `phone`,
+  >    `contacts`, `feed`, `bank`, `bank64`, which fall back to the full mask, unchanged from
+  >    pre-fix `--silhouette`) for closing every measured non-icon false positive in the corpus.
+  >
+  > **Verified byte-identical** (both gates return `null`, unchanged from pre-fix `--silhouette`):
+  > every `examples/characters-ro2/*` view *and* part, every `examples/items-v2/*/*` item, every
+  > `examples/scenes-v3/*` scene, diffed pixel-for-pixel against the pre-change build. `tests/unit/
+  > preview.test.ts` pins both new gates directly against `detectPlateFigure`/`silhouetteSprite`
+  > (a synthetic solid-organic-part-with-accent fixture, independent of the example corpus);
+  > `tests/unit/cli.test.ts` covers the `render --silhouette` surface (message, `--json` field,
+  > both branches).
+- **C011** family weight parity · **C012** the rendered form of `W009` — an *asymmetric* bottom
+  gap (trailing transparent rows exceeding the top margin beyond the centering tolerance), measured
+  from pixels rather than the static `pixels:` grid; symmetric breathing room is never flagged.
+- Every threshold is relative/scale-invariant; the one absolute figure — minimum stroke width
+  — scales as `round(2·size/32)`.
+
+**4 — `--as` selects a `CritiqueProfile` (thresholds), never inference.** Category profiles
+for `icon`/`scene`/`character`/`item` fix the C005/C006/C009/C011 thresholds to the values each
+category's evaluation already measured as its craft floor; omitting `--as` runs the
+category-agnostic subset only. `--family` overrides the default sibling selection
+(`selectSheetDrawings`, [ADR-0082](0082-sheet-contact-sheet-cli.md)); canvas size is read from
+the render, never inferred.
+
+**5 — Severity and gating.** Every `C0xx` finding defaults to `warning` (exit 0 — `critique`
+never blocks a render or build by default). `--strict` promotes a fixed must-fix subset to
+`error` (exit 1), making `critique --strict` usable as a CI regression gate over `examples/`.
+Phase 1c **calibrated that subset against the full bundled corpus** to the *unambiguous
+structural defects only* — **C001** (empty), **C007** (character floating-part/seam), plus
+**C003** for the `icon` profile (icons must optically centre). The other codes are deliberately
+left advisory (`warning`, exit 0) because the corpus proves each has a legitimate form that a
+pixel check cannot distinguish from a bug: **C002** (icons/items intentionally fill to an edge),
+**C008** (open bow/crossbow frames, arrow bundles, glyph counters, organic overlaps all enclose
+1–3 px gaps), **C009** (faction recolors, size variants, and shared bottle/shield/plate scaffolds
+collapse to one silhouette *by design* — a colour-blind silhouette check cannot tell an intended
+variant from a duplicate), **C011** (item sets legitimately mix a ring and a greatsword), **C012**
+(symmetric bottom breathing room), **C005** (thin detail is a style choice), **C006**
+(export-target-aware — see Known limitations; a `warning` only for an indexed-PNG/SVG target,
+advisory `info` for RGBA/JPEG, never a `--strict` error either way). This narrows the
+originally-planned list (C001/C002/C007/C008/C009); the rationale and measured floor are
+recorded in `docs/impl-progress.md`.
+
+**6 — A vision rubric block, printed after the automatic gate.** `critique` additionally
+prints an ordered list of silhouette-first render commands plus a category-specific rubric
+(icon: misread test + merge trap; character: seam contact; item: pair confusion). Automatic
+`pass:true` is **necessary, not sufficient** — the rubric is the part that still requires the
+agent to look. The product-skill workflow states this as the explicit "definition of done":
+`critique` passes **and** the rubric was answered.
+
+## Consequences
+
+- Gives the agent loop a machine quality signal for the class of bug `check` structurally
+  cannot see — closes the "check is grammar-only, ~5/7 costly bugs are visual and silent" gap
+  named across every category evaluation.
+- `critique --strict` becomes the regression gate for `examples/` once wired into CI; every
+  bundled example must re-baseline against it.
+- New file `src/critique.ts` (metric engine, `C0xx` catalog, `CritiqueProfile`s, rubric text);
+  new CLI verb in `src/cli.ts`. No change to `check`, `build`, or `render` semantics —
+  `critique` is purely additive and reuses the existing renderer and metric helpers.
+- Touches [spec §16](../language-spec.md#16-cli-surface) (new CLI verb + diagnostic-code
+  table), the product skill (`skills/drawstic/SKILL.md` + `reference.md` — the mandatory
+  workflow gains a `critique` step before "done"), and `docs/best-practices.md` (verification
+  loop).
+- `tests/unit/critique.test.ts` fixtures pin each check's `measured` value against a
+  known-bad sprite (floating part, pinhole, near-identical sibling pair, off-center icon,
+  flat-value region), so thresholds are test-asserted, not just documented.
+
+## Known limitations (advisory by design)
+
+Closed as deliberate, calibrated advisory scope — not defects — per
+`docs/impl-progress.md`'s "1c-followup" notes; revisit only if a future corpus proves the
+false-positive risk of tightening them is gone:
+
+- **C011 gates weight only, not margin.** The originally-planned "margin parity" (uniform
+  breathing room across siblings) is not a separate gated check — only covered-mass parity
+  is. Each member's `bbox` is already in the `familyMetrics` payload, so margin consistency
+  is inspectable without a render; a dedicated advisory margin-ratio check can be added later
+  if item sets need it actively flagged. See the comment at `PARITY_FACTOR` in
+  `src/critique.ts`.
+- **C006 is export-target-aware, not one fixed ceiling** (character-DX 2026-07-10 fix wave).
+  With smooth normal-`model` shading the default ([ADR-0089](0089-form-based-shading.md)), a clean
+  64×128 character spends 400–600 distinct colours — no defect for a straight-alpha RGBA-PNG
+  sprite, but a real budget for an indexed PNG (≤256-colour palette) or SVG (one `<rect>` run per
+  colour band). C006 therefore reads the drawing's declared `export` formats
+  (`paletteTargetFor` in `src/cli.ts` over `mod.exports`): a `'budgeted'` target — any `png … indexed`
+  or `svg` line — enforces the tight profile ceiling as a `pass`-blocking `warning`; a
+  `'unbudgeted'` target (RGBA-PNG/JPEG, or no export at all — the conservative default when the
+  target is unknown) enforces only the generous `RGBA_COLOR_CEILING` as a non-blocking advisory
+  `info`. So a smooth-`model` RGBA character reaches `pass:true` while a genuinely palette-exploded
+  indexed/SVG export still fails. The ceiling itself is unchanged as a `--strict` signal (C006 was
+  never in the must-fix subset — it is `warning`/`info`, never `error`). See `PaletteTarget` and
+  `checkPaletteBudget` in `src/critique.ts`.

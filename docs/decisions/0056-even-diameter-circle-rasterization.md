@@ -1,6 +1,6 @@
 # 56. Even-diameter circle rasterization
 
-- Status: Accepted
+- Status: Accepted (`ellipse` unified to the same convention by [ADR-0087](0087-anchored-assembly.md))
 - Date: 2026-07-06
 - Deciders: t.koehn, Codex
 

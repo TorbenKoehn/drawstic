@@ -6,7 +6,7 @@ import { asepriteJson, atlasJson, type Frame, tiledTsj, tiledTsx } from '../../s
 
 describe('tiledTsj', () => {
   test('builds a Tiled .tsj JSON tileset descriptor', () => {
-    const out = tiledTsj('terrain', 'terrain.png', 32, 16, 16, 16, 2, 2)
+    const out = tiledTsj('terrain', 'terrain.png', 32, 16, 16, 16, 2, 2, 0)
     expect(out.endsWith('\n')).toBe(true)
     expect(JSON.parse(out)).toEqual({
       columns: 2,
@@ -25,7 +25,7 @@ describe('tiledTsj', () => {
   })
 
   test('reflects a non-square, multi-row grid', () => {
-    const out = JSON.parse(tiledTsj('big', 'big.png', 48, 32, 8, 16, 12, 6))
+    const out = JSON.parse(tiledTsj('big', 'big.png', 48, 32, 8, 16, 12, 6, 0))
     expect(out).toMatchObject({
       columns: 6,
       imagewidth: 48,
@@ -35,20 +35,25 @@ describe('tiledTsj', () => {
       tilecount: 12,
     })
   })
+
+  test('spacing reflects the atlas pad (the grid gutter, ADR-0096 §3)', () => {
+    const out = JSON.parse(tiledTsj('terrain', 'terrain.png', 34, 16, 16, 16, 2, 2, 1))
+    expect(out).toMatchObject({ spacing: 1 })
+  })
 })
 
 describe('tiledTsx', () => {
   test('builds a Tiled .tsx XML tileset descriptor matching the exact template', () => {
-    const out = tiledTsx('terrain', 'terrain.png', 32, 16, 16, 16, 2, 2)
+    const out = tiledTsx('terrain', 'terrain.png', 32, 16, 16, 16, 2, 2, 0)
     const expected =
-      '<?xml version="1.0" encoding="UTF-8"?>\n<tileset version="1.10" name="terrain" tilewidth="16" tileheight="16" tilecount="2" columns="2">\n <image source="terrain.png" width="32" height="16"/>\n</tileset>\n'
+      '<?xml version="1.0" encoding="UTF-8"?>\n<tileset version="1.10" name="terrain" tilewidth="16" tileheight="16" tilecount="2" columns="2" spacing="0">\n <image source="terrain.png" width="32" height="16"/>\n</tileset>\n'
     expect(out).toBe(expected)
   })
 
   test('substitutes every numeric field independently', () => {
-    const out = tiledTsx('big', 'big.png', 48, 32, 8, 16, 12, 6)
+    const out = tiledTsx('big', 'big.png', 48, 32, 8, 16, 12, 6, 2)
     expect(out).toContain(
-      '<tileset version="1.10" name="big" tilewidth="8" tileheight="16" tilecount="12" columns="6">',
+      '<tileset version="1.10" name="big" tilewidth="8" tileheight="16" tilecount="12" columns="6" spacing="2">',
     )
     expect(out).toContain('<image source="big.png" width="48" height="32"/>')
   })

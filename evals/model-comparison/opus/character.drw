@@ -1,0 +1,171 @@
+# Chibi blacksmith - Ragnarok Online style, front view, 64x128.
+# Canonical path: theme(light + figure oracle) -> materials -> parts(pins) -> fit -> outline -> export
+
+# ---- palette (module scope) ----
+skin    = #f0bd8e
+hairC   = #6b3f22
+browC   = #3a2214
+sashC   = #b8433a
+tunicC  = #ddc79c
+apronC  = #7d4a25
+pantsC  = #46536b
+bootC   = #4a2f1a
+steel   = #7c8a9c
+wood    = #8a5a30
+gold    = #d9a43c
+white   = #f7f0e2
+iris    = #3f6f4a
+mouthC  = #9a5545
+inkC    = #2b1b16
+
+# ---- materials: colour + response (the response is physics, never colour) ----
+material skinM  = skin   skin  spread 150%
+material hairM  = hairC  cloth spread 240%
+material sashM  = sashC  cloth spread 180%
+material tunicM = tunicC cloth spread 150%
+material apronM = apronC cloth drape spread 220%
+material pantsM = pantsC cloth spread 200%
+material bootM  = bootC  cloth spread 280%
+material steelM = steel  metal spread 160%
+material woodM  = wood   cloth spread 200%
+material goldM  = gold   metal
+
+# ---- full-body theme: ONE light + the 3-head chibi oracle ----
+theme figThree:
+  mode pixel
+  light forge = dir 1:1 #ffe0a8 amb #2b3550 18%
+  figure:
+    heads 3
+    headW 34
+    eyeLine 0.55
+    earLine 0.56
+    eyeSep 12
+
+# ---- head-part theme: same light, heads 1 (the part canvas IS one head) ----
+theme figHead:
+  mode pixel
+  light forge = dir 1:1 #ffe0a8 amb #2b3550 18%
+  figure:
+    heads 1
+    headW 26
+    eyeLine 0.55
+    earLine 0.56
+    eyeSep 12
+
+# ================= HEAD PART (34x42 = one head) =================
+
+draw smithHead 34x42:
+  use figHead
+  face     = ellipse(17:22, 12:14)
+  earL     = lobe(7:24, 2:25, 6)
+  earR     = lobe(27:24, 32:25, 6)
+  hairMass = dome(17:16, 15:16)
+  headBand = ribbon(4:14, 17:9, 30:14, 5)
+  bandKnot = lobe(7:15, 0:22, 7)
+  beard    = ellipse(17:29, 12:12).subtract(ellipse(17:25, 9:9))
+  # solid underpaint over the whole head silhouette: no set-op boundary pinhole survives
+  fill inkC face.union(earL).union(earR).union(hairMass).union(headBand).union(bandKnot).union(beard)
+  cel face skinM 3
+  cel earL skinM 3
+  cel earR skinM 3
+  cel hairMass hairM 3
+  cel headBand sashM 3
+  cel bandKnot sashM 3
+  cel beard hairM 3
+  # face marks: eyes (white + iris + pupil + catch-light), brows, nose, moustache, mouth
+  fill white ellipse(fig.eyeL, 3:3)
+  fill white ellipse(fig.eyeR, 3:3)
+  circle iris fig.eyeL 2 fill
+  circle iris fig.eyeR 2 fill
+  px #17120f fig.eyeL
+  px #17120f fig.eyeR
+  px #ffffff 10:21
+  px #ffffff 22:21
+  line browC 8:18 13:17
+  line browC 8:17 13:16
+  line browC 21:17 26:18
+  line browC 21:16 26:17
+  px skin.darken(26%) 17:28
+  px skin.darken(26%) 16:28
+  moustL = lobe(16:30, 10:31, 4)
+  moustR = lobe(18:30, 24:31, 4)
+  cel moustL hairM 3
+  cel moustR hairM 3
+  line mouthC.alpha(70%) 15:33 19:33
+  pin neck 17:40
+
+# ================= BODY PART (44x86; feet on the last row) =================
+
+draw smithBody 44x86:
+  use figThree
+  cel rect(18:0, 25:13) skinM 3
+  legL = rrect(12:52, 20:76, 3)
+  legR = rrect(23:52, 31:76, 3)
+  bootL = rrect(10:72, 20:85, 2)
+  bootR = rrect(23:72, 33:85, 2)
+  cel legL pantsM 3 over legL.union(bootL)
+  cel legR pantsM 3 over legR.union(bootR)
+  cel bootL bootM 3 over legL.union(bootL)
+  cel bootR bootM 3 over legR.union(bootR)
+  # clip: full shoulder width above row 22, waist width below it, so the arm gap cannot close
+  bodyClip = rect(0:0, 43:21).union(rect(12:22, 31:52))
+  torso = curvePoly(9:15, 18:8, 25:8, 34:15, 31:26, 30:52, 13:52, 12:26).intersect(bodyClip)
+  cel torso tunicM 3
+  apron = curvePoly(15:15, 22:11, 28:15, 30:56, 13:56).intersect(rect(13:0, 30:56))
+  cel apron apronM 3
+  strapL = rect(15:9, 19:16)
+  strapR = rect(24:9, 28:16)
+  cel strapL apronM 3
+  cel strapR apronM 3
+  belt = rect(13:46, 30:52)
+  cel belt bootM 3
+  buckle = rect(18:46, 25:52)
+  cel buckle goldM 4
+  shoulderL = dome(5:24, 7:10)
+  shoulderR = dome(38:24, 7:10)
+  armL = rrect(0:20, 8:46, 4)
+  armR = rrect(35:20, 43:46, 4)
+  handL = rrect(0:44, 9:57, 3)
+  handR = rrect(34:44, 43:57, 3)
+  cel shoulderL skinM 3 over shoulderL.union(armL)
+  cel shoulderR skinM 3 over shoulderR.union(armR)
+  cel armL skinM 3 over armL.union(handL)
+  cel armR skinM 3 over armR.union(handR)
+  cuffL = rrect(0:42, 9:47, 2)
+  cuffR = rrect(34:42, 43:47, 2)
+  cel cuffL bootM 3
+  cel cuffR bootM 3
+  cel handL skinM 3 over armL.union(handL)
+  cel handR skinM 3 over armR.union(handR)
+  pin neck 22:2
+  pin grip 3:50
+  pin hip  22:52
+
+# ================= PROP - smith hammer, authored head-down as it is held =================
+
+draw hammer 18x42:
+  use figThree
+  shaft = rect(6:0, 11:32)
+  cel shaft woodM 3
+  ferrule = rect(5:27, 12:32)
+  cel ferrule steelM 3
+  # head: symmetric octagonal block on the shaft axis, clearly wider than tall
+  hammerHead = poly(1:31, 16:31, 17:33, 17:39, 16:41, 1:41, 0:39, 0:33)
+  cel hammerHead steelM 4
+  fill steel.lighten(45%) hammerHead.edge(0:1, 2)
+  fill #14100c.alpha(50%) hammerHead.edge(0:-1, 1)
+  pin grip 10:6
+
+# ================= ASSEMBLY =================
+
+draw blacksmith 64x128:
+  use figThree
+  fit smithBody.neck 32:42 ground
+  fit smithHead.neck smithBody.neck
+  fit hammer.grip smithBody.grip behind smithBody   # the fist closes over the haft
+  outline inkC
+
+# ================= EXPORT =================
+
+export blacksmith:
+  png @1 @4
