@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { join } from 'node:path'
 import type { ModuleRecord } from '../../src/eval.js'
 import { Engine } from '../../src/eval.js'
 import { censusModule, lintModule } from '../../src/lint.js'
@@ -824,10 +825,13 @@ describe('canonical-path lints + construct census (W013–W015, ADR-0094/0097)',
 
 describe("W016: export path repeats the recipe's own directory (ADR-0096 §6)", () => {
   /** Like `load`, but places the recipe in a directory named `dir` so the W016 check has something
-   *  to compare the export path's first segment against. */
+   *  to compare the export path's first segment against. Built with `join`, not a literal `\`:
+   *  W016 derives the directory via `dirname`, and posix `dirname` reads a backslash as an ordinary
+   *  filename character, so a hardcoded separator makes this test pass on Windows and silently stop
+   *  testing anything on Linux CI. */
   const loadIn = (dir: string, src: string): { engine: Engine; mod: ModuleRecord } => {
     const engine = new Engine(process.cwd())
-    const mod = engine.loadSource(src, `${process.cwd()}\\${dir}\\recipe${n++}.drw`, 'recipe.drw')
+    const mod = engine.loadSource(src, join(process.cwd(), dir, `recipe${n++}.drw`), 'recipe.drw')
     return { engine, mod }
   }
 
