@@ -100,6 +100,9 @@ const contentFromEntry = (
           pal: [],
           title: undefined,
           desc: undefined,
+          // An empty placeholder buffer — `path` export writes `content.path` via `encodePathSvg`,
+          // never this pseudo-sprite's own pixels (ADR-0013).
+          mode: 'pixel',
         },
         path,
         kind: 'path',

@@ -396,6 +396,7 @@ describe('regions: bbox helpers & combinators', () => {
       pal: [],
       title: undefined,
       desc: undefined,
+      mode: 'pixel' as const,
     }
     const r = spriteRegion(sprite)
     expect(r.bbox).toEqual({ x0: 0, y0: 0, x1: 1, y1: 1 })

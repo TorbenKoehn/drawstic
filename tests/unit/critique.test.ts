@@ -58,7 +58,17 @@ const synthSprite = (
       data[i + 3] = c[3]
     }
   }
-  return { type: 'sprite', name, w, h, data, pal: [], title: undefined, desc: undefined }
+  return {
+    type: 'sprite',
+    name,
+    w,
+    h,
+    data,
+    pal: [],
+    title: undefined,
+    desc: undefined,
+    mode: 'pixel',
+  }
 }
 
 const DARK: Px = [32, 32, 32, 255]

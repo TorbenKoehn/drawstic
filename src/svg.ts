@@ -33,12 +33,19 @@ const quote = (value: string): string =>
  * pixel-rasterized regardless of render mode (no vector/shape reconstruction);
  * `title`/`desc`, when present on the sprite, are emitted for icon
  * accessibility.
+ *
+ * `shape-rendering="crispEdges"` is emitted only for `sprite.mode === 'pixel'` (ADR-0013). In
+ * `'smooth'` mode the rasterizer already produced anti-aliased edge pixels (partial-alpha runs);
+ * `crispEdges` tells the viewer to skip anti-aliasing the emitted `<rect>` geometry on scale, which
+ * would discard exactly that — so smooth-mode output omits the attribute and takes the viewer's
+ * default (`auto`, anti-aliased).
  */
 export const encodeSvg = (sprite: Sprite, opts: SvgOptions): string => {
   const { w, h, data } = sprite
   const lines: string[] = []
+  const crisp = sprite.mode === 'pixel' ? ' shape-rendering="crispEdges"' : ''
   lines.push(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" shape-rendering="crispEdges">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}"${crisp}>`,
   )
   if (sprite.title) {
     lines.push(`  <title>${quote(sprite.title)}</title>`)

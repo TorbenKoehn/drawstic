@@ -84,7 +84,6 @@ import {
   putPixel,
   quadPoints,
   quantInt,
-  type RenderMode,
   stampSprite,
   strokeLine,
   strokePath,
@@ -140,6 +139,7 @@ import {
   point,
   polyRegion,
   type Region,
+  type RenderMode,
   rectRegion,
   regionIntersect,
   regionSubtract,
@@ -2299,6 +2299,7 @@ export class Engine {
       pal: palette,
       title: draw.title,
       desc: draw.description,
+      mode,
       // Export the drawing's own attach points (ADR-0087) so an assembling `fit` can read them.
       ...(draw.pins.size > 0 ? { pins: new Map(draw.pins) } : {}),
       // Export each declared occlusion relation's measured parity (ADR-0092) for `critique`'s C013.
@@ -5844,6 +5845,9 @@ export class Engine {
           pal: foldPalettes(members.map((m) => m.sprite)),
           title: undefined,
           desc: undefined,
+          // The sheet is composited by an identity blit, never region-rasterized, regardless of any
+          // member's own mode (ADR-0013).
+          mode: 'pixel',
         },
         frames,
         tile: { tileWidth, tileHeight, columns, padding },
@@ -5905,6 +5909,9 @@ export class Engine {
         pal: foldPalettes(members.map((m) => m.sprite)),
         title: undefined,
         desc: undefined,
+        // The sheet is composited by an identity blit, never region-rasterized, regardless of any
+        // member's own mode (ADR-0013).
+        mode: 'pixel',
       },
       frames: members.flatMap((member) => {
         const p = placed.find((q) => q.name === member.name)
@@ -5994,6 +6001,8 @@ export class Engine {
       pal: [],
       title: undefined,
       desc: undefined,
+      // A decoded PNG's pixels are never rasterized here (ADR-0013); no smooth mode to carry.
+      mode: 'pixel',
     }
     this.#spriteCache.set(cacheKey, sprite)
     return sprite
@@ -8430,6 +8439,8 @@ export const extractSubSprite = (
     pal: sheet.pal,
     title: undefined,
     desc: undefined,
+    // A crop of the sheet's own pixels: carries the sheet's mode along.
+    mode: sheet.mode,
   }
 }
 
