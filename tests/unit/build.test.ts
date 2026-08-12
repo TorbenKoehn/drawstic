@@ -330,6 +330,18 @@ describe('buildModule — svg / jpeg / path formats', () => {
     }
   })
 
+  test('svg: a pixel-mode export (no theme, no override) carries shape-rendering="crispEdges"', () => {
+    const { engine, mod } = load(CONTENT_SRC)
+    const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
+    try {
+      buildModule(engine, mod, out)
+      const svg = readFileSync(join(out, 'out', 'solid-svg-plain.svg'), 'utf8')
+      expect(svg).toContain('shape-rendering="crispEdges"')
+    } finally {
+      rmSync(out, { recursive: true, force: true })
+    }
+  })
+
   test('svg: ids + classes + inlineStyles flags all apply', () => {
     const { engine, mod } = load(CONTENT_SRC)
     const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
@@ -354,6 +366,21 @@ describe('buildModule — svg / jpeg / path formats', () => {
       buildModule(engine, mod, out)
       expect(engine.modeOverride).toBeNull()
       expect(readFileSync(join(out, 'out', 'solid-svg-mode.svg'), 'utf8')).toContain('<svg')
+    } finally {
+      rmSync(out, { recursive: true, force: true })
+    }
+  })
+
+  test("svg: a per-line 'mode smooth' override on a pixel-themed draw omits crispEdges", () => {
+    // `solid` carries no theme, so its default mode is 'pixel'; `solid-svg-mode`'s own `svg mode
+    // smooth` line overrides just that one format line (§13) — the sprite it renders must carry
+    // 'smooth', not the drawing's default.
+    const { engine, mod } = load(CONTENT_SRC)
+    const out = mkdtempSync(join(tmpdir(), 'drawstic-'))
+    try {
+      buildModule(engine, mod, out)
+      const svg = readFileSync(join(out, 'out', 'solid-svg-mode.svg'), 'utf8')
+      expect(svg).not.toContain('shape-rendering')
     } finally {
       rmSync(out, { recursive: true, force: true })
     }

@@ -25,13 +25,11 @@ import {
   type Grad,
   invertMatrix,
   type Region,
+  type RenderMode,
   type Sprite,
 } from './values.js'
 
-/**
- * 'pixel': pinned hard-edged raster (ADR-0028). 'smooth': anti-aliased, 1/16-subpixel-quantized (ADR-0040).
- */
-export type RenderMode = 'pixel' | 'smooth'
+export type { RenderMode }
 /** A resolved fill/stroke value: a solid color or a gradient. */
 export type Paint = Color | Grad
 

@@ -22,7 +22,7 @@ const makeSprite = (
   w: number,
   h: number,
   fill: (x: number, y: number) => readonly [number, number, number, number],
-  extra: Partial<Pick<Sprite, 'pal' | 'title' | 'desc'>> = {},
+  extra: Partial<Pick<Sprite, 'pal' | 'title' | 'desc' | 'mode'>> = {},
 ): Sprite => {
   const data = new Uint8Array(w * h * 4)
   for (let y = 0; y < h; y++) {
@@ -44,6 +44,7 @@ const makeSprite = (
     pal: extra.pal ?? [],
     title: extra.title,
     desc: extra.desc,
+    mode: extra.mode ?? 'pixel',
   }
 }
 
@@ -59,6 +60,21 @@ describe('encodeSvg', () => {
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 7 4" width="7" height="4" shape-rendering="crispEdges">',
     )
     expect(svg.trim().endsWith('</svg>')).toBe(true)
+  })
+
+  test('pixel-mode sprite (the default) gets shape-rendering="crispEdges"', () => {
+    const sprite = makeSprite(2, 2, () => [255, 0, 0, 255], { mode: 'pixel' })
+    const svg = encodeSvg(sprite, noFlags)
+    expect(svg).toContain('shape-rendering="crispEdges"')
+  })
+
+  test('smooth-mode sprite omits shape-rendering, so the viewer anti-aliases the run rects', () => {
+    const sprite = makeSprite(2, 2, () => [255, 0, 0, 128], { mode: 'smooth' })
+    const svg = encodeSvg(sprite, noFlags)
+    expect(svg).not.toContain('shape-rendering')
+    expect(svg).toContain(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 2" width="2" height="2">',
+    )
   })
 
   test('merges horizontal runs of identical opaque pixels into fewer rects', () => {

@@ -76,6 +76,13 @@ export type Region = {
   /** Continuous coverage test for smooth mode. */
   test: (fx: number, fy: number) => boolean
 }
+/**
+ * 'pixel': pinned hard-edged raster (ADR-0028). 'smooth': anti-aliased, 1/16-subpixel-quantized
+ * (ADR-0040). Declared here, not in `raster.ts`, because {@link Sprite} carries one and `raster.ts`
+ * already imports from this module — the reverse import would cycle.
+ */
+export type RenderMode = 'pixel' | 'smooth'
+
 /** A rendered drawing: straight-alpha RGBA8 bitmap + its palette artifact. */
 export type Sprite = {
   type: 'sprite'
@@ -96,6 +103,15 @@ export type Sprite = {
   pal: { key: string; color: Color; source: string }[]
   title: string | undefined
   desc: string | undefined
+  /**
+   * The render mode this sprite was rasterized under (ADR-0013). A `draw` carries whatever
+   * `modeOverride ?? theme.mode ?? 'pixel'` resolved to; every other sprite source (an atlas sheet,
+   * a `path` export's pseudo-sprite, an imported PNG, a sub-sprite cropped from a sheet's own pixels)
+   * is `'pixel'` — none of them run region-eliminator rasterization, so `'smooth'` never applies to
+   * them. `encodeSvg` reads it to decide `shape-rendering`: a `'smooth'` sprite's anti-aliased edges
+   * must not be crisped away by the SVG viewer.
+   */
+  mode: RenderMode
   /**
    * The drawing's exported attach points (ADR-0087): each `pin NAME PT` in the body registers a
    * named point in this sprite's own local coordinate space, so `fit` can land one part's pin

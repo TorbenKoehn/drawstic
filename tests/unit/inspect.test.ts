@@ -95,6 +95,7 @@ describe('attributePaletteShares (task 3.4: per-palette-key opaque pixel share)'
     pal: [],
     title: undefined,
     desc: undefined,
+    mode: 'pixel',
   })
 
   test('attributes each opaque pixel to its nearest declared color by squared sRGB distance', () => {

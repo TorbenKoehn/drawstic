@@ -369,6 +369,7 @@ describe('stampSprite', () => {
     pal: [],
     title: undefined,
     desc: undefined,
+    mode: 'pixel',
   }
 
   test('identity blit (no matrix) copies opaque texels and skips transparent/out-of-bounds', () => {
@@ -437,6 +438,7 @@ describe('stampSprite aa (ADR-0099 opt-in filtered resampling)', () => {
       pal: [],
       title: undefined,
       desc: undefined,
+      mode: 'pixel',
     }
     const m = translation(0.5, 0)
     const aa = ctx(4, 2)
@@ -469,6 +471,7 @@ describe('stampSprite aa (ADR-0099 opt-in filtered resampling)', () => {
       pal: [],
       title: undefined,
       desc: undefined,
+      mode: 'pixel',
     }
     const c = ctx(3, 1)
     stampSprite(c, twoPx, 0, 0, translation(0.5, 0), undefined, undefined, true)
@@ -490,7 +493,17 @@ describe('stampSprite aa (ADR-0099 opt-in filtered resampling)', () => {
         data[i + 3] = x === w - 1 && y === h - 1 ? 0 : 255
       }
     }
-    return { type: 'sprite', name: 't', w, h, data, pal: [], title: undefined, desc: undefined }
+    return {
+      type: 'sprite',
+      name: 't',
+      w,
+      h,
+      data,
+      pal: [],
+      title: undefined,
+      desc: undefined,
+      mode: 'pixel',
+    }
   }
 
   /** The flag matrix exactly as eval.ts's `#buildStampMatrix` builds it: flip → scale → rotate. */
@@ -602,6 +615,7 @@ describe('stampSprite aa (ADR-0099 opt-in filtered resampling)', () => {
       pal: [],
       title: undefined,
       desc: undefined,
+      mode: 'pixel',
     }
     const m = flagMatrix(2, 3, { rot: 90 })
     const nn = ctx(12, 12)
@@ -634,6 +648,7 @@ describe('stampSprite aa (ADR-0099 opt-in filtered resampling)', () => {
       pal: [],
       title: undefined,
       desc: undefined,
+      mode: 'pixel',
     }
     const withAa = ctx(6, 6)
     const withoutAa = ctx(6, 6)
@@ -659,6 +674,7 @@ describe('stampSprite aa (ADR-0099 opt-in filtered resampling)', () => {
       pal: [],
       title: undefined,
       desc: undefined,
+      mode: 'pixel',
     }
     const c = ctx(20, 20)
     let writes = 0
@@ -987,6 +1003,7 @@ describe('drawText: user fonts', () => {
     pal: [],
     title: undefined,
     desc: undefined,
+    mode: 'pixel',
   }
   const fallback: FontResolved = {
     kind: 'bitmap',

@@ -295,6 +295,8 @@ export const composeSheet = (
       pal: [],
       title: undefined,
       desc: undefined,
+      // The diagnostic grid is composited by an identity blit, never region-rasterized (ADR-0013).
+      mode: 'pixel',
     },
     cols: nCols,
     rows: nRows,
