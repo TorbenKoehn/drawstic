@@ -1195,6 +1195,51 @@ describe('strokeRegion', () => {
     expect(px(c, 4, 4)).toEqual([0, 0, 0, 0]) // interior, eroded away
     expect(px(c, 4, 1)).toEqual([255, 0, 0, 255]) // outer band
   })
+
+  // The claim is a SPREAD of alphas, not "some pixel is partial": a stroke that ignores the
+  // mode still paints, and still satisfies every assertion above about where the band is.
+  // Two alpha values is exactly what it looked like, and what a stroked silhouette shipped.
+  test('smooth mode: the band carries a spread of partial alphas, pixel mode does not', () => {
+    const alphas = (mode: 'pixel' | 'smooth'): number[] => {
+      const c = ctx(48, 48, mode)
+      strokeRegion(c, circleRegion(24, 24, 18), red, 3)
+      const seen = new Set<number>()
+      for (let y = 0; y < 48; y++) {
+        for (let x = 0; x < 48; x++) {
+          seen.add(px(c, x, y)[3] as number)
+        }
+      }
+      return [...seen].filter((a) => a > 0 && a < 255)
+    }
+
+    expect(alphas('pixel')).toEqual([])
+    expect(alphas('smooth').length).toBeGreaterThan(4)
+  })
+
+  test('smooth mode: the band still has a solid core and an untouched interior', () => {
+    const c = ctx(48, 48, 'smooth')
+    strokeRegion(c, circleRegion(24, 24, 18), red, 3)
+    expect(px(c, 24, 24)).toEqual([0, 0, 0, 0]) // interior, eroded away
+    expect(px(c, 24, 7)[3]).toBe(255) // mid-band, fully covered
+  })
+
+  // `width * SUBSAMPLE_OFFSETS.length` erosions on a grid spaced 1/4 px apart inset the
+  // boundary by `width` px. Getting that factor wrong still anti-aliases, so an alpha spread
+  // cannot catch it; only the band's thickness can.
+  test('smooth mode: the band is the declared width, not four times it', () => {
+    const c = ctx(48, 48, 'smooth')
+    strokeRegion(c, circleRegion(24, 24, 18), red, 3)
+    let painted = 0
+    for (let y = 0; y < 48; y++) {
+      if ((px(c, 24, y)[3] as number) > 0) {
+        painted++
+      }
+    }
+    // Two crossings of a 3px band. This column passes through the circle's top and bottom,
+    // where the boundary runs horizontal and coverage lands on whole pixels, so the count is
+    // the band width exactly and no AA fringe widens it.
+    expect(painted).toBe(6)
+  })
 })
 
 describe('E1 regression: a region stroke never leaks state into a following primitive', () => {

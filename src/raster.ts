@@ -408,8 +408,41 @@ const erode4 = (cur: Uint8Array, bw: number, bh: number): Uint8Array => {
 }
 
 /**
+ * Materialize the region on the ADR-0040 subsample grid: one cell per supersample, `r.test`
+ * at the same 1/16 offsets `coverageAt` uses, so the two AA paths cannot disagree about where
+ * an edge is. Cells are spaced 1/4 px apart on both axes, which is what makes `4·N` erosions
+ * inset the boundary by exactly N pixels.
+ */
+const materializeSubsampled = (
+  r: Region,
+  b: BBox,
+): { bits: Uint8Array; bw: number; bh: number } => {
+  const s = SUBSAMPLE_OFFSETS.length
+  const bw = (b.x1 - b.x0 + 1) * s
+  const bh = (b.y1 - b.y0 + 1) * s
+  const bits = new Uint8Array(bw * bh)
+  for (let y = 0; y < bh; y++) {
+    const fy = b.y0 + Math.floor(y / s) + (SUBSAMPLE_OFFSETS[y % s] as number)
+    for (let x = 0; x < bw; x++) {
+      const fx = b.x0 + Math.floor(x / s) + (SUBSAMPLE_OFFSETS[x % s] as number)
+      if (r.test(fx, fy)) {
+        bits[y * bw + x] = 1
+      }
+    }
+  }
+  return { bits, bw, bh }
+}
+
+/**
  * Stroke = region minus its N-fold 4-erosion: the extensional inner
  * boundary band of width N (ADR-0039).
+ *
+ * Smooth mode evaluates that SAME definition on the subsample grid instead of on whole
+ * pixels, and a pixel's alpha is the fraction of its 16 supersamples the band covers. It is
+ * one operator at two resolutions, not two rules: a stroke's edge therefore lands where the
+ * same shape's fill edge lands, which is what a part built from both at once depends on.
+ * Without it a stroke has two alpha values and any silhouette drawn as one ships hard-edged
+ * however smooth the rest of the sprite is.
  */
 export const strokeRegion = (ctx: Context, r: Region, paint: Paint, width: number): void => {
   // bounds: use the region bbox (not canvas-clipped) so erosion at the edge
@@ -422,6 +455,10 @@ export const strokeRegion = (ctx: Context, r: Region, paint: Paint, width: numbe
     y0: Math.floor(r.bbox.y0) - 1,
     x1: Math.ceil(r.bbox.x1) + 1,
     y1: Math.ceil(r.bbox.y1) + 1,
+  }
+  if (ctx.mode === 'smooth') {
+    strokeRegionSmooth(ctx, r, paint, width, b)
+    return
   }
   const { bits, bw, bh } = materialize(r, b)
   let cur = bits
@@ -437,6 +474,64 @@ export const strokeRegion = (ctx: Context, r: Region, paint: Paint, width: numbe
     }
   }
   sink.paint(ctx, paint)
+}
+
+/** `strokeRegion`'s smooth branch: the band resolved on the subsample grid, then painted at
+ * the per-pixel coverage fraction. Coverage is materialized before anything is blended
+ * because a gradient across the stroke has to resolve over the band's own bbox, and that is
+ * not known until every pixel has been counted. */
+const strokeRegionSmooth = (
+  ctx: Context,
+  r: Region,
+  paint: Paint,
+  width: number,
+  b: BBox,
+): void => {
+  const s = SUBSAMPLE_OFFSETS.length
+  const { bits, bw, bh } = materializeSubsampled(r, b)
+  let cur = bits
+  for (let n = 0; n < width * s; n++) {
+    cur = erode4(cur, bw, bh)
+  }
+  const pw = b.x1 - b.x0 + 1
+  const ph = b.y1 - b.y0 + 1
+  const cov = new Float32Array(pw * ph)
+  let x0 = Number.POSITIVE_INFINITY
+  let y0 = Number.POSITIVE_INFINITY
+  let x1 = Number.NEGATIVE_INFINITY
+  let y1 = Number.NEGATIVE_INFINITY
+  for (let py = 0; py < ph; py++) {
+    for (let px = 0; px < pw; px++) {
+      let hit = 0
+      for (let sy = 0; sy < s; sy++) {
+        const row = (py * s + sy) * bw + px * s
+        for (let sx = 0; sx < s; sx++) {
+          if (bits[row + sx] === 1 && cur[row + sx] !== 1) {
+            hit++
+          }
+        }
+      }
+      if (hit > 0) {
+        cov[py * pw + px] = hit / (s * s)
+        x0 = Math.min(x0, b.x0 + px)
+        y0 = Math.min(y0, b.y0 + py)
+        x1 = Math.max(x1, b.x0 + px)
+        y1 = Math.max(y1, b.y0 + py)
+      }
+    }
+  }
+  if (x1 < x0) {
+    return
+  }
+  const bbox: BBox = { x0, y0, x1, y1 }
+  for (let py = 0; py < ph; py++) {
+    for (let px = 0; px < pw; px++) {
+      const c = cov[py * pw + px] as number
+      if (c > 0) {
+        putPixel(ctx, b.x0 + px, b.y0 + py, paint, bbox, c)
+      }
+    }
+  }
 }
 
 // ── curves (fixed flattening, ADR-0023/0027) ────────────────────────────────
@@ -1643,6 +1738,8 @@ export const formShade = (
   // in-region, so no per-pixel membership test is needed).
   const paintGate = fieldRegion === region ? null : region
   const bbox: BBox = region.bbox ?? b
+  // Tones are collected before any of them is painted; `paintFormTones` says why.
+  const tones: (Color | undefined)[] = new Array(w * h)
   const L = spec.light
   // Blinn halfway vector between the toward-light direction and the viewer (straight out, +z).
   const hx = L.x
@@ -1692,7 +1789,65 @@ export const formShade = (
           tone = mix(tone, specColor, clamp01(s * spec.spec))
         }
       }
-      putPixel(ctx, x, y, tone, bbox)
+      tones[gy * w + gx] = tone
+    }
+  }
+  paintFormTones(ctx, { tones, bx, by, w }, paintGate ?? fieldRegion, b, bbox)
+}
+
+/** The tone grid `formShade` computed, indexed by the same `(x-bx, y-by)` offsets. */
+type FormTones = {
+  readonly tones: (Color | undefined)[]
+  readonly bx: number
+  readonly by: number
+  readonly w: number
+}
+
+/**
+ * Commit `formShade`'s tones, in smooth mode at the silhouette's own coverage.
+ *
+ * Two things make this its own pass rather than a `putPixel` in the shading loop. A pixel the
+ * silhouette only partly covers has its CENTRE outside, so the loop never computed a tone for
+ * it and painting it needs a neighbour's; and painting cannot begin until every tone exists,
+ * because that neighbour may be a pixel the loop has not reached yet.
+ *
+ * `edge` is what bounds the painted shape: the part's own region when co-shading over a larger
+ * field, the field itself otherwise. Pixel mode keeps binary membership, so its output is
+ * unchanged to the byte.
+ */
+const paintFormTones = (ctx: Context, form: FormTones, edge: Region, b: BBox, bbox: BBox): void => {
+  const { tones, bx, by, w } = form
+  const smooth = ctx.mode === 'smooth'
+  for (let y = b.y0 - 1; y <= b.y1 + 1; y++) {
+    for (let x = b.x0 - 1; x <= b.x1 + 1; x++) {
+      const gx = x - bx
+      const gy = y - by
+      if (gx < 0 || gy < 0 || gx >= w) {
+        continue
+      }
+      const own = tones[gy * w + gx]
+      if (!smooth) {
+        if (own) {
+          putPixel(ctx, x, y, own, bbox)
+        }
+        continue
+      }
+      const cov = coverageAt(edge, x, y)
+      if (cov <= 0) {
+        continue
+      }
+      // A fringe pixel borrows the nearest shaded neighbour's tone. Reading the height field
+      // here instead would give a flat normal, which reads as a bright rim all the way round
+      // a part whose edge is in shadow.
+      const tone =
+        own ??
+        tones[gy * w + gx - 1] ??
+        tones[gy * w + gx + 1] ??
+        tones[(gy - 1) * w + gx] ??
+        tones[(gy + 1) * w + gx]
+      if (tone) {
+        putPixel(ctx, x, y, tone, bbox, cov)
+      }
     }
   }
 }

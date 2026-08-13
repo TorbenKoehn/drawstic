@@ -372,6 +372,9 @@ export type ModuleRecord = {
   fileTheme: FoldedTheme | undefined
   sizeDefault: { readonly width: number; readonly height: number } | undefined
   fontDefault: string | undefined
+  /** A module-scope `mode pixel|smooth`, the same tier as {@link sizeDefault}: below a theme's
+   * own `mode` and below the CLI override, above the `pixel` fallback. */
+  modeDefault: RenderMode | undefined
   /**
    * Every bare, module-scope `light NAME = …` binding this module declares (ADR-0096 §4 — the
    * third light-resolution tier: a file with exactly one of these and no theme default
@@ -1293,6 +1296,7 @@ export class Engine {
       env: new Environment(null),
       fileTheme: undefined,
       sizeDefault: undefined,
+      modeDefault: undefined,
       fontDefault: undefined,
       exports: [],
       moduleLights: new Map(),
@@ -1493,6 +1497,9 @@ export class Engine {
         }
         case 'sizeDirective':
           rec.sizeDefault = { width: s.width, height: s.height }
+          break
+        case 'modeDirective':
+          rec.modeDefault = s.mode
           break
         case 'fontDirective':
           rec.fontDefault = s.name
@@ -2236,7 +2243,7 @@ export class Engine {
     for (const [name, paint] of paintBindings) {
       env.declare(name, paint, true, false)
     }
-    const mode: RenderMode = this.modeOverride ?? theme.mode ?? 'pixel'
+    const mode: RenderMode = this.modeOverride ?? theme.mode ?? mod.modeDefault ?? 'pixel'
     const buffer = new Framebuffer(width, height)
     buffer.onWrite = () => {
       this.budget.writes++
