@@ -432,3 +432,95 @@ describe('keyword discipline (new words stay contextual, D7)', () => {
     expect(lum(wide, 12, 12)).toBeLessThan(lum(narrow, 12, 12))
   })
 })
+
+describe('a shaded part is anti-aliased against transparency in smooth mode', () => {
+  // `model`/`cel` is the canonical path for every shaded asset, so its silhouette is the one
+  // most sprites are actually cut out along. Shading it from a binary membership grid left
+  // that silhouette hard however smooth the interior was, which no interior assertion can
+  // see: the claim below is about the ALPHA channel and nothing else.
+  // `cel` deliberately, not `model`: `lowerCel` plans exactly ONE form op, so every partial
+  // alpha below has to come from `formShade`. `model` also plans a rim, which fills a region
+  // and anti-aliases on its own — a test written against it passes with the silhouette still
+  // hard, which is what the first draft of this one did.
+  const disc = (mode: 'pixel' | 'smooth'): Sprite =>
+    render(
+      [
+        `mode ${mode}`,
+        'light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%',
+        'material m = #8a95a5 metal',
+        'draw x 48x48:',
+        '  body = circle(24:24, 18)',
+        '  cel body m 4 light sun',
+      ].join('\n'),
+      'x',
+    )
+
+  const partialAlphas = (s: Sprite): number[] => {
+    const seen = new Set<number>()
+    for (let i = 3; i < s.data.length; i += 4) {
+      seen.add(s.data[i] ?? 0)
+    }
+    return [...seen].filter((a) => a > 0 && a < 255)
+  }
+
+  test('smooth mode spreads the silhouette over partial alphas; pixel mode does not', () => {
+    expect(partialAlphas(disc('pixel'))).toEqual([])
+    expect(partialAlphas(disc('smooth')).length).toBeGreaterThan(4)
+  })
+
+  test('the interior stays fully opaque and the far outside stays empty', () => {
+    const s = disc('smooth')
+    expect(px(s, 24, 24)[3]).toBe(255)
+    expect(px(s, 1, 1)[3]).toBe(0)
+  })
+
+  // A fringe pixel takes its tone from the nearest shaded neighbour. Reading the height field
+  // there would give a flat normal, i.e. the same bright tone all the way round, so the far
+  // side of a lit sphere is where that mistake shows.
+  test('a fringe pixel is toned like the edge it borders, not uniformly lit', () => {
+    const s = disc('smooth')
+    const litSide = lum(s, 24, 6)
+    const shadowSide = lum(s, 24, 41)
+    expect(litSide).toBeGreaterThan(shadowSide)
+  })
+})
+
+describe("a module-scope `mode` is the file's default, one tier under a theme", () => {
+  // Same tier as the `size` default: a theme that states a mode wins, and with no theme at
+  // all the file's own line is what decides. It parses either way, so a dropped one is
+  // invisible: the recipe reads as anti-aliased and renders as a pixel grid.
+  const body = ['  body = circle(24:24, 18)', '  model body m light sun']
+  const light = 'light sun = dir 1:1 #ffe6b0 amb #2a3a5e 15%'
+  const material = 'material m = #8a95a5 metal'
+
+  const isSmooth = (s: Sprite): boolean => {
+    for (let i = 3; i < s.data.length; i += 4) {
+      const a = s.data[i] ?? 0
+      if (a > 0 && a < 255) {
+        return true
+      }
+    }
+    return false
+  }
+
+  test('with no theme, the file-level line decides', () => {
+    const src = (m: string): string =>
+      [`mode ${m}`, light, material, 'draw x 48x48:', ...body].join('\n')
+    expect(isSmooth(render(src('smooth'), 'x'))).toBe(true)
+    expect(isSmooth(render(src('pixel'), 'x'))).toBe(false)
+  })
+
+  test("a theme's own mode wins over the file-level one", () => {
+    const src = [
+      'mode smooth',
+      light,
+      material,
+      'theme t:',
+      '  mode pixel',
+      'draw x 48x48:',
+      '  use t',
+      ...body,
+    ].join('\n')
+    expect(isSmooth(render(src, 'x'))).toBe(false)
+  })
+})
